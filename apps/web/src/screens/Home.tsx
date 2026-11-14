@@ -1,5 +1,5 @@
 import { isXRare } from '@bs/cards';
-import { useInstall } from '../pwa';
+import { browserKind, useInstall } from '../pwa';
 import { useEffect, useMemo, useState } from 'react';
 import { cardArt } from '../assets';
 import { BTN } from '../components/Modal';
@@ -219,6 +219,31 @@ function LocalSetup({ onClose }: { onClose: () => void }) {
 }
 
 /** ปุ่มติดตั้งเป็นเว็บแอป: PC/Android = ป๊อปอัปติดตั้งของเบราว์เซอร์, iOS = บอกวิธีเพิ่มไปยังหน้าจอโฮม */
+/** วิธีติดตั้งตามเบราว์เซอร์ (เมื่อเบราว์เซอร์ไม่มีหน้าต่างติดตั้งให้กด) */
+function InstallSteps() {
+  const kind = browserKind();
+  const steps: Record<ReturnType<typeof browserKind>, { title: string; items: React.ReactNode[] }> = {
+    ios: { title: 'ติดตั้งบน iPhone / iPad', items: ['เปิดหน้านี้ด้วย Safari', <>กดปุ่ม <b>แชร์</b> ⬆ ด้านล่าง/บนของจอ</>, <>เลือก <b>เพิ่มไปยังหน้าจอโฮม</b></>] },
+    android: { title: 'ติดตั้งบน Android', items: ['เปิดหน้านี้ด้วย Chrome', <>กดเมนู <b>⋮</b> มุมขวาบน</>, <>เลือก <b>ติดตั้งแอป</b> หรือ <b>เพิ่มลงในหน้าจอหลัก</b></>] },
+    edge: { title: 'ติดตั้งบน Microsoft Edge', items: [<>กดไอคอน <b>⊕ / ติดตั้งแอป</b> ท้ายช่องที่อยู่เว็บ</>, <>หรือเมนู <b>…</b> → <b>แอป</b> → <b>ติดตั้งไซต์นี้เป็นแอป</b></>] },
+    chrome: { title: 'ติดตั้งบน Google Chrome', items: [<>กดไอคอน <b>ติดตั้ง</b> (จอมีลูกศร) ท้ายช่องที่อยู่เว็บ</>, <>หรือเมนู <b>⋮</b> → <b>แคสต์ บันทึก และแชร์</b> → <b>ติดตั้งหน้าเว็บเป็นแอป</b></>] },
+    safari: { title: 'ติดตั้งบน Safari (Mac)', items: [<>เมนู <b>ไฟล์</b> → <b>เพิ่มไปยัง Dock</b></>] },
+    firefox: { title: 'Firefox ยังติดตั้งเว็บแอปไม่ได้', items: ['เปิดหน้านี้ด้วย Chrome หรือ Edge แล้วกดปุ่มติดตั้งอีกครั้ง'] },
+    other: { title: 'ติดตั้งเป็นแอป', items: ['เปิดหน้านี้ด้วย Chrome / Edge (PC, Android) หรือ Safari (iPhone)', 'แล้วกดปุ่มติดตั้งอีกครั้ง'] },
+  };
+  const s = steps[kind];
+  return (
+    <>
+      <div className="mb-2 font-black text-white">{s.title}</div>
+      <ol className="flex list-decimal flex-col gap-1 pl-5">
+        {s.items.map((it, i) => (
+          <li key={i}>{it}</li>
+        ))}
+      </ol>
+    </>
+  );
+}
+
 function InstallButton() {
   const { mode, install } = useInstall();
   const [help, setHelp] = useState(false);
@@ -227,7 +252,7 @@ function InstallButton() {
     <div className="relative">
       <button
         type="button"
-        onClick={() => (mode === 'prompt' ? void install() : setHelp((v) => !v))}
+        onClick={() => (mode === 'prompt' ? void install().then((ok) => !ok && setHelp(true)) : setHelp((v) => !v))}
         className="flex h-10 items-center gap-1.5 rounded-full border border-yellow-300/60 bg-gradient-to-b from-amber-300 to-amber-600 px-4 text-sm font-black text-slate-950 shadow-[0_0_14px_rgba(250,204,21,0.45)] hover:brightness-110"
         title="ติดตั้งเป็นแอปบนเครื่องนี้"
       >
@@ -235,16 +260,7 @@ function InstallButton() {
       </button>
       {help && (
         <div className="absolute top-12 right-0 z-50 w-72 rounded-xl border border-sky-300/40 bg-slate-950/95 p-4 text-sm text-slate-200 shadow-2xl">
-          <div className="mb-2 font-black text-white">ติดตั้งบน iPhone / iPad</div>
-          <ol className="flex list-decimal flex-col gap-1 pl-5">
-            <li>เปิดหน้านี้ด้วย Safari</li>
-            <li>
-              กดปุ่ม <b>แชร์</b> <span className="rounded bg-slate-700 px-1">⬆</span>
-            </li>
-            <li>
-              เลือก <b>เพิ่มไปยังหน้าจอโฮม</b>
-            </li>
-          </ol>
+          <InstallSteps />
           <button type="button" onClick={() => setHelp(false)} className="mt-3 w-full rounded-lg bg-slate-800 py-1 text-xs hover:bg-slate-700">
             ปิด
           </button>

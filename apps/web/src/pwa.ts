@@ -35,23 +35,43 @@ export const isStandalone = () =>
 /** iPhone / iPad (Safari ไม่มีปุ่มติดตั้งอัตโนมัติ ต้องกด แชร์ → เพิ่มไปยังหน้าจอโฮม) */
 export const isIos = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
-/** สถานะการติดตั้ง: 'prompt' = กดติดตั้งได้เลย, 'ios' = ต้องทำเองผ่านเมนูแชร์, null = ติดตั้งแล้ว/ไม่รองรับ */
-export function useInstall(): { mode: 'prompt' | 'ios' | null; install: () => Promise<void> } {
+/** เบราว์เซอร์ที่ใช้อยู่ (ใช้เลือกวิธีติดตั้งที่จะบอกผู้ใช้) */
+export function browserKind(): 'ios' | 'android' | 'edge' | 'chrome' | 'firefox' | 'safari' | 'other' {
+  const ua = navigator.userAgent;
+  if (isIos()) return 'ios';
+  if (/android/i.test(ua)) return 'android';
+  if (/edg\//i.test(ua)) return 'edge';
+  if (/firefox|fxios/i.test(ua)) return 'firefox';
+  if (/chrome|crios/i.test(ua)) return 'chrome';
+  if (/safari/i.test(ua)) return 'safari';
+  return 'other';
+}
+
+/**
+ * สถานะการติดตั้ง: 'prompt' = กดแล้วขึ้นหน้าต่างติดตั้งของเบราว์เซอร์, 'manual' = บอกวิธีติดตั้งเองตามเบราว์เซอร์,
+ * null = เปิดอยู่ในแอปที่ติดตั้งแล้ว
+ */
+export function useInstall(): { mode: 'prompt' | 'manual' | null; install: () => Promise<boolean> } {
   const [, tick] = useState(0);
   useEffect(() => {
     const f = () => tick((n) => n + 1);
     listeners.add(f);
     return () => void listeners.delete(f);
   }, []);
-  const mode = isStandalone() ? null : deferred ? 'prompt' : isIos() ? 'ios' : null;
+  const mode = isStandalone() ? null : deferred ? 'prompt' : 'manual';
   return {
     mode,
     install: async () => {
-      if (!deferred) return;
-      await deferred.prompt();
-      await deferred.userChoice;
+      if (!deferred) return false;
+      try {
+        await deferred.prompt();
+        await deferred.userChoice;
+      } catch {
+        return false; // เบราว์เซอร์ไม่ยอมเปิดหน้าต่างติดตั้ง: ให้บอกวิธีติดตั้งเองแทน
+      }
       deferred = null;
       notify();
+      return true;
     },
   };
 }
