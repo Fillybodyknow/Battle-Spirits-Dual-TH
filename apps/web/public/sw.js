@@ -4,7 +4,7 @@
  *  - ไฟล์อื่นในเว็บเดียวกัน (JS/CSS/ภาพการ์ด): ใช้ที่เก็บไว้ทันที แล้วอัปเดตเบื้องหลัง
  *  - ข้ามเว็บอื่น (Firebase ฯลฯ) ไม่แตะ
  */
-const CACHE = 'bs-dual-v1';
+const CACHE = 'bs-dual-v2';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(['./', './manifest.webmanifest'])).then(() => self.skipWaiting()));
