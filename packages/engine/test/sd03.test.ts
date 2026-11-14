@@ -150,6 +150,19 @@ describe('SD03 ทิ้งเด็คคู่แข่ง', () => {
     expect(trashCount(x, 'p2')).toBe(3 + 5 + 1 + 5);
   });
 
+  it('ลำดับ Chain: หน้าเลือกเอฟเฟกต์มีเอฟเฟกต์ของ Brave ที่ยังค้างอยู่ด้วย (ทะเลคราม Lv2 + ไฮดร้าชิพ + อาราม)', () => {
+    const s = setup();
+    put(s, 'p1', TEMPLE, 1);
+    const deep = put(s, 'p1', DEEP, 4, true);
+    const brave = `t-card-${++seq}`;
+    s.cards[brave] = { id: brave, cardNo: HYDRA, owner: 'p1', state: 'refresh', cores: [], turnBp: 0, usedThisTurn: [], braves: [] };
+    s.cards[deep]!.braves.push(brave);
+    let x = actRaw(toAttack(s), { type: 'declareAttack', player: 'p1', attackerId: deep });
+    expect(x.choice?.kind).toBe('order');
+    x = actRaw(x, { type: 'choose', player: 'p1', pick: 0 }); // ทะเลคราม ทิ้ง 7 → อาราม + ทะเลคราม Lv2 เกิด
+    expect(x.choice?.kind === 'order' && x.choice.effects.map((e) => e.sourceId)).toContain(brave);
+  });
+
   it('เมียวโอญาณวารี Lv2: เมจิคถูกทิ้งในแอทแท็คสเต็ปของเรา → คอร์วอยด์ 1 เม็ดบนสปิริตเรา', () => {
     const s = setup([], [SOULDRAW]);
     const water = put(s, 'p1', WATER, 2);

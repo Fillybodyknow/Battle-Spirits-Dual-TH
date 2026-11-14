@@ -268,10 +268,11 @@ function drainQueue(ctx: Ctx): void {
   while (!s.choice && !s.winner && s.queue.length > 0) {
     const item = s.queue[0]!;
     if (!item.started) {
-      // เอฟเฟกต์ที่เกิดพร้อมกันของผู้ควบคุมเดียวกัน: ให้ผู้ควบคุมเลือกว่าอันไหนทำงานก่อน
+      // เอฟเฟกต์ที่รอทำงานของผู้ควบคุมเดียวกัน (ที่เพิ่งเกิด + ที่ค้างจากก่อนหน้า เช่น เอฟเฟกต์ของ Brave ตอนโจมตี):
+      // ให้ผู้ควบคุมเลือกว่าอันไหนทำงานก่อน
       const group: QueuedEffect[] = [];
       for (const q of s.queue) {
-        if (q.started || q.batch === undefined || q.batch !== item.batch || q.controller !== item.controller) break;
+        if (q.started || q.batch === undefined || item.batch === undefined || q.controller !== item.controller) break;
         group.push(q);
       }
       if (group.length >= 2) {
