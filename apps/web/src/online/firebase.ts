@@ -32,12 +32,21 @@ const roomRef = (code: string) => ref(database(), `rooms/${code}`);
 
 function toInfo(v: unknown): RoomInfo | null {
   if (!v || typeof v !== 'object') return null;
-  const r = v as { seats?: RoomInfo['seats']; names?: RoomInfo['names']; setup?: { round: number; seed: number; decks?: { p1?: string; p2?: string } } };
+  const r = v as {
+    seats?: RoomInfo['seats'];
+    names?: RoomInfo['names'];
+    setup?: { round: number; seed: number; decks?: { p1?: string; p2?: string }; first?: 'p1' | 'p2' };
+  };
   if (!r.setup || !r.setup.decks?.p1) return null;
   return {
     seats: r.seats ?? {},
     names: r.names ?? {},
-    setup: { round: r.setup.round, seed: r.setup.seed, decks: { p1: r.setup.decks.p1, p2: r.setup.decks.p2 ?? null } },
+    setup: {
+      round: r.setup.round,
+      seed: r.setup.seed,
+      decks: { p1: r.setup.decks.p1, p2: r.setup.decks.p2 ?? null },
+      ...(r.setup.first ? { first: r.setup.first } : {}),
+    },
   };
 }
 
@@ -108,6 +117,14 @@ export const firebaseTransport: Transport = {
       cur === null ? encodeAction(action) : undefined,
     );
     return res.committed;
+  },
+
+  async setFirst(code, round, first) {
+    await runTransaction(ref(database(), `rooms/${code}/setup`), (cur) => {
+      if (!cur) return cur;
+      if (cur.round !== round || cur.first) return undefined;
+      return { ...cur, first };
+    });
   },
 
   async setSetup(code, setup) {

@@ -101,6 +101,13 @@ export const localTransport: Transport = {
     write(s);
     return true;
   },
+  async setFirst(code, round, first) {
+    const s = read();
+    const room = s[code];
+    if (!room || room.setup.round !== round || room.setup.first) return;
+    room.setup.first = first;
+    write(s);
+  },
   async setSetup(code, setup) {
     const s = read();
     if (!s[code]) return;

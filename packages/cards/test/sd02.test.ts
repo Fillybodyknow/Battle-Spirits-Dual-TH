@@ -24,6 +24,6 @@ describe('Starter Deck 02', () => {
     expect(teppo.effects).toHaveLength(1);
     const kiri = db.all().find((c) => c.name === 'นินจาสลาตัน คิริคาเงะ')!;
     expect(kiri.effects[0]).toMatchObject({ keyword: 'Soul Quick' });
-    expect(kiri.rarity).toBe('X-Rare');
+    expect(kiri.rarity).toBe('X');
   });
 });

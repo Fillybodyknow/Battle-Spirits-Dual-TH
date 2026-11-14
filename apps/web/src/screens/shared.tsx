@@ -1,3 +1,4 @@
+import { isXRare } from '@bs/cards';
 import { cardArt } from '../assets';
 import { CardFace } from '../components/CardFace';
 import { DECKS, db, type DeckId } from '../store';
@@ -6,7 +7,7 @@ import { DECKS, db, type DeckId } from '../store';
 export function deckCover(id: DeckId): string {
   const entries = DECKS[id].entries;
   const withArt = entries.filter((e) => cardArt(e.cardNo));
-  const xr = withArt.find((e) => db.find(e.cardNo)?.rarity === 'X-Rare');
+  const xr = withArt.find((e) => isXRare(db.find(e.cardNo) ?? {}));
   return (xr ?? withArt[0] ?? entries[0]!).cardNo;
 }
 

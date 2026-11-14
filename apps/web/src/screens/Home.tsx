@@ -1,3 +1,5 @@
+import { isXRare } from '@bs/cards';
+import { useInstall } from '../pwa';
 import { useEffect, useMemo, useState } from 'react';
 import { cardArt } from '../assets';
 import { BTN } from '../components/Modal';
@@ -8,7 +10,7 @@ import { CardArt, DeckTile, GLOW, deckColor, deckCover, deckSize } from './share
 /** คู่การ์ด X-Rare ที่หมุนแสดงทางขวาของหน้าหลัก */
 function useShowcase(): string[][] {
   return useMemo(() => {
-    const xr = db.all().filter((c) => c.rarity === 'X-Rare' && cardArt(c.cardNo));
+    const xr = db.all().filter((c) => isXRare(c) && cardArt(c.cardNo));
     const pairs: string[][] = [];
     for (let i = 0; i < xr.length; i += 2) pairs.push(xr.slice(i, i + 2).map((c) => c.cardNo));
     return pairs.length > 0 ? pairs : [[db.all()[0]!.cardNo]];
@@ -216,6 +218,42 @@ function LocalSetup({ onClose }: { onClose: () => void }) {
   );
 }
 
+/** ปุ่มติดตั้งเป็นเว็บแอป: PC/Android = ป๊อปอัปติดตั้งของเบราว์เซอร์, iOS = บอกวิธีเพิ่มไปยังหน้าจอโฮม */
+function InstallButton() {
+  const { mode, install } = useInstall();
+  const [help, setHelp] = useState(false);
+  if (!mode) return null;
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => (mode === 'prompt' ? void install() : setHelp((v) => !v))}
+        className="flex h-10 items-center gap-1.5 rounded-full border border-yellow-300/60 bg-gradient-to-b from-amber-300 to-amber-600 px-4 text-sm font-black text-slate-950 shadow-[0_0_14px_rgba(250,204,21,0.45)] hover:brightness-110"
+        title="ติดตั้งเป็นแอปบนเครื่องนี้"
+      >
+        ⬇ ติดตั้งแอป
+      </button>
+      {help && (
+        <div className="absolute top-12 right-0 z-50 w-72 rounded-xl border border-sky-300/40 bg-slate-950/95 p-4 text-sm text-slate-200 shadow-2xl">
+          <div className="mb-2 font-black text-white">ติดตั้งบน iPhone / iPad</div>
+          <ol className="flex list-decimal flex-col gap-1 pl-5">
+            <li>เปิดหน้านี้ด้วย Safari</li>
+            <li>
+              กดปุ่ม <b>แชร์</b> <span className="rounded bg-slate-700 px-1">⬆</span>
+            </li>
+            <li>
+              เลือก <b>เพิ่มไปยังหน้าจอโฮม</b>
+            </li>
+          </ol>
+          <button type="button" onClick={() => setHelp(false)} className="mt-3 w-full rounded-lg bg-slate-800 py-1 text-xs hover:bg-slate-700">
+            ปิด
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Home() {
   const setScreen = useGame((s) => s.setScreen);
   const localInProgress = useGame((s) => s.localInProgress);
@@ -255,6 +293,7 @@ export function Home() {
 
       {/* มุมขวาบน */}
       <div className="absolute top-5 right-6 flex items-center gap-2">
+        <InstallButton />
         <span
           className={`rounded-full border px-3 py-1 text-xs font-bold ${
             onlineAvailable ? 'border-emerald-300/40 bg-emerald-500/10 text-emerald-200' : 'border-slate-500/40 bg-black/40 text-slate-400'

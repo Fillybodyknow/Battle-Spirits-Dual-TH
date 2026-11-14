@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { cardLevel, currentBp, isSpiritLike, payableCost, type CoreTarget, type PlayerId } from '@bs/engine';
 import { playerLabel } from '../format';
 import { IMG } from '../assets';
-import type { Fx } from '../store';
+import type { Fx, Hold } from '../store';
 import { blockCandidates, controls, hiddenFrom, mine, braveHostOf, braveHosts, canDropBurst, canQuickSummon, handFieldAction, separatePlacement } from '../store';
 import { actingPlayer, canEvolve, db, flashPlayer, inMain, isChoiceCandidate, isFxBlocking, magicTimings, simulateEvolve, simulateMove, useGame } from '../store';
 import { useFlashUsable } from './Controls';
@@ -97,6 +97,20 @@ function BraveMenu({ braveId, onClose }: { braveId: string; onClose: () => void 
   );
 }
 
+/** ค่าที่หน่วงไว้ของการ์ดนี้ (ถ้ายังไม่ถึงเวลา) — render ใหม่เองเมื่อหมดเวลา */
+function useHeld(cardId: string): Hold | null {
+  const hold = useGame((s) => s.holds[cardId]);
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (!hold) return;
+    const ms = hold.until - performance.now();
+    if (ms <= 0) return;
+    const t = setTimeout(() => tick((n) => n + 1), ms + 10);
+    return () => clearTimeout(t);
+  }, [hold]);
+  return hold && performance.now() < hold.until ? hold : null;
+}
+
 function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }) {
   const state = useGame((s) => s.state);
   const dragging = useGame((s) => s.dragging);
@@ -122,8 +136,10 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
 
   const card = state.cards[cardId]!;
   const def = db.get(card.cardNo);
-  const level = cardLevel(state, db, cardId);
-  const bp = currentBp(state, db, cardId);
+  // ระหว่างแอนิเมชันเอฟเฟกต์: แสดง BP/Lv เดิมไว้ก่อน จนกว่าจะเล่นถึงจังหวะที่ค่าเปลี่ยน
+  const held = useHeld(cardId);
+  const level = held?.level ?? cardLevel(state, db, cardId);
+  const bp = held?.bp ?? currentBp(state, db, cardId);
   const spirit = isSpiritLike(def);
   const exhausted = card.state === 'exhausted';
   const battle = state.battle;
@@ -169,7 +185,7 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
     return (
       <div
         data-field-card={cardId}
-        className={`flex shrink-0 items-center gap-1.5 rounded-lg bg-black/40 p-1 pr-2 transition ${flying ? 'invisible' : ''} ${
+        className={`relative flex shrink-0 items-center gap-1 rounded-lg bg-black/40 p-1 transition ${flying ? 'invisible' : ''} ${
           candidate
             ? 'cursor-pointer ring-4 ring-fuchsia-400'
             : over
@@ -185,20 +201,36 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
         onClick={() => clickFieldCard(cardId)}
         {...dropHandlers(dropTarget, () => moveCoresTo(target), setOver)}
       >
-        <div className="relative h-20 w-14 shrink-0 cursor-pointer">
+        <div className="relative h-24 w-[4.2rem] shrink-0 cursor-pointer">
           <CardFace def={def} size="xs" level={level} />
         </div>
-        <div className="flex min-w-0 flex-col gap-1">
-          <span className="max-w-28 truncate text-[11px] font-semibold text-slate-100">{def.name}</span>
-          <span className="flex items-center gap-1 text-[10px] text-slate-400">
-            <span className="rounded bg-yellow-300 px-1 font-black text-slate-900">Lv{level}</span>
-            Nexus
-          </span>
-          <div className="flex min-h-8 min-w-16 items-center rounded-md bg-black/50 px-1 py-0.5 ring-1 ring-white/10">
-            {card.cores.length > 0 ? <CoreTray cores={card.cores} width={104} /> : <span className="text-[10px] text-slate-500">ไม่มี Core</span>}
-          </div>
-          {previewText && <span className="rounded bg-emerald-400 px-1 text-center text-[11px] font-bold text-slate-900">{previewText}</span>}
+        {/* ช่อง Core แคบ ๆ ข้างการ์ด เรียงแนวตั้ง (หลายดวงซ้อนกันให้พอดีช่อง) · ชื่อ/รายละเอียดดูจากแผงรายละเอียดการ์ด */}
+        <div className="flex h-24 w-8 flex-col items-center justify-center rounded bg-black/50 py-1 ring-1 ring-white/10">
+          {card.cores.length > 0 ? (
+            card.cores.map((id, i) => (
+              <div
+                key={id}
+                className="relative"
+                style={{ marginTop: i === 0 ? 0 : card.cores.length > 3 ? -Math.ceil((24 * card.cores.length - 84) / (card.cores.length - 1)) : 2, zIndex: card.cores.length - i }}
+              >
+                <Core coreId={id} size="md" board />
+              </div>
+            ))
+          ) : (
+            // ช่องว่าง: placeholder รูป Core เส้นประ
+            <div className="flex flex-col items-center gap-1 select-none">
+              <svg viewBox="0 0 24 24" className="h-5 w-5 text-sky-300/30">
+                <polygon points="12,2 21,7 21,17 12,22 3,17 3,7" fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray="3 2" />
+              </svg>
+              <span className="text-[8px] text-slate-500">CORE</span>
+            </div>
+          )}
         </div>
+        {previewText && (
+          <span className="absolute top-full left-1/2 z-10 mt-0.5 -translate-x-1/2 rounded bg-emerald-400 px-1 text-center text-[10px] font-bold whitespace-nowrap text-slate-900">
+            {previewText}
+          </span>
+        )}
       </div>
     );
   }
@@ -488,6 +520,10 @@ function BurstSlot({ player }: { player: PlayerId }) {
   const fxBlocking = useGame((s) => isFxBlocking(s.fx));
   const [over, setOver] = useState(false);
   const myMain = useGame((s) => controls(s, player)) && inMain(state) && state.turnPlayer === player && !fxBlocking;
+  /** คลิกการ์ด Burst ของเรา (Main Step) = เปิดตัวเลือก "ทิ้ง Burst" แทนป้าย "เซ็ทอยู่!" */
+  const [menu, setMenu] = useState(false);
+  const showMenu = menu && myMain && !!burst;
+  const dragging = useGame((s) => !!burst && s.burstDrag === burst);
   return (
     <MatSlot
       label="Burst"
@@ -501,36 +537,57 @@ function BurstSlot({ player }: { player: PlayerId }) {
           {burst ? 'ปล่อยเพื่อเซ็ท Burst (แทนใบเดิม)' : 'ปล่อยเพื่อเซ็ท Burst'}
         </div>
       )}
-      <div className="flex items-center gap-2.5">
+      {/* การ์ด Burst กลางช่อง: ว่าง = กรอบเส้นประมีคำว่า "ว่าง" · เซ็ทแล้ว = หลังการ์ด + ป้าย + ปุ่มทิ้ง (มุมขวาบนของการ์ด) */}
+      <div className="flex flex-1 items-center justify-center">
         <div
           data-burst-card={player}
-          className={`h-16 w-11 shrink-0 ${burst ? 'rounded-lg ring-2 ring-orange-400' : ''} ${visible ? 'cursor-pointer' : ''}`}
+          className={`relative h-24 w-[4.2rem] shrink-0 ${burst ? 'rounded-lg ring-2 ring-orange-400' : ''} ${visible ? 'cursor-pointer' : ''} ${dragging ? 'opacity-40' : ''}`}
           onMouseEnter={() => visible && hover(burst)}
-          onMouseLeave={() => hover(null)}
-          onClick={() => visible && pin(burst)}
+          onMouseLeave={() => {
+            hover(null);
+            setMenu(false);
+          }}
+          onClick={() => {
+            if (visible) pin(burst);
+            if (myMain && burst) setMenu((v) => !v);
+          }}
+          draggable={myMain && !!burst}
+          onDragStart={(e) => {
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', 'burst:' + burst);
+            beginCardDrag(e);
+            setMenu(false);
+            hover(null);
+            useGame.setState({ burstDrag: burst });
+          }}
+          onDragEnd={() => useGame.setState({ burstDrag: null })}
         >
-          {burst ? <CardBack /> : <div className="h-full w-full rounded-lg border border-dashed border-slate-400/30" />}
+          {burst ? (
+            <CardBack />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center rounded-lg border border-dashed border-slate-400/30 text-[11px] text-slate-500">ว่าง</div>
+          )}
+          {burst && !showMenu && (
+            <span className="pointer-events-none absolute inset-x-1 bottom-1 rounded bg-orange-500/95 py-px text-center text-[10px] font-black whitespace-nowrap text-white shadow">เซ็ทอยู่!</span>
+          )}
+          {showMenu && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setMenu(false);
+                dispatch({ type: 'discardBurst', player });
+              }}
+              className="absolute inset-x-0.5 bottom-1 rounded bg-rose-600 py-0.5 text-center text-[11px] font-black whitespace-nowrap text-white shadow-lg ring-1 ring-white/40 hover:bg-rose-500"
+              style={{ animation: 'fx-chain-pop 0.2s ease-out both' }}
+              title="ทิ้ง Burst ที่เซ็ทอยู่ลง Trash"
+            >
+              ทิ้ง Burst
+            </button>
+          )}
         </div>
-        {burst ? (
-          <span className="flex flex-col items-start gap-0.5 leading-tight">
-            <span className="text-sm font-black text-orange-300 [text-shadow:0_0_8px_rgba(251,146,60,0.7)]">เซ็ทอยู่!</span>
-            <span className="text-[10px] text-orange-200/80">{visible ? 'ชี้เพื่อดูการ์ด' : 'คว่ำไว้ 1 ใบ'}</span>
-            {myMain && (
-              <button
-                type="button"
-                onClick={() => dispatch({ type: 'discardBurst', player })}
-                className="rounded bg-slate-800/90 px-1.5 py-0.5 text-[10px] font-bold text-slate-200 ring-1 ring-white/20 hover:bg-rose-700"
-                title="ทิ้ง Burst ที่เซ็ทอยู่ลง Trash"
-              >
-                ทิ้ง Burst
-              </button>
-            )}
-          </span>
-        ) : (
-          <span className="text-[11px] text-slate-500">ว่าง</span>
-        )}
-        {myMain && state.burstSetThisTurn && <span className="absolute top-1 right-1 rounded bg-black/60 px-1 text-[9px] text-orange-200">เซ็ทแล้วเทิร์นนี้</span>}
       </div>
+      {myMain && state.burstSetThisTurn && <span className="absolute top-1 right-1 rounded bg-black/60 px-1 text-[9px] text-orange-200">เซ็ทแล้วเทิร์นนี้</span>}
     </MatSlot>
   );
 }
@@ -560,11 +617,48 @@ function TrashSlot({ player }: { player: PlayerId }) {
   const state = useGame((s) => s.state);
   const openTrash = useGame((s) => s.openTrash);
   const top = p.trashCards.at(-1);
+  const hover = useGame((s) => s.hover);
+  // ลาก Burst ของผู้เล่นนี้มาปล่อย = ทิ้ง Burst
+  const burstDrop = useGame((s) => !!s.burstDrag && s.state.players[player].burst === s.burstDrag);
+  const [over, setOver] = useState(false);
   return (
-    <MatSlot data-trash={player} label="Trash" sub="แทรช" className="min-h-20 flex-1 cursor-pointer hover:border-slate-200/50" onClick={() => openTrash(player)} title="คลิกดูการ์ดใน Trash">
-      <div className="flex flex-col gap-0.5 border-b border-slate-500/40 pb-1 text-[11px]">
-        <span className="text-slate-400">Card · {p.trashCards.length} ใบ</span>
-        <span className="truncate text-slate-200">{top ? db.get(state.cards[top]!.cardNo).name : '—'}</span>
+    <MatSlot
+      data-trash={player}
+      label="Trash"
+      sub="แทรช"
+      className={`min-h-20 flex-1 cursor-pointer hover:border-slate-200/50 ${burstDrop ? (over ? 'border-rose-300 bg-rose-500/30' : 'border-dashed border-rose-300') : ''}`}
+      onClick={() => openTrash(player)}
+      title="คลิกดูการ์ดใน Trash"
+      {...dropHandlers(burstDrop, () => {
+        useGame.setState({ burstDrag: null });
+        useGame.getState().dispatch({ type: 'discardBurst', player });
+      }, setOver)}
+    >
+      {burstDrop && (
+        <div className="pointer-events-none absolute inset-x-1 -top-2 z-10 rounded bg-rose-600 py-0.5 text-center text-[11px] font-bold text-white shadow">ปล่อยเพื่อทิ้ง Burst</div>
+      )}
+      {/* การ์ดใบล่าสุดใน Trash (หงายหน้า) */}
+      <div className="flex items-center gap-2 border-b border-slate-500/40 pb-1.5">
+        <div
+          className="relative h-16 w-11 shrink-0"
+          onMouseEnter={() => top && hover(top)}
+          onMouseLeave={() => hover(null)}
+        >
+          {top ? (
+            <>
+              {p.trashCards.length > 1 && <div className="absolute inset-0 translate-x-0.5 translate-y-0.5 rounded bg-slate-950 ring-1 ring-white/10" />}
+              <div className="relative h-full w-full" key={top} style={{ animation: 'fx-chain-pop 0.35s ease-out both' }}>
+                <CardFace def={db.get(state.cards[top]!.cardNo)} size="xs" />
+              </div>
+            </>
+          ) : (
+            <div className="h-full w-full rounded border border-dashed border-slate-400/30" />
+          )}
+        </div>
+        <div className="flex min-w-0 flex-col gap-0.5 text-[11px]">
+          <span className="text-slate-400">Card · {p.trashCards.length} ใบ</span>
+          <span className="line-clamp-2 text-slate-200">{top ? db.get(state.cards[top]!.cardNo).name : '—'}</span>
+        </div>
       </div>
       <div className="flex flex-col gap-0.5 text-[11px]">
         <span className="text-slate-400">Core · {p.trashCores.length}</span>
@@ -594,7 +688,7 @@ function TurnBadge() {
 /**
  * แผ่นรองเล่นของผู้เล่น
  *  ซ้าย: Burst / Life / Reserve · กลาง: Field · ขวา: Deck / Trash
- *  ฝั่งตรงข้าม (top) หมุน 180° เหมือนนั่งคนละฝั่งโต๊ะ แต่ตัวหนังสือยังตั้งตรง
+ *  ฝั่งตรงข้าม (top) หมุนทั้งแผ่น 180° (รวมตัวหนังสือ) เหมือนนั่งคนละฝั่งโต๊ะ
  */
 export function PlayerMat({ player, top }: { player: PlayerId; top?: boolean }) {
   const state = useGame((s) => s.state);
@@ -602,7 +696,7 @@ export function PlayerMat({ player, top }: { player: PlayerId; top?: boolean }) 
   const acting = actingPlayer(state) === player;
   const myTurn = state.turnPlayer === player;
   const depleting = useDepletingWhileDragging();
-  const col = top ? 'flex-col-reverse' : 'flex-col';
+  const col = 'flex-col';
   const handDrag = useGame((s) => s.handDrag);
   const handAction = handDrag && state.cards[handDrag]!.owner === player ? handFieldAction(state, handDrag) : null;
   const dropHand = useGame((s) => s.dropHand);
@@ -621,12 +715,12 @@ export function PlayerMat({ player, top }: { player: PlayerId; top?: boolean }) 
   return (
     <section
       data-mat={player}
-      className={`mat-sheen relative isolate flex min-h-[16.5rem] flex-1 gap-2 overflow-hidden rounded-xl border-2 p-2 shadow-[0_10px_30px_rgba(0,0,0,0.55)] ${top ? 'flex-row-reverse' : 'flex-row'} ${
+      className={`mat-sheen relative isolate flex min-h-fit flex-1 gap-2 overflow-hidden rounded-xl border-2 p-2 shadow-[0_10px_30px_rgba(0,0,0,0.55)] flex-row ${top ? 'rotate-180' : ''} ${
         acting ? 'mat-active border-transparent shadow-[0_0_24px_rgba(250,204,21,0.25)]' : 'border-slate-500/30'
       }`}
     >
       {/* พื้นแผ่นรองเล่น: ภาพของผู้ใช้ (ถ้ามี) หรือท้องฟ้า-ผืนทรายโทนเทา */}
-      <div className={`absolute inset-0 -z-10 ${top ? 'rotate-180' : ''}`}>
+      <div className="absolute inset-0 -z-10">
         {IMG.playmat ? (
           <>
             <img src={IMG.playmat} alt="" className="h-full w-full object-cover" draggable={false} />
@@ -650,7 +744,7 @@ export function PlayerMat({ player, top }: { player: PlayerId; top?: boolean }) 
         )}
       </div>
 
-      <div className={`flex w-40 shrink-0 gap-2 ${col}`}>
+      <div className={`flex w-32 shrink-0 gap-2 ${col}`}>
         <BurstSlot player={player} />
         <LifeSlot player={player} />
         <ReserveSlot player={player} />
@@ -676,9 +770,9 @@ export function PlayerMat({ player, top }: { player: PlayerId; top?: boolean }) 
           <span className="text-[11px] tracking-[0.4em] text-white/15">สนาม</span>
           <span className="font-serif text-6xl font-bold tracking-wide text-white/10 [text-shadow:0_2px_0_rgba(0,0,0,0.3)]">Field</span>
         </div>
-        {/* แถว Nexus (มีป้ายชื่อผู้เล่นอยู่ซ้าย) */}
-        <div className="relative flex min-h-8 items-center gap-2 rounded-md border border-dashed border-white/10 bg-black/10 px-1.5 py-1">
-          <div className="flex shrink-0 items-center gap-1.5">
+        {/* แถวบนของสนาม: ป้ายผู้เล่น (ซ้าย) + ช่อง Nexus (กลาง) */}
+        <div className="relative flex shrink-0 items-start gap-2">
+          <div className="flex w-36 shrink-0 flex-wrap items-center gap-1.5">
             <span className={`rounded px-2 py-0.5 text-xs font-black ${acting ? 'player-tag-active' : 'player-tag text-slate-200'}`}>
               {playerLabel(player)}
             </span>
@@ -693,17 +787,21 @@ export function PlayerMat({ player, top }: { player: PlayerId; top?: boolean }) 
               </span>
             )}
           </div>
-          <div className="flex flex-1 flex-wrap items-center justify-center gap-2">
-            {nexus.length > 0 ? (
-              nexus.map((id) => <FieldCard key={id} cardId={id} depleting={depleting.has(id)} />)
-            ) : (
-              <span className="text-[10px] tracking-[0.3em] text-white/25 select-none">NEXUS</span>
-            )}
+          <div className="flex flex-1 justify-center">
+            <div className="flex flex-wrap items-center justify-center gap-2 rounded-md border border-dashed border-white/15 bg-black/15 p-1">
+              {nexus.length > 0 ? (
+                nexus.map((id) => <FieldCard key={id} cardId={id} depleting={depleting.has(id)} />)
+              ) : (
+                <span className="px-6 py-0.5 text-[10px] tracking-[0.3em] text-white/25 select-none">NEXUS</span>
+              )}
+            </div>
           </div>
+          {/* ถ่วงขวาให้ช่อง Nexus อยู่กลางสนาม */}
+          <div className="w-36 shrink-0" />
         </div>
 
         {/* แถว Spirit / Ultimate */}
-        <div className="relative flex flex-1 flex-wrap content-center items-start justify-center gap-3 pt-2">
+        <div className="relative flex flex-1 flex-wrap items-start justify-center gap-3 [align-content:safe_center]">
           {myTurn && <TurnBadge />}
           {slots.map((slot) =>
             'id' in slot ? (
@@ -726,14 +824,24 @@ export function PlayerMat({ player, top }: { player: PlayerId; top?: boolean }) 
 // ---------------------------------------------------------------- hand
 
 /** ตำแหน่งในพัด: index/จำนวนใบ */
-type FanPos = { index: number; count: number };
+type FanPos = { index: number; count: number; top?: boolean };
 
 /** ท่าของการ์ดในพัด: เอียงตามตำแหน่ง ใบริมจมลึกกว่า ชี้/เลือกแล้วยกขึ้นตั้งตรง */
 function fanStyle(fan: FanPos, raised: boolean): React.CSSProperties {
   const off = fan.index - (fan.count - 1) / 2;
   const angle = off * Math.min(6, 36 / Math.max(fan.count, 1));
+  if (fan.top) {
+    // มือคู่แข่ง: พัดกลับหัวที่ขอบบน (เหมือนนั่งถือการ์ดอยู่ฝั่งตรงข้าม) จมเหนือขอบจอ
+    return {
+      transform: raised ? 'translateY(8%) rotate(0deg) scale(1.1)' : `translateY(calc(-50% - ${off * off * 2}px)) rotate(${-angle}deg)`,
+      transformOrigin: '50% 0%',
+      zIndex: raised ? 50 : fan.index + 1,
+      marginLeft: fan.index === 0 ? 0 : '-1.6rem',
+      transition: 'transform 160ms ease-out',
+    };
+  }
   return {
-    transform: raised ? 'translateY(-8%) rotate(0deg) scale(1.1)' : `translateY(calc(26% + ${off * off * 2.5}px)) rotate(${angle}deg)`,
+    transform: raised ? 'translateY(-8%) rotate(0deg) scale(1.1)' : `translateY(calc(42% + ${off * off * 2.5}px)) rotate(${angle}deg)`,
     transformOrigin: '50% 100%',
     zIndex: raised ? 50 : fan.index + 1,
     marginLeft: fan.index === 0 ? 0 : '-2.25rem',
@@ -754,7 +862,7 @@ function HandCard({ cardId, hidden, small, fan }: { cardId: string; hidden: bool
   const { startHandDrag, endHandDrag } = useGame.getState();
   const card = state.cards[cardId]!;
   const def = db.get(card.cardNo);
-  const size = small ? 'h-20 w-14' : fan ? 'h-48 w-34' : 'h-36 w-26';
+  const size = small ? 'h-16 w-11' : fan?.top ? 'h-32 w-[5.75rem]' : fan ? 'h-48 w-34' : 'h-36 w-26';
   const draggable = !hidden && !fxBlocking && (!!handFieldAction(state, cardId) || canDropBurst(state, cardId));
   const style = fan ? fanStyle(fan, hovering || selected) : undefined;
 
@@ -762,7 +870,9 @@ function HandCard({ cardId, hidden, small, fan }: { cardId: string; hidden: bool
     // ใส่ data-hand-card ด้วย: แอนิเมชันจั่ว/ลงการ์ด/กลับขึ้นมือของมือที่คว่ำไว้ (มือคู่แข่ง) ต้องใช้ตำแหน่งนี้
     return (
       <div data-hand-card={cardId} className={`${size} shrink-0 ${flying ? 'invisible' : ''}`} style={style}>
-        <CardBack />
+        <div className={`h-full w-full ${fan?.top ? 'rotate-180' : ''}`}>
+          <CardBack />
+        </div>
       </div>
     );
   }
@@ -822,13 +932,15 @@ function HandCard({ cardId, hidden, small, fan }: { cardId: string; hidden: bool
         } ${selected ? `ring-4 ring-yellow-300 ${fan ? '' : '-translate-y-3'}` : ''} ${candidate ? 'cursor-pointer ring-4 ring-fuchsia-400' : ''}`}
         style={candidate || flashUsable ? { animation: 'fx-choice-glow 1.4s ease-in-out infinite' } : undefined}
       >
-        <CardFace def={def} size={small ? 'xs' : 'md'} payCost={pay} />
+        <div className={`h-full w-full ${fan?.top && !(hovering || selected) ? 'rotate-180' : ''}`}>
+          <CardFace def={def} size={small || fan?.top ? 'xs' : 'md'} payCost={pay} />
+        </div>
         {candidate && (
           <div className="absolute inset-x-1 top-1 rounded bg-fuchsia-500 py-0.5 text-center text-xs font-bold text-white shadow">คลิกเพื่อเลือก</div>
         )}
       </div>
       {selected && (
-        <div className="absolute inset-x-0 bottom-full z-20 mb-4 flex flex-col gap-1 rounded-lg border border-yellow-300/60 bg-slate-900 p-1.5 shadow-xl">
+        <div className={`absolute inset-x-0 z-20 flex flex-col ${fan?.top ? "top-full mt-4" : "bottom-full mb-4"} gap-1 rounded-lg border border-yellow-300/60 bg-slate-900 p-1.5 shadow-xl`}>
           {options.length === 0 && <span className="px-1 text-xs text-slate-400">ใช้ตอนนี้ไม่ได้</span>}
           {options.map((o) => (
             <button
@@ -853,18 +965,18 @@ function HandCard({ cardId, hidden, small, fan }: { cardId: string; hidden: bool
 }
 
 /** มือของผู้เล่นด้านล่าง: เรียงแบบพัด ลอยทับขอบล่างของกระดาน และจมลงใต้ขอบเล็กน้อย */
-export function HandFan({ player }: { player: PlayerId }) {
+export function HandFan({ player, top }: { player: PlayerId; top?: boolean }) {
   const state = useGame((s) => s.state);
   const hand = state.players[player].hand;
   const hidden = useGame((s) => hiddenFrom(s, player));
   return (
-    <div data-player-target={player} className="pointer-events-none fixed bottom-0 left-0 right-[var(--sidebar)] z-20 flex h-0 items-end justify-center">
-      <span className="pointer-events-auto absolute bottom-2 left-4 rounded-full bg-black/70 px-3 py-1 text-xs text-slate-300">
-        มือ {playerLabel(player)} · {hand.length} ใบ
-      </span>
-      <div className="flex items-end">
+    <div
+      data-player-target={player}
+      className={`pointer-events-none fixed left-0 right-[var(--sidebar)] z-20 flex h-0 justify-center ${top ? 'top-0 items-start' : 'bottom-0 items-end'}`}
+    >
+      <div className={`flex ${top ? 'items-start' : 'items-end'}`}>
         {hand.map((id, index) => (
-          <HandCard key={id} cardId={id} hidden={hidden} fan={{ index, count: hand.length }} />
+          <HandCard key={id} cardId={id} hidden={hidden} fan={{ index, count: hand.length, top }} />
         ))}
       </div>
     </div>
@@ -877,9 +989,6 @@ export function Hand({ player, small }: { player: PlayerId; small?: boolean }) {
   const hidden = useGame((s) => hiddenFrom(s, player));
   return (
     <div data-player-target={player} className="flex items-end justify-center gap-2 px-2">
-      <span className="mr-1 self-center text-xs text-slate-500">
-        มือ {playerLabel(player)} · {hand.length} ใบ
-      </span>
       {hand.map((id) => (
         <HandCard key={id} cardId={id} hidden={hidden} small={small} />
       ))}

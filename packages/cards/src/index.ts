@@ -3,6 +3,7 @@ export * from './database';
 export * from './deck';
 export * from './text-format';
 export * from './abilities';
+export * from './rarity';
 
 import sampleSet from '../data/sample-set.json';
 import sd01 from '../data/sd01.json';

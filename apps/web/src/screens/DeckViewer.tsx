@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import type { TextEffect } from '@bs/cards';
-import { COLOR_LABEL, TYPE_LABEL } from '../format';
+import { rarityOf, type TextEffect } from '@bs/cards';
+import { COLOR_LABEL, RARITY_BADGE, TYPE_LABEL } from '../format';
 import { DECKS, db, useGame, type DeckId } from '../store';
 import { BackButton, CardArt, DeckTile, deckSize } from './shared';
 
@@ -54,9 +54,14 @@ export function DeckViewer() {
             >
               <CardArt cardNo={e.cardNo} className="aspect-[0.686] w-full" />
               <span className="absolute -right-1.5 -bottom-1.5 rounded-full bg-slate-950 px-2 py-0.5 text-sm font-black text-yellow-300 ring-1 ring-yellow-300/60">×{e.count}</span>
-              {db.get(e.cardNo).rarity === 'X-Rare' && (
-                <span className="absolute -top-1.5 -left-1.5 rounded bg-gradient-to-r from-amber-300 to-rose-400 px-1.5 text-[10px] font-black text-slate-950">X-RARE</span>
-              )}
+              {(() => {
+                const r = rarityOf(db.get(e.cardNo).rarity);
+                return r ? (
+                  <span className={`absolute -top-1.5 -left-1.5 rounded px-1.5 text-[10px] font-black shadow ${RARITY_BADGE[r.rank]}`} title={r.label}>
+                    {r.code}
+                  </span>
+                ) : null;
+              })()}
             </button>
           ))}
         </main>
@@ -65,6 +70,10 @@ export function DeckViewer() {
           <CardArt cardNo={focus} className="mx-auto w-60 shadow-2xl" />
           <div>
             <div className="text-xl font-black text-white">{def.name}</div>
+            {(() => {
+              const r = rarityOf(def.rarity);
+              return r ? <span className={`my-1 inline-block rounded px-1.5 text-xs font-black ${RARITY_BADGE[r.rank]}`}>{r.code} · {r.label}</span> : null;
+            })()}
             <div className="text-xs text-slate-400">
               {TYPE_LABEL[def.type]} · {def.colors.map((c) => COLOR_LABEL[c]).join('/')} · คอสต์ {def.cost}
               {def.family.length > 0 && <> · {def.family.join(' / ')}</>}

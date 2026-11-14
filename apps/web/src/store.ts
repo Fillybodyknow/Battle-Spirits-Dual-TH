@@ -5,10 +5,11 @@ import { firebaseConfigured, firebaseTransport } from './online/firebase';
 import { localTransport } from './online/local';
 import type { RoomInfo, RoomSetup, Transport } from './online/transport';
 import { createCardDatabase, expandDeck, loadSampleCards, loadSD01Cards, loadSD02Cards, SD01_DECK, SD02_DECK, type DeckEntry } from '@bs/cards';
-import type { TextEffect } from '@bs/cards';
+import { rarityOf, type TextEffect } from '@bs/cards';
 import {
   applyAction,
   cardLevel,
+  currentBp,
   minCores,
   payableCost,
   createGame,
@@ -19,6 +20,7 @@ import {
   type Action,
   type ChoicePick,
   type CoreTarget,
+  type EndReason,
   type GameEvent,
   type GameState,
   type PlayerId,
@@ -252,14 +254,16 @@ function autoAdvance(s: GameState, events: GameEvent[]): GameState {
 export type Fx =
   /** delay: ป้ายผู้ชนะรอให้แอนิเมชันทั้งหมดเล่นจบก่อน (ระหว่างรอนับเป็นแอนิเมชันที่ต้องเล่นให้จบ) */
   | { id: number; kind: 'banner'; title: string; sub?: string; tone: 'turn' | 'step' | 'burst' | 'win'; delay?: number }
-  /** โยนเหรียญตัดสินผู้เริ่มก่อน (heads = ด้านทอง: คนที่ดูจอนี้เริ่มก่อน) */
-  | { id: number; kind: 'coin'; heads: boolean; title: string; sub: string }
+  /** ฉากจบเกม: สนามผู้แพ้แตก → VICTORY/DEFEAT → แผงสรุปผล (delay = รอแอนิเมชันก่อนหน้า, ระหว่างรอนับเป็นแอนิเมชันที่ต้องเล่นให้จบ) */
+  | { id: number; kind: 'result'; winner: PlayerId; reason: EndReason; delay: number }
+  /** ฉากเปิดเกม: READY → VS → โยนเหรียญ (heads = ด้านทอง: คนที่ดูจอนี้เริ่มก่อน) → วาร์ป → DUEL */
+  | { id: number; kind: 'intro'; heads: boolean; left: IntroSide; right: IntroSide }
   /** FINAL BLOW: การโจมตีที่ทำให้ Life เป็น 0 (เวลาหยุดชั่วครู่ แสงวาบ ข้อความใหญ่ ฝั่งที่แพ้ร้าว) */
   | { id: number; kind: 'finalBlow'; loser: PlayerId; winner: PlayerId; delay: number }
-  | { id: number; kind: 'summon'; cardId: string; level: number; bp: number; delay: number }
+  | { id: number; kind: 'summon'; cardId: string; level: number; bp: number; delay: number; special?: boolean }
   | { id: number; kind: 'activate'; cardId: string; label: string; text: string; delay: number }
   /** การ์ดบนสนามที่เอฟเฟกต์ทำงาน: ยกขึ้น + เรืองแสง ก่อนผลของเอฟเฟกต์จะเกิด */
-  | { id: number; kind: 'cardActivate'; cardId: string; delay: number; duration: number }
+  | { id: number; kind: 'cardActivate'; cardId: string; delay: number; duration: number; hand?: boolean }
   /** เอฟเฟกต์หลายอันทำงานพร้อมกัน: แสดงการ์ดเรียงพร้อมเลขลำดับและโซ่ (CHAIN → RESOLVE) */
   | { id: number; kind: 'chain'; cardIds: string[]; delay: number; duration: number }
   /** การ์ดที่เอฟเฟกต์ทำงานเสร็จ บินเข้าไปต่อท้ายแถบ Chain (index = ลำดับใน Chain) */
@@ -286,8 +290,10 @@ export type Fx =
       shrink?: boolean;
       /** บินแบบคว่ำ (เซ็ท Burst) */
       faceDown?: boolean;
-      /** ลงสนามแบบหนักหน่วงเป็นพิเศษ (X-Rare) */
+      /** ลงสนามแบบหนักหน่วงเป็นพิเศษ (M ขึ้นไป) */
       heavy?: boolean;
+      /** R: แสงสีฟ้าแวบตอนกระแทกพื้น */
+      rare?: boolean;
       timing?: 'main' | 'flash';
       delay: number;
       hideTarget: boolean;
@@ -392,6 +398,8 @@ const T = {
   finalBlow: 2600,
   /** X-Rare cut-in ก่อนการ์ดบินลงสนาม (การ์ดเริ่มบินตอน cut-in กำลังจาง) */
   cutIn: 1750,
+  /** cut-in ระดับพิเศษ (XX/XV) ยาวกว่า X */
+  cutInSpecial: 2450,
 } as const;
 
 /**
@@ -399,8 +407,31 @@ const T = {
  * engine ประมวลผลเสร็จในครั้งเดียว แต่ภาพจะเล่นตามลำดับ event: ลงการ์ด → เอฟเฟกต์ทำงาน (ยกขึ้นเรืองแสง) → ผลของเอฟเฟกต์
  * t = เวลาที่ขั้นถัดไปจะเริ่ม
  */
+/** ตัวเลือก cut-in อัญเชิญ: always = ทุกครั้ง, first = ครั้งแรกของการ์ดชนิดนั้นในเกม, off = ปิด (ลงหนักแทน) */
+export type CutInMode = 'always' | 'first' | 'off';
+let cutInMode: CutInMode = (() => {
+  try {
+    const v = localStorage.getItem('bs-cutin');
+    return v === 'always' || v === 'off' || v === 'first' ? v : 'first';
+  } catch {
+    return 'first';
+  }
+})();
+
+/** ควรเล่น cut-in ให้การอัญเชิญนี้ไหม (first: ดูจาก log ว่าการ์ดชนิดนี้เคยลงสนามมาก่อนในเกมนี้หรือยัง) */
+function wantCutIn(s: GameState, events: GameEvent[], e: GameEvent, cardNo: string): boolean {
+  if (cutInMode === 'off') return false;
+  if (cutInMode === 'always') return true;
+  const at = s.log.length - events.length + events.indexOf(e);
+  return !s.log.slice(0, at).some((x) => (x.type === 'summoned' || x.type === 'nexusDeployed') && s.cards[x.cardId]?.cardNo === cardNo);
+}
+
+/** เวลาบนไทม์ไลน์ FX ของแต่ละ event ในชุดล่าสุด (ms) ใช้หน่วงการแสดงผลบนกระดานให้ตรงกับแอนิเมชัน */
+let lastEventAt = new Map<GameEvent, number>();
+
 function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: Record<string, Rect>, pick?: unknown): Fx[] {
   const out: FxInput[] = [];
+  lastEventAt = new Map();
   const newTurn = events.some((e) => e.type === 'turnStarted');
   let t = 0;
   // ผลของการเลือกที่รออยู่: แสดงให้เห็นก่อนว่าเลือกอะไร แล้วผลค่อยตามมา
@@ -486,6 +517,7 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
       t = hitAt + 250;
     }
     const at = (battleEvent: boolean) => (battleEvent && hitAt !== null ? hitAt : t);
+    lastEventAt.set(e, t);
 
     switch (e.type) {
       case 'turnStarted':
@@ -513,20 +545,26 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         const card = s.cards[e.cardId]!;
         const to = `[data-field-card="${e.cardId}"] > div:first-child`;
         draws = 0;
-        if (db.get(card.cardNo).rarity === 'X-Rare') {
-          // X-Rare: cut-in เล่นก่อน (การ์ดบนสนามซ่อนไว้) แล้วการ์ดใหญ่กลางจอค่อยบินลงสนาม
+        // ระดับความหายาก: C/U ปกติ · R แสงฟ้าแวบ · M ลงหนัก · X cut-in · XX/XV cut-in พิเศษ
+        const rank = rarityOf(db.get(card.cardNo).rarity)?.rank ?? 0;
+        const host0 = Object.values(s.cards).find((c) => c.braves.includes(e.cardId));
+        if (rank >= 5 && !host0 && wantCutIn(s, events, e, card.cardNo)) {
+          // cut-in เล่นก่อน (การ์ดบนสนามซ่อนไว้) แล้วการ์ดใหญ่กลางจอค่อยทุบลงสนาม
           const onField = s.players[card.owner].field.includes(e.cardId);
+          const special = rank >= 6;
           out.push({
             kind: 'summon',
             cardId: e.cardId,
             level: onField ? cardLevel(s, db, e.cardId) : 0,
             bp: onField ? currentBpSafe(s, e.cardId) : 0,
             delay: t,
+            special,
           });
-          t += T.cutIn;
+          t += special ? T.cutInSpecial : T.cutIn;
           out.push({ kind: 'fly', cardId: e.cardId, from: 'center', to, mode: 'play', heavy: true, delay: t, hideTarget: true });
           t += T.landHeavy;
         } else {
+          const heavy = rank >= 4 && !host0;
           const origin = e.type === 'summoned' ? e.from : undefined;
           const from =
             origin === 'deck'
@@ -537,15 +575,17 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
           // Brave ที่ร่วมร่าง: บินไปที่ผู้ร่วมร่าง
           const host = Object.values(s.cards).find((c) => c.braves.includes(e.cardId));
           const dest = host ? `[data-brave-card="${e.cardId}"]` : to;
-          out.push({ kind: 'fly', cardId: e.cardId, from, to: dest, mode: 'play', delay: t, hideTarget: true });
-          t += T.land;
+          out.push({ kind: 'fly', cardId: e.cardId, from, to: dest, mode: 'play', heavy, rare: rank === 3, delay: t, hideTarget: true });
+          t += heavy ? T.landHeavy : T.land;
         }
         break;
       }
       case 'effectResolving': {
         // การ์ดบนสนามยกขึ้นเรืองแสง → ผลของเอฟเฟกต์เกิดทันที → การ์ดบินไปต่อท้าย Chain
-        const field = onAnyField(e.cardId);
-        if (field) out.push({ kind: 'cardActivate', cardId: e.cardId, delay: t, duration: T.activate });
+        // การ์ดบนสนาม หรือบนมือ (เอฟเฟกต์ที่ทำงานจากมือ): ยกขึ้นเรืองแสง + จอสลัว
+        const inHand = !onAnyField(e.cardId) && PLAYERS.some((p) => s.players[p].hand.includes(e.cardId) || prev.players[p].hand.includes(e.cardId));
+        const field = onAnyField(e.cardId) || inHand;
+        if (field) out.push({ kind: 'cardActivate', cardId: e.cardId, delay: t, duration: T.activate, hand: inHand });
         if (e.source !== null) {
           out.push({ kind: 'activate', cardId: e.cardId, label: 'เอฟเฟกต์ทำงาน', text: effectText(s.cards[e.cardId]!.cardNo, e.source), delay: t });
         }
@@ -732,13 +772,7 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
           out.push({ kind: 'finalBlow', loser, winner: e.winner, delay: fb });
           at = Math.max(end + 300, fb + T.finalBlow);
         }
-        out.push({
-          kind: 'banner',
-          tone: 'win',
-          title: `${who(e.winner)} ชนะ!`,
-          sub: { lifeZero: 'Life ของคู่แข่งเป็น 0', deckOut: 'เด็คของคู่แข่งหมด', concede: 'คู่แข่งยอมแพ้' }[e.reason],
-          delay: at,
-        });
+        out.push({ kind: 'result', winner: e.winner, reason: e.reason, delay: at });
         break;
       }
     }
@@ -759,7 +793,7 @@ function fxEnd(f: FxInput): number {
     case 'fly':
       return d + (f.mode === 'play' && f.heavy ? 1100 : { draw: 420, move: 480, play: 640, magic: 2000, burst: 1900 }[f.mode]);
     case 'summon':
-      return d + 1900;
+      return d + (f.special ? 2600 : 1900);
     case 'cardActivate':
     case 'chain':
     case 'reveal':
@@ -811,6 +845,30 @@ export function mine(player: PlayerId | null | undefined): boolean {
 export const controls = (st: { online: OnlineState | null }, player: PlayerId | null | undefined): boolean =>
   !st.online || (st.online.status === 'playing' && player === st.online.me);
 
+/**
+ * เอฟเฟกต์ที่กำลังทำงานอยู่ตอนนี้ (หัวคิวที่เริ่มแล้ว): การ์ด + ลำดับบรรทัดเอฟเฟกต์ใน CardDef.effects
+ * Magic/Burst (ไม่มี source) = บรรทัดตาม timing ที่ใช้ (Burst / [Main] / [Flash] / Magic ไม่มี timing = ทุกบรรทัดที่ไม่ใช่ Burst)
+ */
+export function resolvingEffect(s: GameState): { cardId: string; lines: number[] } | null {
+  const head = s.queue[0];
+  if (!head || !head.started || s.winner) return null;
+  const cardId = head.sourceId;
+  if (head.source !== undefined) return { cardId, lines: [head.source] };
+  const card = s.cards[cardId];
+  if (!card) return null;
+  const effects = db.get(card.cardNo).effects as TextEffect[];
+  const idx = (pred: (e: TextEffect) => boolean) => effects.map((e, i) => (pred(e) ? i : -1)).filter((i) => i >= 0);
+  for (let i = s.log.length - 1; i >= 0; i--) {
+    const e = s.log[i]!;
+    if (e.type === 'burstActivated' && e.cardId === cardId) return { cardId, lines: idx((x) => x.timing === 'burst') };
+    if (e.type === 'magicUsed' && e.cardId === cardId) {
+      const t = idx((x) => x.timing === e.timing);
+      return { cardId, lines: t.length ? t : idx((x) => x.timing !== 'burst') };
+    }
+  }
+  return { cardId, lines: idx((x) => x.timing !== 'burst') };
+}
+
 export function chainEntries(s: GameState): Extract<GameEvent, { type: 'effectResolving' }>[] {
   return chainLogIndices(s).map((i) => s.log[i] as Extract<GameEvent, { type: 'effectResolving' }>);
 }
@@ -856,13 +914,14 @@ export function isFxBlocking(fx: Fx[]): boolean {
   return fx.some(
     (f) =>
       f.kind === 'cardActivate' ||
-      f.kind === 'coin' ||
+      f.kind === 'intro' ||
       f.kind === 'chain' ||
       f.kind === 'reveal' ||
       f.kind === 'chainAdd' ||
       f.kind === 'target' ||
       f.kind === 'finalBlow' ||
       (f.kind === 'banner' && f.tone === 'win' && (f.delay ?? 0) > 0) ||
+      (f.kind === 'result' && f.delay > 0) ||
       f.kind === 'charge' ||
       f.kind === 'summon' ||
       (f.kind === 'fly' && f.mode !== 'draw'),
@@ -879,7 +938,11 @@ function currentBpSafe(s: GameState, cardId: string): number {
 // ---------------------------------------------------------------- Core motion
 
 /** หน่วงเวลาให้ Core บินตรงกับไทม์ไลน์: Core จากการ์ดที่ออกจากสนามตามภาพแตก, Core ไลฟ์ตามตัวเลขดาเมจ */
-function coreDelays(prev: GameState, next: GameState, fx: Fx[]): Map<string, number> {
+function coreDelays(prev: GameState, next: GameState, fx: Fx[], events: GameEvent[] = []): Map<string, number> {
+  const timeOf = (pred: (e: GameEvent) => boolean) => {
+    const e = events.find(pred);
+    return e ? lastEventAt.get(e) : undefined;
+  };
   const ghostAt = new Map<string, number>();
   const damageAt = new Map<PlayerId, number>();
   for (const f of fx) {
@@ -892,6 +955,49 @@ function coreDelays(prev: GameState, next: GameState, fx: Fx[]): Map<string, num
     if (!loc) continue;
     if (loc.area === 'card' && ghostAt.has(loc.cardId)) out.set(id, ghostAt.get(loc.cardId)!);
     else if (loc.area === 'life' && damageAt.has(loc.player)) out.set(id, damageAt.get(loc.player)!);
+    else if (loc.area === 'card') {
+      // Core ที่ออกจากการ์ดด้วยเอฟเฟกต์ (ลง Trash / Soul Core → Reserve)
+      const at = timeOf((e) => (e.type === 'coresToTrash' || e.type === 'soulToReserve') && e.cardId === loc.cardId);
+      if (at) out.set(id, at);
+    }
+  }
+  // Core ที่เกิดใหม่ (Void Core): โผล่ตอนเอฟเฟกต์ทำงานจริง
+  for (const id of Object.keys(next.cores)) {
+    if (prev.cores[id]) continue;
+    const loc = locateCore(next, id);
+    const at =
+      timeOf((e) => e.type === 'voidCore' && (loc?.area === 'card' ? e.cardId === loc.cardId : e.cardId === null)) ?? timeOf((e) => e.type === 'voidCore');
+    if (at !== undefined) out.set(id, at);
+  }
+  return out;
+}
+
+/** ค่าที่แสดงบนการ์ดแบบหน่วงไว้ (BP / Lv เดิม) จนกว่าแอนิเมชันจะเล่นถึงเอฟเฟกต์ที่ทำให้ค่าเปลี่ยน */
+export type Hold = { bp: number; level: number; until: number };
+
+function computeHolds(prev: GameState, next: GameState, events: GameEvent[], delays: Map<string, number>): Record<string, Hold> {
+  const out: Record<string, Hold> = {};
+  const now = performance.now();
+  for (const p of PLAYERS) {
+    for (const id of next.players[p].field) {
+      const before = prev.players[p].field.includes(id) ? prev.cards[id]!.cores : [];
+      const after = next.cards[id]!.cores;
+      // Core ที่เข้า/ออกการ์ดนี้แบบหน่วง (ยังไม่ถึงจังหวะ)
+      const entering = after.filter((c) => !before.includes(c) && (delays.get(c) ?? 0) > 0);
+      const leaving = before.filter((c) => !after.includes(c) && (delays.get(c) ?? 0) > 0);
+      const buffs = events.filter((e): e is Extract<GameEvent, { type: 'bpBuffed' }> => e.type === 'bpBuffed' && e.cardId === id && (lastEventAt.get(e) ?? 0) > 0);
+      if (entering.length + leaving.length + buffs.length === 0) continue;
+      let at = 0;
+      for (const c of [...entering, ...leaving]) at = Math.max(at, delays.get(c)! + 400);
+      for (const e of buffs) at = Math.max(at, lastEventAt.get(e)!);
+      // สภาพก่อนผลที่หน่วงไว้: ย้อน Core ที่ยังไม่ถึงจังหวะ + หัก BP ที่ยังไม่ได้รับ
+      const tmp = structuredClone(next);
+      tmp.cards[id]!.cores = [...after.filter((c) => !entering.includes(c)), ...leaving];
+      const bp = currentBp(tmp, db, id) - buffs.reduce((n, e) => n + e.amount, 0);
+      const level = cardLevel(tmp, db, id);
+      if (bp === currentBp(next, db, id) && level === cardLevel(next, db, id)) continue;
+      out[id] = { bp, level, until: now + at };
+    }
   }
   return out;
 }
@@ -1066,6 +1172,8 @@ interface Store {
   autoPass: boolean;
   /** คิวเอฟเฟกต์ภาพที่กำลังแสดง */
   fx: Fx[];
+  /** BP/Lv ที่ยังแสดงค่าเดิมไว้ระหว่างแอนิเมชัน (cardId → ค่าเดิม + เวลาเลิกหน่วง) */
+  holds: Record<string, Hold>;
 
   /** การ์ดบนมือที่เปิดเมนูอยู่ */
   selectedHandCard: string | null;
@@ -1100,6 +1208,12 @@ interface Store {
   startLocal(decks: DeckChoice): void;
   /** มีเกมเครื่องเดียวที่เล่นค้างอยู่ (กลับไปเล่นต่อได้) */
   localInProgress: boolean;
+  /** ก่อนเริ่มเกม: คนชนะการเสี่ยง และผู้เริ่มก่อนที่เลือก (null = ยังเลือกอยู่) */
+  pregame: { winner: PlayerId; chosen: PlayerId | null } | null;
+  /** คนชนะการเสี่ยงเลือกเริ่มก่อน (true) หรือเริ่มหลัง (false) */
+  chooseFirst(goFirst: boolean): void;
+  /** ฉากเปิดเกมจบ: ปิดฉาก แล้วขึ้นป้ายเทิร์นที่ 1 */
+  introDone(id: number): void;
   /** เด็คที่เปิดดูในหน้าเด็ค */
   deckView: DeckId;
   onlineJoin(code: string, deck: DeckId): Promise<void>;
@@ -1111,6 +1225,9 @@ interface Store {
   toggleHideIdleHand(): void;
   toggleFixedView(): void;
   toggleAnimations(): void;
+  /** cut-in อัญเชิญการ์ด X ขึ้นไป */
+  cutIn: CutInMode;
+  setCutIn(mode: CutInMode): void;
   toggleAutoPass(): void;
   dismissFx(id: number): void;
   /** FX ที่รอเวลาครบแล้ว: แสดงทันที (delay = 0) */
@@ -1142,6 +1259,8 @@ interface Store {
   endHandDrag(): void;
   /** ปล่อยการ์ดที่ลากจากมือ: สนาม = อัญเชิญ/วาง Nexus/ใช้ Magic, burst = เซ็ท Burst */
   dropHand(on: 'field' | 'burst'): void;
+  /** Burst ที่กำลังลาก (ไปปล่อยที่ Trash = ทิ้ง Burst) */
+  burstDrag: string | null;
   /** Brave บนสนาม (เดี่ยว หรือร่วมร่างอยู่) ที่กำลังลาก */
   braveDrag: string | null;
   startBraveDrag(cardId: string): void;
@@ -1180,7 +1299,8 @@ export interface OnlineState {
   uid: string;
   /** ชื่อ transport ที่ใช้ (Firebase / ทดสอบในเครื่อง) */
   via: string;
-  status: 'waiting' | 'playing';
+  /** waiting = รอคู่แข่ง, choosing = คนชนะการเสี่ยงกำลังเลือกเริ่มก่อน/หลัง, playing = เล่นอยู่ */
+  status: 'waiting' | 'choosing' | 'playing';
   /** ค่าตั้งต้นของรอบปัจจุบัน (null = ยังรอคู่แข่ง) */
   setup: RoomSetup | null;
   /** จำนวน action ของรอบนี้ที่ทำแล้ว */
@@ -1239,9 +1359,13 @@ function onRoom(code: string, info: RoomInfo | null) {
   const opponentHere = !!info.seats[opponentOf(on.me)];
   const ready = !!info.setup.decks.p2 && !!info.seats.p2;
   const names = info.names ?? {};
-  if (ready && (on.status !== 'playing' || on.setup?.round !== info.setup.round)) {
+  if (ready && (on.status === 'waiting' || on.setup?.round !== info.setup.round)) {
     useGame.setState({ online: { ...on, names } });
     void startRound(code, info.setup, opponentHere);
+  } else if (on.status === 'choosing' && info.setup.first && on.setup?.round === info.setup.round) {
+    // คนชนะการเสี่ยงเลือกแล้ว: สร้างเกมด้วยผู้เริ่มก่อนที่เลือก แล้วเริ่มรับ action
+    useGame.setState({ online: { ...on, opponentHere, names } });
+    beginPlay(code, info.setup, opponentHere, 0);
   } else useGame.setState({ online: { ...on, opponentHere, names } });
 }
 
@@ -1257,25 +1381,59 @@ async function startRound(code: string, setup: RoomSetup, opponentHere: boolean)
   const existing = await transport.countActions(code, setup.round);
   const st = useGame.getState();
   if (!st.online || st.online.code !== code) return;
-  silentBelow = existing;
-  nextIndex = existing;
-  const state = startGame(setup.seed, decks);
-  // โยนเหรียญ: จอของคนเริ่มก่อนออกหัว จอของคนเริ่มทีหลังออกก้อย
-  const first = state.turnPlayer === st.online.me;
-  const banner: Fx[] = st.animations && existing === 0 ? coinToss(first, first ? 'คุณเริ่มก่อน!' : 'คุณเริ่มทีหลัง', state.turnPlayer) : [];
+  const me = st.online.me;
+  const opp = opponentOf(me);
+  const winner = coinWinner(setup.seed);
+  const names = st.online.names;
+  // ฉากเปิดเกม: จอของคนชนะการเสี่ยงออกหัว จอของอีกฝั่งออกก้อย
+  const intro: Fx[] =
+    st.animations && existing === 0
+      ? matchIntro(winner === me, { name: names[me] ?? st.playerName, deck: decks[me] }, { name: names[opp] ?? 'คู่แข่ง', deck: decks[opp] })
+      : [];
+  const nav = st.screen === 'lobby' ? {} : { screen: 'game' as const };
+  if (setup.first) {
+    // เลือกผู้เริ่มก่อนไปแล้ว (เช่น กลับเข้าห้องหลังรีเฟรช)
+    useGame.setState({ fx: intro, pregame: { winner, chosen: setup.first }, ...nav });
+    beginPlay(code, setup, opponentHere, existing);
+    return;
+  }
+  // ยังไม่ได้เลือก: แสดงกระดานชั่วคราว (ผู้ชนะการเสี่ยงเริ่มก่อน) ระหว่างรอคนชนะเลือก
   useGame.setState({
     ...resetUi,
-    state,
+    state: startGame(setup.seed, decks, winner),
     truth: null,
     seed: setup.seed,
     decks,
     history: [],
     error: null,
     pinned: null,
-    fx: banner,
+    fx: intro,
+    pregame: { winner, chosen: null },
+    online: { ...st.online, status: 'choosing', setup, applied: 0, opponentHere },
+    ...nav,
+  });
+}
+
+/** สร้างเกมของรอบนี้ด้วยผู้เริ่มก่อนที่เลือกแล้ว แล้วเริ่มรับ action (existing = action ที่มีอยู่แล้ว เล่นซ้ำแบบเงียบ) */
+function beginPlay(code: string, setup: RoomSetup, opponentHere: boolean, existing: number) {
+  unsubActions?.();
+  buffer.clear();
+  const st = useGame.getState();
+  if (!st.online || !setup.first) return;
+  const decks = { p1: setup.decks.p1, p2: setup.decks.p2 ?? setup.decks.p1 } as DeckChoice;
+  silentBelow = existing;
+  nextIndex = existing;
+  useGame.setState({
+    ...resetUi,
+    state: startGame(setup.seed, decks, setup.first),
+    truth: null,
+    seed: setup.seed,
+    decks,
+    history: [],
+    error: null,
+    pinned: null,
+    pregame: { winner: st.pregame?.winner ?? coinWinner(setup.seed), chosen: setup.first },
     online: { ...st.online, status: 'playing', setup, applied: 0, opponentHere },
-    // Lobby แสดง VS แล้วค่อยเข้ากระดานเอง / กลับเข้าห้องหลังรีเฟรช = ไปกระดานเลย
-    ...(st.screen === 'lobby' ? {} : { screen: 'game' as const }),
   });
   unsubActions = transport.watchActions(code, setup.round, (index, action) => receive(code, setup.round, index, action));
 }
@@ -1337,23 +1495,32 @@ async function resumeSession() {
 }
 if (typeof window !== 'undefined') setTimeout(() => void resumeSession(), 0);
 
-/** เวลาของแอนิเมชันโยนเหรียญ (ms) ป้ายเทิร์นที่ 1 ขึ้นหลังจากนี้ */
-export const COIN_MS = 3600;
-
-/** แอนิเมชันโยนเหรียญ ตามด้วยป้ายเทิร์นที่ 1 */
-function coinToss(heads: boolean, title: string, firstPlayer: PlayerId): Fx[] {
-  return [
-    { id: ++fxSeq, kind: 'coin', heads, title, sub: heads ? 'ออกหัว' : 'ออกก้อย' },
-    { id: ++fxSeq, kind: 'banner', tone: 'turn', title: 'เทิร์นที่ 1', sub: `${who(firstPlayer)} เริ่มก่อน`, delay: COIN_MS },
-  ];
+/** ผู้เล่นฝั่งหนึ่งในฉากเปิดเกม */
+export interface IntroSide {
+  name: string;
+  deck: string;
 }
 
-function startGame(seed: number, decks: DeckChoice): GameState {
+/** ฉากเปิดเกม (โยนเหรียญ + เลือกเริ่มก่อน/หลัง) ป้ายเทิร์นที่ 1 ขึ้นเมื่อฉากจบ (introDone) */
+function matchIntro(heads: boolean, left: IntroSide, right: IntroSide): Fx[] {
+  return [{ id: ++fxSeq, kind: 'intro', heads, left, right }];
+}
+
+function startGame(seed: number, decks: DeckChoice, firstPlayer?: PlayerId): GameState {
   return createGame({
     db,
     seed,
     decks: { p1: expandDeck(DECKS[decks.p1].entries), p2: expandDeck(DECKS[decks.p2].entries) },
+    ...(firstPlayer ? { firstPlayer } : {}),
   }).state;
+}
+
+/** คนชนะการเสี่ยงของรอบออนไลน์ (คำนวณจาก seed ของห้อง: ทั้งสองเครื่องได้ผลเดียวกัน) */
+function coinWinner(seed: number): PlayerId {
+  let x = (seed ^ 0x9e3779b9) >>> 0;
+  x = Math.imul(x ^ (x >>> 16), 0x45d9f3b) >>> 0;
+  x = Math.imul(x ^ (x >>> 16), 0x45d9f3b) >>> 0;
+  return ((x ^ (x >>> 16)) & 1) === 0 ? 'p1' : 'p2';
 }
 
 const randomSeed = () => Math.floor(Math.random() * 2 ** 31);
@@ -1381,6 +1548,7 @@ export const useGame = create<Store>((set, get) => {
     fixedView: false,
     viewTurn: initial.turnPlayer,
     animations: true,
+    holds: {},
     autoPass: true,
     online: null,
     screen: 'home',
@@ -1397,10 +1565,30 @@ export const useGame = create<Store>((set, get) => {
     },
     localInProgress: false,
     deckView: 'sd01',
+    pregame: null,
     startLocal: (decks) => {
       set({ decks });
       get().newGame();
       set({ screen: 'game', localInProgress: true });
+    },
+    chooseFirst: (goFirst) => {
+      const { pregame, online, seed, decks } = get();
+      if (!pregame || pregame.chosen) return;
+      const first = goFirst ? pregame.winner : opponentOf(pregame.winner);
+      sfx('click');
+      if (online) {
+        if (online.me !== pregame.winner || !online.setup) return;
+        void transport.setFirst(online.code, online.setup.round, first);
+        return;
+      }
+      // เล่นเครื่องเดียว: สร้างเกมใหม่ด้วย seed เดิมและผู้เริ่มก่อนที่เลือก
+      const state = startGame(seed, decks, first);
+      set({ ...resetUi, state, truth: null, history: [], pregame: { ...pregame, chosen: first }, viewTurn: state.turnPlayer });
+    },
+    introDone: (id) => {
+      const st = get();
+      const banner: Fx = { id: ++fxSeq, kind: 'banner', tone: 'turn', title: 'เทิร์นที่ 1', sub: `${who(st.state.turnPlayer)} เริ่มก่อน` };
+      set({ fx: [...st.fx.filter((f) => f.id !== id), ...(st.animations ? [banner] : [])], viewTurn: st.state.turnPlayer });
     },
     onlineHost: async (deck) => {
       try {
@@ -1434,7 +1622,8 @@ export const useGame = create<Store>((set, get) => {
     onlineRematch: () => {
       const on = get().online;
       if (!on || on.me !== 'p1' || !on.setup) return;
-      void transport.setSetup(on.code, { ...on.setup, round: on.setup.round + 1, seed: randomSeed() });
+      // รอบใหม่: โยนเหรียญและเลือกผู้เริ่มก่อนใหม่ (ไม่เอา first ของรอบก่อน)
+      void transport.setSetup(on.code, { round: on.setup.round + 1, seed: randomSeed(), decks: on.setup.decks });
     },
     fx: [{ id: ++fxSeq, kind: 'banner', tone: 'turn', title: 'เทิร์นที่ 1', sub: 'เริ่มเกม' }],
     selectedHandCard: null,
@@ -1448,6 +1637,7 @@ export const useGame = create<Store>((set, get) => {
     truth: null,
     handDrag: null,
     braveDrag: null,
+    burstDrag: null,
 
     startBraveDrag: (cardId) => set({ braveDrag: cardId, selectedHandCard: null, selectedCores: [] }),
     endBraveDrag: () => set({ braveDrag: null }),
@@ -1489,7 +1679,10 @@ export const useGame = create<Store>((set, get) => {
     newGame() {
       const seed = randomSeed();
       const state = startGame(seed, get().decks);
-      const fx: Fx[] = get().animations ? coinToss(true, `${who(state.turnPlayer)} เริ่มก่อน!`, state.turnPlayer) : [];
+      const d = get().decks;
+      const fx: Fx[] = get().animations ? matchIntro(true, { name: 'ผู้เล่น 1', deck: d.p1 }, { name: 'ผู้เล่น 2', deck: d.p2 }) : [];
+      // คนชนะการเสี่ยง = ผู้เริ่มก่อนชั่วคราวที่ seed สุ่มได้ (ไม่มีแอนิเมชัน = ใช้ตามนั้นเลย)
+      set({ pregame: { winner: state.turnPlayer, chosen: get().animations ? null : state.turnPlayer } });
       set({ ...resetUi, state, truth: null, seed, history: [], error: null, pinned: null, hovered: null, fx, viewTurn: state.turnPlayer });
     },
 
@@ -1574,12 +1767,15 @@ export const useGame = create<Store>((set, get) => {
       const next = get().autoPass || get().online ? autoAdvance(result.state, events) : result.state;
       const newFx = eventsToFx(events, next, state, rects, action.type === 'choose' ? action.pick : undefined);
       const fx = animate ? [...get().fx, ...newFx] : [];
+      let holds: Record<string, Hold> = {};
       if (animate) {
         playFxSounds(newFx);
         // มุมมองสลับฝั่งเมื่อเปลี่ยนเทิร์น: ไม่ให้ Core ทั้งกระดานบินข้ามฝั่ง
         // ออนไลน์กระดานไม่พลิกฝั่ง: Core บินตามปกติแม้เปลี่ยนเทิร์น
         const flipped = !get().online && !get().fixedView && !isFxBlocking(fx) && next.turnPlayer !== get().viewTurn;
-        if (!flipped) primeCoreMotion(coreRects, coreDelays(state, next, newFx));
+        const delays = coreDelays(state, next, newFx, events);
+        if (!flipped) primeCoreMotion(coreRects, delays);
+        holds = { ...get().holds, ...computeHolds(state, next, events, delays) };
       }
       else if (!silent && pre.length + result.events.length > 0) sfx('click');
       const c = next.choice;
@@ -1591,7 +1787,7 @@ export const useGame = create<Store>((set, get) => {
             : [];
       // กระดานพลิกเมื่อแอนิเมชันที่กำลังเล่นจบแล้ว (ดู settleView)
       const viewTurn = isFxBlocking(fx) ? get().viewTurn : next.turnPlayer;
-      set({ ...resetUi, state: next, truth: null, history: [...history, state].slice(-100), error: null, fx, selectedCores: preselect, viewTurn });
+      set({ ...resetUi, state: next, truth: null, history: [...history, state].slice(-100), error: null, fx, holds, selectedCores: preselect, viewTurn });
       return true;
     },
 
@@ -1617,15 +1813,28 @@ export const useGame = create<Store>((set, get) => {
     toggleHideIdleHand: () => set((s) => ({ hideIdleHand: !s.hideIdleHand })),
     toggleFixedView: () => set((s) => ({ fixedView: !s.fixedView })),
     toggleAnimations: () => set((s) => ({ animations: !s.animations, fx: [] })),
+    cutIn: cutInMode,
+    setCutIn: (mode) => {
+      cutInMode = mode;
+      try {
+        localStorage.setItem('bs-cutin', mode);
+      } catch {
+        /* ไม่มีที่เก็บ: ใช้ได้แค่รอบนี้ */
+      }
+      set({ cutIn: mode });
+    },
     toggleAutoPass: () => set((s) => ({ autoPass: !s.autoPass })),
     dismissFx: (id) => set((s) => settleView(s, s.fx.filter((f) => f.id !== id))),
     showFx: (id) => set((s) => settleView(s, s.fx.map((f) => (f.id === id && 'delay' in f ? { ...f, delay: 0 } : f)))),
     skipFx: () => {
       cancelSfx();
+      set({ holds: {} });
       set((s) =>
         settleView(
           s,
-          s.fx.filter((f) => f.kind === 'banner' && (f.tone === 'win' || f.tone === 'turn')).map((f) => ({ ...f, delay: 0 })),
+          s.fx
+            .filter((f) => (f.kind === 'banner' && (f.tone === 'win' || f.tone === 'turn')) || f.kind === 'result' || (f.kind === 'intro' && !s.pregame?.chosen))
+            .map((f) => (f.kind === 'banner' || f.kind === 'result' ? { ...f, delay: 0 } : f)),
         ),
       );
     },

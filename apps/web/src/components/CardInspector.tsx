@@ -1,8 +1,9 @@
-import type { CardDef, SymbolColor, TextEffect } from '@bs/cards';
+import { rarityOf, type CardDef, type SymbolColor, type TextEffect } from '@bs/cards';
 import { bpOf, cardLevel, currentBp, payableCost, type GameState } from '@bs/engine';
 import { cardArt } from '../assets';
-import { COLOR_BG, COLOR_LABEL, TYPE_LABEL, playerLabel } from '../format';
-import { actingPlayer, db, useGame, hiddenFrom } from '../store';
+import { COLOR_BG, COLOR_LABEL, RARITY_BADGE, TYPE_LABEL, playerLabel } from '../format';
+import { useEffect, useRef } from 'react';
+import { actingPlayer, db, useGame, hiddenFrom, resolvingEffect } from '../store';
 import { CardBack, CardFace } from './CardFace';
 import { CoreRow } from './Core';
 
@@ -87,6 +88,14 @@ export function CardInspector() {
   const pinned = useGame((s) => s.pinned);
   const cardId = hovered ?? pinned;
   const card = cardId ? state.cards[cardId] : undefined;
+  // บรรทัดเอฟเฟกต์ที่กำลังทำงาน: ไฮไลต์สีทอง + เลื่อนให้เห็น
+  const resolving = resolvingEffect(state);
+  const firing = card && resolving?.cardId === card.id ? resolving.lines : [];
+  const firingKey = firing.join(',');
+  const firingRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (firingKey) firingRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [firingKey, cardId]);
 
   if (!card) {
     return (
@@ -128,6 +137,7 @@ export function CardInspector() {
   const art = cardArt(def.cardNo);
   const scripted = new Set(def.abilities.map((a) => a.source));
   const effects = def.effects as TextEffect[];
+  const rarity = rarityOf(def.rarity);
   const typeLine = [TYPE_LABEL[def.type], ...def.family].join(' / ');
 
   return (
@@ -157,8 +167,10 @@ export function CardInspector() {
           )}
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-2">
-          {def.rarity && (
-            <span className="w-fit rounded bg-gradient-to-r from-amber-300 to-fuchsia-400 px-1.5 text-xs font-black text-slate-900">{def.rarity}</span>
+          {rarity && (
+            <span className={`w-fit rounded px-1.5 text-xs font-black ${RARITY_BADGE[rarity.rank]}`} title={`ระดับความหายาก: ${rarity.label}`}>
+              {rarity.code} · {rarity.label}
+            </span>
           )}
           <Stat icon="C" iconClass="bg-gradient-to-b from-amber-300 to-amber-600 text-slate-900" title="คอสต์">
             {pay !== null && pay < def.cost ? (
@@ -241,8 +253,13 @@ export function CardInspector() {
             {effects.map((e, i) => {
               const active = level === null || !e.levels || e.levels.includes(level);
               const auto = scripted.has(i);
+              const hot = firing.includes(i);
               return (
-                <div key={i} className={active ? '' : 'opacity-45'}>
+                <div
+                  key={i}
+                  ref={hot && firing[0] === i ? firingRef : undefined}
+                  className={hot ? 'effect-firing -mx-1.5 rounded-lg px-1.5 py-1' : active ? '' : 'opacity-45'}
+                >
                   <div className="mb-0.5 flex flex-wrap items-center gap-1">
                     {e.levels?.map((l) => (
                       <span key={l} className={`rounded px-1 text-[10px] font-bold ${level === l ? 'bg-yellow-300 text-slate-900' : 'bg-slate-700 text-slate-200'}`}>
@@ -254,6 +271,7 @@ export function CardInspector() {
                         {TIMING_LABEL[e.timing]}
                       </span>
                     )}
+                    {hot && <span className="rounded bg-amber-400 px-1 text-[10px] font-black text-slate-900">กำลังทำงาน</span>}
                     <span
                       className={`ml-auto rounded px-1 text-[10px] ${auto ? 'text-emerald-300' : 'text-amber-300'}`}
                       title={auto ? 'engine ประมวลผลให้อัตโนมัติ' : 'engine ยังไม่รองรับ ผู้เล่นต้องจัดการเอง'}
@@ -261,7 +279,7 @@ export function CardInspector() {
                       {auto ? '● อัตโนมัติ' : '● ทำเอง'}
                     </span>
                   </div>
-                  <p className={`text-[15px] leading-relaxed ${active ? 'text-sky-200' : 'text-slate-300'}`}>
+                  <p className={`text-[15px] leading-relaxed ${hot ? 'font-semibold text-amber-200' : active ? 'text-sky-200' : 'text-slate-300'}`}>
                     <EffectText text={e.text} />
                   </p>
                 </div>

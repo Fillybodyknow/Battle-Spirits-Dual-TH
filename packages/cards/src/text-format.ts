@@ -95,6 +95,8 @@ export function parseCardText(text: string, options: ParseOptions): ParsedCardSe
 
   for (const block of splitBlocks(text)) {
     const first = block[0]!.text;
+    // บล็อกคำอธิบาย (ทุกบรรทัดเป็นรายการลำดับเลข เช่นตารางระดับความหายาก): ข้าม
+    if (block.every((l) => /^\d+\.\s/.test(l.text))) continue;
     if (/^ชื่อ:/.test(first) || /^การ์ดระดับ\s/.test(first)) {
       const cardNo = `${options.setCode}-${String(cards.length + 1).padStart(3, '0')}`;
       const card = parseCardBlock(block, cardNo, errors);

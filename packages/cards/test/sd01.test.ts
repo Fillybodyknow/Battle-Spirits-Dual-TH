@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import sd1Text from '../../../assets/files/SD1.text?raw';
 import sd01Json from '../data/sd01.json';
 import sd01DeckJson from '../data/sd01-deck.json';
-import { CardTextError, loadSD01Cards, parseCardText, SD01_DECK, validateDeck } from '../src';
+import { CardTextError, isXRare, loadSD01Cards, parseCardText, rarityOf, SD01_DECK, validateDeck } from '../src';
 
 describe('Starter Deck 01', () => {
   const db = loadSD01Cards();
@@ -27,7 +27,7 @@ describe('Starter Deck 01', () => {
       reduction: { red: 4 },
       symbols: { red: 1 },
       family: ['ผู้เป็นนาย', 'มังกรยุทธ์'],
-      rarity: 'X-Rare',
+      rarity: 'X',
     });
     expect(solDragon.levels.at(-1)).toEqual({ level: 4, cores: 9, bp: 30000 });
 
@@ -85,5 +85,20 @@ ${extra}`;
     const text = card().replace('สี: แดง', 'สี: แดง, ขาว').replace('ชื่อ: ทดสอบ', 'ชื่อ: ทดสอบ\nระดับ: Rare');
     const { cards } = parseCardText(text, { setCode: 'T' });
     expect(cards[0]).toMatchObject({ cardNo: 'T-001', colors: ['red', 'white'], rarity: 'Rare' });
+  });
+
+  it('ข้ามบล็อกคำอธิบายที่เป็นรายการลำดับเลข (ตารางระดับความหายาก)', () => {
+    const text = '1. C (Common). ระดับธรรมดา\n2. X (X-Rare). เอ็กซ์แรร์\n\n' + card();
+    expect(parseCardText(text, { setCode: 'T' }).cards).toHaveLength(1);
+  });
+
+  it('แปลงรหัสระดับความหายาก', () => {
+    expect(rarityOf('C')).toMatchObject({ code: 'C', rank: 1 });
+    expect(rarityOf('UC')).toMatchObject({ code: 'U', label: 'Uncommon', rank: 2 });
+    expect(rarityOf('X-Rare')).toMatchObject({ code: 'X', rank: 5 });
+    expect(rarityOf('XV')).toMatchObject({ code: 'XV', rank: 6 });
+    expect(isXRare({ rarity: 'X' })).toBe(true);
+    expect(isXRare({ rarity: 'M' })).toBe(false);
+    expect(loadSD01Cards().all().filter(isXRare).map((c) => c.name)).toEqual(['มังกรเซ็นโงคุ โซลดราก้อน', 'เซ็นโกคุ-กุเร็นดราก้อน']);
   });
 });

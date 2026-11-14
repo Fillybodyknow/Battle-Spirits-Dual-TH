@@ -33,7 +33,20 @@ export function primeCoreMotion(rects: Map<string, Rect>, delays: Map<string, nu
 export function flyCoreIn(el: HTMLElement, coreId: string) {
   if (!snap) return;
   const from = snap.rects.get(coreId);
-  if (!from) return;
+  if (!from) {
+    // Core เกิดใหม่ (Void Core): ซ่อนไว้จนถึงจังหวะของเอฟเฟกต์ แล้วเด้งโผล่
+    const delay = snap.delays.get(coreId);
+    if (delay === undefined) return;
+    el.animate(
+      [
+        { opacity: 0, transform: 'scale(0.2)', filter: 'brightness(2.5)' },
+        { opacity: 1, transform: 'scale(1.5)', filter: 'brightness(1.8) drop-shadow(0 0 10px rgba(125,211,252,0.95))', offset: 0.55 },
+        { opacity: 1, transform: 'scale(1)', filter: 'brightness(1)' },
+      ],
+      { duration: 420, delay, easing: 'cubic-bezier(.3,.7,.3,1)', fill: 'backwards' },
+    );
+    return;
+  }
   const to = el.getBoundingClientRect();
   const dx = from.x + from.w / 2 - (to.left + to.width / 2);
   const dy = from.y + from.h / 2 - (to.top + to.height / 2);

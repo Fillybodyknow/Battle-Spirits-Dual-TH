@@ -17,6 +17,8 @@ export interface RoomSetup {
   round: number;
   seed: number;
   decks: { p1: string; p2: string | null };
+  /** ผู้เริ่มก่อนที่คนชนะการเสี่ยงเลือกแล้ว (ยังไม่มี = กำลังเลือก) */
+  first?: PlayerId;
 }
 
 export interface RoomInfo {
@@ -45,6 +47,8 @@ export interface Transport {
   watchActions(code: string, round: number, cb: (index: number, action: Action) => void): () => void;
   /** เขียน action ที่ช่อง index (ไม่ทับถ้ามีแล้ว) คืน false ถ้าช่องถูกใช้ไปแล้ว */
   pushAction(code: string, round: number, index: number, action: Action): Promise<boolean>;
+  /** คนชนะการเสี่ยงเลือกผู้เริ่มก่อนของรอบนี้ (เขียนครั้งเดียว) */
+  setFirst(code: string, round: number, first: PlayerId): Promise<void>;
   /** เริ่มรอบใหม่ (เล่นใหม่) */
   setSetup(code: string, setup: RoomSetup): Promise<void>;
   /** ออกจากที่นั่ง */

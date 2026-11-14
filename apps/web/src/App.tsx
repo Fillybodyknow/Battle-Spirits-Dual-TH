@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { PLAYERS, opponentOf } from '@bs/engine';
 import { playerLabel } from './format';
-import { DECKS, onlineAvailable, onlineVia, useGame, viewPlayer, type DeckId } from './store';
-import { Hand, HandFan, PlayerMat } from './components/Board';
-import { CardInspector } from './components/CardInspector';
-import { ChoiceDialog, ErrorToast, GameLog, PromptBar, TrashDialog } from './components/Controls';
+import { DECKS, onlineAvailable, onlineVia, useGame, viewPlayer, type CutInMode, type DeckId } from './store';
+import { HandFan, PlayerMat } from './components/Board';
+import { ChoiceDialog, ErrorToast, PromptBar, TrashDialog } from './components/Controls';
+import { CornerButtons, FloatingInspector, PlayerPlate, TurnAura } from './components/Hud';
 import { PlayDialog } from './components/PlayDialog';
 import { BTN } from './components/Modal';
 import { setSfx, sfx, sfxSettings } from './sfx';
@@ -29,8 +29,16 @@ function Toolbar() {
     if (online) onlineRematch();
     else newGame();
   };
+  // ออนไลน์: เหลือแค่ปุ่มตั้งค่า (ยอมแพ้/ออกจากห้องอยู่ในตั้งค่า)
+  if (online) {
+    return (
+      <div className="fixed top-2 left-2 z-[45] flex items-center gap-1.5">
+        <Settings />
+      </div>
+    );
+  }
   return (
-    <div className="fixed top-2 left-2 z-30 flex items-center gap-1.5">
+    <div className="fixed top-2 left-2 z-[45] flex items-center gap-1.5">
       <button
         type="button"
         className={ICON_BTN}
@@ -51,6 +59,32 @@ function Toolbar() {
         ⟳
       </button>
       <OnlinePanel />
+    </div>
+  );
+}
+
+/** ในตั้งค่าตอนออนไลน์: ยอมแพ้ (ระหว่างเล่น) หรือออกจากห้อง (ยังไม่เริ่ม/จบแล้ว) */
+function OnlineExit() {
+  const online = useGame((s) => s.online);
+  const winner = useGame((s) => s.state.winner);
+  if (!online) return null;
+  const playing = online.status === 'playing' && !winner;
+  return (
+    <div className="flex flex-col gap-1 border-t border-slate-700 pt-3">
+      <span className="text-xs text-slate-400">
+        ห้อง <b className="tracking-widest text-white">{online.code}</b> · {online.opponentHere ? '● คู่แข่งอยู่ในห้อง' : '○ คู่แข่งออกจากห้อง'}
+      </span>
+      <button
+        type="button"
+        className="rounded-lg bg-rose-700/80 px-3 py-1.5 text-sm font-bold text-white hover:bg-rose-600"
+        onClick={() => {
+          if (playing) {
+            if (confirm('ยอมแพ้เกมนี้?')) useGame.getState().dispatch({ type: 'concede', player: online.me });
+          } else if (confirm('ออกจากห้องแล้วกลับหน้าหลัก?')) useGame.getState().onlineLeave();
+        }}
+      >
+        {playing ? 'ยอมแพ้' : 'ออกจากห้อง'}
+      </button>
     </div>
   );
 }
@@ -158,6 +192,8 @@ function Settings() {
   const hideIdleHand = useGame((s) => s.hideIdleHand);
   const fixedView = useGame((s) => s.fixedView);
   const animations = useGame((s) => s.animations);
+  const cutIn = useGame((s) => s.cutIn);
+  const setCutIn = useGame((s) => s.setCutIn);
   const autoPass = useGame((s) => s.autoPass);
   const seed = useGame((s) => s.seed);
   const online = useGame((s) => s.online);
@@ -174,6 +210,8 @@ function Settings() {
       </button>
       {open && (
         <div className="absolute left-0 z-50 mt-1 flex w-72 flex-col gap-3 rounded-lg border border-slate-600 bg-slate-900 p-3 text-sm shadow-xl">
+          {!online && (
+            <>
           {PLAYERS.map((p) => (
             <label key={p} className="flex items-center justify-between gap-2">
               <span className="text-slate-300">เด็ค{playerLabel(p)}</span>
@@ -200,9 +238,24 @@ function Settings() {
             <input type="checkbox" checked={fixedView} onChange={toggleFixedView} />
             มุมมองคงที่ (ผู้เล่น 1 อยู่ล่างเสมอ)
           </label>
+            </>
+          )}
           <label className="flex cursor-pointer items-center gap-2 text-slate-300">
             <input type="checkbox" checked={animations} onChange={toggleAnimations} />
             เอฟเฟกต์ภาพ (ป้ายสเต็ป, cut-in อัญเชิญ, ป๊อปอัปเอฟเฟกต์)
+          </label>
+          <label className="flex items-center gap-2 text-slate-300">
+            <span className="shrink-0">Cut-in การ์ด X</span>
+            <select
+              value={cutIn}
+              disabled={!animations}
+              onChange={(e) => setCutIn(e.target.value as CutInMode)}
+              className="min-w-0 flex-1 rounded bg-slate-800 px-2 py-1 text-sm text-slate-100 disabled:opacity-40"
+            >
+              <option value="first">ครั้งแรกของการ์ดแต่ละชนิด</option>
+              <option value="always">ทุกครั้ง</option>
+              <option value="off">ปิด (ลงสนามแบบหนักแทน)</option>
+            </select>
           </label>
           <div className="flex flex-col gap-1">
             <label className="flex cursor-pointer items-center gap-2 text-slate-300">
@@ -222,6 +275,8 @@ function Settings() {
               aria-label="ความดังเสียง"
             />
           </div>
+          {!online && (
+            <>
           <label className="flex cursor-pointer items-start gap-2 text-slate-300">
             <input type="checkbox" checked={autoPass} onChange={toggleAutoPass} className="mt-1" />
             <span>
@@ -229,7 +284,10 @@ function Settings() {
               <span className="block text-xs text-slate-500">Pass/ไม่ป้องกันให้เองเมื่อไม่มีการ์ดหรือสปิริตที่ใช้ได้</span>
             </span>
           </label>
-          <span className="text-xs text-slate-500">seed {seed}</span>
+            </>
+          )}
+          {online && <OnlineExit />}
+          {!online && <span className="text-xs text-slate-500">seed {seed}</span>}
         </div>
       )}
     </div>
@@ -248,46 +306,38 @@ export function App() {
 }
 
 function GameScreen() {
-  const [showLog, setShowLog] = useState(true);
+  const [inspector, setInspector] = useState(true);
   // ผู้เล่นที่ถือเทิร์นอยู่ด้านล่าง (มือใหญ่ กดง่าย) เว้นแต่ตั้งมุมมองคงที่
   const bottom = useGame(viewPlayer);
   const top = opponentOf(bottom);
 
   return (
     <div className="game-bg relative flex h-screen min-w-[1200px] overflow-hidden">
+      {/* ออร่าฝั่งที่ต้องตัดสินใจ: อยู่หลังกระดาน ไม่บังการ์ด */}
+      <TurnAura />
       {/* กระดาน */}
       <div className="relative z-[1] flex min-w-0 flex-1 flex-col">
         <Toolbar />
-        <main className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3">
-          <div className="shrink-0">
-            <Hand player={top} small />
-          </div>
+        <main className="mx-auto flex min-h-0 w-full max-w-[1380px] flex-1 flex-col gap-1.5 overflow-y-auto px-3 pt-0 pb-0">
+          {/* เว้นที่ให้มือคู่แข่งแบบพัดที่ลอยอยู่ขอบบน */}
+          <div className="h-[56px] shrink-0" />
           <PlayerMat player={top} top />
           <div className="sticky top-0 bottom-0 z-30 shrink-0">
             <PromptBar />
           </div>
           <PlayerMat player={bottom} />
           {/* เว้นที่ให้มือแบบพัดที่ลอยอยู่ขอบล่าง */}
-          <div className="h-32 shrink-0" />
+          <div className="h-[104px] shrink-0" />
         </main>
+        <HandFan player={top} top />
         <HandFan player={bottom} />
       </div>
 
-      {/* แผงรายละเอียดการ์ด + Log */}
-      <aside className="relative z-[1] flex w-[var(--sidebar)] shrink-0 flex-col border-l border-sky-400/20 bg-gradient-to-b from-slate-900/95 via-slate-950/95 to-slate-950 shadow-[-8px_0_30px_rgba(0,0,0,0.5)]">
-        <CardInspector />
-        <div className={`flex shrink-0 flex-col border-t border-slate-800 ${showLog ? 'h-56' : ''}`}>
-          <button
-            type="button"
-            onClick={() => setShowLog((v) => !v)}
-            className="flex items-center justify-between px-3 py-1.5 text-xs font-semibold tracking-wide text-slate-400 hover:bg-white/5 hover:text-slate-200"
-          >
-            <span>LOG</span>
-            <span>{showLog ? 'ซ่อน ▾' : 'แสดง ▴'}</span>
-          </button>
-          {showLog && <GameLog />}
-        </div>
-      </aside>
+      {/* HUD: ป้ายผู้เล่น / รายละเอียดการ์ดลอย / ปุ่มมุมขวาล่าง */}
+      <PlayerPlate player={bottom} corner="bottom-left" />
+      <PlayerPlate player={top} corner="top-right" />
+      <FloatingInspector enabled={inspector} />
+      <CornerButtons inspector={inspector} setInspector={setInspector} />
 
       <AttackArrow />
       <DragGhost />

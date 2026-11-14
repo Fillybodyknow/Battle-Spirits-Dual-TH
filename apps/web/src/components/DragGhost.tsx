@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { IMG } from '../assets';
 import { db, useGame } from '../store';
-import { CardFace } from './CardFace';
+import { CardBack, CardFace } from './CardFace';
 
 /** รูปโปร่งใส 1px: ซ่อนภาพลากของเบราว์เซอร์ (การ์ดในมือหมุน/จมขอบจอ ทำให้ภาพของเบราว์เซอร์หายหรือถูกตัด) */
 const BLANK = typeof Image !== 'undefined' ? new Image() : null;
@@ -64,9 +64,10 @@ export function CoreDragGhost() {
 
 /** การ์ดที่ลอยตามเมาส์ระหว่างลากการ์ดจากมือ (เอียงตามทิศที่ลาก) */
 export function DragGhost() {
-  const cardId = useGame((s) => s.handDrag ?? s.braveDrag);
+  const cardId = useGame((s) => s.handDrag ?? s.braveDrag ?? s.burstDrag);
+  const faceDown = useGame((s) => !!s.burstDrag);
   const card = useGame((s) => {
-    const id = s.handDrag ?? s.braveDrag;
+    const id = s.handDrag ?? s.braveDrag ?? s.burstDrag;
     return id ? s.state.cards[id] : undefined;
   });
   const [pos, setPos] = useState(startAt);
@@ -114,7 +115,7 @@ export function DragGhost() {
         filter: 'drop-shadow(0 18px 22px rgba(0,0,0,0.6)) drop-shadow(0 0 12px rgba(250,204,21,0.45))',
       }}
     >
-      <CardFace def={db.get(card.cardNo)} />
+      {faceDown ? <CardBack /> : <CardFace def={db.get(card.cardNo)} />}
     </div>
   );
 }

@@ -38,7 +38,8 @@ function Versus() {
   const leave = useGame((s) => s.onlineLeave);
   const [copied, setCopied] = useState(false);
   const [count, setCount] = useState(3);
-  const ready = online.status === 'playing';
+  // พบคู่แข่งแล้ว (กำลังเลือกผู้เริ่มก่อน หรือเล่นอยู่): เข้ากระดานไปดูฉากเปิดเกม
+  const ready = online.status !== 'waiting';
   const me = online.me;
   const opp: PlayerId = me === 'p1' ? 'p2' : 'p1';
   const decks = online.setup?.decks;
@@ -47,15 +48,15 @@ function Versus() {
   // พบคู่แข่ง: นับ 3-2-1 แล้วเข้ากระดาน
   useEffect(() => {
     if (!ready) return;
-    sfx('turn');
-    setCount(3);
-    const t = setInterval(() => setCount((c) => Math.max(0, c - 1)), 900);
-    return () => clearInterval(t);
+    // ฉากเปิดเกมบนกระดานมี VS + โยนเหรียญอยู่แล้ว: แสดงว่าพบคู่แข่งครู่เดียวแล้วเข้ากระดาน
+    setCount(1);
+    const t = setTimeout(() => setCount(0), 700);
+    return () => clearTimeout(t);
   }, [ready]);
   useEffect(() => {
     if (!ready) return;
     if (count === 0) setScreen('game');
-    else if (count < 3) sfx('click');
+
   }, [ready, count, setScreen]);
 
   return (
@@ -67,9 +68,7 @@ function Versus() {
             VS
           </div>
           {ready ? (
-            <div key={count} className="lobby-count text-5xl font-black text-white">
-              {count}
-            </div>
+            <div className="lobby-count text-2xl font-black text-white">พบคู่แข่ง!</div>
           ) : (
             <div className="flex flex-col items-center gap-2 rounded-xl border border-sky-300/30 bg-black/60 px-5 py-3">
               <span className="text-xs tracking-widest text-sky-200/80">รหัสห้อง</span>

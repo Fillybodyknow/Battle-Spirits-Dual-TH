@@ -158,3 +158,13 @@ export function formatEvent(e: GameEvent, s: GameState): string | null {
       return `🏆 ${playerLabel(e.winner)} ชนะ (${END_REASON[e.reason]})`;
   }
 }
+
+/** สีป้ายระดับความหายาก (อันดับ 1 = C … 6 = ระดับพิเศษ) */
+export const RARITY_BADGE: Record<number, string> = {
+  1: 'bg-slate-500 text-white',
+  2: 'bg-emerald-500 text-slate-950',
+  3: 'bg-sky-400 text-slate-950',
+  4: 'bg-gradient-to-r from-violet-400 to-fuchsia-500 text-white',
+  5: 'bg-gradient-to-r from-amber-300 to-rose-400 text-slate-950',
+  6: 'bg-gradient-to-r from-yellow-200 via-amber-400 to-fuchsia-500 text-slate-950',
+};

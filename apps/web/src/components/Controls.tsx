@@ -25,6 +25,8 @@ export function PromptBar() {
   let detail: React.ReactNode = null;
   let highlight = false;
   const buttons: React.ReactNode[] = [];
+  /** ปุ่มหลักของ Phase (จบ Main / จบ Attack / Pass Flash): ปุ่มกลมใหญ่ที่ปลายขวาของเส้นกลางกระดาน */
+  let phaseBtn: { label: string; sub: string; onClick: () => void } | null = null;
   const add = (key: string, label: string, onClick: () => void, kind: keyof typeof BTN = 'primary', disabled = false) =>
     buttons.push(
       <button key={key} type="button" className={BTN[kind]} onClick={onClick} disabled={disabled}>
@@ -98,7 +100,7 @@ export function PromptBar() {
       o.evolve.length > 0 && `Evolution บนสนาม ${o.evolve.length} ตัว`,
     ].filter(Boolean);
     detail = parts.length > 0 ? `ใช้ได้: ${parts.join(' · ')} (การ์ดที่ใช้ได้จะเรืองแสง)` : 'ไม่มีการ์ดที่ใช้ได้';
-    add('pass', 'ไม่ใช้ (Pass)', () => dispatch({ type: 'passFlash', player: fp }));
+    phaseBtn = { label: 'PASS', sub: 'ไม่ใช้', onClick: () => dispatch({ type: 'passFlash', player: fp }) };
   } else if (battle?.step === 'declareBlock') {
     const candidates = blockCandidates(state);
     highlight = true;
@@ -134,11 +136,11 @@ export function PromptBar() {
         ? `เลือก Core ไว้ ${selectedCores.length} ดวง: ลากไปวาง หรือคลิกการ์ด/Reserve ปลายทาง`
         : 'คลิกการ์ดบนมือเพื่อเล่น · ลาก Core ไปวางบนการ์ดหรือ Reserve (คลิก Core เพื่อเลือกหลายดวง)';
     if (selectedCores.length > 0) add('clear', 'ยกเลิกเลือก Core', clearCores, 'secondary');
-    add('end', 'จบ Main Step →', () => dispatch({ type: 'endMain', player: state.turnPlayer }));
+    phaseBtn = { label: 'END', sub: 'จบ Main', onClick: () => dispatch({ type: 'endMain', player: state.turnPlayer }) };
   } else if (state.phase === 'attack') {
     title = 'Attack Step';
     detail = 'คลิกสปิริตที่มีกรอบสีเหลืองเพื่อโจมตี';
-    add('end', 'จบ Attack Step →', () => dispatch({ type: 'endAttackStep', player: state.turnPlayer }));
+    phaseBtn = { label: 'END', sub: 'จบ Attack', onClick: () => dispatch({ type: 'endAttackStep', player: state.turnPlayer }) };
   }
 
   const fighter = (id: string) => (
@@ -149,40 +151,60 @@ export function PromptBar() {
   const lifePerBlocker = battle ? battle.lifeOnBlockerDestroyed + (battle.consecutiveBlade ? battle.lifeOnBlockerDestroyedByBlade : 0) : 0;
 
   return (
-    <div
-      className={`hud-panel flex flex-col gap-2 rounded-xl px-4 py-2.5 ${highlight ? 'ring-1 ring-fuchsia-400/70' : ''}`}
-      style={highlight ? { animation: 'fx-choice-glow 1.8s ease-in-out infinite' } : undefined}
-    >
-      {battle && (
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="rounded bg-rose-600 px-2 text-xs font-black tracking-wide">BATTLE</span>
-          {fighter(battle.attackerId)}
-          <span className="text-slate-500">vs</span>
-          {battle.blockers.length === 0 ? <span className="text-slate-500">ยังไม่มีผู้ป้องกัน</span> : battle.blockers.map(fighter)}
-          {battle.consecutiveBlade && <span className="rounded bg-orange-600 px-1.5 text-xs font-bold">Consecutive Blade</span>}
-          {battle.mustBlock && !battle.consecutiveBlade && <span className="rounded bg-orange-600 px-1.5 text-xs font-bold">True-Rage</span>}
-          {battle.endAttackStepAfter && <span className="rounded bg-slate-600 px-1.5 text-xs">จบ Attack Step หลังการต่อสู้นี้</span>}
-          {lifePerBlocker > 0 && <span className="rounded bg-slate-600 px-1.5 text-xs">ผู้ป้องกันถูกทำลาย → ไลฟ์ −{lifePerBlocker}/ตัว</span>}
-        </div>
-      )}
-      {/* 3 ส่วน: ซ้าย = สถานะ + ข้อความ · กลาง = ปุ่ม Action (กึ่งกลางพอดี) · ขวา = Chain ของคู่แข่ง */}
-      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="shrink-0 rounded-lg border border-slate-600 px-2 py-1 text-xs text-slate-300">เทิร์น {state.turn}</span>
-          <ChainTracker side="self" />
-          {actor && (
-            <span className="player-tag-active shrink-0 rounded-lg px-2.5 py-1 text-sm font-black">ตาของ {playerLabel(actor)}</span>
-          )}
-          <div className="min-w-0">
-            <div className="truncate text-base font-black tracking-wide text-white [text-shadow:0_1px_0_#000,0_0_12px_rgba(56,189,248,0.35)]">{title}</div>
-            {detail && <div className="line-clamp-2 text-xs text-slate-400">{detail}</div>}
+    <div className="relative">
+      {/* แถบบางบรรทัดเดียวบนเส้นกลางกระดาน */}
+      <div
+        className={`hud-panel flex flex-col gap-1 rounded-xl py-1 pr-28 pl-3 ${highlight ? 'ring-1 ring-fuchsia-400/70' : ''}`}
+        style={highlight ? { animation: 'fx-choice-glow 1.8s ease-in-out infinite' } : undefined}
+      >
+        {battle && (
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="rounded bg-rose-600 px-2 text-[10px] font-black tracking-wide">BATTLE</span>
+            {fighter(battle.attackerId)}
+            <span className="text-slate-500">vs</span>
+            {battle.blockers.length === 0 ? <span className="text-slate-500">ยังไม่มีผู้ป้องกัน</span> : battle.blockers.map(fighter)}
+            {battle.consecutiveBlade && <span className="rounded bg-orange-600 px-1.5 font-bold">Consecutive Blade</span>}
+            {battle.mustBlock && !battle.consecutiveBlade && <span className="rounded bg-orange-600 px-1.5 font-bold">True-Rage</span>}
+            {battle.endAttackStepAfter && <span className="rounded bg-slate-600 px-1.5">จบ Attack Step หลังการต่อสู้นี้</span>}
+            {lifePerBlocker > 0 && <span className="rounded bg-slate-600 px-1.5">ผู้ป้องกันถูกทำลาย → ไลฟ์ −{lifePerBlocker}/ตัว</span>}
           </div>
-        </div>
-        <div className="btn-row btn-big flex flex-wrap justify-center gap-2">{buttons}</div>
-        <div className="flex justify-end">
+        )}
+        <div className="flex min-h-8 items-center gap-2.5">
+          <span className="shrink-0 rounded-md border border-slate-600 px-1.5 py-0.5 text-[11px] text-slate-300">T{state.turn}</span>
+          {actor && <span className="player-tag-active shrink-0 rounded-md px-2 py-0.5 text-xs font-black">ตาของ {playerLabel(actor)}</span>}
+          <ChainTracker side="self" />
+          <div className="flex min-w-0 flex-1 items-baseline gap-2" title={typeof detail === 'string' ? detail : undefined}>
+            <span className="shrink-0 truncate text-sm font-black tracking-wide text-white [text-shadow:0_1px_0_#000,0_0_12px_rgba(56,189,248,0.35)]">{title}</span>
+            {detail && <span className="min-w-0 truncate text-xs text-slate-400">{detail}</span>}
+          </div>
+          {buttons.length > 0 && <div className="btn-row flex shrink-0 flex-wrap justify-end gap-1.5">{buttons}</div>}
           <ChainTracker side="opp" />
         </div>
       </div>
+      {/* ปุ่ม Phase กลมใหญ่ คร่อมเส้นกลางกระดานด้านขวา */}
+      <PhaseButton btn={phaseBtn} />
+    </div>
+  );
+}
+
+/** ปุ่มกลมใหญ่ปลายขวาของแถบกลาง (จบ Step / Pass) — ไม่มีอะไรให้กดก็แสดงเป็นวงจาง ๆ */
+function PhaseButton({ btn }: { btn: { label: string; sub: string; onClick: () => void } | null }) {
+  return (
+    <div className="pointer-events-none absolute top-1/2 right-3 z-40 -translate-y-1/2">
+      <button
+        type="button"
+        disabled={!btn}
+        onClick={btn?.onClick}
+        className={`pointer-events-auto flex h-[5.5rem] w-[5.5rem] flex-col items-center justify-center rounded-full border-4 font-black transition ${
+          btn
+            ? 'border-amber-200 bg-gradient-to-b from-amber-300 via-amber-500 to-orange-700 text-slate-950 shadow-[0_0_24px_rgba(251,191,36,0.6),inset_0_2px_0_rgba(255,255,255,0.5)] hover:scale-105 active:scale-95'
+            : 'border-slate-600 bg-gradient-to-b from-slate-700 to-slate-900 text-slate-500 shadow-[0_4px_16px_rgba(0,0,0,0.6)]'
+        }`}
+        style={btn ? { animation: 'phase-btn-pulse 2s ease-in-out infinite' } : undefined}
+      >
+        <span className="text-xl leading-none tracking-wider">{btn?.label ?? '···'}</span>
+        {btn && <span className="mt-0.5 text-[10px] leading-none">{btn.sub}</span>}
+      </button>
     </div>
   );
 }
@@ -254,13 +276,14 @@ function PickCard({ cardId, disabled, onPick, note }: { cardId: string; disabled
   const hover = useGame((s) => s.hover);
   const c = state.cards[cardId]!;
   return (
+    // ไม่ใช้ disabled: ปุ่มที่ disabled ไม่ส่ง mouse event ทำให้ชี้ดูรายละเอียดการ์ดไม่ได้ (เช่นการ์ดใน Trash)
     <button
       type="button"
-      disabled={disabled || !onPick}
-      onClick={onPick}
+      aria-disabled={disabled || !onPick}
+      onClick={() => !disabled && onPick?.()}
       onMouseEnter={() => hover(cardId)}
       onMouseLeave={() => hover(null)}
-      className="flex flex-col items-center gap-1 rounded-lg p-1.5 transition enabled:hover:bg-yellow-300/20 disabled:opacity-35"
+      className={`flex flex-col items-center gap-1 rounded-lg p-1.5 transition ${onPick && !disabled ? 'hover:bg-yellow-300/20' : 'cursor-default'} ${disabled ? 'opacity-35' : ''}`}
     >
       <div className="h-44 w-32">
         <CardFace def={db.get(c.cardNo)} />

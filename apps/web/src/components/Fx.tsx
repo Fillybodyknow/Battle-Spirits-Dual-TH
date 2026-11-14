@@ -1,10 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { opponentOf } from '@bs/engine';
 import { cardArt } from '../assets';
-import { actingPlayer, chainEntries, viewPlayer, db, GHOST_MS, isFxBlocking, layoutRect, PLAY_HIT, useGame, type Fx, type Rect, hiddenFrom, COIN_MS } from '../store';
+import { actingPlayer, chainEntries, viewPlayer, db, GHOST_MS, isFxBlocking, layoutRect, PLAY_HIT, useGame, type Fx, type Rect, hiddenFrom } from '../store';
 import { CardBack, CardFace } from './CardFace';
 import { sfx } from '../sfx';
 import { playerLabel } from '../format';
+import { MatchIntro } from './MatchIntro';
+import { MatchResult } from './MatchResult';
 
 /** เรียก onDone เมื่อครบเวลา (ms = null → ไม่ปิดเอง) */
 function useAutoDismiss(onDone: () => void, ms: number | null) {
@@ -82,7 +84,8 @@ function Banner({ fx, onDone }: { fx: Extract<Fx, { kind: 'banner' }>; onDone: (
 // ---------------------------------------------------------------- summon cut-in
 
 function SummonCutIn({ fx, onDone }: { fx: Extract<Fx, { kind: 'summon' }>; onDone: () => void }) {
-  useAutoDismiss(onDone, fx.delay + 1900);
+  const dur = fx.special ? 2600 : 1900;
+  useAutoDismiss(onDone, fx.delay + dur);
   const [shown, setShown] = useState(fx.delay === 0);
   useEffect(() => {
     if (fx.delay === 0) return;
@@ -99,8 +102,8 @@ function SummonCutIn({ fx, onDone }: { fx: Extract<Fx, { kind: 'summon' }>; onDo
 
   return (
     <div
-      className={`${BOARD} z-50 flex cursor-pointer flex-col items-center justify-center overflow-hidden bg-black/75`}
-      style={{ animation: 'fx-fade-in-out 1.9s ease both' }}
+      className={`${BOARD} z-50 flex cursor-pointer flex-col items-center justify-center overflow-hidden ${fx.special ? 'bg-black/85' : 'bg-black/75'}`}
+      style={{ animation: `fx-fade-in-out ${dur}ms ease both` }}
       onClick={onDone}
       title="คลิกเพื่อข้าม"
     >
@@ -113,7 +116,25 @@ function SummonCutIn({ fx, onDone }: { fx: Extract<Fx, { kind: 'summon' }>; onDo
           animation: 'fx-rays 12s linear infinite',
         }}
       />
-      <div className="relative" style={{ animation: 'fx-summon-card 1.9s cubic-bezier(.2,.9,.2,1) both' }}>
+      {/* ระดับพิเศษ (XX/XV): รัศมีสีรุ้งหมุนสวนทาง + แสงทองเต้น */}
+      {fx.special && (
+        <>
+          <div
+            className="pointer-events-none absolute top-1/2 left-1/2 h-[160vmax] w-[160vmax] -translate-x-1/2 -translate-y-1/2 opacity-55 mix-blend-screen"
+            style={{
+              background:
+                'repeating-conic-gradient(from 0deg, #f43f5e 0deg 3deg, transparent 3deg 9deg, #facc15 9deg 12deg, transparent 12deg 18deg, #22c55e 18deg 21deg, transparent 21deg 27deg, #38bdf8 27deg 30deg, transparent 30deg 36deg, #a855f7 36deg 39deg, transparent 39deg 45deg)',
+              maskImage: 'radial-gradient(circle, black 0%, transparent 60%)',
+              animation: 'fx-rays 9s linear infinite reverse',
+            }}
+          />
+          <div
+            className="pointer-events-none absolute top-1/2 left-1/2 h-[70vh] w-[70vh] -translate-x-1/2 -translate-y-1/2 rounded-full"
+            style={{ background: 'radial-gradient(circle, rgba(253,224,71,0.55), rgba(251,146,60,0.2) 45%, transparent 70%)', animation: 'aura-pulse 1.2s ease-in-out infinite' }}
+          />
+        </>
+      )}
+      <div className="relative" style={{ animation: `fx-summon-card ${dur}ms cubic-bezier(.2,.9,.2,1) both` }}>
         {art ? (
           <img src={art} alt={def.name} className="h-[52vh] max-h-[460px] rounded-xl shadow-[0_0_60px_rgba(255,255,255,0.35)]" draggable={false} />
         ) : (
@@ -129,6 +150,11 @@ function SummonCutIn({ fx, onDone }: { fx: Extract<Fx, { kind: 'summon' }>; onDo
               <span key={i}>★</span>
             ))}
           </div>
+        )}
+        {fx.special && (
+          <span className="bg-gradient-to-r from-rose-400 via-yellow-200 to-sky-400 bg-clip-text text-sm font-black tracking-[0.5em] text-transparent">
+            {(def.rarity ?? '').toUpperCase()} RARE
+          </span>
         )}
         <span className="text-3xl font-black tracking-wide text-white italic">{def.name}</span>
         <span className="text-sm text-slate-300">
@@ -194,103 +220,10 @@ function FloatText({ fx, onDone }: { fx: Extract<Fx, { kind: 'float' }>; onDone:
 }
 
 /** ชั้นเอฟเฟกต์ภาพ: ป้าย/cut-in ทีละอัน, ป๊อปอัปเอฟเฟกต์ซ้อนได้ 3 อัน, ตัวเลขลอยพร้อมกันได้ */
-/** ลายบนเหรียญ: แกนคอร์หกเหลี่ยม + วงแหวน (ด้านทอง/ด้านเทาใช้ลายเดียวกัน ต่างแค่สี) */
-function CoinFace({ gold }: { gold: boolean }) {
-  const ink = gold ? '#7c4a03' : '#334155';
-  const hi = gold ? '#fff7cc' : '#f8fafc';
-  return (
-    <div
-      className="absolute inset-0 flex items-center justify-center rounded-full"
-      style={{
-        background: gold
-          ? 'radial-gradient(circle at 35% 30%, #fffbe6 0%, #fde68a 18%, #f5b72a 48%, #c27c0e 78%, #8a5208 100%)'
-          : 'radial-gradient(circle at 35% 30%, #ffffff 0%, #e2e8f0 18%, #a3afc0 50%, #6b7789 78%, #3f4856 100%)',
-        boxShadow: `inset 0 0 0 6px ${gold ? '#b8740c' : '#5b6575'}, inset 0 0 0 10px ${hi}55, inset 0 0 0 16px ${gold ? '#d99a1e' : '#8792a3'}, inset 0 -10px 24px rgba(0,0,0,0.35)`,
-        backfaceVisibility: 'hidden',
-        transform: gold ? 'none' : 'rotateX(180deg)',
-      }}
-    >
-      <svg viewBox="0 0 100 100" className="h-[62%] w-[62%]" style={{ filter: `drop-shadow(0 1px 0 ${hi})` }}>
-        <circle cx="50" cy="50" r="44" fill="none" stroke={ink} strokeWidth="2.5" strokeDasharray="4 5" opacity="0.7" />
-        <polygon points="50,14 81,32 81,68 50,86 19,68 19,32" fill="none" stroke={ink} strokeWidth="5" strokeLinejoin="round" />
-        <polygon points="50,28 68,39 68,61 50,72 32,61 32,39" fill={ink} opacity="0.85" />
-        <polygon points="50,36 60,42 50,48 40,42" fill={hi} opacity="0.8" />
-        {[0, 60, 120, 180, 240, 300].map((a) => (
-          <line key={a} x1="50" y1="14" x2="50" y2="6" stroke={ink} strokeWidth="3" strokeLinecap="round" transform={`rotate(${a} 50 50)`} />
-        ))}
-      </svg>
-    </div>
-  );
-}
-
-/** โยนเหรียญตอนเริ่มเกม: เหรียญลอยขึ้นหมุน แล้วตกลงกลางจอ แสดงผลว่าใครเริ่มก่อน */
-function CoinToss({ fx, onDone }: { fx: Extract<Fx, { kind: 'coin' }>; onDone: () => void }) {
-  const [landed, setLanded] = useState(false);
-  useEffect(() => {
-    sfx('swish');
-    sfx('whoosh', 250);
-    const land = setTimeout(() => {
-      setLanded(true);
-      sfx('impact');
-      sfx(fx.heads ? 'buff' : 'fade', 150);
-    }, 1900);
-    const done = setTimeout(onDone, COIN_MS);
-    return () => {
-      clearTimeout(land);
-      clearTimeout(done);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  const tone = fx.heads ? '#facc15' : '#cbd5e1';
-  return (
-    <div className="pointer-events-none fixed inset-0 z-[65] flex flex-col items-center justify-center" style={{ animation: `fx-fade-in-out ${COIN_MS}ms ease both` }}>
-      <div className="absolute inset-0 bg-black/70" />
-      {/* แสงหลังเหรียญตอนตกถึงพื้น */}
-      {landed && (
-        <div
-          className="absolute top-1/2 left-1/2 h-[520px] w-[520px] rounded-full"
-          style={{ background: `radial-gradient(circle, ${tone}55, transparent 62%)`, animation: 'coin-burst 0.9s ease-out both' }}
-        />
-      )}
-      <div className="relative" style={{ perspective: '900px' }}>
-        <div style={{ animation: 'coin-arc 1.9s cubic-bezier(.25,.6,.35,1) both' }}>
-          <div
-            className="relative h-48 w-48"
-            style={{
-              transformStyle: 'preserve-3d',
-              ['--spin' as string]: fx.heads ? '2160deg' : '2340deg',
-              animation: 'coin-spin 1.9s cubic-bezier(.2,.75,.3,1) both',
-            }}
-          >
-            <CoinFace gold />
-            <CoinFace gold={false} />
-          </div>
-        </div>
-        {/* เงาบนพื้น */}
-        <div className="absolute top-full left-1/2 mt-6 h-4 w-36 -translate-x-1/2 rounded-full bg-black/60 blur-md" style={{ animation: 'coin-shadow 1.9s cubic-bezier(.25,.6,.35,1) both' }} />
-      </div>
-      <div className="relative mt-14 h-24 text-center">
-        {landed && (
-          <>
-            <div className="text-sm font-bold tracking-[0.5em]" style={{ color: tone, animation: 'fx-slide-up 0.4s ease-out both' }}>
-              {fx.sub}
-            </div>
-            <div
-              className="mt-1 text-5xl font-black italic"
-              style={{ color: fx.heads ? '#fde68a' : '#e2e8f0', textShadow: `0 0 24px ${tone}aa, 0 3px 0 rgba(0,0,0,0.6)`, animation: 'lobby-vs 0.55s cubic-bezier(.2,1.4,.4,1) both' }}
-            >
-              {fx.title}
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
 export function FxLayer() {
   const fx = useGame((s) => s.fx);
   const dismiss = useGame((s) => s.dismissFx);
+  const introDone = useGame((s) => s.introDone);
   const current = fx.find((f) => f.kind === 'banner' || f.kind === 'summon');
   const toasts = fx.filter((f): f is Extract<Fx, { kind: 'activate' }> => f.kind === 'activate').slice(0, 3);
   const floats = fx.filter((f): f is Extract<Fx, { kind: 'float' }> => f.kind === 'float');
@@ -298,11 +231,12 @@ export function FxLayer() {
   return (
     <>
       {current?.kind === 'banner' && <Banner key={current.id} fx={current} onDone={() => dismiss(current.id)} />}
-      {fx.map((f) => (f.kind === 'coin' ? <CoinToss key={f.id} fx={f} onDone={() => dismiss(f.id)} /> : null))}
+      {fx.map((f) => (f.kind === 'intro' ? <MatchIntro key={f.id} fx={f} onDone={() => introDone(f.id)} /> : null))}
+      {fx.map((f) => (f.kind === 'result' ? <MatchResult key={f.id} fx={f} onClose={() => dismiss(f.id)} /> : null))}
       {fx.map((f) => (f.kind === 'finalBlow' ? <FinalBlow key={f.id} fx={f} onDone={() => dismiss(f.id)} /> : null))}
       {current?.kind === 'summon' && <SummonCutIn key={current.id} fx={current} onDone={() => dismiss(current.id)} />}
-      {/* ป๊อปอัปเอฟเฟกต์ลอยทับแผงรายละเอียดด้านขวา เพื่อไม่บังกระดาน */}
-      <div className="pointer-events-none fixed top-2 right-2 z-40 flex w-[calc(var(--sidebar)-1rem)] flex-col gap-2">
+      {/* ป๊อปอัปเอฟเฟกต์มุมขวาบน (ใต้ป้ายผู้เล่นคู่แข่ง) อยู่เหนือจอสลัว */}
+      <div className="pointer-events-none fixed top-24 right-3 z-40 flex w-[340px] flex-col gap-2">
         {toasts.map((t) => (
           <ActivateToast key={t.id} fx={t} onDone={() => dismiss(t.id)} />
         ))}
@@ -364,6 +298,33 @@ function spawnFx(style: Partial<CSSStyleDeclaration>, keyframes: Keyframe[], opt
  * แรงกระแทกตอนการ์ดลงสนาม: การ์ดยุบตัว + แสงวาบ + คลื่นกระแทก + สะเก็ดไฟ + จอสั่น
  * heavy (X-Rare): คลื่นหลายชั้น, เสาแสง, แสงวาบทั้งกระดาน, สะเก็ดมากขึ้น, จอสั่นแรง
  */
+/** R: วงแสงสีฟ้าขยายออก + ประกายรอบการ์ดตอนลงสนาม */
+function rareFlash(target: Element) {
+  const r = layoutRect(target);
+  if (!r) return;
+  const cx = r.x + r.w / 2;
+  const cy = r.y + r.h / 2;
+  spawnFx(
+    { left: `${cx - r.w * 0.8}px`, top: `${cy - r.w * 0.8}px`, width: `${r.w * 1.6}px`, height: `${r.w * 1.6}px`, borderRadius: '50%', background: 'radial-gradient(circle, rgba(224,242,254,0.95) 0%, rgba(56,189,248,0.55) 35%, transparent 70%)' },
+    [
+      { transform: 'scale(0.3)', opacity: 1 },
+      { transform: 'scale(1.6)', opacity: 0 },
+    ],
+    { duration: 520, easing: 'ease-out' },
+  );
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    spawnFx(
+      { left: `${cx - 3}px`, top: `${cy - 3}px`, width: '6px', height: '6px', borderRadius: '50%', background: '#e0f2fe', boxShadow: '0 0 8px 3px rgba(56,189,248,0.9)' },
+      [
+        { transform: 'translate(0,0) scale(1)', opacity: 1 },
+        { transform: `translate(${Math.cos(a) * r.w * 0.9}px, ${Math.sin(a) * r.w * 0.9}px) scale(0.3)`, opacity: 0 },
+      ],
+      { duration: 600, easing: 'cubic-bezier(.2,.8,.3,1)' },
+    );
+  }
+}
+
 function landImpact(target: Element, color: string, heavy: boolean) {
   const r = layoutRect(target);
   if (!r) return;
@@ -489,6 +450,16 @@ function landImpact(target: Element, color: string, heavy: boolean) {
 }
 
 /** การ์ดบิน: จั่ว (Deck → มือ), ลงการ์ด (มือ → สนาม แล้วกระแทก), Magic (มือ → กลางจอ → Trash), Burst (ช่อง Burst → กลางจอ) */
+/** การ์ดของฝั่งตรงข้าม (กระดานด้านบนหมุน 180°): ภาพการ์ดที่ลอยอยู่ต้องกลับหัวตาม */
+function upsideFor(owner: string | undefined): boolean {
+  return !!owner && owner !== viewPlayer(useGame.getState());
+}
+
+/** ห่อหน้าการ์ดให้กลับหัวเมื่อเป็นของฝั่งตรงข้าม */
+function Upside({ on, children }: { on: boolean; children: React.ReactNode }) {
+  return on ? <div className="h-full w-full rotate-180">{children}</div> : <>{children}</>;
+}
+
 function FlyCard({ fx, onDone }: { fx: Extract<Fx, { kind: 'fly' }>; onDone: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const card = useGame((s) => s.state.cards[fx.cardId]);
@@ -558,7 +529,10 @@ function FlyCard({ fx, onDone }: { fx: Extract<Fx, { kind: 'fly' }>; onDone: () 
         const target = document.querySelector(fx.to);
         const c = useGame.getState().state.cards[fx.cardId];
         const color = (c && COLOR_HEX[db.get(c.cardNo).colors[0] ?? 'red']) || '#facc15';
-        if (target) landImpact(target, color, !!fx.heavy);
+        if (target) {
+          landImpact(target, fx.rare ? '#7dd3fc' : color, !!fx.heavy);
+          if (fx.rare) rareFlash(target);
+        }
       }
       onDone();
     };
@@ -587,7 +561,9 @@ function FlyCard({ fx, onDone }: { fx: Extract<Fx, { kind: 'fly' }>; onDone: () 
           }}
         />
       )}
-      {faceDown || !flipped ? <CardBack /> : <CardFace def={def} />}
+      <Upside on={fx.mode !== 'magic' && fx.mode !== 'burst' && upsideFor(card?.owner)}>
+        {faceDown || !flipped ? <CardBack /> : <CardFace def={def} />}
+      </Upside>
     </div>
   );
 }
@@ -603,8 +579,9 @@ function Lunge({ fx, onDone }: { fx: Extract<Fx, { kind: 'lunge' }>; onDone: () 
     const dy = b.y + b.h / 2 - (a.y + a.h / 2);
     const len = Math.hypot(dx, dy) || 1;
     const reach = Math.min(len * 0.45, fx.max);
-    const tx = (dx / len) * reach;
-    const ty = (dy / len) * reach;
+    const sign = el.closest('[data-mat].rotate-180') ? -1 : 1;
+    const tx = (dx / len) * reach * sign;
+    const ty = (dy / len) * reach * sign;
     const anim = el.animate(
       [
         { transform: 'translate(0,0) scale(1)' },
@@ -640,19 +617,31 @@ function SkipOverlay() {
 /** การ์ดบนสนามที่เอฟเฟกต์ทำงาน: ยกขึ้น ขยาย และเรืองแสงทอง แล้วค่อยวางกลับ */
 function CardActivate({ fx, onDone }: { fx: Extract<Fx, { kind: 'cardActivate' }>; onDone: () => void }) {
   const [burst, setBurst] = useState<Rect | null>(null);
+  /** ช่องสว่างของ spotlight (ตำแหน่งการ์ดตอนยกขึ้น) — ทั้งจอนอกช่องนี้สลัวลง */
+  const [spot, setSpot] = useState<Rect | null>(null);
   useLayoutEffect(() => {
-    const el = document.querySelector<HTMLElement>(`[data-field-card="${fx.cardId}"] > div:first-child`);
+    const el = fx.hand
+      ? document.querySelector<HTMLElement>(`[data-hand-card="${fx.cardId}"]`)
+      : document.querySelector<HTMLElement>(`[data-field-card="${fx.cardId}"] > div:first-child`);
     if (!el) return onDone();
+    // กระดาน/มือฝั่งบนกลับหัว: "ยกขึ้น" = เลื่อนลงบนจอ
+    const top = !!el.closest('[data-mat].rotate-180') || (fx.hand && el.getBoundingClientRect().top < window.innerHeight / 2);
+    const lift = fx.hand ? (top ? 40 : -40) : -18;
+    const r = el.getBoundingClientRect();
+    const k = fx.hand ? 1.18 : 1.14;
+    const screenLift = fx.hand ? lift : top ? 18 : -18;
+    setSpot({ x: r.x - (r.width * (k - 1)) / 2, y: r.y - (r.height * (k - 1)) / 2 + screenLift, w: r.width * k, h: r.height * k });
     const showBurst = setTimeout(() => setBurst(layoutRect(el)), fx.delay + fx.duration * 0.2);
     const glow = 'drop-shadow(0 0 14px rgba(250,204,21,0.95)) drop-shadow(0 0 4px rgba(255,255,255,0.9)) brightness(1.25)';
     const anim = el.animate(
       [
         { transform: 'translateY(0) scale(1)', filter: 'none' },
-        { transform: 'translateY(-18px) scale(1.14)', filter: glow, offset: 0.25 },
-        { transform: 'translateY(-18px) scale(1.14)', filter: glow, offset: 0.8 },
+        { transform: `translateY(${lift}px) scale(${k})`, filter: glow, offset: 0.25 },
+        { transform: `translateY(${lift}px) scale(${k})`, filter: glow, offset: 0.8 },
         { transform: 'translateY(0) scale(1)', filter: 'none' },
       ],
-      { duration: fx.duration, delay: fx.delay, easing: 'cubic-bezier(.3,.7,.3,1)' },
+      // การ์ดบนมือมี transform ของพัดอยู่แล้ว: ซ้อนทับ (add) ไม่ทับของเดิม
+      { duration: fx.duration, delay: fx.delay, easing: 'cubic-bezier(.3,.7,.3,1)', composite: fx.hand ? 'add' : 'replace' },
     );
     const z = setTimeout(() => (el.style.zIndex = '30'), fx.delay);
     anim.onfinish = () => {
@@ -667,7 +656,34 @@ function CardActivate({ fx, onDone }: { fx: Extract<Fx, { kind: 'cardActivate' }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  if (!burst) return null;
+  return (
+    <>
+      {spot && <Spotlight rect={spot} delay={fx.delay} duration={fx.duration} />}
+      {burst && <Sunburst burst={burst} duration={fx.duration} />}
+    </>
+  );
+}
+
+/** ทั้งจอสลัวลง ยกเว้นช่องรอบการ์ดที่เอฟเฟกต์ทำงาน (เงาขนาดใหญ่รอบกล่องโปร่ง) */
+function Spotlight({ rect, delay, duration }: { rect: Rect; delay: number; duration: number }) {
+  const pad = 10;
+  return (
+    <div
+      className="pointer-events-none fixed z-[28] rounded-2xl"
+      style={{
+        left: rect.x - pad,
+        top: rect.y - pad,
+        width: rect.w + pad * 2,
+        height: rect.h + pad * 2,
+        boxShadow: '0 0 0 200vmax rgba(2,6,23,0.62), 0 0 40px 18px rgba(2,6,23,0.62)',
+        animation: `fx-spot ${duration}ms ${delay}ms ease-out both`,
+      }}
+    />
+  );
+}
+
+function Sunburst({ burst, duration }: { burst: Rect; duration: number }) {
+  const fx = { duration };
   return (
     <div className="pointer-events-none fixed z-[29]" style={{ left: burst.x + burst.w / 2, top: burst.y + burst.h / 2 - 18 }}>
       <div
@@ -1411,7 +1427,9 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
         className="pointer-events-none fixed z-[42] rounded-lg shadow-[0_10px_30px_rgba(0,0,0,0.7)]"
         style={{ left: cx - cardW / 2, top: cy - cardH / 2, width: cardW, height: cardH }}
       >
-        <CardFace def={db.get(fx.cardNo)} />
+        <Upside on={upsideFor(useGame.getState().state.cards[fx.cardId]?.owner)}>
+          <CardFace def={db.get(fx.cardNo)} />
+        </Upside>
       </div>
       {impact && (
         <div className="pointer-events-none fixed z-[43]" style={{ left: impact.x, top: impact.y }}>
@@ -1485,7 +1503,7 @@ function Ghost({ fx, onDone }: { fx: Extract<Fx, { kind: 'ghost' }>; onDone: () 
   return (
     <div className="pointer-events-none fixed z-[41]" style={{ left: fx.rect.x, top: fx.rect.y, width: fx.rect.w, height: fx.rect.h, ...vars }}>
       <div className="absolute inset-0 flex items-center justify-center">
-        <div className="relative shrink-0" style={{ width: cardW, height: cardH, transform: lying ? 'rotate(90deg)' : undefined }}>
+        <div className="relative shrink-0" style={{ width: cardW, height: cardH, transform: `${lying ? 'rotate(90deg)' : ''} ${upsideFor(fx.owner) ? 'rotate(180deg)' : ''}`.trim() || undefined }}>
           {destroy ? (
             <>
               {/* การ์ดสั่น + รอยร้าว แล้วหายไปตอนแตก */}
@@ -1620,7 +1638,8 @@ export function AttackArrow() {
       const from = centerOf(`[data-field-card="${attacker}"] > div`);
       const targets = blockers
         ? blockers.split(',').map((id) => centerOf(`[data-field-card="${id}"] > div`))
-        : [centerOf(`[data-life="${opponentOf(turnPlayer)}"]`)];
+        : // ยังไม่ได้ตัดสินว่าจะป้องกันหรือรับด้วย Life: ชี้ไปกลางสนามคู่แข่ง (ไม่ชี้ไปที่ Life ก่อน)
+          [centerOf(`[data-mat="${opponentOf(turnPlayer)}"]`)];
       const next = from ? targets.filter((t): t is { x: number; y: number } => !!t).map((t) => ({ x1: from.x, y1: from.y, x2: t.x, y2: t.y })) : [];
       const key = next.map((l) => `${l.x1 | 0},${l.y1 | 0},${l.x2 | 0},${l.y2 | 0}`).join(';');
       if (key !== last) {
