@@ -90,7 +90,7 @@ export function magicTimings(cardNo: string): MagicTiming[] {
 /** Core นี้ลาก/ย้ายได้ตอนนี้หรือไม่ (Main Step ของเจ้าของ, อยู่ใน Reserve หรือบนการ์ดในสนาม) */
 export function canMoveCore(s: GameState, coreId: string): boolean {
   const core = s.cores[coreId];
-  if (!core || !inMain(s) || core.owner !== s.turnPlayer) return false;
+  if (!core || !inMain(s) || core.owner !== s.turnPlayer || !mine(core.owner)) return false;
   const loc = locateCore(s, coreId);
   return !!loc && loc.player === core.owner && (loc.area === 'reserve' || loc.area === 'card');
 }
@@ -132,7 +132,7 @@ export function braveHostOf(s: GameState, braveId: string): string | null {
 /** สปิริตบนสนามที่ Brave ใบนี้ (บนมือ / บนสนาม / ร่วมร่างอยู่) ร่วมร่างได้ตอนนี้ใน Main Step */
 export function braveHosts(s: GameState, cardId: string): string[] {
   const card = s.cards[cardId];
-  if (!card || !inMain(s) || card.owner !== s.turnPlayer) return [];
+  if (!card || !inMain(s) || card.owner !== s.turnPlayer || !mine(card.owner)) return [];
   const def = db.get(card.cardNo);
   const p = s.players[card.owner];
   const current = braveHostOf(s, cardId);
@@ -184,7 +184,7 @@ export function isInlineChoice(s: GameState): boolean {
 
 /** การ์ดนี้เป็นตัวเลือกของการเลือกบนกระดานตอนนี้หรือไม่ */
 export function isChoiceCandidate(s: GameState, cardId: string): boolean {
-  return isInlineChoice(s) && s.choice?.kind === 'card' && s.choice.candidates.includes(cardId);
+  return isInlineChoice(s) && s.choice?.kind === 'card' && mine(s.choice.player) && s.choice.candidates.includes(cardId);
 }
 
 /**
@@ -196,7 +196,7 @@ export function isChoiceCandidate(s: GameState, cardId: string): boolean {
 export function canSelectCore(s: GameState, evolveCard: string | null, coreId: string): boolean {
   const core = s.cores[coreId];
   const loc = core ? locateCore(s, coreId) : null;
-  if (!core || !loc) return false;
+  if (!core || !loc || !mine(core.owner)) return false;
   if (evolveCard) {
     const owner = s.cards[evolveCard]!.owner;
     return loc.area === 'card' && loc.player === owner && loc.cardId !== evolveCard && isSpiritLike(db.get(s.cards[loc.cardId]!.cardNo));
@@ -797,6 +797,16 @@ export const viewPlayer = (st: { fixedView: boolean; viewTurn: PlayerId; online:
 export const hiddenFrom = (st: { online: OnlineState | null; hideIdleHand: boolean; state: GameState }, owner: PlayerId): boolean =>
   st.online ? owner !== st.online.me : st.hideIdleHand && actingPlayer(st.state) !== owner;
 
+/**
+ * การ์ด/Core/การเลือกของผู้เล่นนี้ จับต้องได้จากเครื่องนี้หรือไม่ (ออนไลน์ = เฉพาะของที่นั่งเรา)
+ * ใช้เฉพาะฝั่ง UI ห้ามใช้ในสิ่งที่ autoAdvance ใช้ตัดสิน (responseOptions, blockCandidates, canEvolve, canQuickSummon)
+ * ไม่งั้นสองเครื่องจะเดิน state ต่างกัน
+ */
+export function mine(player: PlayerId | null | undefined): boolean {
+  const on = useGame.getState().online;
+  return !on || player === on.me;
+}
+
 /** ผู้เล่นนี้กดสั่งงานจากเครื่องนี้ได้หรือไม่ (ออนไลน์ = เฉพาะที่นั่งของเรา) */
 export const controls = (st: { online: OnlineState | null }, player: PlayerId | null | undefined): boolean =>
   !st.online || (st.online.status === 'playing' && player === st.online.me);
@@ -972,7 +982,7 @@ function playFxSounds(list: Fx[]) {
 /** ปล่อยการ์ดบนมือที่สนาม จะทำอะไร (null = ปล่อยไม่ได้) */
 export function handFieldAction(s: GameState, cardId: string): { kind: PlayKind; timing?: MagicTiming; label: string } | null {
   const card = s.cards[cardId];
-  if (!card || !s.players[card.owner].hand.includes(cardId)) return null;
+  if (!card || !s.players[card.owner].hand.includes(cardId) || !mine(card.owner)) return null;
   const def = db.get(card.cardNo);
   const main = inMain(s) && card.owner === s.turnPlayer;
   const flash = flashPlayer(s) === card.owner;
@@ -993,7 +1003,7 @@ export function handFieldAction(s: GameState, cardId: string): { kind: PlayKind;
 /** ปล่อยการ์ดบนมือที่ช่อง Burst ได้หรือไม่ */
 export function canDropBurst(s: GameState, cardId: string): boolean {
   const card = s.cards[cardId];
-  if (!card || !s.players[card.owner].hand.includes(cardId)) return false;
+  if (!card || !s.players[card.owner].hand.includes(cardId) || !mine(card.owner)) return false;
   return inMain(s) && card.owner === s.turnPlayer && db.get(card.cardNo).burst && !s.burstSetThisTurn;
 }
 
@@ -1632,6 +1642,7 @@ export const useGame = create<Store>((set, get) => {
       if (isChoiceCandidate(state, cardId)) return choose(cardId);
       if (state.choice) return;
       const owner = state.cards[cardId]!.owner;
+      if (!mine(owner)) return;
       const canPlay = inMain(state)
         ? owner === state.turnPlayer
         : flashPlayer(state) === owner && (magicTimings(state.cards[cardId]!.cardNo).includes('flash') || canQuickSummon(state, cardId));
@@ -1694,7 +1705,7 @@ export const useGame = create<Store>((set, get) => {
       set({ pinned: cardId });
 
       if (isChoiceCandidate(state, cardId)) return choose(cardId);
-      if (evolveCard || state.choice) return;
+      if (evolveCard || state.choice || !mine(card.owner)) return;
 
       if (selectedCores.length > 0 && card.owner === state.turnPlayer) {
         moveCoresTo({ cardId });

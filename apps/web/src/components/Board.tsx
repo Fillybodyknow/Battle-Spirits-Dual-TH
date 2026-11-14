@@ -3,7 +3,7 @@ import { cardLevel, currentBp, isSpiritLike, payableCost, type CoreTarget, type 
 import { playerLabel } from '../format';
 import { IMG } from '../assets';
 import type { Fx } from '../store';
-import { blockCandidates, controls, hiddenFrom, braveHostOf, braveHosts, canDropBurst, canQuickSummon, handFieldAction, separatePlacement } from '../store';
+import { blockCandidates, controls, hiddenFrom, mine, braveHostOf, braveHosts, canDropBurst, canQuickSummon, handFieldAction, separatePlacement } from '../store';
 import { actingPlayer, canEvolve, db, flashPlayer, inMain, isChoiceCandidate, isFxBlocking, magicTimings, simulateEvolve, simulateMove, useGame } from '../store';
 import { useFlashUsable } from './Controls';
 import { CardBack, CardFace } from './CardFace';
@@ -130,10 +130,12 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
   const isAttacker = battle?.attackerId === cardId;
   const isBlocker = battle?.blockers.includes(cardId) ?? false;
 
-  const ready = spirit && !exhausted && !state.winner && !state.choice;
+  // ออนไลน์: จับต้องได้เฉพาะการ์ดของที่นั่งเรา
+  const own = mine(card.owner);
+  const ready = own && spirit && !exhausted && !state.winner && !state.choice;
   const canAttack = ready && state.phase === 'attack' && !battle && card.owner === state.turnPlayer;
   const canBlock = ready && battle?.step === 'declareBlock' && card.owner !== state.turnPlayer;
-  const ownTurnMain = inMain(state) && card.owner === state.turnPlayer;
+  const ownTurnMain = own && inMain(state) && card.owner === state.turnPlayer;
   const dropTarget = ownTurnMain && (!!dragging || hasSelection);
 
   const target = useMemo<CoreTarget>(() => ({ cardId }), [cardId]);
@@ -353,7 +355,7 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
         </button>
       ) : (
         !evolveMode &&
-        canEvolve(state, cardId) && (
+        own && canEvolve(state, cardId) && (
           <button
             type="button"
             onClick={() => openEvolve(cardId)}
@@ -412,6 +414,7 @@ function LifeSlot({ player }: { player: PlayerId }) {
   const battle = state.battle;
   const canTake =
     !blocking &&
+    mine(player) &&
     !state.choice &&
     !state.winner &&
     battle?.step === 'declareBlock' &&
@@ -455,7 +458,7 @@ function ReserveSlot({ player }: { player: PlayerId }) {
   const moveCoresTo = useGame((s) => s.moveCoresTo);
   const [over, setOver] = useState(false);
   const p = state.players[player];
-  const active = inMain(state) && player === state.turnPlayer && (!!dragging || hasSelection);
+  const active = mine(player) && inMain(state) && player === state.turnPlayer && (!!dragging || hasSelection);
   const target = useMemo<CoreTarget>(() => ({ area: 'reserve' }), []);
 
   return (
@@ -763,8 +766,8 @@ function HandCard({ cardId, hidden, small, fan }: { cardId: string; hidden: bool
     );
   }
 
-  const main = inMain(state) && card.owner === state.turnPlayer;
-  const flash = flashPlayer(state) === card.owner;
+  const main = mine(card.owner) && inMain(state) && card.owner === state.turnPlayer;
+  const flash = mine(card.owner) && flashPlayer(state) === card.owner;
   const timings = def.type === 'magic' ? magicTimings(card.cardNo) : [];
   const pay = payableCost(state, db, card.owner, def);
   const affordable = pay <= state.players[card.owner].reserve.length + state.players[card.owner].field.reduce((n, id) => n + state.cards[id]!.cores.length, 0);
