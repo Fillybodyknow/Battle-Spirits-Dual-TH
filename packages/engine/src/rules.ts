@@ -69,6 +69,15 @@ export function conditionHolds(
   if (!cond) return true;
   const card = state.cards[sourceId]!;
   const owner = state.players[card.owner];
+  if ('not' in cond) return !conditionHolds(state, sourceId, cond.not, paidWithSoul, catalyzed, db);
+  if ('attackStep' in cond) return state.phase === 'attack';
+  if ('allySoulNamed' in cond) {
+    if (!db) return false;
+    return owner.field.some((id) => {
+      const c = state.cards[id]!;
+      return cond.allySoulNamed.some((w) => db.get(c.cardNo).name.includes(w)) && c.cores.some((x) => state.cores[x]!.isSoul);
+    });
+  }
   if ('soulOnSelf' in cond) return card.cores.some((id) => state.cores[id]!.isSoul);
   if ('lifeAtMost' in cond) return owner.life.length <= cond.lifeAtMost;
   if ('soulInReserve' in cond) return owner.reserve.some((id) => state.cores[id]!.isSoul);
@@ -97,9 +106,15 @@ export function currentBp(state: GameState, db: CardDatabase, cardId: string): n
     const src = state.cards[srcId]!;
     const srcDef = db.get(src.cardNo);
     const level = levelOf(srcDef, src.cores.length);
+    if (effectsNegated(state, db, srcId)) continue;
     for (const ab of srcDef.abilities) {
-      if (ab.kind !== 'staticBp' || !ab.levels.includes(level) || !conditionHolds(state, srcId, ab.if)) continue;
-      const applies = 'self' in ab.scope ? srcId === cardId : def.type === 'spirit' && def.family.includes(ab.scope.ownFamily);
+      if (ab.kind !== 'staticBp' || !ab.levels.includes(level) || !conditionHolds(state, srcId, ab.if, false, false, db)) continue;
+      const applies =
+        'self' in ab.scope
+          ? srcId === cardId
+          : 'ownFamily' in ab.scope
+            ? def.type === 'spirit' && def.family.includes(ab.scope.ownFamily)
+            : (def.type === 'spirit' || def.type === 'brave') && ab.scope.ownNamed.some((w) => def.name.includes(w));
       if (applies) bp += ab.amount;
     }
   }
@@ -114,7 +129,30 @@ export function matchesFilter(state: GameState, db: CardDatabase, cardId: string
   if (filter.families && !filter.families.some((f) => def.family.includes(f))) return false;
   if (filter.state && state.cards[cardId]!.state !== filter.state) return false;
   if (filter.maxBp !== undefined && currentBp(state, db, cardId) > filter.maxBp) return false;
+  if (filter.minCost !== undefined && def.cost < filter.minCost) return false;
+  if (filter.maxCost !== undefined && def.cost > filter.maxCost) return false;
+  if (filter.cost !== undefined && def.cost !== filter.cost) return false;
+  if (filter.nameIncludes && !filter.nameIncludes.some((w) => def.name.includes(w))) return false;
+  if (filter.hasBurst && !def.burst) return false;
   return true;
+}
+
+/**
+ * เอฟเฟกต์ของการ์ดบนสนามนี้ถูกปิดหรือไม่ (เมียวโอดาบแดง: "แอทแท็คสเต็ปของเรา: สปิริต/อัลติเมทคอสต์ไม่เกิน N ของคู่แข่ง เอฟเฟกต์จะไม่ทำงาน")
+ * การ์ดที่ปิดได้คือของฝ่ายที่ไม่ใช่ผู้เล่นเทิร์น จึงไม่วนตรวจกันเอง
+ */
+export function effectsNegated(state: GameState, db: CardDatabase, cardId: string): boolean {
+  if (state.phase !== 'attack') return false;
+  const card = state.cards[cardId];
+  if (!card || card.owner === state.turnPlayer) return false;
+  if (!state.players[card.owner].field.includes(cardId)) return false;
+  const def = db.get(card.cardNo);
+  if (def.type !== 'spirit' && def.type !== 'ultimate' && def.type !== 'brave') return false;
+  return state.players[state.turnPlayer].field.some((id) => {
+    const srcDef = db.get(state.cards[id]!.cardNo);
+    const level = cardLevel(state, db, id);
+    return srcDef.abilities.some((a) => a.kind === 'negateOpponentEffects' && a.levels.includes(level) && def.cost <= a.maxCost);
+  });
 }
 
 /** จำนวน gem symbol ทั้งหมด = Life ที่ลดเมื่อโจมตีสำเร็จ */

@@ -4,7 +4,7 @@ import { primeCoreMotion, snapCores } from './motion';
 import { firebaseConfigured, firebaseTransport } from './online/firebase';
 import { localTransport } from './online/local';
 import type { RoomInfo, RoomSetup, Transport } from './online/transport';
-import { createCardDatabase, expandDeck, loadSampleCards, loadSD01Cards, loadSD02Cards, SD01_DECK, SD02_DECK, type DeckEntry } from '@bs/cards';
+import { createCardDatabase, expandDeck, loadSD01Cards, loadSD02Cards, loadSD03Cards, SD01_DECK, SD02_DECK, SD03_DECK, type DeckEntry } from '@bs/cards';
 import { rarityOf, type TextEffect } from '@bs/cards';
 import {
   applyAction,
@@ -26,30 +26,13 @@ import {
   type PlayerId,
 } from '@bs/engine';
 
-/** การ์ดทุกชุดที่ UI ใช้: ชุดตัวอย่าง (SMP-) + Starter Deck 01/02 (SD01-, SD02-) */
-export const db = createCardDatabase([...loadSampleCards().all(), ...loadSD01Cards().all(), ...loadSD02Cards().all()]);
-
-/** เด็คตัวอย่าง 40 ใบ (ชื่อละไม่เกิน 3 ใบ) ไม่รวม Ultimate เพราะ engine ยังไม่รองรับ */
-const DECK_RED_WHITE: DeckEntry[] = [
-  ...['SMP-001', 'SMP-002', 'SMP-003', 'SMP-004', 'SMP-007', 'SMP-008', 'SMP-009', 'SMP-010', 'SMP-012', 'SMP-016', 'SMP-013', 'SMP-014'].map(
-    (cardNo) => ({ cardNo, count: 3 }),
-  ),
-  { cardNo: 'SMP-005', count: 2 },
-  { cardNo: 'SMP-015', count: 2 },
-];
-const DECK_GREEN_BLUE: DeckEntry[] = [
-  ...['SMP-005', 'SMP-006', 'SMP-015', 'SMP-013', 'SMP-014', 'SMP-016', 'SMP-007', 'SMP-008', 'SMP-001', 'SMP-002', 'SMP-003', 'SMP-010'].map(
-    (cardNo) => ({ cardNo, count: 3 }),
-  ),
-  { cardNo: 'SMP-004', count: 2 },
-  { cardNo: 'SMP-009', count: 2 },
-];
+/** การ์ดทุกชุดที่ UI ใช้: Starter Deck 01/02/03 (SD01-, SD02-, SD03-) */
+export const db = createCardDatabase([...loadSD01Cards().all(), ...loadSD02Cards().all(), ...loadSD03Cards().all()]);
 
 export const DECKS = {
   sd01: { label: 'Starter Deck 01', entries: [...SD01_DECK] },
   sd02: { label: 'Starter Deck 02', entries: [...SD02_DECK] },
-  sampleRedWhite: { label: 'ตัวอย่าง แดง/ขาว', entries: DECK_RED_WHITE },
-  sampleGreenBlue: { label: 'ตัวอย่าง เขียว/ฟ้า', entries: DECK_GREEN_BLUE },
+  sd03: { label: 'Starter Deck 03', entries: [...SD03_DECK] },
 } satisfies Record<string, { label: string; entries: DeckEntry[] }>;
 export type DeckId = keyof typeof DECKS;
 type DeckChoice = Record<PlayerId, DeckId>;
@@ -263,13 +246,15 @@ export type Fx =
   | { id: number; kind: 'summon'; cardId: string; level: number; bp: number; delay: number; special?: boolean }
   | { id: number; kind: 'activate'; cardId: string; label: string; text: string; delay: number }
   /** การ์ดบนสนามที่เอฟเฟกต์ทำงาน: ยกขึ้น + เรืองแสง ก่อนผลของเอฟเฟกต์จะเกิด */
-  | { id: number; kind: 'cardActivate'; cardId: string; delay: number; duration: number; hand?: boolean }
+  | { id: number; kind: 'cardActivate'; cardId: string; delay: number; duration: number; hand?: boolean; brave?: boolean }
   /** เอฟเฟกต์หลายอันทำงานพร้อมกัน: แสดงการ์ดเรียงพร้อมเลขลำดับและโซ่ (CHAIN → RESOLVE) */
   | { id: number; kind: 'chain'; cardIds: string[]; delay: number; duration: number }
   /** การ์ดที่เอฟเฟกต์ทำงานเสร็จ บินเข้าไปต่อท้ายแถบ Chain (index = ลำดับใน Chain) */
   | { id: number; kind: 'chainAdd'; cardId: string; index: number; delay: number }
   /** การ์ดที่เปิดจากเด็คเรียงเป็นพัด (หลังเลือก: ใบที่เลือกยกขึ้นก่อนบินขึ้นมือ / ที่เหลือบินลง Trash) */
   | { id: number; kind: 'reveal'; owner: PlayerId; cardIds: string[]; chosen: string | null; delay: number; duration: number; title?: string }
+  /** การ์ดถูกทิ้งจากเด็ค: บินออกมาเรียงหงายทีละใบ ค้างไว้ครู่หนึ่ง แล้วแตกทีละใบลง Trash (owner = เจ้าของเด็ค) */
+  | { id: number; kind: 'mill'; owner: PlayerId; cardIds: string[]; delay: number }
   /** เส้นเล็งจากการ์ดต้นเอฟเฟกต์ไปยังเป้าหมายที่เลือก */
   | { id: number; kind: 'target'; sourceId: string; targetId: string; delay: number; duration: number }
   /** ตัวเลขดาเมจใหญ่กลางฝั่งที่เสียไลฟ์ (big = โดนโจมตีตรง มีรัศมีแตกกระจาย) */
@@ -330,6 +315,8 @@ export type Fx =
       mode: 'destroy' | 'deplete';
       /** ไม่แสดงอะไรจนถึงเวลาเริ่ม (ผู้โจมตีที่แพ้: ระหว่างนั้นภาพวิ่งชนยังเล่นอยู่) */
       hiddenUntilStart?: boolean;
+      /** แสดงตั้งตรงเสมอ (ภาพการ์ดถูกทิ้งจากเด็ค: ให้อ่านง่ายไม่ว่าฝั่งไหน) */
+      upright?: true;
       delay: number;
     };
 type FxInput = Fx extends infer T ? (T extends Fx ? Omit<T, 'id'> : never) : never;
@@ -378,7 +365,7 @@ const T = {
   /** X-Rare ลอยค้างแล้วทุบลงสนาม + แรงกระแทก */
   landHeavy: 1350,
   /** การ์ดบนสนามยกขึ้นเรืองแสงก่อนเอฟเฟกต์ทำงาน */
-  activate: 900,
+  activate: 1500,
   /** Magic / Burst ค้างกลางจอก่อนผลเกิด */
   spell: 1250,
   /** ผู้โจมตีวิ่งถึงเป้าหมาย */
@@ -584,8 +571,10 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         // การ์ดบนสนามยกขึ้นเรืองแสง → ผลของเอฟเฟกต์เกิดทันที → การ์ดบินไปต่อท้าย Chain
         // การ์ดบนสนาม หรือบนมือ (เอฟเฟกต์ที่ทำงานจากมือ): ยกขึ้นเรืองแสง + จอสลัว
         const inHand = !onAnyField(e.cardId) && PLAYERS.some((p) => s.players[p].hand.includes(e.cardId) || prev.players[p].hand.includes(e.cardId));
-        const field = onAnyField(e.cardId) || inHand;
-        if (field) out.push({ kind: 'cardActivate', cardId: e.cardId, delay: t, duration: T.activate, hand: inHand });
+        // Brave ที่ร่วมร่างอยู่ (เอฟเฟกต์ที่ผู้ร่วมร่างได้รับ): การ์ด Brave ใบเล็กบนผู้ร่วมร่างยกขึ้น
+        const onHost = !onAnyField(e.cardId) && !inHand && Object.values(s.cards).some((c) => c.braves.includes(e.cardId));
+        const field = onAnyField(e.cardId) || inHand || onHost;
+        if (field) out.push({ kind: 'cardActivate', cardId: e.cardId, delay: t, duration: T.activate, hand: inHand, brave: onHost });
         if (e.source !== null) {
           out.push({ kind: 'activate', cardId: e.cardId, label: 'เอฟเฟกต์ทำงาน', text: effectText(s.cards[e.cardId]!.cardNo, e.source), delay: t });
         }
@@ -632,6 +621,11 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
       }
       case 'destroyed':
       case 'depleted': {
+        if (e.type === 'destroyed' && e.stays) {
+          out.push({ kind: 'float', anchor: `[data-field-card="${e.cardId}"]`, text: 'ถูกทำลาย → อยู่ต่อ (เสื่อมสภาพ)', tone: 'bad', delay: t });
+          t += 450;
+          break;
+        }
         const rect = rects[`field:${e.cardId}`];
         const battle = e.type === 'destroyed' && (e.cardId === attackerId || blockers.includes(e.cardId));
         // ผู้โจมตีที่แพ้: วิ่งกลับถึงที่เดิมก่อน แล้วค่อยแตก
@@ -725,8 +719,13 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
           t += 1200;
         }
         break;
-      case 'milled':
-        e.cardIds.forEach((id, i) =>
+      case 'milled': {
+        const fresh = e.cardIds.filter((id) => !revealed.has(id));
+        if (fresh.length > 0) {
+          out.push({ kind: 'mill', owner: e.player, cardIds: fresh, delay: t });
+          t += millDuration(fresh.length) - 600;
+        }
+        e.cardIds.filter((id) => revealed.has(id)).forEach((id, i) =>
           out.push({
             kind: 'fly',
             cardId: id,
@@ -738,7 +737,9 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
             hideTarget: false,
           }),
         );
+        if (fresh.length < e.cardIds.length) t += 250 + (e.cardIds.length - fresh.length) * 120;
         break;
+      }
       case 'cardToHand':
         out.push({
           kind: 'fly',
@@ -786,6 +787,11 @@ export const GHOST_MS = { destroyBreak: 380, destroy: 1300, depleteGather: 700, 
 
 export const PLAY_HIT = { normal: 560, heavy: 900 } as const;
 
+/** เวลาของภาพการ์ดถูกทิ้งจากเด็ค (ms): ออกทีละใบ → ค้าง → แตกทีละใบ */
+export const MILL_MS = { show: 170, fly: 420, hold: 700, brk: 230 } as const;
+export const millBreakAt = (n: number, i: number) => (n - 1) * MILL_MS.show + MILL_MS.fly + MILL_MS.hold + i * MILL_MS.brk;
+export const millDuration = (n: number) => millBreakAt(n, n - 1) + GHOST_MS.destroy;
+
 /** เวลาที่ FX หนึ่งเล่นจบ (โดยประมาณ) ใช้หาจุดจบของไทม์ไลน์ */
 function fxEnd(f: FxInput): number {
   const d = 'delay' in f ? (f.delay ?? 0) : 0;
@@ -803,6 +809,8 @@ function fxEnd(f: FxInput): number {
       return d + T.chargeEnd;
     case 'ghost':
       return d + (f.mode === 'destroy' ? GHOST_MS.destroy : GHOST_MS.deplete);
+    case 'mill':
+      return d + millDuration(f.cardIds.length);
     case 'damage':
       return d + 1100;
     case 'float':
@@ -917,6 +925,7 @@ export function isFxBlocking(fx: Fx[]): boolean {
       f.kind === 'intro' ||
       f.kind === 'chain' ||
       f.kind === 'reveal' ||
+      f.kind === 'mill' ||
       f.kind === 'chainAdd' ||
       f.kind === 'target' ||
       f.kind === 'finalBlow' ||
@@ -973,7 +982,8 @@ function coreDelays(prev: GameState, next: GameState, fx: Fx[], events: GameEven
 }
 
 /** ค่าที่แสดงบนการ์ดแบบหน่วงไว้ (BP / Lv เดิม) จนกว่าแอนิเมชันจะเล่นถึงเอฟเฟกต์ที่ทำให้ค่าเปลี่ยน */
-export type Hold = { bp: number; level: number; until: number };
+/** ค่าที่แสดงแบบหน่วง: BP/Lv เดิมจนถึง until, สภาพเสื่อมสภาพจนถึง exhaustedUntil (การ์ดที่ฟื้นสภาพด้วยเอฟเฟกต์ทีหลัง) */
+export type Hold = { bp?: number; level?: number; until: number; exhaustedUntil?: number };
 
 function computeHolds(prev: GameState, next: GameState, events: GameEvent[], delays: Map<string, number>): Record<string, Hold> {
   const out: Record<string, Hold> = {};
@@ -998,6 +1008,13 @@ function computeHolds(prev: GameState, next: GameState, events: GameEvent[], del
       if (bp === currentBp(next, db, id) && level === cardLevel(next, db, id)) continue;
       out[id] = { bp, level, until: now + at };
     }
+  }
+  // ฟื้นสภาพด้วยเอฟเฟกต์ทีหลัง (เช่น ผู้โจมตีที่เนอวาน่าให้ฟื้นสภาพ): แสดงเสื่อมสภาพไว้ก่อนจนถึงจังหวะนั้น
+  for (const e of events) {
+    if (e.type !== 'cardRefreshed') continue;
+    const at = lastEventAt.get(e) ?? 0;
+    if (at <= 0) continue;
+    out[e.cardId] = { ...(out[e.cardId] ?? { until: 0 }), exhaustedUntil: now + at };
   }
   return out;
 }
@@ -1061,6 +1078,12 @@ function playFxSounds(list: Fx[]) {
       case 'charge':
         sfx('whoosh', f.delay + 150);
         sfx('impact', f.delay + 450);
+        break;
+      case 'mill':
+        f.cardIds.forEach((_, i) => {
+          sfx('draw', f.delay + i * MILL_MS.show);
+          sfx('shatter', f.delay + millBreakAt(f.cardIds.length, i) + GHOST_MS.destroyBreak);
+        });
         break;
       case 'ghost':
         if (f.mode === 'destroy') {
@@ -1510,7 +1533,8 @@ function startGame(seed: number, decks: DeckChoice, firstPlayer?: PlayerId): Gam
   return createGame({
     db,
     seed,
-    decks: { p1: expandDeck(DECKS[decks.p1].entries), p2: expandDeck(DECKS[decks.p2].entries) },
+    // เด็คที่ไม่มีแล้ว (เช่น เด็คตัวอย่างเดิมจากห้องออนไลน์เก่า) ใช้ Starter Deck 01 แทน
+    decks: { p1: expandDeck((DECKS[decks.p1] ?? DECKS.sd01).entries), p2: expandDeck((DECKS[decks.p2] ?? DECKS.sd01).entries) },
     ...(firstPlayer ? { firstPlayer } : {}),
   }).state;
 }

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { cardLevel, currentBp, isSpiritLike, payableCost, type CoreTarget, type PlayerId } from '@bs/engine';
 import { playerLabel } from '../format';
 import { IMG } from '../assets';
-import type { Fx, Hold } from '../store';
+import type { Fx } from '../store';
 import { blockCandidates, controls, hiddenFrom, mine, braveHostOf, braveHosts, canDropBurst, canQuickSummon, handFieldAction, separatePlacement } from '../store';
 import { actingPlayer, canEvolve, db, flashPlayer, inMain, isChoiceCandidate, isFxBlocking, magicTimings, simulateEvolve, simulateMove, useGame } from '../store';
 import { useFlashUsable } from './Controls';
@@ -12,7 +12,8 @@ import { beginCardDrag } from './DragGhost';
 
 /** การ์ดนี้มีแอนิเมชันกำลังบินมาที่ตำแหน่งของมัน (ซ่อนตัวจริงไว้ก่อน) */
 function useFlying(cardId: string): boolean {
-  return useGame((s) => s.fx.some((f) => ((f.kind === 'fly' && f.hideTarget) || f.kind === 'charge') && f.cardId === cardId));
+  // ภาพวิ่งชน (charge) ซ่อนการ์ดตัวจริงเองตอนเริ่มวิ่ง
+  return useGame((s) => s.fx.some((f) => f.kind === 'fly' && f.hideTarget && f.cardId === cardId));
 }
 
 // ---------------------------------------------------------------- drag & drop
@@ -98,17 +99,26 @@ function BraveMenu({ braveId, onClose }: { braveId: string; onClose: () => void 
 }
 
 /** ค่าที่หน่วงไว้ของการ์ดนี้ (ถ้ายังไม่ถึงเวลา) — render ใหม่เองเมื่อหมดเวลา */
-function useHeld(cardId: string): Hold | null {
+function useHeld(cardId: string): { bp?: number; level?: number; exhausted?: true } | null {
   const hold = useGame((s) => s.holds[cardId]);
   const [, tick] = useState(0);
   useEffect(() => {
     if (!hold) return;
-    const ms = hold.until - performance.now();
-    if (ms <= 0) return;
-    const t = setTimeout(() => tick((n) => n + 1), ms + 10);
-    return () => clearTimeout(t);
+    const now = performance.now();
+    const timers = [hold.until, hold.exhaustedUntil ?? 0]
+      .filter((t) => t > now)
+      .map((t) => setTimeout(() => tick((n) => n + 1), t - now + 10));
+    return () => timers.forEach(clearTimeout);
   }, [hold]);
-  return hold && performance.now() < hold.until ? hold : null;
+  if (!hold) return null;
+  const now = performance.now();
+  const out: { bp?: number; level?: number; exhausted?: true } = {};
+  if (now < hold.until) {
+    if (hold.bp !== undefined) out.bp = hold.bp;
+    if (hold.level !== undefined) out.level = hold.level;
+  }
+  if (hold.exhaustedUntil && now < hold.exhaustedUntil) out.exhausted = true;
+  return out;
 }
 
 function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }) {
@@ -141,7 +151,7 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
   const level = held?.level ?? cardLevel(state, db, cardId);
   const bp = held?.bp ?? currentBp(state, db, cardId);
   const spirit = isSpiritLike(def);
-  const exhausted = card.state === 'exhausted';
+  const exhausted = card.state === 'exhausted' || !!held?.exhausted;
   const battle = state.battle;
   const isAttacker = battle?.attackerId === cardId;
   const isBlocker = battle?.blockers.includes(cardId) ?? false;
@@ -324,9 +334,6 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
           <div className="absolute inset-x-1 bottom-1 z-10 rounded bg-emerald-400 py-0.5 text-center text-xs font-bold text-slate-900 shadow">
             {over ? 'ปล่อยเพื่อร่วมร่าง' : 'ร่วมร่างได้'}
           </div>
-        )}
-        {exhausted && (
-          <div className="absolute inset-x-2 top-1/2 -translate-y-1/2 rounded bg-black/75 py-0.5 text-center text-xs font-bold text-slate-200">เสื่อมสภาพ</div>
         )}
         {!isBlocker && battle?.chosenBlockers.includes(cardId) && (
           <div className="absolute -top-2.5 left-1/2 z-10 -translate-x-1/2 rounded bg-fuchsia-500 px-1.5 text-[11px] font-black whitespace-nowrap text-white shadow">
@@ -616,7 +623,11 @@ function TrashSlot({ player }: { player: PlayerId }) {
   const p = useGame((s) => s.state.players[player]);
   const state = useGame((s) => s.state);
   const openTrash = useGame((s) => s.openTrash);
-  const top = p.trashCards.at(-1);
+  // การ์ดที่ภาพ "ถูกทิ้งจากเด็ค" ยังเล่นอยู่: ยังไม่โชว์ใน Trash
+  const fxList = useGame((s) => s.fx);
+  const milling = fxList.flatMap((f) => (f.kind === 'mill' && f.owner === player ? f.cardIds : []));
+  const shown = milling.length > 0 ? p.trashCards.filter((id) => !milling.includes(id)) : p.trashCards;
+  const top = shown.at(-1);
   const hover = useGame((s) => s.hover);
   // ลาก Burst ของผู้เล่นนี้มาปล่อย = ทิ้ง Burst
   const burstDrop = useGame((s) => !!s.burstDrag && s.state.players[player].burst === s.burstDrag);
@@ -656,7 +667,7 @@ function TrashSlot({ player }: { player: PlayerId }) {
           )}
         </div>
         <div className="flex min-w-0 flex-col gap-0.5 text-[11px]">
-          <span className="text-slate-400">Card · {p.trashCards.length} ใบ</span>
+          <span className="text-slate-400">Card · {shown.length} ใบ</span>
           <span className="line-clamp-2 text-slate-200">{top ? db.get(state.cards[top]!.cardNo).name : '—'}</span>
         </div>
       </div>

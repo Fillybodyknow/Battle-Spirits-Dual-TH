@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { rarityOf, type TextEffect } from '@bs/cards';
-import { COLOR_LABEL, RARITY_BADGE, TYPE_LABEL } from '../format';
+import { braveText, COLOR_LABEL, RARITY_BADGE, TYPE_LABEL } from '../format';
 import { DECKS, db, useGame, type DeckId } from '../store';
 import { BackButton, CardArt, DeckTile, deckSize } from './shared';
 
@@ -79,6 +79,20 @@ export function DeckViewer() {
               {def.family.length > 0 && <> · {def.family.join(' / ')}</>}
             </div>
           </div>
+          {(() => {
+          const bt = braveText(def.braveCondition);
+          if (!bt) return null;
+          return (
+            <div className="rounded-lg bg-teal-900/30 px-3 py-2 ring-1 ring-teal-400/30">
+              <div className="mb-0.5 flex items-center gap-1">
+                <span className="rounded bg-teal-600 px-1 text-[10px] font-bold text-white">Brave</span>
+                <span className="text-[11px] font-bold text-teal-200">เงื่อนไขร่วมร่าง</span>
+              </div>
+              <p className="text-[15px] leading-relaxed text-teal-100">{bt.cond}</p>
+              {bt.bonus && <p className="text-[15px] leading-relaxed text-sky-200">เอฟเฟกต์ติดตัวที่ให้ผู้ร่วมร่าง: {bt.bonus}</p>}
+            </div>
+          );
+        })()}
           {def.levels.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
               {def.levels.map((l) => (

@@ -96,10 +96,10 @@ export function sendToTrash(ctx: Ctx, cardId: string): void {
 }
 
 /** by = ผู้เล่นที่ทำลาย (การต่อสู้ / เอฟเฟกต์) ใช้ตรวจ Burst "ถูกทำลายโดยคู่แข่ง" */
-export function destroy(ctx: Ctx, cardId: string, by?: PlayerId): void {
+export function destroy(ctx: Ctx, cardId: string, by?: PlayerId, bySource?: string): void {
   const owner = ctx.s.cards[cardId]!.owner;
   sendToTrash(ctx, cardId);
-  emit(ctx, { type: 'destroyed', cardId });
+  emit(ctx, { type: 'destroyed', cardId, ...(bySource ? { bySource } : {}) });
   if (by && by !== owner) pendBurst(ctx, owner, 'afterAllyDestroyedByOpponent');
 }
 

@@ -24,7 +24,13 @@ export type Condition =
   /** มีการ์ดบนมือเจ้าของเอฟเฟกต์อย่างน้อย N ใบ */
   | { handAtLeast: number }
   /** [Catalyze] ใช้ได้: การ์ดนี้มี Soul Core วางอยู่ และ Burst ที่เซ็ทอยู่ของเราเป็น Soul Burst สีนี้ */
-  | { catalyzable: Color };
+  | { catalyzable: Color }
+  /** มีสปิริตเราที่ชื่อมีคำใดคำหนึ่งนี้ และมี Soul Core วางอยู่ */
+  | { allySoulNamed: string[] }
+  /** อยู่ใน Attack Step (เทิร์นใครก็ได้) */
+  | { attackStep: true }
+  /** กลับเงื่อนไข */
+  | { not: Condition };
 
 /** ตัวกรองการ์ด */
 export interface CardFilter {
@@ -36,6 +42,14 @@ export interface CardFilter {
   maxBp?: number;
   /** สภาพบนสนาม */
   state?: 'refresh' | 'exhausted';
+  /** คอสต์ที่พิมพ์บนการ์ด */
+  minCost?: number;
+  maxCost?: number;
+  cost?: number;
+  /** ชื่อการ์ดมีคำใดคำหนึ่งนี้ */
+  nameIncludes?: string[];
+  /** การ์ดมีเอฟเฟกต์ Burst */
+  hasBurst?: true;
 }
 
 /** ปลายทางของ Core จากวอยด์ */
@@ -46,6 +60,8 @@ export type VoidTarget =
   | 'reserve'
   /** สปิริตเรา 1 ตัวที่ไม่ใช่การ์ดนี้ (เลือก) */
   | 'otherAlly'
+  /** สปิริตเรา 1 ตัว (เลือก รวมการ์ดนี้) */
+  | 'ally'
   /** สปิริตเราที่ตรง filter ทุกตัว ตัวละ count */
   | 'allAllies';
 
@@ -64,7 +80,7 @@ export type Step =
   /** แสดงใบบนสุดเด็ค N ใบ เลือก 1 ใบที่ตรงตัวกรองขึ้นมือ ที่เหลือลง Trash */
   | { do: 'revealPickRestTrash'; count: number; filter: CardFilter }
   /** นำการ์ดในแทรชเรา 1 ใบที่ตรงตัวกรอง กลับขึ้นมือ */
-  | { do: 'returnFromTrash'; filter: CardFilter }
+  | { do: 'returnFromTrash'; filter: CardFilter; if?: Condition }
   /** เมื่อจบการต่อสู้นี้ จบ Attack Step */
   | { do: 'endAttackStepAfterBattle' }
   /**
@@ -82,7 +98,7 @@ export type Step =
    */
   | { do: 'chooseBlockers' }
   /** เราเลือกทิ้งการ์ดในมือ N ใบ */
-  | { do: 'discard'; count: number }
+  | { do: 'discard'; count: number; if?: Condition }
   /** นำ Core จากวอยด์ (Core ใหม่) วางที่ไลฟ์เรา */
   | { do: 'gainLifeFromVoid'; count: number }
   /** Burst: "หลังจากนั้นสามารถจ่ายคอสต์ เพื่อให้เอฟเฟกต์ [Flash] ของการ์ดนี้ทำงาน" (จ่ายหรือไม่ก็ได้) */
@@ -91,8 +107,33 @@ export type Step =
   | { do: 'openBurst' }
   /** สปิริตนี้ฟื้นสภาพ */
   | { do: 'refreshSelf' }
-  /** เลือกการ์ดของคู่แข่ง 1 ใบที่ตรงตัวกรองแล้วทำลาย (ไม่มีให้เลือก = ข้าม) */
-  | { do: 'destroyChosenOpponent'; filter: CardFilter }
+  /** เลือกการ์ดของคู่แข่งที่ตรงตัวกรองแล้วทำลาย count ตัว (ไม่ระบุ = 1, ไม่มีให้เลือก = ข้าม) */
+  | { do: 'destroyChosenOpponent'; filter: CardFilter; count?: number; exclude?: string[] }
+  /** ทำลายสปิริต/อัลติเมทของคู่แข่งที่คอสต์สูงสุด 1 ตัว (คอสต์สูงสุดเท่ากันหลายตัว = เลือก) */
+  | { do: 'destroyHighestCostOpponent'; filter: CardFilter }
+  /** ทิ้งใบบนสุดเด็คคู่แข่ง N ใบ ('level' = เท่าเลเวลของสปิริตนี้: [Crush]) */
+  | { do: 'mill'; count: number | 'level' }
+  /** ถ้าการ์ดที่ถูกทิ้งด้วย mill ล่าสุดของเอฟเฟกต์นี้ ตรงตัวกรองอย่างน้อย 1 ใบ: ทำ steps */
+  | { do: 'ifMilled'; filter: CardFilter; steps: Step[] }
+  /** ทิ้งใบบนสุดเด็คคู่แข่ง 1 ใบ ต่อคอสต์รวมของการ์ดคู่แข่งที่ถูกทำลายโดยเอฟเฟกต์นี้ */
+  | { do: 'millPerDestroyedCost' }
+  /** ทิ้งเบิร์สที่เซ็ทอยู่ของคู่แข่ง */
+  | { do: 'discardOpponentBurst' }
+  /** สปิริตที่เป็นต้นเหตุของ trigger (เช่น สปิริตที่ทิ้งเด็ค) ฟื้นสภาพ */
+  | { do: 'refreshSubject'; if?: Condition }
+  /**
+   * สามารถอัญเชิญการ์ดบนมือเรา 1 ใบที่ตรงตัวกรอง (จ่ายคอสต์ตามปกติ)
+   * fullReductionIf = ถ้าเงื่อนไขเป็นจริง การลดคอสต์ทั้งหมดถือว่าลดจนครบแล้ว
+   */
+  | { do: 'summonFromHand'; filter: CardFilter; fullReductionIf?: Condition }
+  /** (engine ใช้ภายใน) จ่ายคอสต์เพื่ออัญเชิญ cardId จากมือ */
+  | { do: 'payForSummon'; cardId: string; cost: number }
+  /** (engine ใช้ภายใน) ทำลายการ์ด (ไม่ถามเอฟเฟกต์แทนที่ซ้ำ) */
+  | { do: 'destroyCard'; cardId: string; by: 'p1' | 'p2'; bySource?: string }
+  /** (engine ใช้ภายใน) การ์ดอยู่บนสนามต่อในรูปแบบเสื่อมสภาพ */
+  | { do: 'exhaustCard'; cardId: string }
+  /** (engine ใช้ภายใน) ถือว่าถูกทำลายแล้ว แต่ยังอยู่บนสนามในรูปแบบเสื่อมสภาพ (เอฟเฟกต์แทนที่ของโดจินกาขาว) */
+  | { do: 'destroyedButStays'; cardId: string; by: 'p1' | 'p2'; bySource?: string }
   /** เสื่อมสภาพสปิริตคู่แข่ง N ตัว (เลือกทีละตัว จากตัวที่ยังฟื้นสภาพ) */
   | { do: 'exhaustOpponent'; count: number; filter?: CardFilter; if?: Condition }
   /** เสื่อมสภาพสปิริตคู่แข่งกี่ตัวก็ได้ BP รวมไม่เกิน maxTotal */
@@ -141,7 +182,9 @@ export type Step =
 export type StaticScope =
   | { self: true }
   /** สปิริตเผ่านี้ของเราทั้งหมด */
-  | { ownFamily: string };
+  | { ownFamily: string }
+  /** สปิริตเราที่ชื่อมีคำใดคำหนึ่งนี้ทั้งหมด */
+  | { ownNamed: string[] };
 
 /**
  * เหตุการณ์ที่ trigger รอ
@@ -163,13 +206,23 @@ export type TriggerEvent =
   | 'block'
   | 'allyAttack'
   | 'attackHitLife'
-  | 'allyAttackHitLife';
+  | 'allyAttackHitLife'
+  /** เราทิ้งเด็คคู่แข่งด้วยเอฟเฟกต์ (subject = สปิริตที่เป็นเจ้าของเอฟเฟกต์นั้น) */
+  | 'oppDeckMilled'
+  /** การ์ดนี้ถูกทำลายโดยคู่แข่ง (ต่อสู้หรือเอฟเฟกต์) */
+  | 'destroyedByOpponent';
 
 /** เงื่อนไขของสปิริตที่ทำให้ trigger แบบ ally* ทำงาน */
 export interface SubjectFilter {
   family?: string;
   /** มี Soul Core วางอยู่ */
   soul?: true;
+  /** ชื่อการ์ดมีคำใดคำหนึ่งนี้ */
+  nameIncludes?: string[];
+  /** ต้นเหตุคือการ์ดนี้เอง */
+  self?: true;
+  /** เอฟเฟกต์ต้นเหตุเป็นเอฟเฟกต์ "เมื่อสปิริตนี้โจมตี" */
+  attackEffect?: true;
 }
 
 /** เงื่อนไขเปิด Burst */
@@ -192,7 +245,20 @@ export type Ability =
       ownTurnOnly?: true;
       /** "เทิร์นละ 1 ครั้ง" */
       oncePerTurn?: true;
+      /** oppDeckMilled: การ์ดที่ถูกทิ้งต้องมีอย่างน้อย 1 ใบตรงตัวกรองนี้ */
+      milled?: CardFilter;
+      /** ทำงานขณะการ์ดอยู่บนมือ (ไม่ดูเลเวล) */
+      zone?: 'hand';
+      /** Brave: เอฟเฟกต์ที่ผู้ร่วมร่างได้รับ (ทำงานเมื่อผู้ร่วมร่างเกิดเหตุการณ์, "สปิริตนี้" = ผู้ร่วมร่าง) */
+      granted?: true;
     }
+  /** "แอทแท็คสเต็ปของเรา: สปิริต/อัลติเมทคอสต์ไม่เกิน maxCost ของคู่แข่งทั้งหมด เอฟเฟกต์จะไม่ทำงาน" */
+  | { kind: 'negateOpponentEffects'; source: number; levels: number[]; maxCost: number }
+  /**
+   * เมื่อสปิริตเราที่ตรง subject ถูกทำลายโดยเอฟเฟกต์ของคู่แข่ง: สามารถทิ้งใบบนสุดเด็คคู่แข่ง mill ใบ
+   * เพื่อให้สปิริตนั้นอยู่บนสนามต่อในรูปแบบเสื่อมสภาพ
+   */
+  | { kind: 'replaceDestroy'; source: number; levels: number[]; subject: SubjectFilter; mill: number }
   /**
    * "ดรอว์สเต็ปของเรา: จำนวนจั่วการ์ด +N" แต่ละรายการใน extraDraw บวกเพิ่มถ้าเงื่อนไขเป็นจริง
    * after = สิ่งที่ทำหลังจั่ว (เช่น ทิ้งการ์ด)

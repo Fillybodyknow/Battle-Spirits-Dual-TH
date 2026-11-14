@@ -1,6 +1,6 @@
 import type { CardDatabase, CardDef, Step } from '@bs/cards';
 import { assertUsableCore, checkDepletion, destroy, drawCard, emit, endGame, loseLife, newCore, payCost, setPhase, type Ctx } from './ctx';
-import { enqueue, fireTriggers, newBatch, queueTriggers, resolveChoice, runQueue } from './effects';
+import { destroyCard, enqueue, fireTriggers, newBatch, queueTriggers, resolveChoice, runQueue } from './effects';
 import { nextRandom, shuffle } from './rng';
 import {
   RuleError,
@@ -638,8 +638,8 @@ function resolveBattle(ctx: Ctx): void {
     const results = blockers.map((id) => ({ id, bp: currentBp(s, db, id) }));
     const destroyedBlockers = results.filter((r) => r.bp <= bpA).map((r) => r.id);
     const attackerLoses = results.some((r) => bpA <= r.bp);
-    for (const id of destroyedBlockers) destroy(ctx, id, attacker.owner);
-    if (attackerLoses) destroy(ctx, attacker.id, defender);
+    for (const id of destroyedBlockers) destroyCard(ctx, id, attacker.owner);
+    if (attackerLoses) destroyCard(ctx, attacker.id, defender);
 
     const perBlocker = battle.lifeOnBlockerDestroyed + (battle.consecutiveBlade ? battle.lifeOnBlockerDestroyedByBlade : 0);
     if (destroyedBlockers.length > 0 && perBlocker > 0) {

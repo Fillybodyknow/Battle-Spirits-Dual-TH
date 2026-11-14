@@ -113,6 +113,16 @@ export interface QueuedEffect {
   announce?: boolean;
   /** Burst ที่ถูกสั่งใช้โดย [Catalyze] */
   catalyzed?: boolean;
+  /** การ์ดที่ถูกทิ้งด้วย mill ล่าสุดของเอฟเฟกต์นี้ */
+  milled?: string[];
+  /** ตำแหน่งใน log ตอนเอฟเฟกต์เริ่ม (นับการ์ดที่ถูกทำลายโดยเอฟเฟกต์นี้) */
+  logStart?: number;
+  /** สปิริตที่เป็นต้นเหตุของ trigger นี้ */
+  subjectId?: string;
+  /** เอฟเฟกต์นี้มาจาก "เมื่อสปิริตนี้โจมตี" */
+  fromAttack?: boolean;
+  /** มี Soul Core บนการ์ดนี้ตอนเกิด trigger (การ์ดที่ออกจากสนามไปแล้ว) */
+  soulSnapshot?: boolean;
 }
 
 /** การตัดสินใจที่ engine รอจากผู้เล่น (ระหว่างนี้ทำได้แค่ choose หรือ concede) */
@@ -249,7 +259,8 @@ export type GameEvent =
   | { type: 'noBlock' }
   | { type: 'flashPassed'; player: PlayerId }
   | { type: 'lifeLost'; player: PlayerId; amount: number }
-  | { type: 'destroyed'; cardId: string }
+  /** bySource = การ์ดที่เป็นเจ้าของเอฟเฟกต์ที่ทำลาย */
+  | { type: 'destroyed'; cardId: string; bySource?: string; stays?: true }
   | { type: 'battleEnded' }
   | { type: 'gameOver'; winner: PlayerId; reason: EndReason }
   /** source = index บรรทัดเอฟเฟกต์ใน CardDef.effects */
@@ -260,6 +271,7 @@ export type GameEvent =
   | { type: 'mustBlock'; cardId: string }
   | { type: 'cardsRevealed'; player: PlayerId; cardIds: string[] }
   | { type: 'cardToHand'; player: PlayerId; cardId: string; from: 'deck' | 'trash' }
+  /** player = เจ้าของเด็ค */
   | { type: 'milled'; player: PlayerId; cardIds: string[] }
   | { type: 'optionChosen'; player: PlayerId; option: string }
   | { type: 'evolved'; cardId: string; count: number; soul: boolean }

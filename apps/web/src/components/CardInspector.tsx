@@ -1,7 +1,7 @@
 import { rarityOf, type CardDef, type SymbolColor, type TextEffect } from '@bs/cards';
 import { bpOf, cardLevel, currentBp, payableCost, type GameState } from '@bs/engine';
 import { cardArt } from '../assets';
-import { COLOR_BG, COLOR_LABEL, RARITY_BADGE, TYPE_LABEL, playerLabel } from '../format';
+import { braveText, COLOR_BG, COLOR_LABEL, RARITY_BADGE, TYPE_LABEL, playerLabel } from '../format';
 import { useEffect, useRef } from 'react';
 import { actingPlayer, db, useGame, hiddenFrom, resolvingEffect } from '../store';
 import { CardBack, CardFace } from './CardFace';
@@ -246,7 +246,22 @@ export function CardInspector() {
 
       {/* เอฟเฟกต์ (เลื่อนอ่านได้) */}
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
+        {(() => {
+          const bt = braveText(def.braveCondition);
+          if (!bt) return null;
+          return (
+            <div className="mb-2.5 rounded-lg bg-teal-900/30 px-2 py-1.5 ring-1 ring-teal-400/30">
+              <div className="mb-0.5 flex items-center gap-1">
+                <span className="rounded bg-teal-600 px-1 text-[10px] font-bold text-white">Brave</span>
+                <span className="text-[11px] font-bold text-teal-200">เงื่อนไขร่วมร่าง</span>
+              </div>
+              <p className="text-[15px] leading-relaxed text-teal-100">{bt.cond}</p>
+              {bt.bonus && <p className="text-[15px] leading-relaxed text-sky-200">เอฟเฟกต์ติดตัวที่ให้ผู้ร่วมร่าง: {bt.bonus}</p>}
+            </div>
+          );
+        })()}
         {effects.length === 0 ? (
+          def.braveCondition ? null : 
           <p className="text-sm text-slate-500">ไม่มีเอฟเฟกต์</p>
         ) : (
           <div className="flex flex-col gap-2.5">
@@ -271,6 +286,8 @@ export function CardInspector() {
                         {TIMING_LABEL[e.timing]}
                       </span>
                     )}
+                    {e.granted && <span className="rounded bg-teal-600 px-1 text-[10px] font-bold text-white">ผู้ร่วมร่างได้รับ</span>}
+                    {e.hand && <span className="rounded bg-sky-700 px-1 text-[10px] font-bold text-white">บนมือ</span>}
                     {hot && <span className="rounded bg-amber-400 px-1 text-[10px] font-black text-slate-900">กำลังทำงาน</span>}
                     <span
                       className={`ml-auto rounded px-1 text-[10px] ${auto ? 'text-emerald-300' : 'text-amber-300'}`}

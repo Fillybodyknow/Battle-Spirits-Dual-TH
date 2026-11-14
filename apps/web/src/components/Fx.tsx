@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { opponentOf } from '@bs/engine';
 import { cardArt } from '../assets';
-import { actingPlayer, chainEntries, viewPlayer, db, GHOST_MS, isFxBlocking, layoutRect, PLAY_HIT, useGame, type Fx, type Rect, hiddenFrom } from '../store';
+import { actingPlayer, chainEntries, viewPlayer, db, GHOST_MS, isFxBlocking, layoutRect, MILL_MS, millBreakAt, millDuration, PLAY_HIT, useGame, type Fx, type Rect, hiddenFrom } from '../store';
 import { CardBack, CardFace } from './CardFace';
 import { sfx } from '../sfx';
 import { playerLabel } from '../format';
@@ -236,7 +236,7 @@ export function FxLayer() {
       {fx.map((f) => (f.kind === 'finalBlow' ? <FinalBlow key={f.id} fx={f} onDone={() => dismiss(f.id)} /> : null))}
       {current?.kind === 'summon' && <SummonCutIn key={current.id} fx={current} onDone={() => dismiss(current.id)} />}
       {/* ป๊อปอัปเอฟเฟกต์มุมขวาบน (ใต้ป้ายผู้เล่นคู่แข่ง) อยู่เหนือจอสลัว */}
-      <div className="pointer-events-none fixed top-24 right-3 z-40 flex w-[340px] flex-col gap-2">
+      <div className="pointer-events-none fixed top-24 right-3 z-[48] flex w-[340px] flex-col gap-2">
         {toasts.map((t) => (
           <ActivateToast key={t.id} fx={t} onDone={() => dismiss(t.id)} />
         ))}
@@ -259,6 +259,8 @@ export function FxLayer() {
           <ChainAddFx key={f.id} fx={f} onDone={() => dismiss(f.id)} />
         ) : f.kind === 'reveal' ? (
           <RevealFx key={f.id} fx={f} onDone={() => dismiss(f.id)} />
+        ) : f.kind === 'mill' ? (
+          <MillFx key={f.id} fx={f} onDone={() => dismiss(f.id)} />
         ) : f.kind === 'target' ? (
           <TargetFx key={f.id} fx={f} onDone={() => dismiss(f.id)} />
         ) : f.kind === 'chain' ? (
@@ -614,78 +616,116 @@ function SkipOverlay() {
   );
 }
 
-/** การ์ดบนสนามที่เอฟเฟกต์ทำงาน: ยกขึ้น ขยาย และเรืองแสงทอง แล้วค่อยวางกลับ */
+/**
+ * การ์ดที่เอฟเฟกต์ทำงาน (บนสนาม/บนมือ): ทั้งจอสลัวลง แล้วสำเนาการ์ดลอยขึ้นเหนือทุกอย่าง ขยาย เรืองแสงทอง มีวงไฮไลต์รอบการ์ด แล้ววางกลับ
+ * การ์ดตัวจริงซ่อนไว้ระหว่างนั้น (สำเนาอยู่ชั้นบนสุด ไม่ติดลำดับชั้นของกระดาน)
+ */
 function CardActivate({ fx, onDone }: { fx: Extract<Fx, { kind: 'cardActivate' }>; onDone: () => void }) {
-  const [burst, setBurst] = useState<Rect | null>(null);
-  /** ช่องสว่างของ spotlight (ตำแหน่งการ์ดตอนยกขึ้น) — ทั้งจอนอกช่องนี้สลัวลง */
-  const [spot, setSpot] = useState<Rect | null>(null);
+  const card = useGame((s) => s.state.cards[fx.cardId]);
+  const [view, setView] = useState<{ rect: Rect; lift: number; k: number; lying: boolean; faceDown: boolean; upside: boolean } | null>(null);
+  const [burst, setBurst] = useState(false);
+  const cloneRef = useRef<HTMLDivElement>(null);
+  /** กล่องที่หมุนตามการ์ด (นอน/กลับหัว): วงไฮไลต์อยู่ที่นี่ ให้ขอบเรืองแสงตามรูปการ์ด */
+  const ringRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const el = fx.hand
       ? document.querySelector<HTMLElement>(`[data-hand-card="${fx.cardId}"]`)
-      : document.querySelector<HTMLElement>(`[data-field-card="${fx.cardId}"] > div:first-child`);
-    if (!el) return onDone();
-    // กระดาน/มือฝั่งบนกลับหัว: "ยกขึ้น" = เลื่อนลงบนจอ
-    const top = !!el.closest('[data-mat].rotate-180') || (fx.hand && el.getBoundingClientRect().top < window.innerHeight / 2);
-    const lift = fx.hand ? (top ? 40 : -40) : -18;
-    const r = el.getBoundingClientRect();
-    const k = fx.hand ? 1.18 : 1.14;
-    const screenLift = fx.hand ? lift : top ? 18 : -18;
-    setSpot({ x: r.x - (r.width * (k - 1)) / 2, y: r.y - (r.height * (k - 1)) / 2 + screenLift, w: r.width * k, h: r.height * k });
-    const showBurst = setTimeout(() => setBurst(layoutRect(el)), fx.delay + fx.duration * 0.2);
-    const glow = 'drop-shadow(0 0 14px rgba(250,204,21,0.95)) drop-shadow(0 0 4px rgba(255,255,255,0.9)) brightness(1.25)';
-    const anim = el.animate(
-      [
-        { transform: 'translateY(0) scale(1)', filter: 'none' },
-        { transform: `translateY(${lift}px) scale(${k})`, filter: glow, offset: 0.25 },
-        { transform: `translateY(${lift}px) scale(${k})`, filter: glow, offset: 0.8 },
-        { transform: 'translateY(0) scale(1)', filter: 'none' },
-      ],
-      // การ์ดบนมือมี transform ของพัดอยู่แล้ว: ซ้อนทับ (add) ไม่ทับของเดิม
-      { duration: fx.duration, delay: fx.delay, easing: 'cubic-bezier(.3,.7,.3,1)', composite: fx.hand ? 'add' : 'replace' },
-    );
-    const z = setTimeout(() => (el.style.zIndex = '30'), fx.delay);
-    anim.onfinish = () => {
-      el.style.zIndex = '';
+      : fx.brave
+        ? document.querySelector<HTMLElement>(`[data-brave-card="${fx.cardId}"]`)
+        : document.querySelector<HTMLElement>(`[data-field-card="${fx.cardId}"] > div:first-child`);
+    const owner = useGame.getState().state.cards[fx.cardId]?.owner;
+    if (!el || !owner) return onDone();
+    // การ์ดบนสนาม: ซ่อนแค่หน้าการ์ด (ป้าย BP / Brave ที่ร่วมร่างยังอยู่)
+    const face = !fx.hand && !fx.brave ? ((el.firstElementChild as HTMLElement | null) ?? el) : el;
+    // ขนาดจริงของกล่อง (ไม่รวมการหมุนของพัดบนมือ) วางกลางกรอบที่เห็นบนจอ
+    const bb = el.getBoundingClientRect();
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    const rect = { x: bb.x + bb.width / 2 - w / 2, y: bb.y + bb.height / 2 - h / 2, w, h };
+    const upside = upsideFor(owner);
+    // "ยกขึ้น" เข้าหาเจ้าของการ์ด: ฝั่งตรงข้ามเลื่อนลงบนจอ
+    const lift = fx.hand ? (upside ? 110 : -130) : fx.brave ? (upside ? 40 : -40) : upside ? 26 : -26;
+    setView({
+      rect,
+      lift,
+      k: fx.hand ? 1.3 : fx.brave ? 1.9 : 1.24,
+      lying: !fx.hand && !fx.brave && w > h,
+      faceDown: !!fx.hand && hiddenFrom(useGame.getState(), owner),
+      upside,
+    });
+    const hide = setTimeout(() => (face.style.visibility = 'hidden'), fx.delay);
+    const showBurst = setTimeout(() => setBurst(true), fx.delay + fx.duration * 0.2);
+    const end = setTimeout(() => {
+      face.style.visibility = '';
       onDone();
-    };
+    }, fx.delay + fx.duration);
     return () => {
-      clearTimeout(z);
-      clearTimeout(showBurst);
-      el.style.zIndex = '';
-      anim.cancel();
+      [hide, showBurst, end].forEach(clearTimeout);
+      face.style.visibility = '';
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useLayoutEffect(() => {
+    const el = cloneRef.current;
+    if (!el || !view) return;
+    const glow = 'drop-shadow(0 0 16px rgba(250,204,21,0.95)) drop-shadow(0 0 4px rgba(255,255,255,0.9)) brightness(1.18)';
+    const ring = '0 0 0 3px rgba(253,224,71,0.95), 0 0 26px 8px rgba(250,204,21,0.75)';
+    // fill forwards: ระหว่างรอถึงคิว (delay) ใช้สไตล์ตั้งต้น opacity 0 = ยังไม่โผล่ (ไม่ทับการ์ดตัวจริงตอน Chain ก่อนหน้ายังเล่นอยู่)
+    const timing = { duration: fx.duration, delay: fx.delay, easing: 'cubic-bezier(.3,.7,.3,1)', fill: 'forwards' } as const;
+    const anim = el.animate(
+      [
+        { transform: 'translateY(0) scale(1)', filter: 'none', opacity: 1 },
+        { transform: `translateY(${view.lift}px) scale(${view.k})`, filter: glow, opacity: 1, offset: 0.22 },
+        { transform: `translateY(${view.lift}px) scale(${view.k * 1.02})`, filter: glow, opacity: 1, offset: 0.5 },
+        { transform: `translateY(${view.lift}px) scale(${view.k})`, filter: glow, opacity: 1, offset: 0.82 },
+        { transform: 'translateY(0) scale(1)', filter: 'none', opacity: 1 },
+      ],
+      timing,
+    );
+    const ringAnim = ringRef.current?.animate(
+      [
+        { boxShadow: '0 0 0 0 rgba(253,224,71,0)' },
+        { boxShadow: ring, offset: 0.22 },
+        { boxShadow: '0 0 0 4px rgba(254,240,138,1), 0 0 40px 14px rgba(250,204,21,0.9)', offset: 0.5 },
+        { boxShadow: ring, offset: 0.82 },
+        { boxShadow: '0 0 0 0 rgba(253,224,71,0)' },
+      ],
+      timing,
+    );
+    return () => {
+      anim.cancel();
+      ringAnim?.cancel();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view]);
+
+  if (!view || !card) return null;
+  const { rect } = view;
+  const cw = view.lying ? rect.h : rect.w;
+  const ch = view.lying ? rect.w : rect.h;
+  const def = db.get(card.cardNo);
   return (
     <>
-      {spot && <Spotlight rect={spot} delay={fx.delay} duration={fx.duration} />}
-      {burst && <Sunburst burst={burst} duration={fx.duration} />}
+      {/* ทั้งจอสลัว (รวม HUD) */}
+      <div className="pointer-events-none fixed inset-0 z-[45] bg-slate-950/75" style={{ animation: `fx-spot ${fx.duration}ms ${fx.delay}ms ease-out both` }} />
+      {burst && <Sunburst burst={{ ...rect, y: rect.y + view.lift + 18 }} duration={fx.duration} />}
+      {/* สำเนาการ์ดเหนือจอสลัว + วงไฮไลต์ */}
+      <div className="pointer-events-none fixed z-[47] flex items-center justify-center" style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h }}>
+        <div ref={cloneRef} className="rounded-lg" style={{ width: cw, height: ch, transform: 'scale(1)', opacity: 0 }}>
+          <div ref={ringRef} className="h-full w-full rounded-lg" style={{ transform: `${view.lying ? 'rotate(90deg)' : ''} ${view.upside ? 'rotate(180deg)' : ''}`.trim() || undefined }}>
+            {view.faceDown ? <CardBack /> : <CardFace def={def} />}
+          </div>
+        </div>
+      </div>
     </>
-  );
-}
-
-/** ทั้งจอสลัวลง ยกเว้นช่องรอบการ์ดที่เอฟเฟกต์ทำงาน (เงาขนาดใหญ่รอบกล่องโปร่ง) */
-function Spotlight({ rect, delay, duration }: { rect: Rect; delay: number; duration: number }) {
-  const pad = 10;
-  return (
-    <div
-      className="pointer-events-none fixed z-[28] rounded-2xl"
-      style={{
-        left: rect.x - pad,
-        top: rect.y - pad,
-        width: rect.w + pad * 2,
-        height: rect.h + pad * 2,
-        boxShadow: '0 0 0 200vmax rgba(2,6,23,0.62), 0 0 40px 18px rgba(2,6,23,0.62)',
-        animation: `fx-spot ${duration}ms ${delay}ms ease-out both`,
-      }}
-    />
   );
 }
 
 function Sunburst({ burst, duration }: { burst: Rect; duration: number }) {
   const fx = { duration };
   return (
-    <div className="pointer-events-none fixed z-[29]" style={{ left: burst.x + burst.w / 2, top: burst.y + burst.h / 2 - 18 }}>
+    <div className="pointer-events-none fixed z-[46]" style={{ left: burst.x + burst.w / 2, top: burst.y + burst.h / 2 - 18 }}>
       <div
         className="absolute h-72 w-72 rounded-full"
         style={{
@@ -820,23 +860,6 @@ function FinalBlow({ fx, onDone }: { fx: Extract<Fx, { kind: 'finalBlow' }>; onD
           }}
         />
       ))}
-      {/* ข้อความ */}
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <div style={{ animation: 'fx-fb-text 2.6s cubic-bezier(.2,.9,.3,1) 0.32s both' }}>
-          <div
-            className="bg-gradient-to-b from-white via-yellow-200 to-amber-500 bg-clip-text text-[7rem] leading-none font-black tracking-tight text-transparent italic"
-            style={{ filter: 'drop-shadow(0 4px 0 #7c2d12) drop-shadow(0 0 24px rgba(251,191,36,0.85)) drop-shadow(0 0 60px rgba(239,68,68,0.7))', transform: 'skewX(-8deg)' }}
-          >
-            FINAL BLOW
-          </div>
-        </div>
-        <div
-          className="mt-3 rounded-full bg-black/70 px-5 py-1 text-lg font-bold text-rose-200 shadow"
-          style={{ animation: 'fx-fb-sub 2.6s ease-out 0.6s both' }}
-        >
-          Life ของ {playerLabel(fx.loser)} เหลือ 0
-        </div>
-      </div>
       {/* แสงวาบ */}
       <div className="absolute inset-0 bg-white" style={{ animation: 'fx-fb-flash 0.55s ease-out both' }} />
     </div>
@@ -936,7 +959,7 @@ function ChainAddFx({ fx, onDone }: { fx: Extract<Fx, { kind: 'chainAdd' }>; onD
     if (!on) return;
     const el = ref.current;
     const to = layoutRect(document.querySelector(`[data-chain-slot="${fx.index}"]`));
-    const from = layoutRect(document.querySelector(`[data-field-card="${fx.cardId}"] > div:first-child`)) ?? boardCenter(150, 210);
+    const from = layoutRect(document.querySelector(`[data-field-card="${fx.cardId}"] > div:first-child`) ?? document.querySelector(`[data-brave-card="${fx.cardId}"]`)) ?? boardCenter(150, 210);
     const spot = stackLayout(sides)[fx.index];
     if (!el || !to || !spot) return onDone();
     const big = { x: spot.x - spot.w * 0.06, y: spot.y - spot.h * 0.06, w: spot.w * 1.12, h: spot.h * 1.12 };
@@ -1358,6 +1381,11 @@ const HIT_AT = 0.45; // สัดส่วนเวลาที่ชนเป�
  * ใช้การ์ดโคลนลอยเหนือกระดาน เพราะแผ่นรองเล่นตัดสิ่งที่ล้นขอบ การ์ดจริงถูกซ่อนระหว่างนี้
  */
 function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: () => void }) {
+  const [{ card, onBoard }] = useState(() => {
+    const st = useGame.getState().state;
+    const c = st.cards[fx.cardId];
+    return { card: c, onBoard: !!c && st.players[c.owner].field.includes(fx.cardId) };
+  });
   const ref = useRef<HTMLDivElement>(null);
   const [impact, setImpact] = useState<{ x: number; y: number } | null>(null);
   // ขนาดการ์ดตั้งตรง (กล่องนอกของการ์ดที่นอนอยู่จะกว้างกว่าสูง)
@@ -1399,8 +1427,12 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
         { transform: `translate(${hx}px,${hy}px) rotate(0deg) scale(1.18)`, offset: HIT_AT, easing: 'ease-out' },
         ...end,
       ],
-      { duration: CHARGE_MS, delay: fx.delay, easing: 'cubic-bezier(.5,0,.3,1)', fill: 'both' },
+      // ผู้โจมตีที่ยังอยู่บนสนาม: ก่อนถึงคิวแสดงการ์ดตัวจริง (มี Core / BP / Brave) แล้วค่อยสลับเป็นภาพที่วิ่ง
+      // ผู้โจมตีที่แพ้ (ออกจากสนามแล้ว): ภาพนี้ยืนแทนที่ช่องเดิมไปจนวิ่ง
+      { duration: CHARGE_MS, delay: fx.delay, easing: 'cubic-bezier(.5,0,.3,1)', fill: onBoard ? 'forwards' : 'both' },
     );
+    const real = onBoard ? document.querySelector<HTMLElement>(`[data-field-card="${fx.cardId}"]`) : null;
+    const swap = setTimeout(() => real && (real.style.visibility = 'hidden'), fx.delay);
     const hit = setTimeout(() => {
       setImpact({ x: cx + hx, y: cy + hy });
       // จอสั่น + เป้าหมายสั่น
@@ -1412,9 +1444,14 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
         document.querySelector(fx.target)?.animate([{ filter: 'brightness(2.5)' }, { filter: 'brightness(1)' }], { duration: 400 });
       }
     }, fx.delay + CHARGE_MS * HIT_AT);
-    anim.onfinish = onDone;
+    anim.onfinish = () => {
+      if (real) real.style.visibility = '';
+      onDone();
+    };
     return () => {
       clearTimeout(hit);
+      clearTimeout(swap);
+      if (real) real.style.visibility = '';
       anim.cancel();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1425,10 +1462,18 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
       <div
         ref={ref}
         className="pointer-events-none fixed z-[42] rounded-lg shadow-[0_10px_30px_rgba(0,0,0,0.7)]"
-        style={{ left: cx - cardW / 2, top: cy - cardH / 2, width: cardW, height: cardH }}
+        style={{ left: cx - cardW / 2, top: cy - cardH / 2, width: cardW, height: cardH, ...(onBoard ? { opacity: 0 } : {}) }}
       >
-        <Upside on={upsideFor(useGame.getState().state.cards[fx.cardId]?.owner)}>
-          <CardFace def={db.get(fx.cardNo)} />
+        <Upside on={upsideFor(card?.owner)}>
+          <div className="relative h-full w-full">
+            <CardFace def={db.get(fx.cardNo)} />
+            {/* Brave ที่ร่วมร่าง วิ่งไปพร้อมผู้ร่วมร่าง */}
+            {(card?.braves ?? []).map((b) => (
+              <div key={b} className="absolute top-6 -right-8 h-[4.6rem] w-[3.3rem] rotate-12 rounded shadow-[0_4px_10px_rgba(0,0,0,0.7)] ring-2 ring-emerald-300">
+                <CardFace def={db.get(useGame.getState().state.cards[b]!.cardNo)} size="xs" />
+              </div>
+            ))}
+          </div>
         </Upside>
       </div>
       {impact && (
@@ -1503,7 +1548,7 @@ function Ghost({ fx, onDone }: { fx: Extract<Fx, { kind: 'ghost' }>; onDone: () 
   return (
     <div className="pointer-events-none fixed z-[41]" style={{ left: fx.rect.x, top: fx.rect.y, width: fx.rect.w, height: fx.rect.h, ...vars }}>
       <div className="absolute inset-0 flex items-center justify-center">
-        <div className="relative shrink-0" style={{ width: cardW, height: cardH, transform: `${lying ? 'rotate(90deg)' : ''} ${upsideFor(fx.owner) ? 'rotate(180deg)' : ''}`.trim() || undefined }}>
+        <div className="relative shrink-0" style={{ width: cardW, height: cardH, transform: `${lying ? 'rotate(90deg)' : ''} ${!fx.upright && upsideFor(fx.owner) ? 'rotate(180deg)' : ''}`.trim() || undefined }}>
           {destroy ? (
             <>
               {/* การ์ดสั่น + รอยร้าว แล้วหายไปตอนแตก */}
@@ -1605,6 +1650,82 @@ function Ghost({ fx, onDone }: { fx: Extract<Fx, { kind: 'ghost' }>; onDone: () 
         />
       ))}
     </div>
+  );
+}
+
+/**
+ * การ์ดถูกทิ้งจากเด็ค: บินจากเด็คมาเรียงหงายกลางสนามของเจ้าของเด็คทีละใบ → ค้างให้อ่าน → แตกทีละใบเป็นดวงวิญญาณลง Trash
+ */
+function MillFx({ fx, onDone }: { fx: Extract<Fx, { kind: 'mill' }>; onDone: () => void }) {
+  const n = fx.cardIds.length;
+  useAutoDismiss(onDone, fx.delay + millDuration(n));
+  // ตำแหน่งการ์ดแต่ละใบ: แถวเดียวกลางสนามของเจ้าของเด็ค (ใบเยอะ = ซ้อนกันมากขึ้น)
+  const [slots] = useState<Rect[]>(() => {
+    // กลางจอ
+    const w = 110;
+    const h = 154;
+    const maxW = Math.min(window.innerWidth * 0.7, 1100);
+    const gap = n > 1 ? Math.min(w + 14, (maxW - w) / (n - 1)) : 0;
+    const left = window.innerWidth / 2 - (w + gap * (n - 1)) / 2;
+    const top = window.innerHeight / 2 - h / 2;
+    return fx.cardIds.map((_, i) => ({ x: left + gap * i, y: top, w, h }));
+  });
+  const [broken, setBroken] = useState(0);
+  const refs = useRef<(HTMLDivElement | null)[]>([]);
+  useLayoutEffect(() => {
+    const deck = rectOf(document.querySelector(`[data-deck="${fx.owner}"]`));
+    const anims = refs.current.map((el, i) => {
+      if (!el) return null;
+      const s = slots[i]!;
+      const dx = deck ? deck.x + deck.w / 2 - (s.x + s.w / 2) : 0;
+      const dy = deck ? deck.y + deck.h / 2 - (s.y + s.h / 2) : 0;
+      return el.animate(
+        [
+          { transform: `translate(${dx}px, ${dy}px) scale(0.45) rotateY(180deg)`, opacity: 0 },
+          { transform: `translate(${dx * 0.4}px, ${dy * 0.4 - 40}px) scale(0.9) rotateY(90deg)`, opacity: 1, offset: 0.45 },
+          { transform: 'translate(0, 0) scale(1) rotateY(0deg)', opacity: 1 },
+        ],
+        { duration: MILL_MS.fly, delay: fx.delay + i * MILL_MS.show, easing: 'cubic-bezier(.25,.8,.3,1)', fill: 'backwards' },
+      );
+    });
+    const timers = fx.cardIds.map((_, i) => setTimeout(() => setBroken(i + 1), fx.delay + millBreakAt(n, i)));
+    return () => {
+      timers.forEach(clearTimeout);
+      anims.forEach((a) => a?.cancel());
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const cards = useGame((s) => s.state.cards);
+  return (
+    <>
+      {fx.cardIds.map((id, i) => {
+        const s = slots[i]!;
+        const card = cards[id];
+        if (!card) return null;
+        if (i < broken) {
+          return (
+            <Ghost
+              key={id}
+              fx={{ id: -1 - i, kind: 'ghost', cardId: id, owner: fx.owner, slot: -1, cardNo: card.cardNo, rect: s, mode: 'destroy', delay: 0, upright: true }}
+              onDone={() => {}}
+            />
+          );
+        }
+        return (
+          <div
+            key={id}
+            ref={(el) => {
+              refs.current[i] = el;
+            }}
+            className="pointer-events-none fixed z-[41] rounded-lg shadow-[0_10px_24px_rgba(0,0,0,0.7)]"
+            style={{ left: s.x, top: s.y, width: s.w, height: s.h, zIndex: 41 + i, perspective: 800 }}
+          >
+            {/* ตั้งตรงเสมอ ให้อ่านง่ายว่าทิ้งอะไรไปบ้าง */}
+            <CardFace def={db.get(card.cardNo)} />
+          </div>
+        );
+      })}
+    </>
   );
 }
 

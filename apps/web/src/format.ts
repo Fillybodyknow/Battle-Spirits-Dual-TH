@@ -99,7 +99,7 @@ export function formatEvent(e: GameEvent, s: GameState): string | null {
     case 'lifeLost':
       return `${playerLabel(e.player)} เสีย Life ${e.amount}`;
     case 'destroyed':
-      return `${name(e.cardId)} ถูกทำลาย`;
+      return e.stays ? `${name(e.cardId)} ถูกทำลาย แต่ยังอยู่บนสนามแบบเสื่อมสภาพ` : `${name(e.cardId)} ถูกทำลาย`;
     case 'battleEnded':
       return null;
     case 'effectResolving':
@@ -168,3 +168,12 @@ export const RARITY_BADGE: Record<number, string> = {
   5: 'bg-gradient-to-r from-amber-300 to-rose-400 text-slate-950',
   6: 'bg-gradient-to-r from-yellow-200 via-amber-400 to-fuchsia-500 text-slate-950',
 };
+
+/** ข้อความเงื่อนไขร่วมร่างของ Brave */
+export function braveText(b: { minCost?: number; bp?: number; maxSpirits?: number } | undefined): { cond: string; bonus: string | null } | null {
+  if (!b) return null;
+  return {
+    cond: b.minCost !== undefined ? `ร่วมร่างกับสปิริตคอสต์ตั้งแต่ ${b.minCost} ขึ้นไป` : 'ร่วมร่างกับสปิริตได้',
+    bonus: b.bp ? `ผู้ร่วมร่าง BP +${b.bp.toLocaleString()}` : null,
+  };
+}

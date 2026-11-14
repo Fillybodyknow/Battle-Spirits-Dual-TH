@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { TextEffect } from '@bs/cards';
-import type { PlayerId } from '@bs/engine';
+import { opponentOf, symbolCount, type PlayerId } from '@bs/engine';
 import { playerLabel } from '../format';
 import { actingPlayer, chainEntries, db, isFxBlocking, useGame, viewPlayer } from '../store';
 import { CardFace } from './CardFace';
@@ -212,6 +212,53 @@ export function TurnAura() {
           }}
         />
       ))}
+    </div>
+  );
+}
+
+/**
+ * การโจมตีนี้ถึงตาย (ไม่นับเอฟเฟกต์): ยังไม่มีผู้ป้องกัน และ Life ที่จะเสีย ≥ Life ที่เหลือของฝ่ายป้องกัน
+ * แสดงแถบ "Final Blow !" วิ่งตามขอบซ้าย-ขวาของจอ
+ */
+export function FinalBlowWarning() {
+  const state = useGame((s) => s.state);
+  const battle = state.battle;
+  if (!battle || state.winner || battle.blockers.length > 0) return null;
+  const attacker = state.cards[battle.attackerId];
+  if (!attacker) return null;
+  const defender = opponentOf(attacker.owner);
+  const dmg = symbolCount(db.get(attacker.cardNo)) + attacker.braves.reduce((n, b) => n + symbolCount(db.get(state.cards[b]!.cardNo)), 0);
+  const life = state.players[defender].life.length;
+  if (dmg <= 0 || dmg < life) return null;
+  const text = Array.from({ length: 14 }, () => 'Final Blow !').join('  ');
+  const band = (side: 'left' | 'right') => (
+    <div
+      className={`absolute inset-y-[-10%] w-14 overflow-hidden ${side === 'left' ? 'left-0' : 'right-0'}`}
+      style={{
+        background: 'linear-gradient(90deg, #a3e635, #fde047 50%, #a3e635)',
+        boxShadow: '0 0 24px 6px rgba(190,242,100,0.55)',
+        transform: `rotate(${side === 'left' ? 4 : -4}deg)`,
+        animation: `fb-band-in-${side} 0.45s cubic-bezier(.2,.9,.3,1) both`,
+      }}
+    >
+      <div
+        className="absolute top-0 left-1/2 text-[2.1rem] font-black whitespace-nowrap text-rose-600 italic [text-shadow:0_2px_0_rgba(255,255,255,0.6)]"
+        style={{
+          writingMode: 'vertical-rl',
+          transform: `translateX(-50%) ${side === 'left' ? 'rotate(180deg)' : ''}`,
+          animation: `fb-band-scroll-${side} 9s linear infinite`,
+        }}
+      >
+        {text}
+      </div>
+    </div>
+  );
+  return (
+    <div className="pointer-events-none fixed inset-0 z-[41] overflow-hidden" key={battle.attackerId}>
+      {/* ขอบจอแดงเรือง */}
+      <div className="absolute inset-0" style={{ boxShadow: 'inset 0 0 120px 30px rgba(244,63,94,0.35)', animation: 'aura-pulse 1.2s ease-in-out infinite' }} />
+      {band('left')}
+      {band('right')}
     </div>
   );
 }

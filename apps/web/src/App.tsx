@@ -4,7 +4,7 @@ import { playerLabel } from './format';
 import { DECKS, onlineAvailable, onlineVia, useGame, viewPlayer, type CutInMode, type DeckId } from './store';
 import { HandFan, PlayerMat } from './components/Board';
 import { ChoiceDialog, ErrorToast, PromptBar, TrashDialog } from './components/Controls';
-import { CornerButtons, FloatingInspector, PlayerPlate, TurnAura } from './components/Hud';
+import { CornerButtons, FinalBlowWarning, FloatingInspector, PlayerPlate, TurnAura } from './components/Hud';
 import { PlayDialog } from './components/PlayDialog';
 import { BTN } from './components/Modal';
 import { setSfx, sfx, sfxSettings } from './sfx';
@@ -334,6 +334,7 @@ function GameScreen() {
       </div>
 
       {/* HUD: ป้ายผู้เล่น / รายละเอียดการ์ดลอย / ปุ่มมุมขวาล่าง */}
+      <FinalBlowWarning />
       <PlayerPlate player={bottom} corner="bottom-left" />
       <PlayerPlate player={top} corner="top-right" />
       <FloatingInspector enabled={inspector} />

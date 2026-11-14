@@ -8,6 +8,8 @@
  *  - บล็อกที่ไม่ได้ขึ้นต้นด้วยการ์ด = รายการเด็ค บรรทัดละ "<ชื่อการ์ด> <จำนวน>"
  *  - บรรทัดที่ขึ้นต้นด้วย "(" = หมายเหตุ (บรรทัดย่อหน้าที่ตามมาเป็นหมายเหตุด้วย) ไม่นำไปใช้
  *  - "Brave: เงื่อนไขร่วมร่าง : คอสต์ตั้งแต่ N ขึ้นไป" + ย่อหน้า "เอฟเฟกต์ติดตัวที่ให้ผู้ร่วมร่าง: BP +N"
+ *    บรรทัดย่อหน้าใต้ Brave ที่ขึ้นต้นด้วย "[" = เอฟเฟกต์ที่ผู้ร่วมร่างได้รับ (เป็นบรรทัดเอฟเฟกต์ granted: true)
+ *  - เอฟเฟกต์ที่ขึ้นต้นด้วย "การ์ด...นี้บนมือเรา" = ทำงานขณะการ์ดอยู่บนมือ (hand: true)
  *
  * ไฟล์นี้ import แค่ type เพื่อให้สคริปต์รันด้วย node ได้ตรง ๆ (type stripping)
  */
@@ -23,6 +25,10 @@ export interface TextEffect {
   keyword?: string;
   /** ข้อความเอฟเฟกต์ดิบ (ยังไม่แปลงเป็นข้อมูล รอขั้นที่ 3) */
   text: string;
+  /** Brave: เอฟเฟกต์ที่ผู้ร่วมร่างได้รับ */
+  granted?: true;
+  /** ทำงานขณะการ์ดอยู่บนมือ */
+  hand?: true;
 }
 
 export interface ParsedCardSet {
@@ -252,6 +258,10 @@ function parseCardBlock(block: Line[], cardNo: string, errors: string[]): CardDe
     const bp = all.match(/BP\s*\+\s*(\d+)/);
     if (!minCost) errIn(braveField.line, 'Brave ต้องระบุ "คอสต์ตั้งแต่ N ขึ้นไป"');
     braveCondition = { maxSpirits: 1, ...(minCost ? { minCost: Number(minCost[1]) } : {}), ...(bp ? { bp: Number(bp[1]) } : {}) };
+    for (const line of children.get('Brave') ?? []) {
+      const text = line.text.trim();
+      if (text.startsWith('[')) effects.push({ text, granted: true });
+    }
   } else if (type === 'brave') {
     errIn(block[0]!, 'การ์ด Brave ต้องมีหัวข้อ "Brave:"');
   }
@@ -283,6 +293,8 @@ function parseEffectLine(line: Line, type: CardDefInput['type'] | undefined, err
     rest = rest.slice(m[0].length);
   }
   if (levels.length > 0) return { levels, text: rest };
+
+  if (/^การ์ด\S*นี้บนมือ/.test(rest)) return { hand: true, text: rest };
 
   const keyword = rest.match(/^Flash\s*\[([^\]]+)\]\s*:?\s*/i);
   if (keyword && type !== 'magic') return { keyword: keyword[1]!.trim(), text: rest.slice(keyword[0].length) };
