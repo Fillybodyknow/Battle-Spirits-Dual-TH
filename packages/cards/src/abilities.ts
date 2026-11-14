@@ -1,0 +1,239 @@
+/**
+ * ภาษาสคริปต์เอฟเฟกต์การ์ด (ขั้นที่ 3)
+ *
+ * ข้อความเอฟเฟกต์ดิบอยู่ใน CardDef.effects ส่วนสคริปต์ที่ engine ประมวลผลได้อยู่ใน CardDef.abilities
+ * แต่ละ ability อ้างกลับไปที่ข้อความด้วย `source` (index ใน effects)
+ * ข้อความที่ยังไม่มีสคริปต์ = ยังไม่ทำงานใน engine
+ */
+import type { CardType, Color } from './schema';
+
+/** เงื่อนไข "ถ้า..." */
+export type Condition =
+  /** มี Soul Core วางอยู่บนการ์ดที่เป็นเจ้าของเอฟเฟกต์ */
+  | { soulOnSelf: true }
+  /** ใช้ Soul Core ร่วมจ่ายคอสต์ของการ์ดนี้ (Magic) */
+  | { paidWithSoul: true }
+  /** ไลฟ์ของเจ้าของเอฟเฟกต์ไม่เกิน N */
+  | { lifeAtMost: number }
+  /** มี Soul Core อยู่ในรีเสิร์ฟของเจ้าของเอฟเฟกต์ */
+  | { soulInReserve: true }
+  /** เอฟเฟกต์ (Burst) นี้ถูกสั่งใช้โดย [Catalyze] */
+  | { catalyzed: true }
+  /** การ์ดเจ้าของเอฟเฟกต์มี Core อย่างน้อย N ดวง */
+  | { selfCoresAtLeast: number }
+  /** มีการ์ดบนมือเจ้าของเอฟเฟกต์อย่างน้อย N ใบ */
+  | { handAtLeast: number }
+  /** [Catalyze] ใช้ได้: การ์ดนี้มี Soul Core วางอยู่ และ Burst ที่เซ็ทอยู่ของเราเป็น Soul Burst สีนี้ */
+  | { catalyzable: Color };
+
+/** ตัวกรองการ์ด */
+export interface CardFilter {
+  types?: CardType[];
+  family?: string;
+  /** อยู่ในเผ่าใดเผ่าหนึ่งเหล่านี้ */
+  families?: string[];
+  /** BP ปัจจุบันไม่เกินค่านี้ (เฉพาะบนสนาม) */
+  maxBp?: number;
+  /** สภาพบนสนาม */
+  state?: 'refresh' | 'exhausted';
+}
+
+/** ปลายทางของ Core จากวอยด์ */
+export type VoidTarget =
+  /** บนการ์ดนี้ */
+  | 'self'
+  /** รีเสิร์ฟเรา */
+  | 'reserve'
+  /** สปิริตเรา 1 ตัวที่ไม่ใช่การ์ดนี้ (เลือก) */
+  | 'otherAlly'
+  /** สปิริตเราที่ตรง filter ทุกตัว ตัวละ count */
+  | 'allAllies';
+
+/** ขั้นตอนของเอฟเฟกต์ ทำตามลำดับ */
+export type Step =
+  /** เราจั่วการ์ด */
+  | { do: 'draw'; count: number; if?: Condition }
+  /** ในเทิร์นนี้ สปิริตนี้ BP+ */
+  | { do: 'buffSelf'; amount: number; if?: Condition }
+  /** ในเทิร์นนี้ เลือกสปิริต/อัลติเมท 1 ตัว (ฝ่ายใดก็ได้) BP+ */
+  | { do: 'buffChosen'; amount: number }
+  /** [True-Rage]: คู่แข่งต้องป้องกันถ้าทำได้ (ใช้ระหว่างการต่อสู้) */
+  | { do: 'mustBlock'; if?: Condition }
+  /** ทำลายการ์ดของคู่แข่งทั้งหมดที่ตรงตัวกรอง */
+  | { do: 'destroyAllOpponent'; filter: CardFilter }
+  /** แสดงใบบนสุดเด็ค N ใบ เลือก 1 ใบที่ตรงตัวกรองขึ้นมือ ที่เหลือลง Trash */
+  | { do: 'revealPickRestTrash'; count: number; filter: CardFilter }
+  /** นำการ์ดในแทรชเรา 1 ใบที่ตรงตัวกรอง กลับขึ้นมือ */
+  | { do: 'returnFromTrash'; filter: CardFilter }
+  /** เมื่อจบการต่อสู้นี้ จบ Attack Step */
+  | { do: 'endAttackStepAfterBattle' }
+  /**
+   * ในการต่อสู้นี้ ส่งไลฟ์คู่แข่งลงรีเสิร์ฟคู่แข่ง ต่อผู้ป้องกัน 1 ตัวที่ถูกทำลายจากการเทียบ BP
+   * onlyConsecutiveBlade = นับเฉพาะเมื่อการต่อสู้นี้ใช้ [Consecutive Blade]
+   */
+  | { do: 'lifeOnBlockerDestroyed'; amount: number; if?: Condition; onlyConsecutiveBlade?: true }
+  /** ส่ง Soul Core บนสปิริตนี้ไปที่แทรชเรา */
+  | { do: 'soulToTrash' }
+  /** [Consecutive Blade]: คู่แข่งต้องป้องกันด้วย 2 ตัวถ้าทำได้ และต่อสู้พร้อมกัน */
+  | { do: 'consecutiveBlade' }
+  /**
+   * เราเลือกสปิริต/อัลติเมทของคู่แข่งที่จะป้องกันในการต่อสู้นี้ (ไม่เลือกก็ได้, เลือกตัวที่เสื่อมสภาพได้)
+   * เลือกได้สูงสุดเท่าจำนวนผู้ป้องกันของการต่อสู้นี้
+   */
+  | { do: 'chooseBlockers' }
+  /** เราเลือกทิ้งการ์ดในมือ N ใบ */
+  | { do: 'discard'; count: number }
+  /** นำ Core จากวอยด์ (Core ใหม่) วางที่ไลฟ์เรา */
+  | { do: 'gainLifeFromVoid'; count: number }
+  /** Burst: "หลังจากนั้นสามารถจ่ายคอสต์ เพื่อให้เอฟเฟกต์ [Flash] ของการ์ดนี้ทำงาน" (จ่ายหรือไม่ก็ได้) */
+  | { do: 'payToUseFlash' }
+  /** (engine ใช้ภายใน) เปิด Burst: นำการ์ดออกจากช่อง Burst และลง Trash เมื่อประมวลผลเสร็จ */
+  | { do: 'openBurst' }
+  /** สปิริตนี้ฟื้นสภาพ */
+  | { do: 'refreshSelf' }
+  /** เลือกการ์ดของคู่แข่ง 1 ใบที่ตรงตัวกรองแล้วทำลาย (ไม่มีให้เลือก = ข้าม) */
+  | { do: 'destroyChosenOpponent'; filter: CardFilter }
+  /** เสื่อมสภาพสปิริตคู่แข่ง N ตัว (เลือกทีละตัว จากตัวที่ยังฟื้นสภาพ) */
+  | { do: 'exhaustOpponent'; count: number; filter?: CardFilter; if?: Condition }
+  /** เสื่อมสภาพสปิริตคู่แข่งกี่ตัวก็ได้ BP รวมไม่เกิน maxTotal */
+  | { do: 'exhaustOpponentTotalBp'; maxTotal: number }
+  /** นำการ์ดคู่แข่ง 1 ใบที่ตรงตัวกรองกลับขึ้นมือ (Core บนการ์ดไปรีเสิร์ฟของเจ้าของ) */
+  | { do: 'bounceOpponent'; filter: CardFilter }
+  /** นำ Core จากวอยด์มาวาง */
+  | { do: 'voidCore'; to: VoidTarget; count: number; filter?: CardFilter; if?: Condition }
+  /** ส่ง Soul Core บนสปิริตนี้ไปที่รีเสิร์ฟเรา */
+  | { do: 'soulToReserve' }
+  /**
+   * แสดงใบบนสุดเด็ค N ใบ อัญเชิญไม่จ่ายคอสต์ใบที่ตรงตัวกรองได้สูงสุด max ใบ (null = กี่ใบก็ได้)
+   * ที่เหลือไว้ใต้สุดเด็ค (เรียงลำดับได้)
+   */
+  | { do: 'revealSummon'; count: number; filter: CardFilter; max: number | null }
+  /** (Burst) หลังเอฟเฟกต์นี้ อัญเชิญการ์ดสปิริตนี้ไม่จ่ายคอสต์ */
+  | { do: 'summonThisFree' }
+  /** ทิ้งการ์ดบนมือเราทั้งหมด แล้วจั่วการ์ดเท่าจำนวนการ์ดบนมือคู่แข่ง */
+  | { do: 'discardHandDrawOpponentCount' }
+  /** ฟื้นสภาพสปิริตเรา 1 ตัวที่ตรงตัวกรอง */
+  | { do: 'refreshChosenAlly'; filter: CardFilter }
+  /** ส่งคอร์ไลฟ์คู่แข่ง N เม็ดไปที่รีเสิร์ฟคู่แข่ง */
+  | { do: 'opponentLifeToReserve'; count: number }
+  /** ส่ง Core บนสปิริตนี้ N ดวงลงแทรชเรา (เลือก Core ธรรมดาก่อน) */
+  | { do: 'selfCoresToTrash'; count: number }
+  /** เมื่อจบการต่อสู้นี้ ทำ steps */
+  | { do: 'atBattleEnd'; steps: Step[] }
+  /** นำสปิริตนี้กลับขึ้นมือ ถ้าสำเร็จทำ then */
+  | { do: 'returnSelfToHand'; then?: Step[] }
+  /** สามารถนำการ์ดที่มีเอฟเฟกต์ Burst บนมือเรา 1 ใบไปเซ็ทได้ */
+  | { do: 'setBurstFromHand' }
+  /** [Catalyze]: สั่งใช้ Soul Burst สีนี้ของเราที่เซ็ทอยู่ (ไม่ต้องรอเงื่อนไข) */
+  | { do: 'catalyze'; color: Color }
+  /** (engine ใช้ภายใน) ไล่วางการ์ดที่เหลือไว้ใต้สุดเด็คตามลำดับที่เลือก */
+  | { do: 'toDeckBottom'; cardIds: string[] }
+  /** (engine ใช้ภายใน) วาง Core จากรีเสิร์ฟบนการ์ดที่อัญเชิญไม่จ่ายคอสต์ แล้วนำลงสนาม */
+  | { do: 'placeCores'; cardId: string; state?: 'refresh' | 'exhausted'; noSummon?: true; asSpirit?: true }
+  /** (engine ใช้ภายใน) Brave ที่อัญเชิญด้วยเอฟเฟกต์: เลือกสปิริตที่จะร่วมร่าง หรือไม่เลือก = ลงเป็นสปิริต */
+  | { do: 'braveOrSpirit'; cardId: string }
+  /** (engine ใช้ภายใน) เบรฟที่ผู้ร่วมร่างออกจากสนาม: เลือกให้อยู่ต่อหรือลง Trash */
+  | { do: 'braveTrash'; cardId: string }
+  /** ผู้ควบคุมเลือก 1 ตัวเลือก (if = ถามเฉพาะเมื่อเงื่อนไขเป็นจริง) */
+  | { do: 'chooseOne'; options: { label: string; steps: Step[] }[]; if?: Condition };
+
+/** ขอบเขตของ BP+ ถาวร */
+export type StaticScope =
+  | { self: true }
+  /** สปิริตเผ่านี้ของเราทั้งหมด */
+  | { ownFamily: string };
+
+/**
+ * เหตุการณ์ที่ trigger รอ
+ * - attack / summon: สปิริตนี้โจมตี / ถูกอัญเชิญ
+ * - soulEvolvedOnto: Soul Core ถูกนำมาวางบนสปิริตนี้โดย [Evolution]
+ * - allyDepletedByEvolution: สปิริตอื่นของเราสูญสลายโดย [Evolution]
+ * - blockKeyword: [True-Rage] หรือ [Consecutive Blade] ของสปิริตเราทำงาน
+ * - block: สปิริตนี้ป้องกัน
+ * - allyAttack: สปิริตเรา (รวมตัวนี้) ที่ตรง subject โจมตี
+ * - attackHitLife: การโจมตีของสปิริตนี้ทำให้คู่แข่งเสียไลฟ์
+ * - allyAttackHitLife: การโจมตีของสปิริตเรา (ตรง subject) ทำให้คู่แข่งเสียไลฟ์
+ */
+export type TriggerEvent =
+  | 'attack'
+  | 'summon'
+  | 'soulEvolvedOnto'
+  | 'allyDepletedByEvolution'
+  | 'blockKeyword'
+  | 'block'
+  | 'allyAttack'
+  | 'attackHitLife'
+  | 'allyAttackHitLife';
+
+/** เงื่อนไขของสปิริตที่ทำให้ trigger แบบ ally* ทำงาน */
+export interface SubjectFilter {
+  family?: string;
+  /** มี Soul Core วางอยู่ */
+  soul?: true;
+}
+
+/** เงื่อนไขเปิด Burst */
+export type BurstEvent = 'afterLifeLost' | 'afterAllyDestroyedByOpponent' | 'afterOpponentHandIncreased';
+
+export type Ability =
+  /** เอฟเฟกต์ที่ทำงานเมื่อเกิดเหตุการณ์ (เฉพาะเลเวลที่ระบุ) */
+  | {
+      kind: 'trigger';
+      source: number;
+      /** หลายเหตุการณ์ = "เมื่อสปิริตนี้โจมตี/ป้องกัน" */
+      on: TriggerEvent | TriggerEvent[];
+      /** เหตุการณ์ ally*: สปิริตที่เป็นต้นเหตุต้องตรงเงื่อนไขนี้ */
+      subject?: SubjectFilter;
+      levels: number[];
+      steps: Step[];
+      /** "แอทแท็คสเต็ปของผู้เล่นทุกคน": ทำงานเฉพาะใน Attack Step (เทิร์นใครก็ได้) */
+      attackStepOnly?: true;
+      /** "...สเต็ปของเรา": ทำงานเฉพาะเทิร์นของเจ้าของ */
+      ownTurnOnly?: true;
+      /** "เทิร์นละ 1 ครั้ง" */
+      oncePerTurn?: true;
+    }
+  /**
+   * "ดรอว์สเต็ปของเรา: จำนวนจั่วการ์ด +N" แต่ละรายการใน extraDraw บวกเพิ่มถ้าเงื่อนไขเป็นจริง
+   * after = สิ่งที่ทำหลังจั่ว (เช่น ทิ้งการ์ด)
+   */
+  | { kind: 'drawStep'; source: number; levels: number[]; extraDraw: { amount: number; if?: Condition }[]; after?: Step[] }
+  /** เอฟเฟกต์ Burst: เมื่อเงื่อนไขเกิด เจ้าของเลือกเปิดได้ (ไม่เปิด = การ์ดยังเซ็ทอยู่) */
+  | { kind: 'burst'; source: number; on: BurstEvent; steps: Step[]; soul?: true }
+  /**
+   * Flash [Quick]: อัญเชิญจากมือใน Flash timing โดยใช้ Core จากรีเสิร์ฟเท่านั้น
+   * soul = [Soul Quick]: จ่ายคอสต์ทั้งหมดด้วย Soul Core ในรีเสิร์ฟ 1 ดวง (เฉพาะ Attack Step)
+   */
+  | { kind: 'quick'; source: number; soul?: true }
+  /** แอทแท็คสเต็ปของเรา: เบิร์สของคู่แข่งไม่สามารถทำงาน */
+  | { kind: 'blockOpponentBurst'; source: number; levels: number[]; if?: Condition }
+  /** Flash [Evolution]: นำ Core บนสปิริตอื่นของเรากี่ดวงก็ได้มาวางบนสปิริตนี้ (ใช้ด้วย action evolve) */
+  | { kind: 'evolution'; source: number; levels: number[] }
+  /** BP+ ที่มีผลตลอดเวลาขณะการ์ดอยู่บนสนาม */
+  | { kind: 'staticBp'; source: number; levels: number[]; if?: Condition; scope: StaticScope; amount: number }
+  /** เอฟเฟกต์ Magic: [Main] หรือ [Flash] */
+  | { kind: 'magic'; source: number; timing: 'main' | 'flash'; steps: Step[] };
+
+/** สคริปต์ของการ์ดหนึ่งใบ เรียงตาม effects (null = ยังไม่รองรับ) */
+export type CardScript = (DistributiveOmit<Ability, 'source'> | null)[];
+
+type DistributiveOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : never;
+
+/**
+ * ผูกสคริปต์เข้ากับข้อมูลการ์ดตามชื่อ: ช่องที่ i ของสคริปต์ = effects[i]
+ * โยน error ถ้าจำนวนช่องไม่ตรงกับจำนวนบรรทัดเอฟเฟกต์ (กันสคริปต์เลื่อนไปผิดบรรทัด)
+ */
+export function attachScripts<T extends { name: string; effects?: unknown[] }>(
+  cards: readonly T[],
+  scripts: Record<string, CardScript>,
+): (T & { abilities: Ability[] })[] {
+  return cards.map((card) => {
+    const script = scripts[card.name] ?? [];
+    const effectCount = card.effects?.length ?? 0;
+    if (scripts[card.name] && script.length !== effectCount) {
+      throw new Error(`สคริปต์ของ ${card.name} มี ${script.length} ช่อง แต่การ์ดมีเอฟเฟกต์ ${effectCount} บรรทัด`);
+    }
+    const abilities = script.flatMap((a, source) => (a ? [{ ...a, source } as Ability] : []));
+    return { ...card, abilities };
+  });
+}

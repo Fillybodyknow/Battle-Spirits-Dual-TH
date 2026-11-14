@@ -1,0 +1,118 @@
+/**
+ * Transport ผ่าน Firebase Realtime Database + Anonymous Auth
+ * ค่าตั้งค่าอ่านจาก apps/web/.env.local (VITE_FIREBASE_*) ดู .env.example
+ */
+import { initializeApp, type FirebaseApp } from 'firebase/app';
+import { getAuth, signInAnonymously } from 'firebase/auth';
+import { get, getDatabase, onChildAdded, onValue, ref, remove, runTransaction, set, type Database } from 'firebase/database';
+import { actionKey, decodeAction, encodeAction, type RoomInfo, type Transport } from './transport';
+
+const env = import.meta.env;
+export const firebaseConfig = {
+  apiKey: env.VITE_FIREBASE_API_KEY as string | undefined,
+  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN as string | undefined,
+  databaseURL: env.VITE_FIREBASE_DATABASE_URL as string | undefined,
+  projectId: env.VITE_FIREBASE_PROJECT_ID as string | undefined,
+  appId: env.VITE_FIREBASE_APP_ID as string | undefined,
+};
+
+/** ตั้งค่า Firebase ครบหรือยัง (ต้องมีอย่างน้อย apiKey + databaseURL) */
+export const firebaseConfigured = !!firebaseConfig.apiKey && !!firebaseConfig.databaseURL;
+
+let app: FirebaseApp | null = null;
+let db: Database | null = null;
+function database(): Database {
+  if (!firebaseConfigured) throw new Error('ยังไม่ได้ตั้งค่า Firebase (apps/web/.env.local)');
+  app ??= initializeApp(firebaseConfig);
+  db ??= getDatabase(app);
+  return db;
+}
+
+const roomRef = (code: string) => ref(database(), `rooms/${code}`);
+
+function toInfo(v: unknown): RoomInfo | null {
+  if (!v || typeof v !== 'object') return null;
+  const r = v as { seats?: RoomInfo['seats']; setup?: { round: number; seed: number; decks?: { p1?: string; p2?: string } } };
+  if (!r.setup || !r.setup.decks?.p1) return null;
+  return {
+    seats: r.seats ?? {},
+    setup: { round: r.setup.round, seed: r.setup.seed, decks: { p1: r.setup.decks.p1, p2: r.setup.decks.p2 ?? null } },
+  };
+}
+
+export const firebaseTransport: Transport = {
+  name: 'Firebase',
+
+  async signIn() {
+    database();
+    const auth = getAuth(app!);
+    if (auth.currentUser) return auth.currentUser.uid;
+    const cred = await signInAnonymously(auth);
+    return cred.user.uid;
+  },
+
+  async createRoom(code, info) {
+    const res = await runTransaction(roomRef(code), (cur) => (cur ? undefined : { ...info, createdAt: Date.now() }));
+    if (!res.committed) throw new Error('รหัสห้องนี้ถูกใช้แล้ว ลองใหม่อีกครั้ง');
+  },
+
+  async joinRoom(code, uid, deck) {
+    let reason = '';
+    const res = await runTransaction(roomRef(code), (cur) => {
+      if (!cur) {
+        // ครั้งแรก SDK อาจส่ง null มาก่อนอ่านค่าจริง: คืนค่าเดิมให้ลองใหม่กับข้อมูลจริง
+        return cur;
+      }
+      const seats = cur.seats ?? {};
+      if (seats.p2 && seats.p2 !== uid) {
+        reason = 'ห้องนี้เต็มแล้ว';
+        return undefined;
+      }
+      if (seats.p1 === uid) {
+        reason = 'คุณเป็นเจ้าของห้องนี้อยู่แล้ว';
+        return undefined;
+      }
+      cur.seats = { ...seats, p2: uid };
+      cur.setup = { ...cur.setup, decks: { ...cur.setup.decks, p2: deck } };
+      return cur;
+    });
+    const info = toInfo(res.snapshot.val());
+    if (!info) throw new Error('ไม่พบห้องนี้');
+    if (!res.committed || info.seats.p2 !== uid) throw new Error(reason || 'เข้าห้องไม่สำเร็จ');
+    return info;
+  },
+
+  async readRoom(code) {
+    return toInfo((await get(roomRef(code))).val());
+  },
+
+  watchRoom(code, cb) {
+    return onValue(roomRef(code), (snap) => cb(toInfo(snap.val())));
+  },
+
+  async countActions(code, round) {
+    const snap = await get(ref(database(), `rooms/${code}/actions/${round}`));
+    return snap.exists() ? snap.size : 0;
+  },
+
+  watchActions(code, round, cb) {
+    return onChildAdded(ref(database(), `rooms/${code}/actions/${round}`), (snap) => {
+      cb(Number(snap.key), decodeAction(snap.val() as string));
+    });
+  },
+
+  async pushAction(code, round, index, action) {
+    const res = await runTransaction(ref(database(), `rooms/${code}/actions/${round}/${actionKey(index)}`), (cur) =>
+      cur === null ? encodeAction(action) : undefined,
+    );
+    return res.committed;
+  },
+
+  async setSetup(code, setup) {
+    await set(ref(database(), `rooms/${code}/setup`), setup);
+  },
+
+  async leave(code, seat) {
+    await remove(ref(database(), `rooms/${code}/seats/${seat}`));
+  },
+};

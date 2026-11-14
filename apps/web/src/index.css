@@ -1,0 +1,335 @@
+@import 'tailwindcss';
+
+:root {
+  /* ความกว้างแผงรายละเอียดการ์ดด้านขวา (dialog จะไม่บังแผงนี้) */
+  --sidebar: 400px;
+}
+
+html,
+body {
+  background: #0f1117;
+  color: #e5e7eb;
+  font-family: 'Noto Sans Thai', 'Segoe UI', system-ui, sans-serif;
+}
+
+/* ---------------------------------------------------------------- FX */
+
+/* ป้ายวิ่งผ่านจอ: เข้าจากซ้าย ค้าง แล้วออกทางขวา */
+@keyframes fx-banner {
+  0% { transform: translateX(-110%) skewX(-12deg); opacity: 0; }
+  18% { transform: translateX(0) skewX(-12deg); opacity: 1; }
+  80% { transform: translateX(0) skewX(-12deg); opacity: 1; }
+  100% { transform: translateX(110%) skewX(-12deg); opacity: 0; }
+}
+@keyframes fx-banner-text {
+  0% { letter-spacing: 0.6em; opacity: 0; }
+  25% { letter-spacing: 0.12em; opacity: 1; }
+  100% { letter-spacing: 0.08em; opacity: 1; }
+}
+/* cut-in อัญเชิญ */
+@keyframes fx-rays { to { transform: rotate(360deg); } }
+@keyframes fx-summon-card {
+  0% { transform: scale(0.4) translateY(40px); opacity: 0; filter: brightness(3); }
+  25% { transform: scale(1.06); opacity: 1; filter: brightness(1.6); }
+  40% { transform: scale(1); filter: brightness(1); }
+  100% { transform: scale(1.02); }
+}
+@keyframes fx-fade-in-out {
+  0% { opacity: 0; }
+  12% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes fx-slide-up {
+  0% { transform: translateY(24px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+/* ป๊อปอัปเอฟเฟกต์ */
+@keyframes fx-toast {
+  0% { transform: translateX(120%); opacity: 0; }
+  10% { transform: translateX(0); opacity: 1; }
+  88% { transform: translateX(0); opacity: 1; }
+  100% { transform: translateX(120%); opacity: 0; }
+}
+/* ตัวเลขลอย */
+@keyframes fx-float {
+  0% { transform: translate(-50%, 0) scale(0.6); opacity: 0; }
+  15% { transform: translate(-50%, -12px) scale(1.15); opacity: 1; }
+  70% { transform: translate(-50%, -40px) scale(1); opacity: 1; }
+  100% { transform: translate(-50%, -64px) scale(1); opacity: 0; }
+}
+/* เส้นลูกศรโจมตีวิ่ง */
+@keyframes fx-dash { to { stroke-dashoffset: -60; } }
+@keyframes fx-pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.55); }
+  50% { box-shadow: 0 0 0 8px rgba(250, 204, 21, 0); }
+}
+/* ช่อง Burst ที่มีการ์ดเซ็ทอยู่ */
+@keyframes fx-burst-glow {
+  0%, 100% { box-shadow: 0 0 6px 1px rgba(251, 146, 60, 0.45); }
+  50% { box-shadow: 0 0 18px 5px rgba(251, 146, 60, 0.85); }
+}
+/* สิ่งที่รอให้ผู้เล่นเลือก (การ์ดเป้าหมาย, แถบคำถาม, การ์ดที่ใช้ได้) */
+@keyframes fx-choice-glow {
+  0%, 100% { box-shadow: 0 0 4px 1px rgba(232, 121, 249, 0.45); }
+  50% { box-shadow: 0 0 16px 5px rgba(232, 121, 249, 0.85); }
+}
+/* คลื่นแสงรอบการ์ด (Magic / Burst) */
+@keyframes fx-shockwave {
+  0% { transform: translate(-50%, -50%) scale(0.4); opacity: 0.9; }
+  100% { transform: translate(-50%, -50%) scale(1.6); opacity: 0; }
+}
+/* ถูกทำลาย: สั่น แดง แล้วแตกกระจาย */
+@keyframes fx-shatter {
+  0% { transform: translate(0, 0) rotate(0); opacity: 1; filter: brightness(1); }
+  15% { transform: translate(-6px, 0) rotate(-3deg); filter: brightness(2); }
+  30% { transform: translate(6px, 0) rotate(3deg); }
+  45% { transform: translate(-4px, 0) rotate(-2deg) scale(1.05); opacity: 1; }
+  100% { transform: translate(0, 30px) rotate(12deg) scale(0.6); opacity: 0; filter: brightness(2) blur(4px); }
+}
+/* สูญสลาย: ซีดแล้วจมลง */
+@keyframes fx-deplete {
+  0% { opacity: 1; filter: grayscale(0); transform: translateY(0); }
+  100% { opacity: 0; filter: grayscale(1) blur(2px); transform: translateY(24px) scale(0.92); }
+}
+/* แสงกระแทกตอนโจมตีชน */
+@keyframes fx-impact {
+  0% { transform: translate(-50%, -50%) scale(0.2); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1.3); opacity: 0; }
+}
+@keyframes fx-impact-ring {
+  0% { transform: translate(-50%, -50%) scale(0.3); opacity: 0.9; }
+  100% { transform: translate(-50%, -50%) scale(1.4); opacity: 0; }
+}
+/* แสงระเบิดหลังการ์ด / รัศมีดาเมจ */
+@keyframes fx-sunburst {
+  0% { transform: translate(-50%, -50%) scale(0.3) rotate(0deg); opacity: 0; }
+  25% { opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1.15) rotate(25deg); opacity: 0; }
+}
+/* chain: การ์ดเด้งเข้า และคำ CHAIN / RESOLVE */
+@keyframes fx-chain-in {
+  0% { transform: scale(0.3) rotate(-8deg); opacity: 0; }
+  100% { transform: scale(1) rotate(0); opacity: 1; }
+}
+@keyframes fx-chain-word {
+  0% { transform: scale(1.8); opacity: 0; letter-spacing: 0.5em; }
+  40% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(1); opacity: 0.9; }
+}
+/* ตัวเลขดาเมจ: กระแทกเข้า ค้าง แล้วลอยขึ้นหาย */
+@keyframes fx-damage {
+  0% { transform: translate(-50%, -50%) scale(2.4); opacity: 0; }
+  15% { transform: translate(-50%, -50%) scale(0.9); opacity: 1; }
+  25% { transform: translate(-50%, -50%) scale(1.05); }
+  75% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  100% { transform: translate(-50%, -80%) scale(1); opacity: 0; }
+}
+
+/* ================================================================ ธีมเกม */
+
+/* ฉากหลัง: ไล่สีน้ำเงิน-ม่วง + แสงออโรร่าเคลื่อนช้า + อนุภาคลอย */
+.game-bg {
+  background:
+    radial-gradient(ellipse at 20% 0%, rgba(56, 189, 248, 0.14), transparent 55%),
+    radial-gradient(ellipse at 80% 100%, rgba(244, 63, 94, 0.12), transparent 55%),
+    radial-gradient(ellipse at 50% 50%, #131a2e 0%, #0a0e1a 70%);
+}
+.game-bg::before,
+.game-bg::after {
+  content: '';
+  position: fixed;
+  inset: -20%;
+  pointer-events: none;
+  z-index: 0;
+}
+.game-bg::before {
+  background: conic-gradient(from 0deg at 50% 50%, transparent 0deg, rgba(99, 102, 241, 0.08) 60deg, transparent 120deg, rgba(14, 165, 233, 0.07) 200deg, transparent 260deg);
+  animation: bg-aurora 40s linear infinite;
+}
+.game-bg::after {
+  background-image:
+    radial-gradient(1.5px 1.5px at 10% 20%, rgba(255, 255, 255, 0.5), transparent),
+    radial-gradient(1px 1px at 30% 70%, rgba(186, 230, 253, 0.6), transparent),
+    radial-gradient(1.5px 1.5px at 55% 35%, rgba(255, 255, 255, 0.4), transparent),
+    radial-gradient(1px 1px at 75% 80%, rgba(253, 224, 71, 0.5), transparent),
+    radial-gradient(1.5px 1.5px at 90% 15%, rgba(255, 255, 255, 0.45), transparent),
+    radial-gradient(1px 1px at 65% 55%, rgba(186, 230, 253, 0.5), transparent);
+  background-size: 600px 600px;
+  animation: bg-drift 60s linear infinite;
+  opacity: 0.7;
+}
+@keyframes bg-aurora { to { transform: rotate(360deg); } }
+@keyframes bg-drift { to { background-position: 600px -600px; } }
+
+/* แผ่นรองเล่น: กรอบเรืองแสงไหลรอบ เมื่อเป็นตาของผู้เล่นนี้ */
+.mat-active::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 2px;
+  background: conic-gradient(from var(--mat-angle, 0deg), #facc15, transparent 25%, transparent 50%, #fde68a 75%, #facc15);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: mat-spin 4s linear infinite;
+  pointer-events: none;
+  z-index: 5;
+}
+@property --mat-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+@keyframes mat-spin { to { --mat-angle: 360deg; } }
+/* แสงกวาดผ่านแผ่นรองเล่น */
+.mat-sheen::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 40%, rgba(255, 255, 255, 0.06) 50%, transparent 60%);
+  background-size: 250% 100%;
+  animation: mat-sheen 9s ease-in-out infinite;
+  pointer-events: none;
+  z-index: -5;
+}
+@keyframes mat-sheen { 0%, 100% { background-position: 120% 0; } 50% { background-position: -20% 0; } }
+
+/* ช่องบนแผ่นรองเล่น: กรอบโลหะ */
+.slot-frame {
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.85), rgba(2, 6, 23, 0.75)) padding-box,
+    linear-gradient(160deg, rgba(226, 232, 240, 0.55), rgba(71, 85, 105, 0.35) 40%, rgba(148, 163, 184, 0.5) 70%, rgba(30, 41, 59, 0.6)) border-box;
+  border: 1.5px solid transparent;
+  box-shadow: inset 0 2px 14px rgba(0, 0, 0, 0.75), 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+/* แผง HUD (แถบกลางจอ / แผงขวา) */
+.hud-panel {
+  background:
+    linear-gradient(180deg, rgba(30, 41, 59, 0.92), rgba(15, 23, 42, 0.95)) padding-box,
+    linear-gradient(90deg, rgba(56, 189, 248, 0.5), rgba(148, 163, 184, 0.25) 30%, rgba(148, 163, 184, 0.25) 70%, rgba(250, 204, 21, 0.5)) border-box;
+  border: 1.5px solid transparent;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(6px);
+}
+
+/* ปุ่มเกม */
+.btn-game {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(180deg, #fde68a 0%, #facc15 45%, #d97706 100%);
+  color: #1c1917;
+  box-shadow: 0 0 0 1px rgba(120, 53, 15, 0.6), 0 3px 0 #92400e, 0 6px 16px rgba(250, 204, 21, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+.btn-game::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.55) 50%, transparent 70%);
+  transform: translateX(-120%);
+  transition: transform 0.6s;
+}
+.btn-game:hover:not(:disabled)::after { transform: translateX(120%); }
+.btn-game:hover:not(:disabled) { filter: brightness(1.08); }
+.btn-game:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 0 0 1px rgba(120, 53, 15, 0.6), 0 1px 0 #92400e, inset 0 1px 0 rgba(255, 255, 255, 0.7); }
+.btn-steel {
+  background: linear-gradient(180deg, #475569 0%, #334155 50%, #1e293b 100%);
+  color: #f1f5f9;
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.8), 0 3px 0 #0f172a, inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+.btn-steel:hover:not(:disabled) { filter: brightness(1.2); }
+.btn-steel:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.8), 0 1px 0 #0f172a; }
+/* ปุ่มหลักที่รอให้กด: เต้นเบา ๆ */
+.btn-pulse { animation: btn-pulse 2.2s ease-in-out infinite; }
+@keyframes btn-pulse { 0%, 100% { box-shadow: 0 0 0 1px rgba(120, 53, 15, 0.6), 0 3px 0 #92400e, 0 0 0 0 rgba(250, 204, 21, 0.5); } 50% { box-shadow: 0 0 0 1px rgba(120, 53, 15, 0.6), 0 3px 0 #92400e, 0 0 18px 4px rgba(250, 204, 21, 0.55); } }
+
+/* Soul Core เรืองแสงเป็นจังหวะ */
+.soul-glow { animation: soul-glow 2.4s ease-in-out infinite; }
+@keyframes soul-glow { 0%, 100% { filter: drop-shadow(0 0 2px rgba(244, 63, 94, 0.6)); } 50% { filter: drop-shadow(0 0 8px rgba(244, 63, 94, 0.95)); } }
+
+/* ช่อง Life: ช่องเสียบ Core เรืองแสง */
+.life-socket {
+  background: radial-gradient(circle at 50% 35%, rgba(51, 65, 85, 0.9), rgba(2, 6, 23, 0.95));
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(148, 163, 184, 0.35), 0 0 8px rgba(56, 189, 248, 0.15);
+}
+
+/* ป้ายชื่อผู้เล่น */
+.player-tag { background: linear-gradient(90deg, rgba(2, 6, 23, 0.85), rgba(30, 41, 59, 0.7)); border: 1px solid rgba(148, 163, 184, 0.35); }
+.player-tag-active { background: linear-gradient(90deg, #facc15, #f59e0b); color: #1c1917; border-color: #fde68a; box-shadow: 0 0 12px rgba(250, 204, 21, 0.5); }
+/* ปุ่มสุดท้ายในแถบกลางจอ = ปุ่มหลัก: เต้นเบา ๆ */
+.btn-row > .btn-game:last-child:not(:disabled) { animation: btn-pulse 2.2s ease-in-out infinite; }
+/* เป้าเล็งบนการ์ดเป้าหมาย */
+@keyframes fx-reticle {
+  0% { transform: translate(-50%, -50%) scale(2) rotate(-90deg); opacity: 0; }
+  100% { transform: translate(-50%, -50%) scale(1) rotate(0deg); opacity: 1; }
+}
+
+/* FINAL BLOW */
+@keyframes fx-fb-flash { 0% { opacity: 0; } 8% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes fx-fb-slash {
+  0% { transform: scaleX(0); opacity: 1; }
+  35% { transform: scaleX(1); opacity: 1; }
+  100% { transform: scaleX(1) scaleY(0.1); opacity: 0; }
+}
+@keyframes fx-fb-lines { 0% { opacity: 0; transform: scale(1.4) rotate(0deg); } 15% { opacity: 1; } 80% { opacity: 0.8; } 100% { opacity: 0; transform: scale(1) rotate(8deg); } }
+@keyframes fx-fb-text {
+  0% { transform: scale(3.2); opacity: 0; filter: blur(12px); }
+  12% { transform: scale(0.92); opacity: 1; filter: blur(0); }
+  18% { transform: scale(1.06); }
+  24% { transform: scale(1); }
+  82% { transform: scale(1.04); opacity: 1; }
+  100% { transform: scale(1.25); opacity: 0; filter: blur(6px); }
+}
+@keyframes fx-fb-sub { 0% { opacity: 0; transform: translateY(12px); } 15% { opacity: 1; transform: translateY(0); } 85% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes fx-fb-crack { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes fx-fb-dim { 0%, 15% { opacity: 0; } 25% { opacity: 1; } 100% { opacity: 1; } }
+
+/* การ์ดออกจากสนาม → ดวงวิญญาณ */
+@keyframes fx-g-crack-card {
+  0% { transform: translate(0,0); filter: brightness(1); opacity: 1; }
+  15% { transform: translate(-5px,1px) rotate(-2deg); filter: brightness(1.8); }
+  35% { transform: translate(5px,-1px) rotate(2deg); }
+  55% { transform: translate(-4px,0) rotate(-1deg); filter: brightness(1.3); }
+  80% { transform: translate(3px,0) scale(1.03); filter: brightness(2.2); }
+  99% { opacity: 1; }
+  100% { transform: scale(1.04); opacity: 0; }
+}
+@keyframes fx-g-shard {
+  0% { opacity: 1; transform: translate(0,0) rotate(0) scale(1); filter: brightness(2); }
+  100% { opacity: 0; transform: translate(var(--tx), var(--ty)) rotate(var(--rot)) scale(0.55); filter: brightness(0.8); }
+}
+@keyframes fx-g-dissolve {
+  0% { clip-path: inset(0 0 0 0); filter: grayscale(0) brightness(1); }
+  30% { clip-path: inset(0 0 0 0); filter: grayscale(1) brightness(0.8); }
+  100% { clip-path: inset(0 0 100% 0); filter: grayscale(1) brightness(1.4); }
+}
+@keyframes fx-g-edge {
+  0%, 30% { top: 100%; opacity: 0; }
+  35% { opacity: 1; }
+  95% { top: 0%; opacity: 1; }
+  100% { top: 0%; opacity: 0; }
+}
+@keyframes fx-g-dust {
+  0% { opacity: 0; transform: translate(0,0) scale(1); }
+  20% { opacity: 1; transform: translate(0,-12px) scale(1.3); }
+  100% { opacity: 0.9; transform: translate(var(--gx), var(--gy)) scale(0.4); }
+}
+@keyframes fx-g-soul {
+  0% { opacity: 0; transform: translate(-50%,-50%) scale(0); }
+  16% { opacity: 1; transform: translate(-50%,-50%) scale(1.35); }
+  28% { opacity: 1; transform: translate(-50%,-50%) translateY(-10px) scale(1); }
+  62% { opacity: 1; transform: translate(-50%,-50%) translate(calc(var(--dx) * 0.4), calc(var(--dy) * 0.4 - 90px)) scale(1.05); }
+  100% { opacity: 0.3; transform: translate(-50%,-50%) translate(var(--dx), var(--dy)) scale(0.35); }
+}
+
+/* แถบ Chain */
+@keyframes fx-chain-pop { 0% { transform: scale(1.6); filter: brightness(2.5); } 60% { transform: scale(0.92); } 100% { transform: scale(1); filter: brightness(1); } }
+/* ต่อ Chain กลางจอ */
+@keyframes fx-cl-backdrop { 0% { opacity: 0; } 15% { opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes fx-cl-ring { 0% { transform: scale(1.8) rotate(-90deg); opacity: 0; } 40% { opacity: 1; } 100% { transform: scale(1) rotate(30deg); opacity: 1; } }
+@keyframes fx-cl-pulse { 0% { transform: scale(0.3); opacity: 1; } 100% { transform: scale(1.3); opacity: 0; } }
+@keyframes fx-cl-word { 0% { transform: translateX(-40px); opacity: 0; } 100% { transform: translateX(0); opacity: 1; } }
+@keyframes fx-cl-num { 0% { transform: scale(3); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+@keyframes fx-cl-link { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
+@keyframes fx-cl-push { from { transform: translateY(var(--push)); } to { transform: translateY(0); } }
+/* ปุ่มในแถบกลางจอ: ใหญ่ขึ้นให้เห็นชัด */
+.btn-big > button { padding: 0.6rem 1.4rem; font-size: 1rem; }

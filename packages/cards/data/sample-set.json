@@ -1,0 +1,222 @@
+[
+  {
+    "cardNo": "SMP-001",
+    "name": "Ember Pup",
+    "type": "spirit",
+    "cost": 1,
+    "colors": ["red"],
+    "reduction": { "red": 1 },
+    "symbols": { "red": 1 },
+    "family": ["Beast"],
+    "levels": [
+      { "level": 1, "cores": 1, "bp": 1000 },
+      { "level": 2, "cores": 3, "bp": 3000 }
+    ]
+  },
+  {
+    "cardNo": "SMP-002",
+    "name": "Flame Lancer",
+    "type": "spirit",
+    "cost": 3,
+    "colors": ["red"],
+    "reduction": { "red": 2 },
+    "symbols": { "red": 1 },
+    "family": ["Warrior"],
+    "levels": [
+      { "level": 1, "cores": 1, "bp": 3000 },
+      { "level": 2, "cores": 3, "bp": 5000 }
+    ]
+  },
+  {
+    "cardNo": "SMP-003",
+    "name": "Blaze Drake",
+    "type": "spirit",
+    "cost": 5,
+    "colors": ["red"],
+    "reduction": { "red": 3 },
+    "symbols": { "red": 1 },
+    "family": ["Dragon"],
+    "levels": [
+      { "level": 1, "cores": 1, "bp": 5000 },
+      { "level": 2, "cores": 3, "bp": 7000 },
+      { "level": 3, "cores": 5, "bp": 9000 }
+    ]
+  },
+  {
+    "cardNo": "SMP-004",
+    "name": "Twin-Fang Wyrm",
+    "type": "spirit",
+    "cost": 6,
+    "colors": ["red"],
+    "reduction": { "red": 3 },
+    "symbols": { "red": 2 },
+    "family": ["Dragon"],
+    "levels": [
+      { "level": 1, "cores": 1, "bp": 6000 },
+      { "level": 2, "cores": 4, "bp": 9000 }
+    ]
+  },
+  {
+    "cardNo": "SMP-005",
+    "name": "Leaf Sprite",
+    "type": "spirit",
+    "cost": 1,
+    "colors": ["green"],
+    "reduction": { "green": 1 },
+    "symbols": { "green": 1 },
+    "family": ["Fairy"],
+    "levels": [
+      { "level": 1, "cores": 1, "bp": 2000 },
+      { "level": 2, "cores": 2, "bp": 3000 }
+    ]
+  },
+  {
+    "cardNo": "SMP-006",
+    "name": "Thorn Beetle",
+    "type": "spirit",
+    "cost": 3,
+    "colors": ["green"],
+    "reduction": { "green": 2 },
+    "symbols": { "green": 1 },
+    "family": ["Insect"],
+    "levels": [
+      { "level": 1, "cores": 1, "bp": 3000 },
+      { "level": 2, "cores": 4, "bp": 6000 }
+    ]
+  },
+  {
+    "cardNo": "SMP-007",
+    "name": "Frost Golem",
+    "type": "spirit",
+    "cost": 4,
+    "colors": ["white"],
+    "reduction": { "white": 2 },
+    "symbols": { "white": 1 },
+    "family": ["Machine"],
+    "burst": true,
+    "levels": [
+      { "level": 1, "cores": 1, "bp": 4000 },
+      { "level": 2, "cores": 3, "bp": 6000 }
+    ]
+  },
+  {
+    "cardNo": "SMP-008",
+    "name": "Iron Bastion",
+    "type": "nexus",
+    "cost": 3,
+    "colors": ["white"],
+    "reduction": { "white": 2 },
+    "symbols": { "white": 1 },
+    "levels": [
+      { "level": 1, "cores": 0 },
+      { "level": 2, "cores": 2 }
+    ]
+  },
+  {
+    "cardNo": "SMP-009",
+    "name": "Ember Stone",
+    "type": "nexus",
+    "cost": 2,
+    "colors": ["red"],
+    "reduction": { "red": 1 },
+    "symbols": { "red": 1 },
+    "levels": [
+      { "level": 1, "cores": 0 },
+      { "level": 2, "cores": 3 }
+    ]
+  },
+  {
+    "cardNo": "SMP-010",
+    "name": "Fire Burst",
+    "type": "magic",
+    "cost": 4,
+    "colors": ["red"],
+    "reduction": { "red": 2 },
+    "burst": true
+  },
+  {
+    "cardNo": "SMP-011",
+    "name": "Sunburst Titan",
+    "type": "ultimate",
+    "cost": 7,
+    "colors": ["yellow"],
+    "reduction": { "yellow": 3 },
+    "symbols": { "ultimate": 1 },
+    "family": ["Titan"],
+    "levels": [
+      { "level": 3, "cores": 3, "bp": 10000 },
+      { "level": 4, "cores": 5, "bp": 12000 }
+    ]
+  },
+  {
+    "cardNo": "SMP-012",
+    "name": "Twin Blade Brave",
+    "type": "brave",
+    "cost": 3,
+    "colors": ["red"],
+    "reduction": { "red": 2 },
+    "symbols": { "red": 1 },
+    "braveCondition": { "maxSpirits": 2 },
+    "levels": [
+      { "level": 1, "cores": 1, "bp": 3000 },
+      { "level": 2, "cores": 3, "bp": 5000 }
+    ]
+  },
+  {
+    "cardNo": "SMP-013",
+    "name": "Tide Serpent",
+    "type": "spirit",
+    "cost": 2,
+    "colors": ["blue"],
+    "reduction": { "blue": 1 },
+    "symbols": { "blue": 1 },
+    "family": ["Serpent"],
+    "levels": [
+      { "level": 1, "cores": 1, "bp": 2000 },
+      { "level": 2, "cores": 3, "bp": 4000 }
+    ]
+  },
+  {
+    "cardNo": "SMP-014",
+    "name": "Shade Bat",
+    "type": "spirit",
+    "cost": 1,
+    "colors": ["purple"],
+    "reduction": { "purple": 1 },
+    "symbols": { "purple": 1 },
+    "family": ["Night"],
+    "levels": [
+      { "level": 1, "cores": 1, "bp": 1000 },
+      { "level": 2, "cores": 2, "bp": 2000 }
+    ]
+  },
+  {
+    "cardNo": "SMP-015",
+    "name": "Gale Hawk",
+    "type": "spirit",
+    "cost": 2,
+    "colors": ["green"],
+    "reduction": { "green": 1 },
+    "symbols": { "green": 1 },
+    "family": ["Bird"],
+    "levels": [
+      { "level": 1, "cores": 1, "bp": 2000 },
+      { "level": 2, "cores": 3, "bp": 4000 }
+    ]
+  },
+  {
+    "cardNo": "SMP-016",
+    "name": "Gear Knight",
+    "type": "spirit",
+    "cost": 2,
+    "colors": ["white"],
+    "reduction": { "white": 1 },
+    "symbols": { "white": 1 },
+    "family": ["Machine"],
+    "levels": [
+      { "level": 1, "cores": 1, "bp": 2000 },
+      { "level": 2, "cores": 2, "bp": 3000 },
+      { "level": 3, "cores": 4, "bp": 5000 }
+    ]
+  }
+]
