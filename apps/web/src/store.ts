@@ -478,6 +478,8 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
   }
   /** เวลาที่ผู้โจมตีชนเป้าหมาย (เริ่มวิ่งเมื่อถึง event แรกที่เป็นผลของการต่อสู้) */
   let hitAt: number | null = null;
+  /** มีเอฟเฟกต์ทำงานหลังการชนแล้ว: Life ที่เสียต่อจากนี้เป็นผลของเอฟเฟกต์ (ตามไทม์ไลน์ ไม่ใช่จังหวะชน) */
+  let effectAfterHit = false;
   const battleResult = (e: GameEvent) =>
     !!charge &&
     hitAt === null &&
@@ -568,6 +570,7 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         break;
       }
       case 'effectResolving': {
+        if (hitAt !== null) effectAfterHit = true;
         // การ์ดบนสนามยกขึ้นเรืองแสง → ผลของเอฟเฟกต์เกิดทันที → การ์ดบินไปต่อท้าย Chain
         // การ์ดบนสนาม หรือบนมือ (เอฟเฟกต์ที่ทำงานจากมือ): ยกขึ้นเรืองแสง + จอสลัว
         const inHand = !onAnyField(e.cardId) && PLAYERS.some((p) => s.players[p].hand.includes(e.cardId) || prev.players[p].hand.includes(e.cardId));
@@ -642,7 +645,10 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
       case 'lifeLost':
         if (e.amount > 0) {
           const direct = !!charge && e.player === defender && blockers.length === 0;
-          out.push({ kind: 'damage', player: e.player, amount: e.amount, big: direct, delay: at(e.player === defender) });
+          // เสีย Life จากการโจมตีเอง = จังหวะชน, จากเอฟเฟกต์ที่ทำงานทีหลัง (เช่น ส่งไลฟ์ลงรีเสิร์ฟ) = ตามคิวเอฟเฟกต์
+          const fromBattle = e.player === defender && !effectAfterHit;
+          out.push({ kind: 'damage', player: e.player, amount: e.amount, big: direct && fromBattle, delay: at(fromBattle) });
+          if (!fromBattle) t += 700;
         }
         break;
       case 'exhausted':
