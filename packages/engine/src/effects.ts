@@ -623,7 +623,7 @@ function putOnField(ctx: Ctx, item: QueuedEffect, step: Extract<Step, { do: 'pla
   const from = detach(ctx, me, step.cardId);
   for (const id of cores) removeCore(s, id);
   s.players[me].field.push(step.cardId);
-  card.cores = cores;
+  card.cores = [...cores];
   card.state = step.state ?? 'refresh';
   if (step.noSummon) {
     emit(ctx, { type: 'braveSeparated', cardId: step.cardId, stays: true });

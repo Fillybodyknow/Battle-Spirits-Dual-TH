@@ -176,5 +176,5 @@ export function payCost(
     p.trashCores.push(id);
   }
   for (const id of placement) removeCore(ctx.s, id);
-  return { paid: cost, placed: placement };
+  return { paid: cost, placed: [...placement] };
 }

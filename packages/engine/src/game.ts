@@ -269,7 +269,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     removeFrom(p.hand, cardId);
     p.field.push(cardId);
     card.state = 'refresh';
-    card.cores = placed;
+    card.cores = [...placed];
     emit(ctx, { type: 'summoned', player, cardId, paid, ...(flash ? { quick: true } : {}) });
     if (flash) {
       flash.consecutivePasses = 0;
@@ -293,7 +293,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     removeFrom(p.hand, cardId);
     p.field.push(cardId);
     card.state = 'refresh';
-    card.cores = placed;
+    card.cores = [...placed];
     emit(ctx, { type: 'nexusDeployed', player, cardId, paid });
     checkDepletion(ctx);
   },
@@ -701,7 +701,9 @@ function checkBattleParticipants(ctx: Ctx): void {
  * ฟังก์ชันหลักของ engine: ตรวจกติกาแล้วคืน state ใหม่ (ไม่แก้ state เดิม)
  * action ที่ผิดกติกาจะได้ { ok: false } และ state เดิมไม่เปลี่ยน
  */
-export function applyAction(state: GameState, action: Action, db: CardDatabase): ActionResult {
+export function applyAction(state: GameState, input: Action, db: CardDatabase): ActionResult {
+  // คัดลอก action: engine ห้ามแก้ object ของผู้เรียก (array ใน action ถูกใช้เป็นข้อมูลใน state เช่น Core บนการ์ด)
+  const action = structuredClone(input);
   if (state.winner) return { ok: false, error: { code: 'GAME_OVER', message: 'เกมจบแล้ว' } };
   const ctx: Ctx = { s: structuredClone(state), db, events: [] };
   try {

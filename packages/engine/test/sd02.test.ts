@@ -608,3 +608,17 @@ describe('สปิริตอื่น ๆ', () => {
     expect(s.cards[fong]!.cores).toHaveLength(1);
   });
 });
+
+describe('engine ไม่แก้ action ของผู้เรียก', () => {
+  it('อัญเชิญนินโควโชวจ่ายด้วยโซล (คอร์วอยด์บนตัวเอง): placement ใน action ไม่ถูกต่อคอร์ใหม่เข้าไป', () => {
+    // บั๊กเดิม: Core บนการ์ดใช้ array เดียวกับ action.placement → คอร์วอยด์ถูกต่อเข้า action
+    // เล่นออนไลน์จะส่ง action ที่ถูกแก้แล้ว (มีคอร์ที่ไม่มีจริง) เข้าห้อง ทำให้สองเครื่องไม่ตรงกัน
+    const s = setup([NINKO]);
+    const r = pay(s, 'p1', NINKO, true);
+    const action: Action = { type: 'summon', player: 'p1', cardId: handId(s, 'p1', NINKO), payment: r, placement: spare(s, 'p1', r, 1) };
+    const before = JSON.stringify(action);
+    const next = actRaw(s, action);
+    expect(JSON.stringify(action)).toBe(before);
+    expect(next.cards[action.cardId]!.cores).toHaveLength(2);
+  });
+});
