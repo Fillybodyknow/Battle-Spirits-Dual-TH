@@ -1577,7 +1577,8 @@ export const useGame = create<Store>((set, get) => {
       if (animate) {
         playFxSounds(newFx);
         // มุมมองสลับฝั่งเมื่อเปลี่ยนเทิร์น: ไม่ให้ Core ทั้งกระดานบินข้ามฝั่ง
-        const flipped = !get().fixedView && !isFxBlocking(fx) && next.turnPlayer !== get().viewTurn;
+        // ออนไลน์กระดานไม่พลิกฝั่ง: Core บินตามปกติแม้เปลี่ยนเทิร์น
+        const flipped = !get().online && !get().fixedView && !isFxBlocking(fx) && next.turnPlayer !== get().viewTurn;
         if (!flipped) primeCoreMotion(coreRects, coreDelays(state, next, newFx));
       }
       else if (!silent && pre.length + result.events.length > 0) sfx('click');

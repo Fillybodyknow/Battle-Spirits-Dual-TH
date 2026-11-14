@@ -759,8 +759,9 @@ function HandCard({ cardId, hidden, small, fan }: { cardId: string; hidden: bool
   const style = fan ? fanStyle(fan, hovering || selected) : undefined;
 
   if (hidden) {
+    // ใส่ data-hand-card ด้วย: แอนิเมชันจั่ว/ลงการ์ด/กลับขึ้นมือของมือที่คว่ำไว้ (มือคู่แข่ง) ต้องใช้ตำแหน่งนี้
     return (
-      <div className={`${size} shrink-0`} style={style}>
+      <div data-hand-card={cardId} className={`${size} shrink-0 ${flying ? 'invisible' : ''}`} style={style}>
         <CardBack />
       </div>
     );
