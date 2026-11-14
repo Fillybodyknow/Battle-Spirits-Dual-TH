@@ -1,5 +1,6 @@
 # Build เว็บเกมแล้ว deploy ขึ้น GitHub Pages ทุกครั้งที่ push เข้า main (หรือกดรันเองในแท็บ Actions)
-# ค่า Firebase ตั้งที่ Settings → Secrets and variables → Actions → Variables (VITE_FIREBASE_*)
+# ค่า Firebase (VITE_FIREBASE_*) อ่านจาก Environment variables ของ environment "github-pages"
+# (หรือ Repository variables ก็ได้) ที่ Settings → Environments → github-pages
 name: Deploy to GitHub Pages
 
 on:
@@ -17,8 +18,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
+    # ผูกกับ environment นี้ทั้ง job เพื่อให้ขั้น build อ่าน Environment variables ได้
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -27,7 +32,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
-      - run: npm run build
+      - name: Build
+        run: |
+          if [ -z "$VITE_FIREBASE_API_KEY" ]; then echo "::warning::ยังไม่ได้ตั้ง VITE_FIREBASE_API_KEY: เว็บจะเล่นออนไลน์ไม่ได้"; fi
+          if [ -z "$VITE_FIREBASE_APP_ID" ]; then echo "::warning::ยังไม่ได้ตั้ง VITE_FIREBASE_APP_ID"; fi
+          npm run build
         env:
           # เว็บอยู่ที่ https://<user>.github.io/<repo>/
           VITE_BASE: /${{ github.event.repository.name }}/
@@ -40,13 +49,5 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: apps/web/dist
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
       - id: deployment
         uses: actions/deploy-pages@v4
