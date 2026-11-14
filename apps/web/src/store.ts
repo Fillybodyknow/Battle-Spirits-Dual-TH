@@ -1389,7 +1389,10 @@ function onRoom(code: string, info: RoomInfo | null) {
     // คนชนะการเสี่ยงเลือกแล้ว: สร้างเกมด้วยผู้เริ่มก่อนที่เลือก แล้วเริ่มรับ action
     useGame.setState({ online: { ...on, opponentHere, names } });
     beginPlay(code, info.setup, opponentHere, 0);
-  } else useGame.setState({ online: { ...on, opponentHere, names } });
+  } else {
+    // ยังรอคู่แข่ง: เก็บ setup ของห้องไว้ (หน้า Lobby แสดงเด็คที่เลือกจริงจากห้อง)
+    useGame.setState({ online: { ...on, opponentHere, names, ...(on.status === 'waiting' ? { setup: info.setup } : {}) } });
+  }
 }
 
 async function startRound(code: string, setup: RoomSetup, opponentHere: boolean) {
