@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { opponentOf } from '@bs/engine';
 import { cardArt } from '../assets';
-import { actingPlayer, chainEntries, viewPlayer, db, GHOST_MS, isFxBlocking, layoutRect, PLAY_HIT, useGame, type Fx, type Rect, hiddenFrom } from '../store';
+import { actingPlayer, chainEntries, viewPlayer, db, GHOST_MS, isFxBlocking, layoutRect, PLAY_HIT, useGame, type Fx, type Rect, hiddenFrom, COIN_MS } from '../store';
 import { CardBack, CardFace } from './CardFace';
 import { sfx } from '../sfx';
 import { playerLabel } from '../format';
@@ -32,7 +32,13 @@ function Banner({ fx, onDone }: { fx: Extract<Fx, { kind: 'banner' }>; onDone: (
   const win = fx.tone === 'win';
   const showFx = useGame((s) => s.showFx);
   const shown = (fx.delay ?? 0) === 0;
-  useAutoDismiss(onDone, win ? null : 1400);
+  // นับเวลาปิดเมื่อป้ายแสดงจริงแล้ว (ป้ายที่มี delay ต้องรอแอนิเมชันก่อนหน้า เช่น โยนเหรียญ)
+  useEffect(() => {
+    if (!shown || win) return;
+    const t = setTimeout(onDone, 1400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shown]);
   useEffect(() => {
     if (shown) return;
     const t = setTimeout(() => showFx(fx.id), fx.delay);
@@ -188,6 +194,100 @@ function FloatText({ fx, onDone }: { fx: Extract<Fx, { kind: 'float' }>; onDone:
 }
 
 /** ชั้นเอฟเฟกต์ภาพ: ป้าย/cut-in ทีละอัน, ป๊อปอัปเอฟเฟกต์ซ้อนได้ 3 อัน, ตัวเลขลอยพร้อมกันได้ */
+/** ลายบนเหรียญ: แกนคอร์หกเหลี่ยม + วงแหวน (ด้านทอง/ด้านเทาใช้ลายเดียวกัน ต่างแค่สี) */
+function CoinFace({ gold }: { gold: boolean }) {
+  const ink = gold ? '#7c4a03' : '#334155';
+  const hi = gold ? '#fff7cc' : '#f8fafc';
+  return (
+    <div
+      className="absolute inset-0 flex items-center justify-center rounded-full"
+      style={{
+        background: gold
+          ? 'radial-gradient(circle at 35% 30%, #fffbe6 0%, #fde68a 18%, #f5b72a 48%, #c27c0e 78%, #8a5208 100%)'
+          : 'radial-gradient(circle at 35% 30%, #ffffff 0%, #e2e8f0 18%, #a3afc0 50%, #6b7789 78%, #3f4856 100%)',
+        boxShadow: `inset 0 0 0 6px ${gold ? '#b8740c' : '#5b6575'}, inset 0 0 0 10px ${hi}55, inset 0 0 0 16px ${gold ? '#d99a1e' : '#8792a3'}, inset 0 -10px 24px rgba(0,0,0,0.35)`,
+        backfaceVisibility: 'hidden',
+        transform: gold ? 'none' : 'rotateX(180deg)',
+      }}
+    >
+      <svg viewBox="0 0 100 100" className="h-[62%] w-[62%]" style={{ filter: `drop-shadow(0 1px 0 ${hi})` }}>
+        <circle cx="50" cy="50" r="44" fill="none" stroke={ink} strokeWidth="2.5" strokeDasharray="4 5" opacity="0.7" />
+        <polygon points="50,14 81,32 81,68 50,86 19,68 19,32" fill="none" stroke={ink} strokeWidth="5" strokeLinejoin="round" />
+        <polygon points="50,28 68,39 68,61 50,72 32,61 32,39" fill={ink} opacity="0.85" />
+        <polygon points="50,36 60,42 50,48 40,42" fill={hi} opacity="0.8" />
+        {[0, 60, 120, 180, 240, 300].map((a) => (
+          <line key={a} x1="50" y1="14" x2="50" y2="6" stroke={ink} strokeWidth="3" strokeLinecap="round" transform={`rotate(${a} 50 50)`} />
+        ))}
+      </svg>
+    </div>
+  );
+}
+
+/** โยนเหรียญตอนเริ่มเกม: เหรียญลอยขึ้นหมุน แล้วตกลงกลางจอ แสดงผลว่าใครเริ่มก่อน */
+function CoinToss({ fx, onDone }: { fx: Extract<Fx, { kind: 'coin' }>; onDone: () => void }) {
+  const [landed, setLanded] = useState(false);
+  useEffect(() => {
+    sfx('swish');
+    sfx('whoosh', 250);
+    const land = setTimeout(() => {
+      setLanded(true);
+      sfx('impact');
+      sfx(fx.heads ? 'buff' : 'fade', 150);
+    }, 1900);
+    const done = setTimeout(onDone, COIN_MS);
+    return () => {
+      clearTimeout(land);
+      clearTimeout(done);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const tone = fx.heads ? '#facc15' : '#cbd5e1';
+  return (
+    <div className="pointer-events-none fixed inset-0 z-[65] flex flex-col items-center justify-center" style={{ animation: `fx-fade-in-out ${COIN_MS}ms ease both` }}>
+      <div className="absolute inset-0 bg-black/70" />
+      {/* แสงหลังเหรียญตอนตกถึงพื้น */}
+      {landed && (
+        <div
+          className="absolute top-1/2 left-1/2 h-[520px] w-[520px] rounded-full"
+          style={{ background: `radial-gradient(circle, ${tone}55, transparent 62%)`, animation: 'coin-burst 0.9s ease-out both' }}
+        />
+      )}
+      <div className="relative" style={{ perspective: '900px' }}>
+        <div style={{ animation: 'coin-arc 1.9s cubic-bezier(.25,.6,.35,1) both' }}>
+          <div
+            className="relative h-48 w-48"
+            style={{
+              transformStyle: 'preserve-3d',
+              ['--spin' as string]: fx.heads ? '2160deg' : '2340deg',
+              animation: 'coin-spin 1.9s cubic-bezier(.2,.75,.3,1) both',
+            }}
+          >
+            <CoinFace gold />
+            <CoinFace gold={false} />
+          </div>
+        </div>
+        {/* เงาบนพื้น */}
+        <div className="absolute top-full left-1/2 mt-6 h-4 w-36 -translate-x-1/2 rounded-full bg-black/60 blur-md" style={{ animation: 'coin-shadow 1.9s cubic-bezier(.25,.6,.35,1) both' }} />
+      </div>
+      <div className="relative mt-14 h-24 text-center">
+        {landed && (
+          <>
+            <div className="text-sm font-bold tracking-[0.5em]" style={{ color: tone, animation: 'fx-slide-up 0.4s ease-out both' }}>
+              {fx.sub}
+            </div>
+            <div
+              className="mt-1 text-5xl font-black italic"
+              style={{ color: fx.heads ? '#fde68a' : '#e2e8f0', textShadow: `0 0 24px ${tone}aa, 0 3px 0 rgba(0,0,0,0.6)`, animation: 'lobby-vs 0.55s cubic-bezier(.2,1.4,.4,1) both' }}
+            >
+              {fx.title}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function FxLayer() {
   const fx = useGame((s) => s.fx);
   const dismiss = useGame((s) => s.dismissFx);
@@ -198,6 +298,7 @@ export function FxLayer() {
   return (
     <>
       {current?.kind === 'banner' && <Banner key={current.id} fx={current} onDone={() => dismiss(current.id)} />}
+      {fx.map((f) => (f.kind === 'coin' ? <CoinToss key={f.id} fx={f} onDone={() => dismiss(f.id)} /> : null))}
       {fx.map((f) => (f.kind === 'finalBlow' ? <FinalBlow key={f.id} fx={f} onDone={() => dismiss(f.id)} /> : null))}
       {current?.kind === 'summon' && <SummonCutIn key={current.id} fx={current} onDone={() => dismiss(current.id)} />}
       {/* ป๊อปอัปเอฟเฟกต์ลอยทับแผงรายละเอียดด้านขวา เพื่อไม่บังกระดาน */}

@@ -49,13 +49,14 @@ export const localTransport: Transport = {
     s[code] = info;
     write(s);
   },
-  async joinRoom(code, uid, deck) {
+  async joinRoom(code, uid, deck, name) {
     const s = read();
     const room = s[code];
     if (!room) throw new Error('ไม่พบห้องนี้');
     if (room.seats.p1 === uid) throw new Error('คุณเป็นเจ้าของห้องนี้อยู่แล้ว');
     if (room.seats.p2 && room.seats.p2 !== uid) throw new Error('ห้องนี้เต็มแล้ว');
     room.seats.p2 = uid;
+    room.names = { ...(room.names ?? {}), p2: name };
     room.setup.decks.p2 = deck;
     write(s);
     return room;
@@ -67,7 +68,7 @@ export const localTransport: Transport = {
     let last = '';
     const check = () => {
       const r = read()[code] ?? null;
-      const sig = JSON.stringify(r && { seats: r.seats, setup: r.setup });
+      const sig = JSON.stringify(r && { seats: r.seats, setup: r.setup, names: r.names });
       if (sig === last) return;
       last = sig;
       cb(r);

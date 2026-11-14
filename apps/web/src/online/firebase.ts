@@ -32,10 +32,11 @@ const roomRef = (code: string) => ref(database(), `rooms/${code}`);
 
 function toInfo(v: unknown): RoomInfo | null {
   if (!v || typeof v !== 'object') return null;
-  const r = v as { seats?: RoomInfo['seats']; setup?: { round: number; seed: number; decks?: { p1?: string; p2?: string } } };
+  const r = v as { seats?: RoomInfo['seats']; names?: RoomInfo['names']; setup?: { round: number; seed: number; decks?: { p1?: string; p2?: string } } };
   if (!r.setup || !r.setup.decks?.p1) return null;
   return {
     seats: r.seats ?? {},
+    names: r.names ?? {},
     setup: { round: r.setup.round, seed: r.setup.seed, decks: { p1: r.setup.decks.p1, p2: r.setup.decks.p2 ?? null } },
   };
 }
@@ -56,7 +57,7 @@ export const firebaseTransport: Transport = {
     if (!res.committed) throw new Error('รหัสห้องนี้ถูกใช้แล้ว ลองใหม่อีกครั้ง');
   },
 
-  async joinRoom(code, uid, deck) {
+  async joinRoom(code, uid, deck, name) {
     let reason = '';
     const res = await runTransaction(roomRef(code), (cur) => {
       if (!cur) {
@@ -73,6 +74,7 @@ export const firebaseTransport: Transport = {
         return undefined;
       }
       cur.seats = { ...seats, p2: uid };
+      cur.names = { ...(cur.names ?? {}), p2: name };
       cur.setup = { ...cur.setup, decks: { ...cur.setup.decks, p2: deck } };
       return cur;
     });

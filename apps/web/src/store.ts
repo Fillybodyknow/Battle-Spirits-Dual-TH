@@ -252,6 +252,8 @@ function autoAdvance(s: GameState, events: GameEvent[]): GameState {
 export type Fx =
   /** delay: ป้ายผู้ชนะรอให้แอนิเมชันทั้งหมดเล่นจบก่อน (ระหว่างรอนับเป็นแอนิเมชันที่ต้องเล่นให้จบ) */
   | { id: number; kind: 'banner'; title: string; sub?: string; tone: 'turn' | 'step' | 'burst' | 'win'; delay?: number }
+  /** โยนเหรียญตัดสินผู้เริ่มก่อน (heads = ด้านทอง: คนที่ดูจอนี้เริ่มก่อน) */
+  | { id: number; kind: 'coin'; heads: boolean; title: string; sub: string }
   /** FINAL BLOW: การโจมตีที่ทำให้ Life เป็น 0 (เวลาหยุดชั่วครู่ แสงวาบ ข้อความใหญ่ ฝั่งที่แพ้ร้าว) */
   | { id: number; kind: 'finalBlow'; loser: PlayerId; winner: PlayerId; delay: number }
   | { id: number; kind: 'summon'; cardId: string; level: number; bp: number; delay: number }
@@ -725,7 +727,7 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         let at = end + 300;
         if (e.reason === 'lifeZero') {
           const loser = opponentOf(e.winner);
-          const hit = [...out].reverse().find((f) => f.kind === 'damage' && f.player === loser);
+          const hit = [...out].reverse().find((f): f is Extract<FxInput, { kind: 'damage' }> => f.kind === 'damage' && f.player === loser);
           const fb = hit?.delay ?? end;
           out.push({ kind: 'finalBlow', loser, winner: e.winner, delay: fb });
           at = Math.max(end + 300, fb + T.finalBlow);
@@ -844,6 +846,7 @@ export function isFxBlocking(fx: Fx[]): boolean {
   return fx.some(
     (f) =>
       f.kind === 'cardActivate' ||
+      f.kind === 'coin' ||
       f.kind === 'chain' ||
       f.kind === 'reveal' ||
       f.kind === 'chainAdd' ||
@@ -1077,6 +1080,18 @@ interface Store {
   /** การเล่นออนไลน์ (null = เล่นเครื่องเดียว) */
   online: OnlineState | null;
   onlineHost(deck: DeckId): Promise<void>;
+  /** หน้าที่แสดงอยู่ */
+  screen: Screen;
+  setScreen(screen: Screen): void;
+  /** ชื่อผู้เล่นของเครื่องนี้ (จำไว้ใน localStorage) */
+  playerName: string;
+  setPlayerName(name: string): void;
+  /** เริ่มเกมเล่นเครื่องเดียวด้วยเด็คที่เลือก แล้วไปหน้ากระดาน */
+  startLocal(decks: DeckChoice): void;
+  /** มีเกมเครื่องเดียวที่เล่นค้างอยู่ (กลับไปเล่นต่อได้) */
+  localInProgress: boolean;
+  /** เด็คที่เปิดดูในหน้าเด็ค */
+  deckView: DeckId;
   onlineJoin(code: string, deck: DeckId): Promise<void>;
   onlineLeave(): void;
   /** เจ้าของห้อง: เริ่มเกมใหม่ในห้องเดิม */
@@ -1139,6 +1154,16 @@ interface Store {
 
 // ---------------------------------------------------------------- เล่นออนไลน์
 
+export type Screen = 'home' | 'lobby' | 'decks' | 'game';
+
+function loadName(): string {
+  try {
+    return localStorage.getItem('bs-name') || 'นักดวล';
+  } catch {
+    return 'นักดวล';
+  }
+}
+
 export interface OnlineState {
   code: string;
   me: PlayerId;
@@ -1151,6 +1176,8 @@ export interface OnlineState {
   /** จำนวน action ของรอบนี้ที่ทำแล้ว */
   applied: number;
   opponentHere: boolean;
+  /** ชื่อผู้เล่นในห้อง */
+  names: Partial<Record<PlayerId, string>>;
 }
 
 /** ?online=local = ทดสอบ 2 แท็บในเครื่องเดียว (ไม่ใช้ Firebase) */
@@ -1183,7 +1210,10 @@ function stopSync() {
 function enterRoom(code: string, me: PlayerId, uid: string) {
   stopSync();
   sessionStorage.setItem(SESSION, JSON.stringify({ code, me, via: transport.name }));
-  useGame.setState({ online: { code, me, uid, via: transport.name, status: 'waiting', setup: null, applied: 0, opponentHere: me === 'p2' }, error: null });
+  useGame.setState({
+    online: { code, me, uid, via: transport.name, status: 'waiting', setup: null, applied: 0, opponentHere: me === 'p2', names: {} },
+    error: null,
+  });
   unsubRoom = transport.watchRoom(code, (info) => onRoom(code, info));
 }
 
@@ -1198,8 +1228,11 @@ function onRoom(code: string, info: RoomInfo | null) {
   }
   const opponentHere = !!info.seats[opponentOf(on.me)];
   const ready = !!info.setup.decks.p2 && !!info.seats.p2;
-  if (ready && (on.status !== 'playing' || on.setup?.round !== info.setup.round)) void startRound(code, info.setup, opponentHere);
-  else useGame.setState({ online: { ...on, opponentHere } });
+  const names = info.names ?? {};
+  if (ready && (on.status !== 'playing' || on.setup?.round !== info.setup.round)) {
+    useGame.setState({ online: { ...on, names } });
+    void startRound(code, info.setup, opponentHere);
+  } else useGame.setState({ online: { ...on, opponentHere, names } });
 }
 
 async function startRound(code: string, setup: RoomSetup, opponentHere: boolean) {
@@ -1217,8 +1250,9 @@ async function startRound(code: string, setup: RoomSetup, opponentHere: boolean)
   silentBelow = existing;
   nextIndex = existing;
   const state = startGame(setup.seed, decks);
-  const banner: Fx[] =
-    st.animations && existing === 0 ? [{ id: ++fxSeq, kind: 'banner', tone: 'turn', title: 'เทิร์นที่ 1', sub: `${who(state.turnPlayer)} เริ่มก่อน` }] : [];
+  // โยนเหรียญ: จอของคนเริ่มก่อนออกหัว จอของคนเริ่มทีหลังออกก้อย
+  const first = state.turnPlayer === st.online.me;
+  const banner: Fx[] = st.animations && existing === 0 ? coinToss(first, first ? 'คุณเริ่มก่อน!' : 'คุณเริ่มทีหลัง', state.turnPlayer) : [];
   useGame.setState({
     ...resetUi,
     state,
@@ -1230,6 +1264,8 @@ async function startRound(code: string, setup: RoomSetup, opponentHere: boolean)
     pinned: null,
     fx: banner,
     online: { ...st.online, status: 'playing', setup, applied: 0, opponentHere },
+    // Lobby แสดง VS แล้วค่อยเข้ากระดานเอง / กลับเข้าห้องหลังรีเฟรช = ไปกระดานเลย
+    ...(st.screen === 'lobby' ? {} : { screen: 'game' as const }),
   });
   unsubActions = transport.watchActions(code, setup.round, (index, action) => receive(code, setup.round, index, action));
 }
@@ -1291,6 +1327,17 @@ async function resumeSession() {
 }
 if (typeof window !== 'undefined') setTimeout(() => void resumeSession(), 0);
 
+/** เวลาของแอนิเมชันโยนเหรียญ (ms) ป้ายเทิร์นที่ 1 ขึ้นหลังจากนี้ */
+export const COIN_MS = 3600;
+
+/** แอนิเมชันโยนเหรียญ ตามด้วยป้ายเทิร์นที่ 1 */
+function coinToss(heads: boolean, title: string, firstPlayer: PlayerId): Fx[] {
+  return [
+    { id: ++fxSeq, kind: 'coin', heads, title, sub: heads ? 'ออกหัว' : 'ออกก้อย' },
+    { id: ++fxSeq, kind: 'banner', tone: 'turn', title: 'เทิร์นที่ 1', sub: `${who(firstPlayer)} เริ่มก่อน`, delay: COIN_MS },
+  ];
+}
+
 function startGame(seed: number, decks: DeckChoice): GameState {
   return createGame({
     db,
@@ -1326,12 +1373,31 @@ export const useGame = create<Store>((set, get) => {
     animations: true,
     autoPass: true,
     online: null,
+    screen: 'home',
+    setScreen: (screen) => set({ screen }),
+    playerName: loadName(),
+    setPlayerName: (name) => {
+      const clean = name.trim().slice(0, 16) || 'นักดวล';
+      try {
+        localStorage.setItem('bs-name', clean);
+      } catch {
+        /* ไม่มี storage ก็ใช้ชื่อในหน่วยความจำ */
+      }
+      set({ playerName: clean });
+    },
+    localInProgress: false,
+    deckView: 'sd01',
+    startLocal: (decks) => {
+      set({ decks });
+      get().newGame();
+      set({ screen: 'game', localInProgress: true });
+    },
     onlineHost: async (deck) => {
       try {
         const uid = await transport.signIn();
         const code = randomCode();
         const setup: RoomSetup = { round: 1, seed: randomSeed(), decks: { p1: deck, p2: null } };
-        await transport.createRoom(code, { seats: { p1: uid }, setup });
+        await transport.createRoom(code, { seats: { p1: uid }, setup, names: { p1: get().playerName } });
         enterRoom(code, 'p1', uid);
       } catch (e) {
         set({ error: `สร้างห้องไม่สำเร็จ: ${(e as Error).message}` });
@@ -1341,7 +1407,7 @@ export const useGame = create<Store>((set, get) => {
       try {
         const uid = await transport.signIn();
         const c = code.trim().toUpperCase();
-        await transport.joinRoom(c, uid, deck);
+        await transport.joinRoom(c, uid, deck, get().playerName);
         enterRoom(c, 'p2', uid);
       } catch (e) {
         set({ error: `เข้าห้องไม่สำเร็จ: ${(e as Error).message}` });
@@ -1352,7 +1418,7 @@ export const useGame = create<Store>((set, get) => {
       stopSync();
       clearSession();
       if (on) void transport.leave(on.code, on.me).catch(() => {});
-      set({ online: null });
+      set({ online: null, screen: 'home', localInProgress: false });
       get().newGame();
     },
     onlineRematch: () => {
@@ -1413,7 +1479,7 @@ export const useGame = create<Store>((set, get) => {
     newGame() {
       const seed = randomSeed();
       const state = startGame(seed, get().decks);
-      const fx: Fx[] = get().animations ? [{ id: ++fxSeq, kind: 'banner', tone: 'turn', title: 'เทิร์นที่ 1', sub: `${who(state.turnPlayer)} เริ่มก่อน` }] : [];
+      const fx: Fx[] = get().animations ? coinToss(true, `${who(state.turnPlayer)} เริ่มก่อน!`, state.turnPlayer) : [];
       set({ ...resetUi, state, truth: null, seed, history: [], error: null, pinned: null, hovered: null, fx, viewTurn: state.turnPlayer });
     },
 

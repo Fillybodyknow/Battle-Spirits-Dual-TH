@@ -22,6 +22,8 @@ export interface RoomSetup {
 export interface RoomInfo {
   seats: Partial<Record<PlayerId, string>>;
   setup: RoomSetup;
+  /** ชื่อที่ผู้เล่นตั้งเอง */
+  names?: Partial<Record<PlayerId, string>>;
 }
 
 export interface Transport {
@@ -32,7 +34,7 @@ export interface Transport {
   /** สร้างห้องใหม่ (ล้มเหลวถ้ารหัสซ้ำ) */
   createRoom(code: string, info: RoomInfo): Promise<void>;
   /** จองที่นั่ง p2 และตั้งเด็คของ p2 คืนข้อมูลห้อง (ล้มเหลวถ้าไม่มีห้องหรือเต็ม) */
-  joinRoom(code: string, uid: string, deck: string): Promise<RoomInfo>;
+  joinRoom(code: string, uid: string, deck: string, name: string): Promise<RoomInfo>;
   /** อ่านห้องหนึ่งครั้ง */
   readRoom(code: string): Promise<RoomInfo | null>;
   /** ติดตามข้อมูลห้อง (ที่นั่ง/ค่าตั้งต้น) */
