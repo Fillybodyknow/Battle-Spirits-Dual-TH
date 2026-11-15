@@ -5,8 +5,10 @@ import './index.css';
 // สีสำรองสำหรับเบราว์เซอร์ที่ไม่รู้จัก oklch() (สร้างด้วย npm run legacy-colors)
 import './legacy-colors.css';
 import { registerPwa } from './pwa';
+import { installTouch } from './touch';
 
 registerPwa();
+installTouch();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

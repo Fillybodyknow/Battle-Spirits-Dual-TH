@@ -2,19 +2,21 @@ import { describe, expect, it } from 'vitest';
 import sd1Text from '../../../assets/files/SD1.text?raw';
 import sd01Json from '../data/sd01.json';
 import sd01DeckJson from '../data/sd01-deck.json';
-import { CardTextError, isXRare, loadSD01Cards, parseCardText, rarityOf, SD01_DECK, validateDeck } from '../src';
+import { CardTextError, isXRare, loadAllCards, loadBS01Cards, loadSD01Cards, parseCardText, rarityOf, SD01_DECK, validateDeck } from '../src';
 
 describe('Starter Deck 01', () => {
-  const db = loadSD01Cards();
+  // การ์ดส่วนใหญ่ของ SD01 เขียนไว้ใน Booster Set 01 (assets/files/BS01) ที่เดียว
+  const db = loadAllCards();
 
   it('JSON ใน data/ ตรงกับ assets/files/SD1.text (ถ้าไม่ตรง ให้รัน npm run cards)', () => {
-    const parsed = parseCardText(sd1Text, { setCode: 'SD01' });
+    const parsed = parseCardText(sd1Text, { setCode: 'SD01', otherCards: loadBS01Cards().all() });
     expect(parsed.cards).toEqual(sd01Json);
     expect(parsed.deck).toEqual(sd01DeckJson);
   });
 
   it('ผ่าน schema และเด็ค 40 ใบถูกกติกา', () => {
-    expect(db.all()).toHaveLength(15);
+    expect(loadSD01Cards().all().map((c) => c.name)).toEqual(['เบิร์สวอลล์']);
+    expect(new Set(SD01_DECK.map((e) => e.cardNo)).size).toBe(15);
     expect(validateDeck([...SD01_DECK], db)).toEqual({ valid: true, total: 40, errors: [] });
   });
 
@@ -31,7 +33,7 @@ describe('Starter Deck 01', () => {
     });
     expect(solDragon.levels.at(-1)).toEqual({ level: 4, cores: 9, bp: 30000 });
 
-    const nexus = db.all().find((c) => c.type === 'nexus')!;
+    const nexus = db.all().find((c) => c.name === 'หุบเหวร้อยปราชญ์')!;
     expect(nexus.levels).toEqual([
       { level: 1, cores: 0 },
       { level: 2, cores: 3 },
@@ -46,7 +48,7 @@ describe('Starter Deck 01', () => {
 
     const tokage = db.all().find((c) => c.name === 'อิคุสะ โทคาเงะ')!;
     expect(tokage.reduction).toEqual({});
-    expect(tokage.effects).toEqual([{ levels: [3], text: 'ถ้าสปิริตนี้มี (โซลคอร์) วางอยู่, สปิริตนี้ BP+6000.' }]);
+    expect(tokage.effects).toEqual([{ levels: [3], text: expect.stringContaining('สปิริตนี้ BP+6000') }]);
   });
 });
 
@@ -65,7 +67,7 @@ Burst: ไม่มี
 ${extra}`;
 
   it('รายงานบรรทัดที่ผิดพร้อมเลขบรรทัด', () => {
-    const bad = card().replace('สี: แดง', 'สี: ชมพู').replace('Lv1  Core 1  BP 2000', 'Lv1 1 2000');
+    const bad = card().replace('สี: แดง', 'สี: ชมพู').replace('Lv1  Core 1  BP 2000', 'Lv1 Core หนึ่ง BP 2000');
     expect(() => parseCardText(bad, { setCode: 'T' })).toThrow(CardTextError);
     try {
       parseCardText(bad, { setCode: 'T' });
@@ -99,6 +101,7 @@ ${extra}`;
     expect(rarityOf('XV')).toMatchObject({ code: 'XV', rank: 6 });
     expect(isXRare({ rarity: 'X' })).toBe(true);
     expect(isXRare({ rarity: 'M' })).toBe(false);
-    expect(loadSD01Cards().all().filter(isXRare).map((c) => c.name)).toEqual(['มังกรเซ็นโงคุ โซลดราก้อน', 'เซ็นโกคุ-กุเร็นดราก้อน']);
+    const deckCards = SD01_DECK.map((e) => loadAllCards().get(e.cardNo));
+    expect(deckCards.filter(isXRare).map((c) => c.name)).toEqual(['มังกรเซ็นโงคุ โซลดราก้อน', 'เซ็นโกคุ-กุเร็นดราก้อน']);
   });
 });

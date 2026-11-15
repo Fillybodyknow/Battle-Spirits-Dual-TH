@@ -4,7 +4,8 @@ import { primeCoreMotion, snapCores } from './motion';
 import { firebaseConfigured, firebaseTransport } from './online/firebase';
 import { localTransport } from './online/local';
 import type { RoomInfo, RoomSetup, Transport } from './online/transport';
-import { createCardDatabase, expandDeck, loadSD01Cards, loadSD02Cards, loadSD03Cards, loadSD04Cards, SD01_DECK, SD02_DECK, SD03_DECK, SD04_DECK, type DeckEntry } from '@bs/cards';
+import { expandDeck, loadAllCards, validateDeck } from '@bs/cards';
+import { deckChoices, deckInfo, deckToken, STARTER_DECKS, type DeckId } from './decks';
 import { rarityOf, type TextEffect } from '@bs/cards';
 import {
   applyAction,
@@ -29,15 +30,14 @@ import {
 } from '@bs/engine';
 
 /** การ์ดทุกชุดที่ UI ใช้: Starter Deck 01–04 (SD01-…SD04-) */
-export const db = createCardDatabase([...loadSD01Cards().all(), ...loadSD02Cards().all(), ...loadSD03Cards().all(), ...loadSD04Cards().all()]);
+export const db = loadAllCards();
 
-export const DECKS = {
-  sd01: { label: 'Starter Deck 01', entries: [...SD01_DECK] },
-  sd02: { label: 'Starter Deck 02', entries: [...SD02_DECK] },
-  sd03: { label: 'Starter Deck 03', entries: [...SD03_DECK] },
-  sd04: { label: 'Starter Deck 04', entries: [...SD04_DECK] },
-} satisfies Record<string, { label: string; entries: DeckEntry[] }>;
-export type DeckId = keyof typeof DECKS;
+/** เด็คที่เลือกเล่นได้ (Starter + เด็คที่จัดเองซึ่งถูกกติกา) */
+export const playableDecks = (): DeckId[] => deckChoices().filter((id) => validateDeck(deckInfo(id).entries, db).valid);
+
+/** Starter Deck (เด็คที่จัดเองดู decks.ts) */
+export const DECKS = STARTER_DECKS;
+export type { DeckId };
 type DeckChoice = Record<PlayerId, DeckId>;
 
 export type PlayKind = 'summon' | 'deployNexus' | 'useMagic';
@@ -172,7 +172,9 @@ export function responseOptions(s: GameState, player: PlayerId): { magic: string
 export function isInlineChoice(s: GameState): boolean {
   const c = s.choice;
   if (!c || c.kind !== 'card' || c.revealed) return false;
-  return c.candidates.every((id) => PLAYERS.some((p) => s.players[p].field.includes(id)) || s.players[c.player].hand.includes(id));
+  // Brave ที่ร่วมร่างอยู่ (ไม่อยู่ใน field) ก็เลือกบนกระดานได้
+  const onBoard = (id: string) => PLAYERS.some((p) => s.players[p].field.some((f) => f === id || s.cards[f]!.braves.includes(id)));
+  return c.candidates.every((id) => onBoard(id) || s.players[c.player].hand.includes(id));
 }
 
 /** การ์ดนี้เป็นตัวเลือกของการเลือกบนกระดานตอนนี้หรือไม่ */
@@ -1397,7 +1399,7 @@ interface Store {
 
 // ---------------------------------------------------------------- เล่นออนไลน์
 
-export type Screen = 'home' | 'lobby' | 'decks' | 'game';
+export type Screen = 'home' | 'lobby' | 'decks' | 'builder' | 'game';
 
 function loadName(): string {
   try {
@@ -1628,7 +1630,8 @@ function startGame(seed: number, decks: DeckChoice, firstPlayer?: PlayerId): Gam
     db,
     seed,
     // เด็คที่ไม่มีแล้ว (เช่น เด็คตัวอย่างเดิมจากห้องออนไลน์เก่า) ใช้ Starter Deck 01 แทน
-    decks: { p1: expandDeck((DECKS[decks.p1] ?? DECKS.sd01).entries), p2: expandDeck((DECKS[decks.p2] ?? DECKS.sd01).entries) },
+    // เด็คที่จัดเอง/หาไม่เจอ: deckInfo จัดการให้ (หาไม่เจอ = Starter Deck 01)
+    decks: { p1: expandDeck(deckInfo(decks.p1).entries), p2: expandDeck(deckInfo(decks.p2).entries) },
     ...(firstPlayer ? { firstPlayer } : {}),
     // Draw Step รอผู้เล่นกดจั่วเอง (DrawPrompt)
     config: { manualDraw: true },
@@ -1714,7 +1717,7 @@ export const useGame = create<Store>((set, get) => {
       try {
         const uid = await transport.signIn();
         const code = randomCode();
-        const setup: RoomSetup = { round: 1, seed: randomSeed(), decks: { p1: deck, p2: null } };
+        const setup: RoomSetup = { round: 1, seed: randomSeed(), decks: { p1: deckToken(deck), p2: null } };
         await transport.createRoom(code, { seats: { p1: uid }, setup, names: { p1: get().playerName } });
         enterRoom(code, 'p1', uid);
       } catch (e) {
@@ -1725,7 +1728,7 @@ export const useGame = create<Store>((set, get) => {
       try {
         const uid = await transport.signIn();
         const c = code.trim().toUpperCase();
-        await transport.joinRoom(c, uid, deck, get().playerName);
+        await transport.joinRoom(c, uid, deckToken(deck), get().playerName);
         enterRoom(c, 'p2', uid);
       } catch (e) {
         set({ error: `เข้าห้องไม่สำเร็จ: ${(e as Error).message}` });

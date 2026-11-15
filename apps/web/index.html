@@ -4,10 +4,28 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <script>
-      // จอเล็ก (มือถือ/แท็บเล็ต): ให้เบราว์เซอร์ย่อทั้งหน้าลงจากความกว้าง 1280px (กระดานออกแบบไว้สำหรับจอกว้าง)
+      // จอเล็ก/จอสัมผัส (มือถือ, iPad): ให้เบราว์เซอร์ย่อทั้งหน้า ให้กระดาน (ออกแบบไว้ 1280 x 860) พอดีจอทั้งกว้างและสูง
+      // แนวนอน: เลือกความกว้างของหน้าให้ความสูงไม่ต่ำกว่า __fitH (กระดานเกม 860, หน้าเมนูน้อยกว่า = ใหญ่ขึ้น) · แนวตั้ง: ขึ้นป้ายให้หมุนจอ
       (function () {
-        var w = Math.max(screen.width, screen.height);
-        if (w < 1280) document.querySelector('meta[name=viewport]').setAttribute('content', 'width=1280, viewport-fit=cover');
+        var meta = document.querySelector('meta[name=viewport]');
+        window.__fitH = 860;
+        function fit() {
+          var sw = screen.width, sh = screen.height;
+          var landscape = window.matchMedia('(orientation: landscape)').matches;
+          var w = landscape ? Math.max(sw, sh) : Math.min(sw, sh);
+          var h = landscape ? Math.min(sw, sh) : Math.max(sw, sh);
+          var coarse = window.matchMedia('(pointer: coarse)').matches;
+          var content = 'width=device-width, initial-scale=1.0, viewport-fit=cover';
+          if (coarse || w < 1280) {
+            var width = landscape ? Math.max(1280, Math.ceil((window.__fitH * w) / h)) : 1280;
+            content = 'width=' + width + ', viewport-fit=cover';
+          }
+          if (meta.getAttribute('content') !== content) meta.setAttribute('content', content);
+        }
+        fit();
+        window.__refit = fit;
+        window.addEventListener('orientationchange', function () { setTimeout(fit, 250); });
+        window.addEventListener('resize', fit);
       })();
     </script>
     <title>Battle Spirits Dual TH</title>

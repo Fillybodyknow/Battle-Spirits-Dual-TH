@@ -1,34 +1,34 @@
 [
   {
-    "cardNo": "SD01-001",
+    "cardNo": "BS01-SP-C003",
     "count": 3
   },
   {
-    "cardNo": "SD01-002",
+    "cardNo": "BS01-SP-C004",
     "count": 3
   },
   {
-    "cardNo": "SD01-003",
+    "cardNo": "BS01-MG-C002",
     "count": 2
   },
   {
-    "cardNo": "SD01-004",
+    "cardNo": "BS01-SP-M001",
     "count": 3
   },
   {
-    "cardNo": "SD01-005",
+    "cardNo": "BS01-SP-M002",
     "count": 2
   },
   {
-    "cardNo": "SD01-006",
+    "cardNo": "BS01-SP-X001",
     "count": 3
   },
   {
-    "cardNo": "SD01-007",
+    "cardNo": "BS01-SP-U005",
     "count": 3
   },
   {
-    "cardNo": "SD01-008",
+    "cardNo": "BS01-NX-U003",
     "count": 2
   },
   {
@@ -36,27 +36,27 @@
     "count": 3
   },
   {
-    "cardNo": "SD01-010",
+    "cardNo": "BS01-SP-C008",
     "count": 3
   },
   {
-    "cardNo": "SD01-011",
+    "cardNo": "BS01-SP-C009",
     "count": 3
   },
   {
-    "cardNo": "SD01-012",
+    "cardNo": "BS01-SP-C011",
     "count": 3
   },
   {
-    "cardNo": "SD01-013",
+    "cardNo": "BS01-SP-C014",
     "count": 3
   },
   {
-    "cardNo": "SD01-014",
+    "cardNo": "BS01-MG-U002",
     "count": 3
   },
   {
-    "cardNo": "SD01-015",
+    "cardNo": "BS01-SP-X002",
     "count": 1,
     "foils": [
       "rainbow"

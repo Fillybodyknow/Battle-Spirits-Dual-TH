@@ -29,6 +29,16 @@ export type Condition =
   | { allySoulNamed: string[] }
   /** อยู่ใน Attack Step (เทิร์นใครก็ได้) */
   | { attackStep: true }
+  /** "แอทแท็คสเต็ปของเรา" */
+  | { ownAttackStep: true }
+  /** ทุกเงื่อนไขเป็นจริง */
+  | { all: Condition[] }
+  /** การ์ดนี้กำลังต่อสู้กับการ์ดประเภทนี้ของคู่แข่ง (ผู้ป้องกันของเรา / ผู้โจมตีที่เราป้องกัน) */
+  | { battlingOpponentType: CardType }
+  /** มี Soul Core วางอยู่บนสปิริตเรา (ตัวใดก็ได้) */
+  | { anyAllySoul: true }
+  /** สปิริตนี้ร่วมร่างกับ Brave อยู่ */
+  | { selfBraved: true }
   /** กลับเงื่อนไข */
   | { not: Condition };
 
@@ -52,6 +62,14 @@ export interface CardFilter {
   hasBurst?: true;
   /** สีของการ์ด */
   color?: Color;
+  /** BP ปัจจุบันตั้งแต่ค่านี้ (เฉพาะบนสนาม) */
+  minBp?: number;
+  /** มี Soul Core วางอยู่ */
+  soul?: true;
+  /** ไม่มี Soul Core วางอยู่ */
+  noSoul?: true;
+  /** การ์ดมี [Evolution] */
+  hasEvolution?: true;
 }
 
 /** ปลายทางของ Core จากวอยด์ */
@@ -75,8 +93,10 @@ export type Step =
   | { do: 'buffSelf'; amount: number; if?: Condition }
   /** ในเทิร์นนี้ เลือกสปิริต/อัลติเมท 1 ตัว (ฝ่ายใดก็ได้) BP+ */
   | { do: 'buffChosen'; amount: number }
+  /** สปิริตต้นเหตุ (subject) BP+ ในเทิร์นนี้ */
+  | { do: 'buffSubject'; amount: number }
   /** [True-Rage]: คู่แข่งต้องป้องกันถ้าทำได้ (ใช้ระหว่างการต่อสู้) */
-  | { do: 'mustBlock'; if?: Condition }
+  | { do: 'mustBlock'; if?: Condition; subject?: true }
   /** ทำลายการ์ดของคู่แข่งทั้งหมดที่ตรงตัวกรอง */
   | { do: 'destroyAllOpponent'; filter: CardFilter }
   /** แสดงใบบนสุดเด็ค N ใบ เลือก 1 ใบที่ตรงตัวกรองขึ้นมือ ที่เหลือลง Trash */
@@ -110,7 +130,27 @@ export type Step =
   /** สปิริตนี้ฟื้นสภาพ */
   | { do: 'refreshSelf' }
   /** เลือกการ์ดของคู่แข่งที่ตรงตัวกรองแล้วทำลาย count ตัว (ไม่ระบุ = 1, ไม่มีให้เลือก = ข้าม) */
-  | { do: 'destroyChosenOpponent'; filter: CardFilter; count?: number; exclude?: string[] }
+  | {
+      do: 'destroyChosenOpponent';
+      filter: CardFilter;
+      count?: number;
+      exclude?: string[];
+      if?: Condition;
+      /** BP ไม่เกิน: self = BP ปัจจุบันของสปิริตนี้, subjectLv1 = BP ที่ Lv1 ของสปิริตต้นเหตุ */
+      bpFrom?: 'self' | 'subjectLv1';
+      /** เลือกการ์ดของฝ่ายไหนก็ได้ (รวมของเรา) */
+      anySide?: true;
+    }
+  /** ถ้าเอฟเฟกต์นี้ทำลายการ์ดที่ตรงเงื่อนไขได้ (BP ตอนถูกทำลาย / ประเภท) ทำ steps ต่อ */
+  | { do: 'ifDestroyed'; filter: { minBp?: number; types?: CardType[]; opponent?: true }; steps: Step[] }
+  /** ทำลาย Brave ที่ร่วมร่างอยู่ของคู่แข่ง 1 ใบ (เลือก) */
+  | { do: 'destroyOpponentBrave'; if?: Condition }
+  /** คู่แข่งเลือกทำลายการ์ดของตัวเองที่ตรงตัวกรอง 1 ใบ */
+  | { do: 'opponentDestroysOwn'; filter: CardFilter }
+  /** สปิริตเราทั้งหมด (ที่ตรงตัวกรอง) BP+ ในเทิร์นนี้ */
+  | { do: 'buffAllies'; amount: number; filter?: CardFilter }
+  /** อัญเชิญการ์ดในแทรชเราไม่จ่ายคอสต์ (เลือก ไม่อัญเชิญก็ได้) */
+  | { do: 'summonFromTrashFree'; filter: CardFilter }
   /** ทำลายสปิริต/อัลติเมทของคู่แข่งที่คอสต์สูงสุด 1 ตัว (คอสต์สูงสุดเท่ากันหลายตัว = เลือก) */
   | { do: 'destroyHighestCostOpponent'; filter: CardFilter }
   /** ทิ้งใบบนสุดเด็คคู่แข่ง N ใบ ('level' = เท่าเลเวลของสปิริตนี้: [Crush]) */
@@ -139,7 +179,7 @@ export type Step =
   /** นำการ์ดทั้งหมดในแทรชเราไปไว้ใต้สุดเด็ค (เรียงลำดับได้) */
   | { do: 'trashToDeckBottom' }
   /** สามารถอัญเชิญไม่จ่ายคอสต์การ์ดบนมือเรา 1 ใบที่ตรงตัวกรอง */
-  | { do: 'summonFromHandFree'; filter: CardFilter }
+  | { do: 'summonFromHandFree'; filter: CardFilter; if?: Condition }
   /**
    * ในเทิร์นนี้ เลือกการ์ดของคู่แข่งที่ตรงตัวกรอง BP-amount แล้วทำลายตัวที่ BP กลายเป็น 0
    * count = จำนวนตัว (ไม่ระบุ = 1), countPerAllyFamily = จำนวนตัวเท่าสปิริตเราเผ่านี้
@@ -197,7 +237,9 @@ export type StaticScope =
   /** สปิริตเผ่านี้ของเราทั้งหมด */
   | { ownFamily: string }
   /** สปิริตเราที่ชื่อมีคำใดคำหนึ่งนี้ทั้งหมด */
-  | { ownNamed: string[] };
+  | { ownNamed: string[] }
+  /** สปิริตเราทั้งหมดที่ตรงเงื่อนไข (สี / เผ่า / มี Soul Core) */
+  | { ownSpirits: { color?: Color; family?: string; soul?: true } };
 
 /**
  * เหตุการณ์ที่ trigger รอ
@@ -235,7 +277,13 @@ export type TriggerEvent =
   /** เราเสียไลฟ์ */
   | 'lifeLost'
   /** เราใช้การ์ดเมจิค (ทำงานหลังเอฟเฟกต์ของเมจิคนั้น) */
-  | 'allyMagicUsed';
+  | 'allyMagicUsed'
+  /** สปิริตนี้ (ที่โจมตี) ถูกป้องกัน */
+  | 'blocked'
+  /** สปิริตเรา (subject) ที่โจมตีถูกป้องกัน */
+  | 'allyBlocked'
+  /** การ์ดของคู่แข่งถูกทำลายโดยการ์ดของเรา (subject = การ์ดของเราที่ทำลาย) */
+  | 'oppDestroyed';
 
 /** เงื่อนไขของสปิริตที่ทำให้ trigger แบบ ally* ทำงาน */
 export interface SubjectFilter {
@@ -250,6 +298,14 @@ export interface SubjectFilter {
   attackEffect?: true;
   /** ต้นเหตุไม่ใช่การ์ดนี้ */
   other?: true;
+  /** สีของสปิริตต้นเหตุ */
+  color?: Color;
+  /** ประเภทของการ์ดต้นเหตุ */
+  types?: CardType[];
+  /** allySummoned: จ่ายคอสต์อัญเชิญด้วย Soul Core */
+  paidWithSoul?: true;
+  /** oppDestroyed: ทำลายด้วยเอฟเฟกต์ (ไม่ใช่การต่อสู้) */
+  byEffect?: true;
 }
 
 /** เงื่อนไขเปิด Burst */
@@ -282,6 +338,10 @@ export type Ability =
       oppTurnOnly?: true;
       /** Brave: เอฟเฟกต์ที่ผู้ร่วมร่างได้รับ (ทำงานเมื่อผู้ร่วมร่างเกิดเหตุการณ์, "สปิริตนี้" = ผู้ร่วมร่าง) */
       granted?: true;
+      /** blocked / allyBlocked: ผู้ป้องกันต้องตรงตัวกรองนี้ */
+      blocker?: CardFilter;
+      /** เงื่อนไขเพิ่ม (ตรวจตอนเกิด trigger) */
+      if?: Condition;
     }
   /** "แอทแท็คสเต็ปของเรา: สปิริต/อัลติเมทคอสต์ไม่เกิน maxCost ของคู่แข่งทั้งหมด เอฟเฟกต์จะไม่ทำงาน" */
   | { kind: 'negateOpponentEffects'; source: number; levels: number[]; maxCost: number }
@@ -299,8 +359,10 @@ export type Ability =
       mill?: number;
       /** จ่ายด้วยการทิ้งการ์ดบนมือเรา 1 ใบที่ตรงตัวกรอง */
       discard?: CardFilter;
-      /** สภาพที่อยู่ต่อ (ไม่ระบุ = เสื่อมสภาพ) */
-      state?: 'refresh' | 'exhausted';
+      /** สภาพที่อยู่ต่อ (ไม่ระบุ = เสื่อมสภาพ, same = สภาพเดิม) */
+      state?: 'refresh' | 'exhausted' | 'same';
+      /** ทำต่อหลังอยู่ต่อ (เช่น นำคอร์วอยด์วางไลฟ์) */
+      then?: Step[];
       /** ใช้กับการถูกทำลายจากการต่อสู้ด้วย (ไม่ระบุ = เฉพาะเอฟเฟกต์ของคู่แข่ง) */
       battle?: true;
       /** ไม่ถาม: ทำงานเองเมื่อเงื่อนไขครบ */
@@ -329,6 +391,12 @@ export type Ability =
   | { kind: 'evolution'; source: number; levels: number[] }
   /** BP+ ที่มีผลตลอดเวลาขณะการ์ดอยู่บนสนาม */
   | { kind: 'staticBp'; source: number; levels: number[]; if?: Condition; scope: StaticScope; amount: number }
+  /** "ถ้า...สปิริตนี้เจ็มสี color เพิ่ม count เม็ด" */
+  | { kind: 'extraSymbol'; source: number; levels: number[]; if?: Condition; color: Color; count: number }
+  /** "ถ้า...สปิริตนี้ถือว่าเป็น Lv สูงสุด" */
+  | { kind: 'maxLevelIf'; source: number; levels: number[]; if: Condition }
+  /** "สปิริตนี้/การ์ดสปิริตนี้ถือว่ามีคำว่า ... ในชื่อการ์ดด้วย" */
+  | { kind: 'nameAlias'; source: number; names: string[] }
   /** เอฟเฟกต์ Magic: [Main] หรือ [Flash] */
   | { kind: 'magic'; source: number; timing: 'main' | 'flash'; steps: Step[]; oncePerTurn?: true };
 

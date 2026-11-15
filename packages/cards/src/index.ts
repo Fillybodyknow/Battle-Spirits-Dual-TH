@@ -18,6 +18,8 @@ import { SD03_SCRIPTS } from '../data/sd03-scripts';
 import sd04 from '../data/sd04.json';
 import sd04Deck from '../data/sd04-deck.json';
 import { SD04_SCRIPTS } from '../data/sd04-scripts';
+import bs01 from '../data/bs01.json';
+import { BS01_SCRIPTS } from '../data/bs01-scripts';
 import { attachScripts } from './abilities';
 import { createCardDatabase, type CardDatabase } from './database';
 import type { DeckEntry } from './deck';
@@ -50,10 +52,27 @@ export function loadSD04Cards(): CardDatabase {
   return createCardDatabase(attachScripts(sd04, SD04_SCRIPTS));
 }
 
-/** การ์ด Starter Deck ทุกชุดในฐานข้อมูลเดียว (ใช้เล่นข้ามชุด) */
-export function loadStarterCards(): CardDatabase {
-  return createCardDatabase([...loadSD01Cards().all(), ...loadSD02Cards().all(), ...loadSD03Cards().all(), ...loadSD04Cards().all()]);
+/**
+ * การ์ดทุกชุดในฐานข้อมูลเดียว (Starter Deck + Booster Set)
+ * ใช้เล่นจริง: รายการเด็คของชุดหนึ่งอาจมีการ์ดที่เขียนไว้ในอีกชุด
+ */
+export function loadAllCards(): CardDatabase {
+  return createCardDatabase([
+    ...loadSD01Cards().all(),
+    ...loadSD02Cards().all(),
+    ...loadSD03Cards().all(),
+    ...loadSD04Cards().all(),
+    ...loadBS01Cards().all(),
+  ]);
 }
+
+/** การ์ดชุด Booster Set 01 (assets/files/BS01/*.text + data/bs01-scripts.ts) */
+export function loadBS01Cards(): CardDatabase {
+  return createCardDatabase(attachScripts(bs01, BS01_SCRIPTS));
+}
+
+/** @deprecated ใช้ loadAllCards (ชื่อเดิม ก่อนมี Booster Set) */
+export const loadStarterCards = loadAllCards;
 
 /** รายการการ์ดในกล่อง Starter Deck 01 (40 ใบ) */
 export const SD01_DECK: readonly DeckEntry[] = sd01Deck as readonly DeckEntry[];

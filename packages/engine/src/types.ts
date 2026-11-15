@@ -117,6 +117,8 @@ export interface QueuedEffect {
   catalyzed?: boolean;
   /** การ์ดที่ถูกทิ้งด้วย mill ล่าสุดของเอฟเฟกต์นี้ */
   milled?: string[];
+  /** การ์ดที่เอฟเฟกต์นี้ทำลาย (BP ตอนถูกทำลาย / ประเภท) ใช้กับ ifDestroyed */
+  destroyedByThis?: { bp: number; type: string; opponent: boolean }[];
   /** ตำแหน่งใน log ตอนเอฟเฟกต์เริ่ม (นับการ์ดที่ถูกทำลายโดยเอฟเฟกต์นี้) */
   logStart?: number;
   /** สปิริตที่เป็นต้นเหตุของ trigger นี้ */

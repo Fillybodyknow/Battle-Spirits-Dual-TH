@@ -29,6 +29,8 @@ export interface TextEffect {
   granted?: true;
   /** ทำงานขณะการ์ดอยู่บนมือ */
   hand?: true;
+  /** "[ร่วมร่าง][LvX] ..." บนสปิริต: ทำงานเฉพาะตอนสปิริตนี้ร่วมร่างกับ Brave อยู่ */
+  whileBraved?: true;
 }
 
 export interface ParsedCardSet {
@@ -37,8 +39,32 @@ export interface ParsedCardSet {
 }
 
 export interface ParseOptions {
-  /** prefix ของ cardNo เช่น "SD01" → SD01-001, SD01-002, ... ตามลำดับในไฟล์ */
+  /** prefix ของ cardNo เช่น "SD01" → SD01-001, SD01-002, ... ตามลำดับในไฟล์ (การ์ดที่ไม่ได้ระบุ "รหัส:") */
   setCode: string;
+  /**
+   * การ์ดจากชุดอื่น: รายการเด็คอ้างชื่อการ์ดที่เขียนไว้ในไฟล์ชุดอื่นได้
+   * (เช่น Starter Deck ที่มีการ์ดจาก Booster Set — ข้อมูลการ์ดเขียนไว้ที่เดียว)
+   */
+  otherCards?: readonly { name: string; cardNo: string }[];
+  /** อ่านเฉพาะการ์ด ไม่แปลงรายการเด็ค (รอบแรกของ npm run cards ก่อนรู้การ์ดของชุดอื่น) */
+  skipDeck?: boolean;
+  /**
+   * รหัสอัตโนมัติ (Booster Set): <ชุด>-<ประเภท>-<ระดับ><เลข> เช่น BS01-SP-R001, BS01-MG-C001
+   * นับแยกตาม ประเภท + ระดับความหายาก · ส่งตัวนับเดียวกันให้ทุกไฟล์ในชุด (โฟลเดอร์ BS01/) เลขจะได้ต่อกัน
+   */
+  typeCounters?: Record<string, number>;
+}
+
+/** ตัวย่อประเภทการ์ดในรหัส (Booster Set) */
+export const TYPE_CODE: Record<CardDefInput['type'], string> = { spirit: 'SP', ultimate: 'UL', brave: 'BR', nexus: 'NX', magic: 'MG' };
+
+/** ระดับความหายากในรหัส: C U R M X XX XV … (UC → U, X-Rare → X) · ไม่มีระดับ = null */
+function rarityCode(raw: string | undefined): string | null {
+  if (!raw) return null;
+  let code = raw.trim().toUpperCase().replace(/\s+/g, '');
+  if (code === 'UC') code = 'U';
+  if (code === 'X-RARE' || code === 'XRARE') code = 'X';
+  return /^[A-Z]+$/.test(code) ? code : null;
 }
 
 export class CardTextError extends Error {
@@ -105,19 +131,41 @@ export function parseCardText(text: string, options: ParseOptions): ParsedCardSe
     if (block.every((l) => /^\d+\.\s/.test(l.text))) continue;
     if (/^ชื่อ:/.test(first) || /^การ์ดระดับ\s/.test(first)) {
       const cardNo = `${options.setCode}-${String(cards.length + 1).padStart(3, '0')}`;
-      const card = parseCardBlock(block, cardNo, errors);
-      if (card) cards.push(card);
+      const card = parseCardBlock(block, options.typeCounters ? '' : cardNo, errors);
+      if (card && options.typeCounters) {
+        // Booster Set: รหัส <ชุด>-<ประเภท>-<ระดับ><เลข> เช่น BS01-SP-R001 (นับแยกตามประเภท + ระดับ)
+        const type = TYPE_CODE[card.type];
+        const rarity = rarityCode(card.rarity);
+        if (!rarity) {
+          errors.push(`บรรทัด ${block[0]!.no}: (${card.name}) ต้องมีระดับความหายาก "การ์ดระดับ C/U/R/M/X" (ใช้ในรหัสการ์ด)`);
+        } else if (card.cardNo === '') {
+          const key = `${type}-${rarity}`;
+          const n = (options.typeCounters[key] ?? 0) + 1;
+          options.typeCounters[key] = n;
+          card.cardNo = `${options.setCode}-${type}-${rarity}${String(n).padStart(3, '0')}`;
+        } else if (!card.cardNo.startsWith(`${options.setCode}-${type}-${rarity}`) || !/\d+$/.test(card.cardNo)) {
+          errors.push(
+            `บรรทัด ${block[0]!.no}: (${card.name}) รหัส ${card.cardNo} ไม่ตรงประเภท/ระดับ ต้องเป็นรูปแบบ ${options.setCode}-${type}-${rarity}001 (หรือไม่ต้องใส่ ระบบนับให้)`,
+          );
+        }
+      }
+      if (card) {
+        const dup = cards.find((c) => c.cardNo === card.cardNo);
+        if (dup) errors.push(`บรรทัด ${block[0]!.no}: รหัสการ์ด ${card.cardNo} ซ้ำกับ "${dup.name}"`);
+        cards.push(card);
+      }
     } else {
       deckLines.push(...block);
     }
   }
 
-  const deck = parseDeck(deckLines, cards, errors);
+  const deck = options.skipDeck ? [] : parseDeck(deckLines, [...cards, ...(options.otherCards ?? []).filter((o) => !cards.some((c) => c.name === o.name))], errors);
   if (errors.length > 0) throw new CardTextError(errors);
   return { cards, deck };
 }
 
-function parseCardBlock(block: Line[], cardNo: string, errors: string[]): CardDefInput | null {
+function parseCardBlock(block: Line[], autoCardNo: string, errors: string[]): CardDefInput | null {
+  let cardNo = autoCardNo;
   const fields = new Map<string, { line: Line; value: string }>();
   const children = new Map<string, Line[]>();
   let rarity: string | undefined;
@@ -158,12 +206,21 @@ function parseCardBlock(block: Line[], cardNo: string, errors: string[]): CardDe
     if (!f) errors.push(`บรรทัด ${block[0]!.no}: การ์ดไม่มีหัวข้อ "${key}"`);
     return f;
   };
+  /** หัวข้อที่ไม่เขียนก็ได้ (ถือว่า "ไม่มี") */
+  const optional = (key: string) => fields.get(key);
 
   const name = field('ชื่อ')?.value ?? '';
+  // รหัสการ์ดตามที่พิมพ์บนการ์ดจริง (ไม่ใส่ = นับตามลำดับในไฟล์) ใช้เป็นชื่อไฟล์ภาพด้วย
+  const codeField = fields.get('รหัส');
+  if (codeField) {
+    const code = codeField.value.trim().toUpperCase();
+    if (/^[A-Z0-9]+(-[A-Z0-9]+)+$/.test(code)) cardNo = code;
+    else err(codeField.line, `(${name}) รหัสการ์ดต้องเป็นรูปแบบ "BS01-012": "${codeField.value}"`);
+  }
   const where = `(${name || cardNo})`;
   const errIn = (line: Line, msg: string) => err(line, `${where} ${msg}`);
 
-  const known = new Set(['ชื่อ', 'ประเภท', 'สี', 'คอสต์', 'ลดคอสต์', 'Gem symbol', 'เผ่า', 'เลเวล', 'Burst', 'เอฟเฟกต์', 'ระดับ', 'Brave']);
+  const known = new Set(['ชื่อ', 'รหัส', 'ประเภท', 'สี', 'คอสต์', 'ลดคอสต์', 'Gem symbol', 'เผ่า', 'เลเวล', 'Burst', 'เอฟเฟกต์', 'ระดับ', 'Brave']);
   for (const [key, { line }] of fields) {
     if (!known.has(key)) errIn(line, `ไม่รู้จักหัวข้อ "${key}"`);
   }
@@ -192,11 +249,11 @@ function parseCardBlock(block: Line[], cardNo: string, errors: string[]): CardDe
 
   // ลดคอสต์ / Gem symbol: "แดง 2, ขาว 1"
   const symbolMap = (key: string) => {
-    const f = field(key);
+    const f = optional(key);
     const map: Partial<Record<Color, number>> = {};
     if (!f || isNone(f.value)) return map;
     for (const part of f.value.split(/[,/]/).map((s) => s.trim()).filter(Boolean)) {
-      const m = part.match(/^(\S+)\s+(\d+)$/);
+      const m = part.match(/^(\D+?)\s*(\d+)$/);
       const color = m ? COLOR_TH[m[1]!] : undefined;
       if (!m || !color || Number(m[2]) < 1) {
         errIn(f.line, `${key} ต้องเป็นรูปแบบ "สี จำนวน": "${part}"`);
@@ -210,7 +267,7 @@ function parseCardBlock(block: Line[], cardNo: string, errors: string[]): CardDe
   const symbols = symbolMap('Gem symbol');
 
   // เผ่า: คั่นด้วย , หรือ /
-  const familyField = field('เผ่า');
+  const familyField = optional('เผ่า');
   const family =
     familyField && !isNone(familyField.value)
       ? familyField.value.split(/[,/]/).map((s) => s.trim()).filter(Boolean)
@@ -218,14 +275,20 @@ function parseCardBlock(block: Line[], cardNo: string, errors: string[]): CardDe
 
   // เลเวล: "Lv1  Core 1  BP 3000" (Nexus ไม่มี BP)
   const levels: { level: number; cores: number; bp?: number }[] = [];
-  const levelField = field('เลเวล');
+  const levelField = optional('เลเวล');
+  const levelParts: { line: Line; text: string }[] = [];
   if (levelField && levelField.value !== '' && !isNone(levelField.value)) {
-    errIn(levelField.line, 'ให้เขียนเลเวลในบรรทัดย่อหน้าถัดไป หรือ "ไม่มี"');
+    for (const part of levelField.value.split(',')) levelParts.push({ line: levelField.line, text: part.trim() });
   }
   for (const line of children.get('เลเวล') ?? []) {
-    const m = line.text.trim().match(/^Lv(\d+)\s+Core\s+(\d+)(?:\s+BP\s+(\d+))?$/i);
+    for (const part of line.text.split(',')) levelParts.push({ line, text: part.trim() });
+  }
+  for (const { line, text } of levelParts) {
+    if (!text) continue;
+    // "Lv1  Core 1  BP 3000" หรือแบบสั้น "Lv1 1 3000" (Nexus ไม่มี BP)
+    const m = text.match(/^Lv\s*(\d+)\s+(?:Core\s*)?(\d+)(?:\s+(?:BP\s*)?(\d+))?$/i);
     if (!m) {
-      errIn(line, `เลเวลต้องเป็นรูปแบบ "Lv1  Core 1  BP 3000": "${line.text.trim()}"`);
+      errIn(line, `เลเวลต้องเป็นรูปแบบ "Lv1 Core 1 BP 3000" หรือ "Lv1 1 3000": "${text}"`);
       continue;
     }
     levels.push({ level: Number(m[1]), cores: Number(m[2]), ...(m[3] ? { bp: Number(m[3]) } : {}) });
@@ -233,7 +296,7 @@ function parseCardBlock(block: Line[], cardNo: string, errors: string[]): CardDe
 
   // Burst: "ไม่มี" หรือข้อความเงื่อนไข Burst
   const effects: TextEffect[] = [];
-  const burstField = field('Burst');
+  const burstField = optional('Burst');
   const burst = !!burstField && !isNone(burstField.value);
   if (burstField && burst) {
     const text = [burstField.value, ...(children.get('Burst') ?? []).map((l) => l.text.trim())].join(' ');
@@ -241,9 +304,10 @@ function parseCardBlock(block: Line[], cardNo: string, errors: string[]): CardDe
   }
 
   // เอฟเฟกต์: "[Lv1][Lv2] ข้อความ" / "[Main] ข้อความ" / "[Flash] ข้อความ"
-  const effectField = field('เอฟเฟกต์');
+  const effectField = optional('เอฟเฟกต์');
   if (effectField && !isNone(effectField.value) && effectField.value !== '') {
-    errIn(effectField.line, 'ให้เขียนเอฟเฟกต์ในบรรทัดย่อหน้าถัดไป หรือ "ไม่มี"');
+    // เอฟเฟกต์เดียว: "เอฟเฟกต์: [Flash] ..." บรรทัดเดียวกับหัวข้อ
+    effects.push(parseEffectLine({ ...effectField.line, text: effectField.value }, type, (msg) => errIn(effectField.line, msg)));
   }
   for (const line of children.get('เอฟเฟกต์') ?? []) {
     effects.push(parseEffectLine(line, type, (msg) => errIn(line, msg)));
@@ -266,6 +330,8 @@ function parseCardBlock(block: Line[], cardNo: string, errors: string[]): CardDe
     errIn(block[0]!, 'การ์ด Brave ต้องมีหัวข้อ "Brave:"');
   }
 
+  if (type && type !== 'magic' && levelParts.length === 0) errIn(block[0]!, 'การ์ดประเภทนี้ต้องมีหัวข้อ "เลเวล:"');
+
   if (errors.length > before || !type) return null;
   return {
     cardNo,
@@ -286,6 +352,12 @@ function parseCardBlock(block: Line[], cardNo: string, errors: string[]): CardDe
 
 function parseEffectLine(line: Line, type: CardDefInput['type'] | undefined, err: (msg: string) => void): TextEffect {
   let rest = line.text.trim();
+  // "[ร่วมร่าง][Lv2][Lv3] ..." = เอฟเฟกต์ที่ทำงานตอนสปิริตนี้ร่วมร่างอยู่
+  const braved = rest.match(/^\[ร่วมร่าง\]\s*(?=\[Lv)/);
+  if (braved) {
+    const inner = parseEffectLine({ ...line, text: rest.slice(braved[0].length) }, type, err);
+    return { ...inner, whileBraved: true };
+  }
   const levels: number[] = [];
   let m: RegExpMatchArray | null;
   while ((m = rest.match(/^\[Lv(\d+)\]\s*/i))) {
@@ -296,7 +368,8 @@ function parseEffectLine(line: Line, type: CardDefInput['type'] | undefined, err
 
   if (/^การ์ด\S*นี้บนมือ/.test(rest)) return { hand: true, text: rest };
   // กฎของการ์ดเองที่ไม่ผูกกับเลเวล/จังหวะ เช่น "การ์ดสปิริตนี้ เมื่อถูกทิ้ง..." หรือ "ถ้าเรามี ... การลดคอสต์..."
-  if (/^(การ์ด|ถ้า)/.test(rest)) return { text: rest };
+  // หรือ "สปิริตนี้/การ์ดสปิริตนี้ถือว่ามีคำว่า ... ในชื่อการ์ดด้วย"
+  if (/^(การ์ด|ถ้า|สปิริตนี้)/.test(rest)) return { text: rest };
 
   const keyword = rest.match(/^Flash\s*\[([^\]]+)\]\s*:?\s*/i);
   if (keyword && type !== 'magic') return { keyword: keyword[1]!.trim(), text: rest.slice(keyword[0].length) };
@@ -317,7 +390,7 @@ const FOIL_NAMES: Record<string, Foil> = { ฟอยรุ้ง: 'rainbow', ฟ
  * รายการเด็ค: "<ชื่อการ์ด> <จำนวน>" ต่อท้ายฟอยได้ เช่น "ฟูริน 3 (ฟอยรุ้ง 1)" หรือ "(ฟอยรุ้ง 1, ฟอยขาว 1)"
  * ใบที่ไม่ได้ระบุฟอยเป็นการ์ดปกติ
  */
-function parseDeck(lines: Line[], cards: CardDefInput[], errors: string[]): DeckEntry[] {
+function parseDeck(lines: Line[], cards: readonly { name: string; cardNo: string }[], errors: string[]): DeckEntry[] {
   const byName = new Map(cards.map((c) => [c.name, c.cardNo]));
   const counts = new Map<string, number>();
   const foils = new Map<string, Foil[]>();
@@ -329,7 +402,7 @@ function parseDeck(lines: Line[], cards: CardDefInput[], errors: string[]): Deck
     }
     const cardNo = byName.get(m[1]!);
     if (!cardNo) {
-      errors.push(`บรรทัด ${line.no}: ไม่พบการ์ดชื่อ "${m[1]}" ในไฟล์`);
+      errors.push(`บรรทัด ${line.no}: ไม่พบการ์ดชื่อ "${m[1]}" ในไฟล์นี้หรือชุดอื่น`);
       continue;
     }
     counts.set(cardNo, (counts.get(cardNo) ?? 0) + Number(m[2]));

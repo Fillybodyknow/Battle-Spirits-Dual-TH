@@ -11,6 +11,7 @@ import {
   cardLevel,
   conditionHolds,
   currentBp,
+  extraSymbols,
   fail,
   fieldCard,
   isSpiritLike,
@@ -463,7 +464,10 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     emit(ctx, { type: 'blockDeclared', blockerId });
     // [Consecutive Blade]: ประกาศตัวถัดไปได้ (บังคับถ้าทำได้)
     if (!(battle.blockers.length < battle.maxBlockers && canBlockWith(ctx, player).length > 0)) openFlashAfterBlock(battle, player);
-    fireTriggers(ctx, blockerId, 'block');
+    const batch = newBatch(ctx);
+    queueTriggers(ctx, blockerId, 'block', batch);
+    queueBlockedTriggers(ctx, battle.attackerId, blockerId, batch);
+    runQueue(ctx);
   },
 
   /** ไม่บล็อก หรือ (เมื่อบล็อกได้หลายตัว) ไม่บล็อกเพิ่ม */
@@ -627,6 +631,7 @@ function applyChosenBlockers(ctx: Ctx): void {
   if (!(battle.blockers.length < battle.maxBlockers && canBlockWith(ctx, defender).length > 0)) openFlashAfterBlock(battle, defender);
   const batch = newBatch(ctx);
   for (const id of chosen) queueTriggers(ctx, id, 'block', batch);
+  for (const id of chosen) queueBlockedTriggers(ctx, battle.attackerId, id, batch);
   runQueue(ctx);
 }
 
@@ -642,6 +647,14 @@ function requireBlockStep(ctx: Ctx, player: PlayerId) {
   return battle;
 }
 
+/** ผู้โจมตีถูกป้องกัน: "เมื่อสปิริตนี้ถูกป้องกัน" + "เมื่อสปิริตเราถูกป้องกัน" */
+function queueBlockedTriggers(ctx: Ctx, attackerId: string, blockerId: string, batch: number): void {
+  const attacker = ctx.s.cards[attackerId];
+  if (!attacker || !ctx.s.players[attacker.owner].field.includes(attackerId)) return;
+  queueTriggers(ctx, attackerId, 'blocked', batch, { blockerId });
+  for (const id of [...ctx.s.players[attacker.owner].field]) queueTriggers(ctx, id, 'allyBlocked', batch, { subject: attackerId, blockerId });
+}
+
 /** ต่อสู้ตัดสิน (หมวด 7 ข้อ 5-7) */
 function resolveBattle(ctx: Ctx): void {
   const { s, db } = ctx;
@@ -653,7 +666,8 @@ function resolveBattle(ctx: Ctx): void {
   let lostLife = false;
   const blockers = battle.blockers.filter((id) => s.players[defender].field.includes(id));
   if (blockers.length === 0) {
-    if (loseLife(ctx, defender, symbolCount(attackerDef) + braveSymbols(ctx, attacker.id), attacker.owner)) return;
+    const extra = Object.values(extraSymbols(s, db, attacker.id)).reduce<number>((n, v) => n + (v ?? 0), 0);
+    if (loseLife(ctx, defender, symbolCount(attackerDef) + braveSymbols(ctx, attacker.id) + extra, attacker.owner)) return;
     lostLife = true;
     queueLifeLostTriggers(ctx, defender);
   } else {
@@ -662,8 +676,8 @@ function resolveBattle(ctx: Ctx): void {
     const results = blockers.map((id) => ({ id, bp: currentBp(s, db, id) }));
     const destroyedBlockers = results.filter((r) => r.bp <= bpA).map((r) => r.id);
     const attackerLoses = results.some((r) => bpA <= r.bp);
-    for (const id of destroyedBlockers) destroyCard(ctx, id, attacker.owner);
-    if (attackerLoses) destroyCard(ctx, attacker.id, defender);
+    for (const id of destroyedBlockers) destroyCard(ctx, id, attacker.owner, { bySource: attacker.id });
+    if (attackerLoses) destroyCard(ctx, attacker.id, defender, { bySource: results.find((r) => bpA <= r.bp)!.id });
 
     const perBlocker = battle.lifeOnBlockerDestroyed + (battle.consecutiveBlade ? battle.lifeOnBlockerDestroyedByBlade : 0);
     if (destroyedBlockers.length > 0 && perBlocker > 0) {

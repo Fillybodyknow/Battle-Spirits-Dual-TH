@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { cardArt } from '../assets';
 import { BTN } from '../components/Modal';
 import { setSfx, sfx, sfxSettings } from '../sfx';
-import { DECKS, db, onlineAvailable, useGame, type DeckId } from '../store';
+import { DECKS, db, onlineAvailable, useGame, type DeckId, playableDecks } from '../store';
+import { deckInfo } from '../decks';
 import { CardArt, DeckTile, GLOW, deckColor, deckCover, deckSize } from './shared';
 
 /** คู่การ์ด X-Rare ที่หมุนแสดงทางขวาของหน้าหลัก */
@@ -146,14 +147,14 @@ function DeckBanner({ onOpen }: { onOpen: (id: DeckId) => void }) {
         <button type="button" onClick={() => onOpen(id)} className="absolute inset-0 text-left" style={{ background: `linear-gradient(110deg, ${glow}44, #0b1020 55%)` }}>
           <div className="absolute top-0 left-0 rounded-br-lg bg-gradient-to-r from-amber-400 to-orange-500 px-3 py-0.5 text-xs font-black text-slate-950">STARTER DECK</div>
           <div className="absolute top-8 left-8 z-10 max-w-[54%]">
-            <div className="text-2xl font-black text-white drop-shadow">{DECKS[id].label}</div>
+            <div className="text-2xl font-black text-white drop-shadow">{deckInfo(id).label}</div>
             <div className="mt-1 text-xs text-slate-300">
               {deckSize(id)} ใบ · การ์ดเด่น {db.get(deckCover(id)).name}
             </div>
             <div className="mt-2 text-xs font-bold text-yellow-300">ดูการ์ดในเด็ค ▶</div>
           </div>
           <div className="absolute top-3 right-3 flex [&>*]:origin-bottom">
-            {DECKS[id].entries
+            {deckInfo(id).entries
               .filter((e) => cardArt(e.cardNo))
               .slice(0, 3)
               .map((e, k) => (
@@ -187,7 +188,7 @@ function LocalSetup({ onClose }: { onClose: () => void }) {
   const decks = useGame((s) => s.decks);
   const startLocal = useGame((s) => s.startLocal);
   const [pick, setPick] = useState(decks);
-  const ids = Object.keys(DECKS) as DeckId[];
+  const ids = playableDecks();
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={onClose}>
       <div className="hud-panel flex max-w-4xl flex-col gap-4 rounded-2xl p-6" onClick={(e) => e.stopPropagation()}>
@@ -299,6 +300,7 @@ export function Home() {
           <MenuItem big title="DUEL" sub="ดวลออนไลน์กับเพื่อน" onClick={() => setScreen('lobby')} disabled={!onlineAvailable} badge={onlineAvailable ? 'ONLINE' : undefined} />
           <MenuItem title="LOCAL" sub="เล่นเครื่องเดียว สองคนสลับกัน" onClick={() => setLocal(true)} />
           <MenuItem title="DECK" sub="ดูการ์ดในเด็ค" onClick={() => setScreen('decks')} />
+          <MenuItem title="BUILD" sub="จัดเด็คเอง" onClick={() => (useGame.setState({ deckView: '' }), setScreen('builder'))} />
           {!onlineAvailable && <p className="mt-1 text-xs text-amber-300/80">ยังไม่ได้ตั้งค่า Firebase: ดวลออนไลน์ไม่ได้</p>}
         </nav>
 

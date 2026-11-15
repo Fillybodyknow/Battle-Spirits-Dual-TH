@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import type { PlayerId } from '@bs/engine';
 import { BTN } from '../components/Modal';
 import { sfx } from '../sfx';
-import { DECKS, onlineAvailable, onlineVia, useGame, type DeckId } from '../store';
+import { onlineAvailable, onlineVia, playableDecks, useGame, type DeckId } from '../store';
+import { deckInfo } from '../decks';
 import { BackButton, CardArt, DeckTile, deckColor, deckCover } from './shared';
 
 /** ป้ายผู้เล่นฝั่งหนึ่งในหน้าจอ VS */
@@ -25,7 +26,7 @@ function PlayerPlate({ name, deck, side, waiting }: { name?: string; deck?: Deck
       </div>
       <div className={`w-full rounded-xl border px-4 py-2 text-center ${waiting ? 'border-white/10 bg-black/40' : 'border-yellow-300/40 bg-gradient-to-r from-slate-950/90 via-slate-900/90 to-slate-950/90'}`}>
         <div className="truncate text-xl font-black text-white">{waiting ? '???' : (name ?? 'นักดวล')}</div>
-        <div className="text-xs text-slate-400">{deck && !waiting ? DECKS[deck].label : 'ยังไม่มีผู้เล่น'}</div>
+        <div className="text-xs text-slate-400">{deck && !waiting ? deckInfo(deck).label : 'ยังไม่มีผู้เล่น'}</div>
       </div>
     </div>
   );
@@ -121,7 +122,7 @@ function RoomSetup() {
     await fn();
     setBusy(false);
   };
-  const ids = Object.keys(DECKS) as DeckId[];
+  const ids = playableDecks();
 
   return (
     <div className="flex flex-1 items-center justify-center gap-10 px-10">

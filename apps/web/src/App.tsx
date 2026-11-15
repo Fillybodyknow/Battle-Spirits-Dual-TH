@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { PLAYERS, opponentOf } from '@bs/engine';
 import { playerLabel } from './format';
-import { DECKS, onlineAvailable, onlineVia, useGame, viewPlayer, type CutInMode, type DeckId } from './store';
+import { onlineAvailable, onlineVia, playableDecks, useGame, viewPlayer, type CutInMode, type DeckId } from './store';
+import { deckInfo } from './decks';
 import { HandFan, PlayerMat } from './components/Board';
 import { ChoiceDialog, ErrorToast, PromptBar, TrashDialog } from './components/Controls';
 import { CornerButtons, FinalBlowWarning, FloatingInspector, PlayerPlate, TurnAura } from './components/Hud';
@@ -11,8 +12,10 @@ import { setSfx, sfx, sfxSettings } from './sfx';
 import { AttackArrow, FxLayer } from './components/Fx';
 import { DrawPrompt } from './components/DrawPrompt';
 import { Icon } from './components/Icon';
+import { usePortraitPhone } from './touch';
 import { CoreDragGhost, DragGhost } from './components/DragGhost';
 import { DeckViewer } from './screens/DeckViewer';
+import { DeckBuilder } from './screens/DeckBuilder';
 import { Home } from './screens/Home';
 import { Lobby } from './screens/Lobby';
 
@@ -157,9 +160,9 @@ function OnlinePanel() {
               <label className="flex items-center justify-between gap-2">
                 <span className="text-slate-300">เด็คของคุณ</span>
                 <select value={deck} onChange={(e) => setDeck(e.target.value as DeckId)} className="rounded bg-slate-700 px-2 py-1 text-slate-100">
-                  {(Object.keys(DECKS) as DeckId[]).map((id) => (
+                  {playableDecks().map((id) => (
                     <option key={id} value={id}>
-                      {DECKS[id].label}
+                      {deckInfo(id).label}
                     </option>
                   ))}
                 </select>
@@ -223,9 +226,9 @@ function Settings() {
                 onChange={(e) => setDeck(p, e.target.value as DeckId)}
                 className="rounded bg-slate-700 px-2 py-1 text-slate-100"
               >
-                {(Object.keys(DECKS) as DeckId[]).map((id) => (
+                {playableDecks().map((id) => (
                   <option key={id} value={id}>
-                    {DECKS[id].label}
+                    {deckInfo(id).label}
                   </option>
                 ))}
               </select>
@@ -299,11 +302,33 @@ function Settings() {
 /** สลับหน้า: หน้าหลัก / Lobby / ดูเด็ค / กระดาน */
 export function App() {
   const screen = useGame((s) => s.screen);
+  // มือถือแนวนอน: กระดานเกมต้องการความสูง 860 ส่วนหน้าเมนูใช้น้อยกว่า (ย่อน้อยลง ปุ่ม/ตัวหนังสือใหญ่ขึ้น)
+  useEffect(() => {
+    const w = window as unknown as { __fitH?: number; __refit?: () => void };
+    w.__fitH = screen === 'game' ? 860 : 640;
+    w.__refit?.();
+  }, [screen]);
   return (
     <>
-      {screen === 'home' ? <Home /> : screen === 'lobby' ? <Lobby /> : screen === 'decks' ? <DeckViewer /> : <GameScreen />}
+      {screen === 'home' ? <Home /> : screen === 'lobby' ? <Lobby /> : screen === 'decks' ? <DeckViewer /> : screen === 'builder' ? <DeckBuilder /> : <GameScreen />}
       {screen !== 'game' && <ErrorToast />}
+      {/* มือถือ: เล่นแนวนอนเท่านั้น (ทุกหน้า) */}
+      <RotateHint />
     </>
+  );
+}
+
+/** ถือมือถือแนวตั้ง: เกมเล่นแนวนอนเท่านั้น */
+function RotateHint() {
+  if (!usePortraitPhone()) return null;
+  return (
+    <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center gap-6 bg-[#05040d]/95 text-center text-white">
+      <div className="text-7xl" style={{ animation: 'rotate-hint 2.4s ease-in-out infinite' }}>
+        📱
+      </div>
+      <div className="text-4xl font-black">หมุนโทรศัพท์เป็นแนวนอน</div>
+      <div className="text-2xl text-slate-300">เกมนี้เล่นได้เฉพาะแนวนอน</div>
+    </div>
   );
 }
 

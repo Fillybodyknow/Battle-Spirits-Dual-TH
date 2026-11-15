@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { opponentOf, type PlayerId } from '@bs/engine';
 import { sfx } from '../sfx';
-import { DECKS, layoutRect, useGame, type Fx, type Rect } from '../store';
+import { layoutRect, useGame, type Fx, type Rect } from '../store';
+import { deckInfo } from '../decks';
 import { BTN } from './Modal';
 
 const REASON: Record<string, (win: string, lose: string) => string> = {
@@ -229,7 +230,7 @@ export function MatchResult({ fx, onClose }: { fx: Extract<Fx, { kind: 'result' 
                         <div className={`bg-gradient-to-r py-2 ${i === 0 ? 'from-slate-950/90 to-transparent pl-3' : 'from-transparent to-slate-950/90 pr-3'}`}>
                           <div className="text-lg font-black text-white">{label(p)}</div>
                           <div className="text-xs" style={{ color: won ? '#fde68a' : '#94a3b8' }}>
-                            {won ? 'ชนะ' : 'แพ้'} · {DECKS[decks[p]]?.label ?? decks[p]}
+                            {won ? 'ชนะ' : 'แพ้'} · {deckInfo(decks[p]).label}
                           </div>
                         </div>
                       </div>

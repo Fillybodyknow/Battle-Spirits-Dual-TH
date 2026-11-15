@@ -6,6 +6,7 @@ import { useEffect, useRef } from 'react';
 import { actingPlayer, db, useGame, hiddenFrom, resolvingEffect } from '../store';
 import { CardBack, CardFace } from './CardFace';
 import { CoreRow } from './Core';
+import { useLastInputTouch, useTouchInspected } from '../touch';
 
 type Place = 'hand' | 'field' | 'trash' | 'burst' | 'deck' | 'other';
 
@@ -86,7 +87,10 @@ export function CardInspector() {
   const state = useGame((s) => s.state);
   const hovered = useGame((s) => s.hovered);
   const pinned = useGame((s) => s.pinned);
-  const cardId = hovered ?? pinned;
+  // ใช้นิ้ว: แสดงการ์ดที่กดค้าง (ไม่ตามการ "ชี้" ที่เบราว์เซอร์จำลองจากการแตะ)
+  const touch = useLastInputTouch();
+  const touchInspected = useTouchInspected();
+  const cardId = touch ? touchInspected : (hovered ?? pinned);
   const card = cardId ? state.cards[cardId] : undefined;
   // บรรทัดเอฟเฟกต์ที่กำลังทำงาน: ไฮไลต์สีทอง + เลื่อนให้เห็น
   const resolving = resolvingEffect(state);
@@ -288,6 +292,7 @@ export function CardInspector() {
                     )}
                     {e.granted && <span className="rounded bg-teal-600 px-1 text-[10px] font-bold text-white">ผู้ร่วมร่างได้รับ</span>}
                     {e.hand && <span className="rounded bg-sky-700 px-1 text-[10px] font-bold text-white">บนมือ</span>}
+                    {e.whileBraved && <span className="rounded bg-teal-600 px-1 text-[10px] font-bold text-white">ขณะร่วมร่าง</span>}
                     {hot && <span className="rounded bg-amber-400 px-1 text-[10px] font-black text-slate-900">กำลังทำงาน</span>}
                     <span
                       className={`ml-auto rounded px-1 text-[10px] ${auto ? 'text-emerald-300' : 'text-amber-300'}`}

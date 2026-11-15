@@ -41,7 +41,17 @@ export const SD01_SCRIPTS: Record<string, CardScript> = {
   โอนิมุฉะไรซัน: [
     trueRage(ALL_LV),
     { kind: 'trigger', on: 'attack', levels: ALL_LV, steps: [{ do: 'draw', count: 1 }] },
-    null, // ถูกป้องกันโดยอัลติเมท (ยังไม่มีอัลติเมท)
+    // แอทแท็คสเต็ปของเรา: สปิริตเผ่า [มังกรยุทธ์] ของเราถูกป้องกันโดยอัลติเมท → สปิริตนั้น BP+10000
+    {
+      kind: 'trigger',
+      on: 'allyBlocked',
+      subject: { family: 'มังกรยุทธ์' },
+      blocker: { types: ['ultimate'] },
+      levels: [2, 3],
+      ownTurnOnly: true,
+      attackStepOnly: true,
+      steps: [{ do: 'buffSubject', amount: 10000 }],
+    },
   ],
   'ซามูไร-ดราก้อน': [
     { kind: 'evolution', levels: ALL_LV },

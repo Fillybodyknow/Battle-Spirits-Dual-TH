@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { sfx } from '../sfx';
-import { DECKS, useGame, type DeckId, type Fx } from '../store';
+import { useGame, type DeckId, type Fx } from '../store';
+import { deckInfo } from '../decks';
 import { CardArt, deckColor, deckCover } from '../screens/shared';
 
 /** ลายบนเหรียญ: แกนคอร์หกเหลี่ยม + วงแหวน (ด้านทอง = หัว, ด้านเทา = ก้อย) */
@@ -67,7 +68,7 @@ function Plate({ side, name, deck }: { side: 'left' | 'right'; name: string; dec
           <div className={left ? 'text-left' : 'text-right'}>
             <div className="text-xl font-black text-white drop-shadow">{name}</div>
             <div className="text-xs" style={{ color: `${accent}cc` }}>
-              {DECKS[deck as DeckId]?.label ?? deck}
+              {deckInfo(deck).label}
             </div>
           </div>
         </div>

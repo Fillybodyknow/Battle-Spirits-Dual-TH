@@ -299,17 +299,27 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
           </div>
         )}
         {/* Brave ที่ร่วมร่าง: ซ้อนมุมบนขวาของผู้ร่วมร่าง */}
-        {card.braves.map((b) => (
+        {card.braves.map((b) => {
+          // เป็นเป้าหมายให้เลือก (เช่น ทำลายเบรฟที่ร่วมร่างอยู่)
+          const braveCandidate = !fxBlocking && isChoiceCandidate(state, b);
+          return (
           <div
             key={b}
             data-brave-card={b}
-            className="absolute top-6 -right-8 z-[5] h-[4.6rem] w-[3.3rem] rotate-12 rounded shadow-[0_4px_10px_rgba(0,0,0,0.7)] ring-2 ring-emerald-300"
+            className={`absolute top-6 -right-8 z-[5] h-[4.6rem] w-[3.3rem] rotate-12 rounded shadow-[0_4px_10px_rgba(0,0,0,0.7)] ${
+              braveCandidate ? 'cursor-pointer ring-4 ring-fuchsia-400' : 'ring-2 ring-emerald-300'
+            }`}
             title={`Brave: ${db.get(state.cards[b]!.cardNo).name}${ownTurnMain ? ' · คลิกเพื่อแยกร่าง/ย้าย' : ''}`}
             onMouseEnter={(e) => {
               e.stopPropagation();
               hover(b);
             }}
             onClick={(e) => {
+              if (braveCandidate) {
+                e.stopPropagation();
+                useGame.getState().choose(b);
+                return;
+              }
               if (!ownTurnMain || state.choice) return;
               e.stopPropagation();
               setBraveMenu(braveMenu ? null : b);
@@ -324,11 +334,12 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
               useGame.getState().startBraveDrag(b);
             }}
             onDragEnd={() => useGame.getState().endBraveDrag()}
-            style={ownTurnMain ? { cursor: 'pointer' } : undefined}
+            style={braveCandidate ? { animation: 'fx-choice-glow 1.4s ease-in-out infinite' } : ownTurnMain ? { cursor: 'pointer' } : undefined}
           >
             <CardFace def={db.get(state.cards[b]!.cardNo)} size="xs" />
           </div>
-        ))}
+          );
+        })}
         {braveMenu && ownTurnMain && <BraveMenu braveId={braveMenu} onClose={() => setBraveMenu(null)} />}
         {(braveDrop || fieldBraveDrop) && (
           <div className="absolute inset-x-1 bottom-1 z-10 rounded bg-emerald-400 py-0.5 text-center text-xs font-bold text-slate-900 shadow">

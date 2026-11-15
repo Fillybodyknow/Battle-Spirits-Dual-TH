@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { loadSD01Cards } from '@bs/cards';
+import { loadAllCards } from '@bs/cards';
 import { applyAction, createGame, currentBp, getPlayerView, payableCost, type Action, type GameState, type PlayerId } from '../src';
 
-const db = loadSD01Cards();
+// การ์ดของ SD01 ส่วนใหญ่อยู่ใน Booster Set 01: ใช้ฐานข้อมูลรวม
+const db = loadAllCards();
 const no = (name: string) => db.all().find((c) => c.name === name)!.cardNo;
 
 const HIEN = no('ฮิเอ็นดราก้อน');

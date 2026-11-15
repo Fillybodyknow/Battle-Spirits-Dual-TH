@@ -2,22 +2,23 @@ import type { Foil } from '@bs/cards';
 import { isXRare } from '@bs/cards';
 import { cardArt } from '../assets';
 import { CardFace } from '../components/CardFace';
-import { DECKS, db, type DeckId } from '../store';
+import { db, type DeckId } from '../store';
+import { deckInfo, deckSizeOf } from '../decks';
 
 /** การ์ดหน้าปกของเด็ค: X-Rare ใบแรกที่มีภาพ ไม่งั้นใบแรกที่มีภาพ ไม่งั้นใบแรก */
 export function deckCover(id: DeckId): string {
-  const entries = DECKS[id].entries;
+  const entries = deckInfo(id).entries;
   const withArt = entries.filter((e) => cardArt(e.cardNo));
   const xr = withArt.find((e) => isXRare(db.find(e.cardNo) ?? {}));
   return (xr ?? withArt[0] ?? entries[0]!).cardNo;
 }
 
-export const deckSize = (id: DeckId) => DECKS[id].entries.reduce((n, e) => n + e.count, 0);
+export const deckSize = (id: DeckId) => deckSizeOf(deckInfo(id).entries);
 
 /** สีหลักของเด็ค (สีที่การ์ดในเด็คใช้มากที่สุด) ใช้แต่งแสงพื้นหลัง */
 export function deckColor(id: DeckId): string {
   const count: Record<string, number> = {};
-  for (const e of DECKS[id].entries) for (const c of db.find(e.cardNo)?.colors ?? []) count[c] = (count[c] ?? 0) + e.count;
+  for (const e of deckInfo(id).entries) for (const c of db.find(e.cardNo)?.colors ?? []) count[c] = (count[c] ?? 0) + e.count;
   const top = Object.entries(count).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'blue';
   return GLOW[top] ?? GLOW.blue!;
 }
@@ -98,7 +99,7 @@ export function DeckTile({ id, selected, onClick, small }: { id: DeckId; selecte
         <div className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-slate-950 to-transparent" />
       </div>
       <div className="relative px-2.5 pt-1 pb-2">
-        <div className="truncate text-sm font-black text-white">{DECKS[id].label}</div>
+        <div className="truncate text-sm font-black text-white">{deckInfo(id).label}</div>
         <div className="text-[11px] text-slate-400">{deckSize(id)} ใบ</div>
       </div>
       {selected && <div className="absolute top-1.5 right-1.5 rounded-full bg-yellow-300 px-1.5 text-[11px] font-black text-slate-900">✓</div>}

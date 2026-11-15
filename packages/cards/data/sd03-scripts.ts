@@ -4,7 +4,6 @@
  * (Burst อยู่ช่องแรก, เอฟเฟกต์ที่ Brave ให้ผู้ร่วมร่างอยู่ท้ายสุด)
  */
 import type { CardFilter, CardScript, Condition, Step } from '../src/abilities';
-import { SD01_SCRIPTS } from './sd01-scripts';
 
 const WARRIOR = 'วิญญาณนักรบ';
 const MYOO = 'เมียวโอ';
@@ -159,5 +158,4 @@ export const SD03_SCRIPTS: Record<string, CardScript> = {
     },
     { kind: 'trigger', on: 'attack', levels: [2], steps: [{ do: 'destroyChosenOpponent', filter: { types: ['spirit', 'brave'], maxCost: 4 } }] },
   ],
-  เบิร์สวอลล์: SD01_SCRIPTS['เบิร์สวอลล์']!,
 };

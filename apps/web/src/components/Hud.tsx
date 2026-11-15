@@ -7,6 +7,7 @@ import { CardFace } from './CardFace';
 import { CardInspector } from './CardInspector';
 import { GameLog } from './Controls';
 import { Icon } from './Icon';
+import { setTouchInspected, useLastInputTouch, useTouchInspected } from '../touch';
 
 /** ชื่อที่แสดงของผู้เล่น (ออนไลน์ = ชื่อที่ตั้ง, เครื่องเดียว = ผู้เล่น 1/2) */
 function useSeatName(p: PlayerId): string {
@@ -57,19 +58,23 @@ export function FloatingInspector({ enabled }: { enabled: boolean }) {
   const hovered = useGame((s) => s.hovered);
   const pinned = useGame((s) => s.pinned);
   const pin = useGame((s) => s.pin);
-  const show = enabled && !!(hovered ?? pinned);
+  // ใช้นิ้ว: เปิดเฉพาะการ์ดที่กดค้าง (การแตะทั่วไปไม่เปิดแผงค้างไว้บังกระดาน)
+  const touch = useLastInputTouch();
+  const touchInspected = useTouchInspected();
+  const shown = touch ? touchInspected : (hovered ?? pinned);
+  const show = enabled && !!shown;
   if (!show) return null;
-  const sticky = !!pinned && !hovered;
+  const sticky = touch || (!!pinned && !hovered);
   return (
     <div
       className={`fixed top-14 left-2 z-[43] flex h-[min(600px,calc(100vh-150px))] w-[320px] flex-col rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.7)] ${sticky ? 'pointer-events-auto' : 'pointer-events-none'}`}
       style={{ animation: 'fx-fade-in 0.12s ease-out both' }}
     >
       <CardInspector />
-      {pinned && (
+      {(touch || pinned) && (
         <button
           type="button"
-          onClick={() => pin(null)}
+          onClick={() => (touch ? setTouchInspected(null) : pin(null))}
           className="pointer-events-auto absolute -top-2 -right-2 flex h-7 w-7 items-center justify-center rounded-full bg-slate-800 text-sm text-slate-200 ring-1 ring-white/30 hover:bg-rose-600"
           title="ปิดรายละเอียดการ์ด"
         >

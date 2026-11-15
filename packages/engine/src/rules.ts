@@ -54,7 +54,40 @@ export function cardLevel(state: GameState, db: CardDatabase, cardId: string): n
   const card = state.cards[cardId]!;
   const def = db.get(card.cardNo);
   if (def.type === 'brave' && braveHostOf(state, cardId)) return def.levels[0]?.level ?? 0;
-  return levelOf(def, card.cores.length);
+  const level = levelOf(def, card.cores.length);
+  // จักรพรรดิมังกร ซีคฟรีด: มี Soul Core = ถือว่าเป็น Lv สูงสุด
+  if (level > 0) {
+    for (const ab of def.abilities) {
+      if (ab.kind === 'maxLevelIf' && ab.levels.includes(level) && conditionHolds(state, cardId, ab.if, false, false, db)) {
+        return def.levels.at(-1)?.level ?? level;
+      }
+    }
+  }
+  return level;
+}
+
+/** ชื่อของการ์ด รวมชื่อแฝง ("ถือว่ามีคำว่า ... ในชื่อการ์ดด้วย") */
+export function cardNames(def: CardDef): string[] {
+  const alias = def.abilities.flatMap((a) => (a.kind === 'nameAlias' ? a.names : []));
+  return [def.name, ...alias];
+}
+
+/** ชื่อการ์ด (รวมชื่อแฝง) มีคำใดคำหนึ่งนี้ */
+export function nameHas(def: CardDef, words: readonly string[]): boolean {
+  const names = cardNames(def);
+  return words.some((w) => names.some((n) => n.includes(w)));
+}
+
+/** เจ็มที่เพิ่มจากเอฟเฟกต์ของการ์ดบนสนาม ("สปิริตนี้เจ็มแดงเพิ่ม 1 เม็ด") */
+export function extraSymbols(state: GameState, db: CardDatabase, cardId: string): Partial<Record<SymbolColor, number>> {
+  const out: Partial<Record<SymbolColor, number>> = {};
+  if (effectsNegated(state, db, cardId)) return out;
+  const level = cardLevel(state, db, cardId);
+  for (const ab of db.get(state.cards[cardId]!.cardNo).abilities) {
+    if (ab.kind !== 'extraSymbol' || !ab.levels.includes(level) || !conditionHolds(state, cardId, ab.if, false, false, db)) continue;
+    out[ab.color] = (out[ab.color] ?? 0) + ab.count;
+  }
+  return out;
 }
 
 /** ตรวจเงื่อนไขของเอฟเฟกต์ (paidWithSoul / catalyzed มีความหมายเฉพาะตอนประมวลผลเอฟเฟกต์ในคิว) */
@@ -70,12 +103,24 @@ export function conditionHolds(
   const card = state.cards[sourceId]!;
   const owner = state.players[card.owner];
   if ('not' in cond) return !conditionHolds(state, sourceId, cond.not, paidWithSoul, catalyzed, db);
+  if ('all' in cond) return cond.all.every((c) => conditionHolds(state, sourceId, c, paidWithSoul, catalyzed, db));
   if ('attackStep' in cond) return state.phase === 'attack';
+  if ('ownAttackStep' in cond) return state.phase === 'attack' && state.turnPlayer === card.owner;
+  if ('anyAllySoul' in cond) return owner.field.some((id) => state.cards[id]!.cores.some((x) => state.cores[x]!.isSoul));
+  if ('selfBraved' in cond) return card.braves.length > 0;
+  if ('battlingOpponentType' in cond) {
+    const b = state.battle;
+    if (!b || !db) return false;
+    const typeOf = (id: string) => db.get(state.cards[id]!.cardNo).type;
+    if (b.attackerId === sourceId) return b.blockers.some((id) => typeOf(id) === cond.battlingOpponentType);
+    if (b.blockers.includes(sourceId)) return typeOf(b.attackerId) === cond.battlingOpponentType;
+    return false;
+  }
   if ('allySoulNamed' in cond) {
     if (!db) return false;
     return owner.field.some((id) => {
       const c = state.cards[id]!;
-      return cond.allySoulNamed.some((w) => db.get(c.cardNo).name.includes(w)) && c.cores.some((x) => state.cores[x]!.isSoul);
+      return nameHas(db.get(c.cardNo), cond.allySoulNamed) && c.cores.some((x) => state.cores[x]!.isSoul);
     });
   }
   if ('soulOnSelf' in cond) return card.cores.some((id) => state.cores[id]!.isSoul);
@@ -99,22 +144,30 @@ export function currentBp(state: GameState, db: CardDatabase, cardId: string): n
   const card = state.cards[cardId]!;
   const def = db.get(card.cardNo);
   if (!isSpiritLike(def)) return 0;
-  let bp = bpOf(def, card.cores.length) + card.turnBp;
+  const ownLevel = cardLevel(state, db, cardId);
+  let bp = (def.levels.find((l) => l.level === ownLevel)?.bp ?? 0) + card.turnBp;
   // เอฟเฟกต์ติดตัวที่ Brave ให้ผู้ร่วมร่าง
   for (const b of card.braves) bp += db.get(state.cards[b]!.cardNo).braveCondition?.bp ?? 0;
   for (const srcId of state.players[card.owner].field) {
     const src = state.cards[srcId]!;
     const srcDef = db.get(src.cardNo);
-    const level = levelOf(srcDef, src.cores.length);
+    const level = cardLevel(state, db, srcId);
     if (effectsNegated(state, db, srcId)) continue;
     for (const ab of srcDef.abilities) {
       if (ab.kind !== 'staticBp' || !ab.levels.includes(level) || !conditionHolds(state, srcId, ab.if, false, false, db)) continue;
+      const scope = ab.scope;
+      const isSpirit = def.type === 'spirit' || def.type === 'brave';
       const applies =
-        'self' in ab.scope
+        'self' in scope
           ? srcId === cardId
-          : 'ownFamily' in ab.scope
-            ? def.type === 'spirit' && def.family.includes(ab.scope.ownFamily)
-            : (def.type === 'spirit' || def.type === 'brave') && ab.scope.ownNamed.some((w) => def.name.includes(w));
+          : 'ownFamily' in scope
+            ? def.type === 'spirit' && def.family.includes(scope.ownFamily)
+            : 'ownNamed' in scope
+              ? isSpirit && nameHas(def, scope.ownNamed)
+              : isSpirit &&
+                (!scope.ownSpirits.color || def.colors.includes(scope.ownSpirits.color)) &&
+                (!scope.ownSpirits.family || def.family.includes(scope.ownSpirits.family)) &&
+                (!scope.ownSpirits.soul || card.cores.some((x) => state.cores[x]!.isSoul));
       if (applies) bp += ab.amount;
     }
   }
@@ -132,9 +185,15 @@ export function matchesFilter(state: GameState, db: CardDatabase, cardId: string
   if (filter.minCost !== undefined && def.cost < filter.minCost) return false;
   if (filter.maxCost !== undefined && def.cost > filter.maxCost) return false;
   if (filter.cost !== undefined && def.cost !== filter.cost) return false;
-  if (filter.nameIncludes && !filter.nameIncludes.some((w) => def.name.includes(w))) return false;
+  if (filter.nameIncludes && !nameHas(def, filter.nameIncludes)) return false;
   if (filter.hasBurst && !def.burst) return false;
   if (filter.color && !def.colors.includes(filter.color)) return false;
+  if (filter.minBp !== undefined && currentBp(state, db, cardId) < filter.minBp) return false;
+  const card = state.cards[cardId]!;
+  const hasSoul = card.cores.some((id) => state.cores[id]!.isSoul);
+  if (filter.soul && !hasSoul) return false;
+  if (filter.noSoul && hasSoul) return false;
+  if (filter.hasEvolution && !def.abilities.some((a) => a.kind === 'evolution')) return false;
   return true;
 }
 
@@ -172,6 +231,11 @@ export function fieldSymbols(
   for (const id of state.players[player].field.flatMap((f) => [f, ...state.cards[f]!.braves])) {
     const def = db.get(state.cards[id]!.cardNo);
     for (const [color, n] of Object.entries(def.symbols) as [SymbolColor, number][]) {
+      out[color] = (out[color] ?? 0) + n;
+    }
+  }
+  for (const id of state.players[player].field) {
+    for (const [color, n] of Object.entries(extraSymbols(state, db, id)) as [SymbolColor, number][]) {
       out[color] = (out[color] ?? 0) + n;
     }
   }
