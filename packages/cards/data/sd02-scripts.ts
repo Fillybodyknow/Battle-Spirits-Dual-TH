@@ -20,6 +20,9 @@ const soulCost = (to: 'reserve' | 'trash', label: string, then: Step[], cond: Co
   ],
 });
 
+/** ส่ง Soul Core เพื่อแสดงใบบนสุดเด็ค: ต้องมี Soul Core และเด็คต้องมีการ์ด */
+const soulAndDeck: Condition = { all: [{ soulOnSelf: true }, { deckAtLeast: 1 }] };
+
 const exhaust1: Step = { do: 'exhaustOpponent', count: 1, filter: SPIRIT };
 
 export const SD02_SCRIPTS: Record<string, CardScript> = {
@@ -55,7 +58,7 @@ export const SD02_SCRIPTS: Record<string, CardScript> = {
       steps: [
         soulCost('reserve', 'ส่ง Soul Core ไปรีเสิร์ฟ: แสดงใบบนสุดเด็ค 1 ใบ', [
           { do: 'revealSummon', count: 1, filter: { types: ['spirit'], family: NINJA }, max: 1 },
-        ]),
+        ], soulAndDeck),
       ],
     },
   ],
@@ -68,7 +71,7 @@ export const SD02_SCRIPTS: Record<string, CardScript> = {
       steps: [
         soulCost('reserve', 'ส่ง Soul Core ไปรีเสิร์ฟ: แสดงใบบนสุดเด็ค 3 ใบ', [
           { do: 'revealSummon', count: 3, filter: { types: ['spirit', 'brave'], family: NINJA }, max: null },
-        ]),
+        ], soulAndDeck),
       ],
     },
   ],
@@ -201,7 +204,8 @@ export const SD02_SCRIPTS: Record<string, CardScript> = {
       steps: [
         {
           do: 'chooseOne',
-          if: { selfCoresAtLeast: 3 },
+          // ส่ง 3 ดวงแล้วต้องยังเหลือคอร์ (ไม่งั้นสูญสลาย ฟื้นสภาพไม่ได้ = ท่อนหลังทำไม่ได้)
+          if: { selfCoresAtLeast: 4 },
           options: [
             { label: 'ส่ง Core บนสปิริตนี้ 3 ดวงลงแทรช: ฟื้นสภาพ', steps: [{ do: 'selfCoresToTrash', count: 3 }, { do: 'refreshSelf' }] },
             { label: 'ไม่ใช้', steps: [] },

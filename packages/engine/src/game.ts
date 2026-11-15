@@ -1,12 +1,13 @@
 import type { CardDatabase, CardDef, Step } from '@bs/cards';
 import { assertUsableCore, checkDepletion, destroy, drawCard, emit, endGame, loseLife, newCore, payCost, setPhase, type Ctx } from './ctx';
-import { destroyCard, enqueue, fireTriggers, newBatch, queueLifeLostTriggers, queueMagicUsedTriggers, queueSummonTriggers, queueTriggers, resolveChoice, runQueue } from './effects';
+import { destroyCard, enqueue, fireTriggers, newBatch, queueExhaustTriggers, queueLifeLostTriggers, queueMagicUsedTriggers, queueSummonTriggers, queueTriggers, resolveChoice, runQueue } from './effects';
 import { nextRandom, shuffle } from './rng';
 import {
   RuleError,
   blockersFor,
   canAttackWith,
   magicUsedUp,
+  baseCost,
   braveHostOf,
   cardLevel,
   conditionHolds,
@@ -21,6 +22,10 @@ import {
   removeCore,
   removeFrom,
   symbolCount,
+  matchesFilter,
+  quickAnyCores,
+  trashSummonRule,
+  activatableAbilities,
 } from './rules';
 import {
   DEFAULT_CONFIG,
@@ -142,6 +147,29 @@ function beginTurn(ctx: Ctx): void {
   }
 
   setPhase(ctx, 'draw');
+  // เอฟเฟกต์ "ดรอว์สเต็ปของเรา" ที่ทำก่อนจั่ว (ร็อคแฮนด์: ทิ้งการ์ดเพื่อจั่วเพิ่ม)
+  for (const id of p.field) {
+    const level = cardLevel(s, ctx.db, id);
+    for (const ab of ctx.db.get(s.cards[id]!.cardNo).abilities) {
+      if (ab.kind !== 'drawStep' || !ab.before || !ab.levels.includes(level)) continue;
+      enqueue(ctx, { controller: player, sourceId: id, source: ab.source, steps: [...ab.before], paidWithSoul: false, trashWhenDone: false });
+    }
+  }
+  if (s.queue.length > 0) {
+    runQueue(ctx);
+    if (s.winner) return;
+    if (s.choice) {
+      s.resume = 'drawStepStart';
+      return;
+    }
+  }
+  startDraw(ctx);
+}
+
+/** Draw Step: รอกดจั่ว (หน้าเว็บ) หรือจั่วเลย */
+function startDraw(ctx: Ctx): void {
+  const { s } = ctx;
+  const player = s.turnPlayer;
   if (s.config.manualDraw) {
     // รอผู้เล่นกดจั่ว (action 'drawStep')
     s.awaitingDraw = player;
@@ -165,7 +193,8 @@ function continueDraw(ctx: Ctx): void {
 function drawStep(ctx: Ctx): void {
   const { s, db } = ctx;
   const player = s.turnPlayer;
-  let count = 1;
+  let count = 1 + (s.drawStepExtra ?? 0);
+  delete s.drawStepExtra;
   const after: { sourceId: string; steps: Step[] }[] = [];
   for (const id of s.players[player].field) {
     const level = cardLevel(s, db, id);
@@ -189,7 +218,19 @@ function afterDraw(ctx: Ctx): void {
   const player = s.turnPlayer;
   const p = s.players[player];
   setPhase(ctx, 'refresh');
-  for (const id of p.field) s.cards[id]!.state = 'refresh';
+  // ฟื้นสภาพไม่ได้: ถูกล็อกด้วยเอฟเฟกต์ (เคล็ดวิชาปลดปล่อยพสุธา) / เอฟเฟกต์ของคู่แข่งบนสนาม (โซอุม)
+  const locks = s.refreshLocks ?? [];
+  const opp = s.players[opponentOf(player)];
+  const blocked = (id: string) =>
+    locks.includes(id) ||
+    opp.field.some((src) => {
+      const level = cardLevel(s, ctx.db, src);
+      return ctx.db
+        .get(s.cards[src]!.cardNo)
+        .abilities.some((a) => a.kind === 'opponentNoRefresh' && a.levels.includes(level) && matchesFilter(s, ctx.db, id, a.filter));
+    });
+  for (const id of p.field) if (!blocked(id)) s.cards[id]!.state = 'refresh';
+  if (locks.length > 0) s.refreshLocks = locks.filter((id) => s.cards[id]!.owner !== player);
   p.reserve.push(...p.trashCores);
   p.trashCores = [];
   emit(ctx, { type: 'refreshed', player });
@@ -200,11 +241,29 @@ function afterDraw(ctx: Ctx): void {
 function endTurn(ctx: Ctx): void {
   const { s } = ctx;
   setPhase(ctx, 'end');
+  // "เอนด์สเต็ปของเรา"
+  const batch = newBatch(ctx);
+  for (const id of [...s.players[s.turnPlayer].field]) queueTriggers(ctx, id, 'endStep', batch);
+  if (s.queue.length > 0) {
+    runQueue(ctx);
+    if (s.winner) return;
+    if (s.choice) {
+      s.resume = 'endTurn';
+      return;
+    }
+  }
+  finishTurn(ctx);
+}
+
+/** ส่งเทิร์นให้อีกฝ่าย */
+function finishTurn(ctx: Ctx): void {
+  const { s } = ctx;
   for (const card of Object.values(s.cards)) {
     card.turnBp = 0;
     card.usedThisTurn = [];
   }
   s.usedOncePerTurn = [];
+  if (s.turnTriggers?.length) s.turnTriggers = [];
   s.turn += 1;
   s.turnPlayer = opponentOf(s.turnPlayer);
   s.burstSetThisTurn = false;
@@ -233,11 +292,17 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     const { s, db } = ctx;
     const flash = s.battle?.flash;
     if (!flash) requireMain(ctx, player);
-    const def = cardInHand(ctx, player, cardId);
-    const quick = def.abilities.find((a) => a.kind === 'quick');
+    // อัญเชิญจากแทรช (ร็อคแฮนด์ / มุเมอิ): ต้องมีเอฟเฟกต์อนุญาตในจังหวะนี้
+    const inTrash = s.players[player].trashCards.includes(cardId);
+    const trashRule = inTrash ? trashSummonRule(s, db, player, cardId) : null;
+    if (inTrash && !trashRule) fail('NOT_IN_HAND', 'อัญเชิญการ์ดนี้จากแทรชไม่ได้ในตอนนี้');
+    if (inTrash && braveOnto) fail('WRONG_PHASE', 'การ์ดจากแทรชร่วมร่างทันทีไม่ได้');
+    const def = inTrash ? db.get(s.cards[cardId]!.cardNo) : cardInHand(ctx, player, cardId);
+    const quick = inTrash ? undefined : def.abilities.find((a) => a.kind === 'quick');
     if (flash) {
       if (flash.priority !== player) fail('NOT_YOUR_PRIORITY', 'ยังไม่ถึงตาคุณใน Flash timing');
-      if (!quick) fail('WRONG_PHASE', 'อัญเชิญใน Flash timing ได้เฉพาะการ์ดที่มี [Quick]');
+      if (!quick && !trashRule) fail('WRONG_PHASE', 'อัญเชิญใน Flash timing ได้เฉพาะการ์ดที่มี [Quick]');
+      if (s.battle?.noFlash === player) fail('NO_FLASH', 'ในการต่อสู้นี้ใช้เอฟเฟกต์แฟลชไม่ได้');
       if (braveOnto) fail('WRONG_PHASE', 'ร่วมร่าง Brave ได้เฉพาะ Main Step');
     }
     if (def.type === 'ultimate') fail('NOT_SUPPORTED', 'Ultimate ยังไม่รองรับ (ขั้นที่ 3)');
@@ -246,6 +311,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     const p = s.players[player];
     const card = s.cards[cardId]!;
     const paidWithSoul = payment.some((id) => s.cores[id]?.isSoul);
+    if (trashRule?.soulPayment && !paidWithSoul) fail('SOUL_REQUIRED', 'ต้องใช้ Soul Core ร่วมจ่ายคอสต์เพื่ออัญเชิญจากแทรช');
 
     if (braveOnto) {
       // อัญเชิญเพื่อร่วมร่างทันที: จ่ายคอสต์ ไม่วาง Core บน Brave และ "เมื่อเบรฟนี้ถูกอัญเชิญ" ไม่ทำงาน
@@ -280,20 +346,23 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
       paid = 1;
       placed = placement;
     } else {
-      ({ paid, placed } = payCost(ctx, player, def, payment, placement, { reserveOnly: !!flash }));
+      ({ paid, placed } = payCost(ctx, player, def, payment, placement, {
+        reserveOnly: !!flash && !trashRule && !quickAnyCores(s, db, player),
+        baseCost: baseCost(s, db, cardId),
+      }));
     }
-    removeFrom(p.hand, cardId);
+    removeFrom(inTrash ? p.trashCards : p.hand, cardId);
     p.field.push(cardId);
     card.state = 'refresh';
     card.cores = [...placed];
-    emit(ctx, { type: 'summoned', player, cardId, paid, ...(flash ? { quick: true } : {}) });
+    emit(ctx, { type: 'summoned', player, cardId, paid, ...(flash && !inTrash ? { quick: true } : {}), ...(inTrash ? { fromTrash: true as const } : {}) });
     if (flash) {
       flash.consecutivePasses = 0;
       flash.priority = opponentOf(player);
     }
     checkDepletion(ctx);
     if (p.field.includes(cardId)) {
-      queueSummonTriggers(ctx, cardId, newBatch(ctx), { paidWithSoul });
+      queueSummonTriggers(ctx, cardId, newBatch(ctx), { paidWithSoul, fromTrash: inTrash, from: inTrash ? 'trash' : 'hand' });
       runQueue(ctx);
     }
   },
@@ -319,6 +388,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     const flash = s.battle?.flash;
     if (flash) {
       if (flash.priority !== player) fail('NOT_YOUR_PRIORITY', 'ยังไม่ถึงตาคุณใน Flash timing');
+      if (s.battle?.noFlash === player) fail('NO_FLASH', 'ในการต่อสู้นี้ใช้เอฟเฟกต์แฟลชไม่ได้');
     } else {
       requireMain(ctx, player);
     }
@@ -399,7 +469,14 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
   endMain(ctx, { player }) {
     requireMain(ctx, player);
     setPhase(ctx, 'attack');
-    if (ctx.s.turn === 1 && ctx.s.config.firstPlayerSkipsAttackStep) endTurn(ctx);
+    if (ctx.s.turn === 1 && ctx.s.config.firstPlayerSkipsAttackStep) {
+      endTurn(ctx);
+      return;
+    }
+    // "เมื่อเริ่มแอทแท็คสเต็ปของคู่แข่ง"
+    const batch = newBatch(ctx);
+    for (const id of [...ctx.s.players[opponentOf(player)].field]) queueTriggers(ctx, id, 'oppAttackStepStart', batch);
+    runQueue(ctx);
   },
 
   declareAttack(ctx, { player, attackerId }) {
@@ -431,6 +508,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     const batch = newBatch(ctx);
     queueTriggers(ctx, attackerId, 'attack', batch);
     for (const id of [...s.players[player].field]) queueTriggers(ctx, id, 'allyAttack', batch, { subject: attackerId });
+    queueExhaustTriggers(ctx, attackerId);
     runQueue(ctx);
   },
 
@@ -458,6 +536,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     const card = fieldCard(ctx.s, player, blockerId);
     if (!isSpiritLike(ctx.db.get(card.cardNo))) fail('CANNOT_BLOCK', 'การ์ดนี้ป้องกันไม่ได้');
     if (card.state !== 'refresh') fail('EXHAUSTED', 'การ์ดเสื่อมสภาพอยู่');
+    if (battle.blockFilter && !matchesFilter(ctx.s, ctx.db, blockerId, battle.blockFilter)) fail('CANNOT_BLOCK', 'การต่อสู้นี้ป้องกันด้วยการ์ดนี้ไม่ได้');
 
     card.state = 'exhausted';
     battle.blockers.push(blockerId);
@@ -467,6 +546,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     const batch = newBatch(ctx);
     queueTriggers(ctx, blockerId, 'block', batch);
     queueBlockedTriggers(ctx, battle.attackerId, blockerId, batch);
+    queueExhaustTriggers(ctx, blockerId);
     runQueue(ctx);
   },
 
@@ -489,6 +569,23 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     if (s.turnPlayer !== player) fail('NOT_YOUR_TURN', 'ไม่ใช่เทิร์นของคุณ');
     if (s.phase !== 'attack' || s.battle) fail('WRONG_PHASE', 'จบ Attack Step ได้เมื่อไม่มีการต่อสู้ค้างอยู่');
     endTurn(ctx);
+  },
+
+  activate(ctx, { player, cardId, source }) {
+    const { s, db } = ctx;
+    const flash = s.battle?.flash;
+    if (!flash) fail('WRONG_PHASE', 'ใช้เอฟเฟกต์ Flash ได้เฉพาะใน Flash timing');
+    if (flash.priority !== player) fail('NOT_YOUR_PRIORITY', 'ยังไม่ถึงตาคุณใน Flash timing');
+    if (s.battle?.noFlash === player) fail('NO_FLASH', 'ในการต่อสู้นี้ใช้เอฟเฟกต์แฟลชไม่ได้');
+    const card = fieldCard(s, player, cardId);
+    const ab = activatableAbilities(s, db, player, cardId).find((a) => a.source === source);
+    if (!ab) fail('CANNOT_ACTIVATE', 'ใช้เอฟเฟกต์นี้ไม่ได้ตอนนี้');
+    card.usedThisTurn.push(source);
+    emit(ctx, { type: 'activated', player, cardId, source });
+    flash.consecutivePasses = 0;
+    flash.priority = opponentOf(player);
+    enqueue(ctx, { controller: player, sourceId: cardId, steps: [...ab.steps], paidWithSoul: false, trashWhenDone: false, source });
+    runQueue(ctx);
   },
 
   evolve(ctx, { player, cardId, cores }) {
@@ -667,9 +764,10 @@ function resolveBattle(ctx: Ctx): void {
   const blockers = battle.blockers.filter((id) => s.players[defender].field.includes(id));
   if (blockers.length === 0) {
     const extra = Object.values(extraSymbols(s, db, attacker.id)).reduce<number>((n, v) => n + (v ?? 0), 0);
-    if (loseLife(ctx, defender, symbolCount(attackerDef) + braveSymbols(ctx, attacker.id) + extra, attacker.owner)) return;
+    const dmg = symbolCount(attackerDef) + braveSymbols(ctx, attacker.id) + extra;
+    if (loseLife(ctx, defender, dmg, attacker.owner)) return;
     lostLife = true;
-    queueLifeLostTriggers(ctx, defender);
+    queueLifeLostTriggers(ctx, defender, dmg);
   } else {
     // เทียบ BP กับผู้ป้องกันทีละตัว โดยใช้ BP ก่อนมีใครถูกทำลาย (ต่อสู้พร้อมกัน)
     const bpA = currentBp(s, db, attacker.id);
@@ -677,13 +775,19 @@ function resolveBattle(ctx: Ctx): void {
     const destroyedBlockers = results.filter((r) => r.bp <= bpA).map((r) => r.id);
     const attackerLoses = results.some((r) => bpA <= r.bp);
     for (const id of destroyedBlockers) destroyCard(ctx, id, attacker.owner, { bySource: attacker.id });
+    if (s.winner) return;
     if (attackerLoses) destroyCard(ctx, attacker.id, defender, { bySource: results.find((r) => bpA <= r.bp)!.id });
+    // "ชนะและทำลายสปิริตคู่แข่งจากการเทียบ BP → ฟื้นสภาพ" (คาราคุริโอโอคามิ)
+    if (!attackerLoses && destroyedBlockers.length > 0 && battle.refreshOnWin?.includes(attacker.id) && s.players[attacker.owner].field.includes(attacker.id)) {
+      attacker.state = 'refresh';
+      emit(ctx, { type: 'cardRefreshed', cardId: attacker.id });
+    }
 
     const perBlocker = battle.lifeOnBlockerDestroyed + (battle.consecutiveBlade ? battle.lifeOnBlockerDestroyedByBlade : 0);
     if (destroyedBlockers.length > 0 && perBlocker > 0) {
       if (loseLife(ctx, defender, perBlocker * destroyedBlockers.length, attacker.owner)) return;
       lostLife = true;
-      queueLifeLostTriggers(ctx, defender);
+      queueLifeLostTriggers(ctx, defender, perBlocker * destroyedBlockers.length);
     }
   }
 
@@ -760,6 +864,8 @@ export function applyAction(state: GameState, input: Action, db: CardDatabase): 
       const resume = ctx.s.resume;
       ctx.s.resume = null;
       if (resume === 'afterDraw') afterDraw(ctx);
+      else if (resume === 'endTurn') finishTurn(ctx);
+      else if (resume === 'drawStepStart') startDraw(ctx);
       else if (ctx.s.battle) endBattle(ctx);
     }
   } catch (e) {

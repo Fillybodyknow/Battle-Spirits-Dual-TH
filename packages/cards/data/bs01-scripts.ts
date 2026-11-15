@@ -125,8 +125,16 @@ export const BS01_SCRIPTS: Record<string, CardScript> = {
         {
           do: 'chooseOne',
           options: [
-            { label: 'ทำลายสปิริต BP ไม่เกิน 5000 ของคู่แข่ง 1 ตัว', steps: [destroy({ types: SPIRIT, maxBp: 5000 })] },
-            { label: 'ทำลายอัลติเมท BP ไม่เกิน 10000 ของคู่แข่ง 1 ตัว', steps: [destroy({ types: ULTIMATE, maxBp: 10000 })] },
+            {
+              label: 'ทำลายสปิริต BP ไม่เกิน 5000 ของคู่แข่ง 1 ตัว',
+              if: { opponentHas: { types: SPIRIT, maxBp: 5000 } },
+              steps: [destroy({ types: SPIRIT, maxBp: 5000 })],
+            },
+            {
+              label: 'ทำลายอัลติเมท BP ไม่เกิน 10000 ของคู่แข่ง 1 ตัว',
+              if: { opponentHas: { types: ULTIMATE, maxBp: 10000 } },
+              steps: [destroy({ types: ULTIMATE, maxBp: 10000 })],
+            },
           ],
         },
       ],

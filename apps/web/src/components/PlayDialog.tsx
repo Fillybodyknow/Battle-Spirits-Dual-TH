@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { bpOf, levelOf, minCores, payableCost } from '@bs/engine';
+import { baseCost, bpOf, levelOf, minCores, payableCost, quickAnyCores, trashSummonRule } from '@bs/engine';
 import { cardName, playerLabel } from '../format';
 import { db, flashPlayer, useGame, type MagicTiming, type PlayKind } from '../store';
 import { CardFace } from './CardFace';
@@ -83,9 +83,15 @@ function PlayDialogInner({ cardId, kind, timing, braveOnto }: { cardId: string; 
   const quickAb = kind === 'summon' && flashPlayer(state) === player ? def.abilities.find((a) => a.kind === 'quick') : undefined;
   const soulQuick = quickAb?.kind === 'quick' && !!quickAb.soul;
   const reserveSoul = p.reserve.find((id) => state.cores[id]!.isSoul);
-  const cost = soulQuick ? 0 : payableCost(state, db, player, def);
+  // อัญเชิญจากแทรช: คอสต์ตาม "ถือว่ามีคอสต์" ในแทรช และบางเอฟเฟกต์ต้องใช้ Soul Core ร่วมจ่าย
+  const fromTrash = p.trashCards.includes(cardId);
+  const mustSoul = fromTrash && !!trashSummonRule(state, db, player, cardId)?.soulPayment;
+  const base = baseCost(state, db, cardId);
+  const cost = soulQuick ? 0 : payableCost(state, db, player, def, base);
   const allowPlace = kind !== 'useMagic' && !braveOnto;
-  const normal = p.reserve.filter((id) => !state.cores[id]!.isSoul);
+  // [Quick] + ไซเลนท์ฮิล: ใช้คอร์บนการ์ดในสนามได้ด้วย (ใช้คอร์ในรีเสิร์ฟก่อน)
+  const fieldPool = quickAb && !soulQuick && quickAnyCores(state, db, player) ? p.field.flatMap((id) => state.cards[id]!.cores) : [];
+  const normal = [...p.reserve, ...fieldPool].filter((id) => !state.cores[id]!.isSoul);
   const soul = soulQuick ? undefined : reserveSoul;
 
   // ตัวเลือกเลเวลที่จะวาง (จำนวน Core บนการ์ด)
@@ -96,6 +102,7 @@ function PlayDialogInner({ cardId, kind, timing, braveOnto }: { cardId: string; 
   const [pick, setPick] = useState(Math.max(0, firstOk));
   const [soulUse, setSoulUse] = useState<SoulUse>(() => {
     const need = levelChoices[Math.max(0, firstOk)]!.need;
+    if (mustSoul) return 'pay';
     return normal.length >= cost + need ? 'keep' : cost > 0 ? 'pay' : 'place';
   });
   const [manual, setManual] = useState(false);
@@ -110,7 +117,8 @@ function PlayDialogInner({ cardId, kind, timing, braveOnto }: { cardId: string; 
   const min = allowPlace ? minCores(def) : 0;
   const payment = manual ? manualPay : auto.pay;
   const placement = manual ? manualPlace : auto.place;
-  const ok = manual ? manualPay.length === cost && manualPlace.length >= min : auto.ok;
+  const soulPaid = payment.some((id) => state.cores[id]!.isSoul);
+  const ok = (manual ? manualPay.length === cost && manualPlace.length >= min : auto.ok) && (!mustSoul || soulPaid);
   const level = allowPlace ? levelOf(def, placement.length) : undefined;
 
   const startManual = () => {
@@ -143,9 +151,9 @@ function PlayDialogInner({ cardId, kind, timing, braveOnto }: { cardId: string; 
   };
 
   const soulOptions: { id: SoulUse; label: string; show: boolean }[] = [
-    { id: 'keep', label: 'เก็บไว้ใน Reserve', show: true },
+    { id: 'keep', label: 'เก็บไว้ใน Reserve', show: !mustSoul },
     { id: 'pay', label: 'ใช้จ่ายคอสต์', show: cost > 0 },
-    { id: 'place', label: 'วางบนการ์ดนี้', show: allowPlace && chosen.need > 0 },
+    { id: 'place', label: 'วางบนการ์ดนี้', show: !mustSoul && allowPlace && chosen.need > 0 },
   ];
 
   return (
@@ -158,6 +166,7 @@ function PlayDialogInner({ cardId, kind, timing, braveOnto }: { cardId: string; 
           {timing && <span className="ml-2 text-base text-yellow-300">[{timing === 'main' ? 'Main' : 'Flash'}]</span>}
           {quickAb && <span className="ml-2 text-base text-emerald-300">[{soulQuick ? 'Soul Quick' : 'Quick'}]</span>}
           {braveOnto && <span className="ml-2 text-base text-emerald-300">→ {cardName(state, braveOnto)}</span>}
+          {fromTrash && <span className="ml-2 text-base text-purple-300">[จากแทรช{mustSoul ? ' · ต้องใช้ Soul Core จ่าย' : ''}]</span>}
         </>
       }
     >
@@ -175,7 +184,8 @@ function PlayDialogInner({ cardId, kind, timing, braveOnto }: { cardId: string; 
             ) : (
               <>
                 คอสต์ที่ต้องจ่าย <b className="text-lg text-rose-300">{cost}</b>
-                {cost < def.cost && <span className="text-slate-400"> (ลดจาก {def.cost})</span>}
+                {cost < base && <span className="text-slate-400"> (ลดจาก {base}{fromTrash && base !== def.cost ? ' ในแทรช' : ''})</span>}
+                {cost === base && fromTrash && base !== def.cost && <span className="text-slate-400"> (คอสต์ในแทรช)</span>}
               </>
             )}
             <span className="ml-3 text-slate-400">Reserve มี {p.reserve.length} ดวง</span>

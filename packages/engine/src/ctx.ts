@@ -1,6 +1,7 @@
 import type { CardDatabase, CardDef } from '@bs/cards';
 import { fail, isSpiritLike, levelOf, locateCore, minCores, payableCost, removeCore, removeFrom } from './rules';
 import { PLAYERS, opponentOf, type EndReason, type GameEvent, type GameState, type Phase, type PlayerId } from './types';
+import { newBatch, queueLifeLostTriggers, queueTriggers } from './effects';
 
 /** สถานะระหว่างประมวลผล action หนึ่งครั้ง (s เป็นสำเนาที่แก้ได้) */
 export interface Ctx {
@@ -28,6 +29,12 @@ export function drawCard(ctx: Ctx, player: PlayerId, byEffect = false): void {
   p.hand.push(id);
   emit(ctx, { type: 'cardDrawn', player, cardId: id });
   if (byEffect) handIncreasedByEffect(ctx, player);
+  // "เมื่อคู่แข่งจั่วการ์ด"
+  const opp = ctx.s.players[opponentOf(player)];
+  if (opp.field.length > 0) {
+    const batch = newBatch(ctx);
+    for (const fid of [...opp.field]) queueTriggers(ctx, fid, 'oppDrew', batch);
+  }
 }
 
 /** มือของผู้เล่นเพิ่มขึ้นโดยเอฟเฟกต์ของตัวเอง → Burst "หลังจากมือของคู่แข่งเพิ่มขึ้น" ของอีกฝ่าย */
@@ -92,7 +99,15 @@ export function leaveField(ctx: Ctx, cardId: string, to: 'trash' | 'hand'): void
 }
 
 export function sendToTrash(ctx: Ctx, cardId: string): void {
+  const battle = ctx.s.battle;
+  const gone = !!battle?.lifeOnBattlerGone && battle.blockers.includes(cardId) && ctx.s.players[ctx.s.cards[cardId]!.owner].field.includes(cardId);
   leaveField(ctx, cardId, 'trash');
+  // "เมื่อสปิริตของคู่แข่งที่ต่อสู้อยู่ถูกทำลาย/สูญสลาย" (ดุ๊คคิงเทารอส)
+  if (gone && battle?.lifeOnBattlerGone && !ctx.s.winner) {
+    const owner = ctx.s.cards[cardId]!.owner;
+    const { amount, to } = battle.lifeOnBattlerGone;
+    if (!loseLife(ctx, owner, amount, opponentOf(owner), to)) queueLifeLostTriggers(ctx, owner, amount);
+  }
 }
 
 /** by = ผู้เล่นที่ทำลาย (การต่อสู้ / เอฟเฟกต์) ใช้ตรวจ Burst "ถูกทำลายโดยคู่แข่ง" */
@@ -104,10 +119,10 @@ export function destroy(ctx: Ctx, cardId: string, by?: PlayerId, bySource?: stri
 }
 
 /** ไลฟ์ไปรีเสิร์ฟของเจ้าของ; คืน true ถ้าไลฟ์หมดแล้วจบเกม */
-export function loseLife(ctx: Ctx, player: PlayerId, amount: number, winner: PlayerId): boolean {
+export function loseLife(ctx: Ctx, player: PlayerId, amount: number, winner: PlayerId, to: 'reserve' | 'trash' = 'reserve'): boolean {
   const p = ctx.s.players[player];
   const n = Math.min(amount, p.life.length);
-  p.reserve.push(...p.life.splice(p.life.length - n, n));
+  (to === 'trash' ? p.trashCores : p.reserve).push(...p.life.splice(p.life.length - n, n));
   emit(ctx, { type: 'lifeLost', player, amount: n });
   if (n > 0) pendBurst(ctx, player, 'afterLifeLost');
   if (p.life.length > 0) return false;
@@ -152,9 +167,9 @@ export function payCost(
   def: CardDef,
   payment: string[],
   placement: string[],
-  opts: { noPlacement?: boolean; reserveOnly?: boolean } = {},
+  opts: { noPlacement?: boolean; reserveOnly?: boolean; /** คอสต์ก่อนลด (การ์ดในแทรช) */ baseCost?: number } = {},
 ): { paid: number; placed: string[] } {
-  const cost = payableCost(ctx.s, ctx.db, player, def);
+  const cost = payableCost(ctx.s, ctx.db, player, def, opts.baseCost ?? def.cost);
   if (payment.length !== cost) {
     fail('WRONG_PAYMENT', `ต้องจ่าย Core ${cost} ดวง แต่ส่งมา ${payment.length} ดวง`);
   }

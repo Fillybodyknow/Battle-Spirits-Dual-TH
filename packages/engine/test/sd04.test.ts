@@ -3,7 +3,8 @@ import { loadStarterCards, SD04_DECK } from '@bs/cards';
 import { applyAction, blockersFor, canAttackWith, createGame, currentBp, payableCost, type Action, type GameState, type PlayerId } from '../src';
 
 const db = loadStarterCards();
-const no = (name: string, set = 'SD04') => db.all().find((c) => c.name === name && c.cardNo.startsWith(set))!.cardNo;
+// ชื่อการ์ดไม่ซ้ำกันทั้งฐานข้อมูล (การ์ดของ Starter Deck ส่วนใหญ่เขียนไว้ใน Booster Set)
+const no = (name: string, _set?: string) => db.all().find((c) => c.name === name)!.cardNo;
 
 const HITOTSUME = no('ฮิโทสึเมะ โบส'); // คอสต์ 0 BP 1000/2000 (1/2)
 const KARAKASA = no('คาระคาสะแมน'); // คอสต์ 1 ไม่มีเอฟเฟกต์ BP 3000 (Lv1)

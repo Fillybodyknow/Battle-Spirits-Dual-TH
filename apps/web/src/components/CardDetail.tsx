@@ -49,7 +49,7 @@ export function CardDetail({ cardNo, className = 'w-[360px]' }: { cardNo: string
         {(def.effects as TextEffect[]).map((e, i) => (
           <p key={i} className="rounded-lg bg-black/30 p-2 text-sm leading-relaxed text-slate-200">
             <span className="mr-1 text-xs font-bold text-yellow-300">
-              {e.levels ? e.levels.map((l) => `[Lv${l}]`).join('') : e.timing === 'burst' ? '[Burst]' : e.keyword ? `Flash [${e.keyword}]` : e.timing ? `[${e.timing === 'main' ? 'Main' : 'Flash'}]` : ''}
+              {e.levels ? e.levels.map((l) => `[Lv${l}]`).join('') : e.timing === 'burst' ? '[Burst]' : e.keyword ? `Flash [${e.keyword}]` : e.flash ? '[Flash]' : e.timing ? `[${e.timing === 'main' ? 'Main' : 'Flash'}]` : ''}
             </span>
             {e.text}
           </p>

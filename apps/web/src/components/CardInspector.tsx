@@ -1,5 +1,5 @@
 import { rarityOf, type CardDef, type SymbolColor, type TextEffect } from '@bs/cards';
-import { bpOf, cardLevel, currentBp, payableCost, type GameState } from '@bs/engine';
+import { baseCost, bpOf, cardLevel, currentBp, payableCost, type GameState } from '@bs/engine';
 import { cardArt } from '../assets';
 import { braveText, COLOR_BG, COLOR_LABEL, RARITY_BADGE, TYPE_LABEL, playerLabel } from '../format';
 import { useEffect, useRef } from 'react';
@@ -134,7 +134,7 @@ export function CardInspector() {
   const onField = place === 'field';
   const level = onField ? cardLevel(state, db, card.id) : null;
   const main = def.colors[0] ?? 'white';
-  const pay = place === 'hand' ? payableCost(state, db, card.owner, def) : null;
+  const pay = place === 'hand' ? payableCost(state, db, card.owner, def, baseCost(state, db, card.id)) : null;
   const spirit = def.type !== 'nexus' && def.type !== 'magic';
   const bpNow = onField && spirit ? currentBp(state, db, card.id) : null;
   const bpBase = onField ? bpOf(def, card.cores.length) : 0;

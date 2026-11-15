@@ -31,6 +31,8 @@ export interface TextEffect {
   hand?: true;
   /** "[ร่วมร่าง][LvX] ..." บนสปิริต: ทำงานเฉพาะตอนสปิริตนี้ร่วมร่างกับ Brave อยู่ */
   whileBraved?: true;
+  /** "Flash ..." ของสปิริต/การ์ดที่ไม่ใช่ Magic ที่ไม่มีคีย์เวิร์ด (ใช้ใน Flash Timing) */
+  flash?: true;
 }
 
 export interface ParsedCardSet {
@@ -371,8 +373,13 @@ function parseEffectLine(line: Line, type: CardDefInput['type'] | undefined, err
   // หรือ "สปิริตนี้/การ์ดสปิริตนี้ถือว่ามีคำว่า ... ในชื่อการ์ดด้วย"
   if (/^(การ์ด|ถ้า|สปิริตนี้)/.test(rest)) return { text: rest };
 
-  const keyword = rest.match(/^Flash\s*\[([^\]]+)\]\s*:?\s*/i);
+  // "Flash [Quick] : ..." / "Flash Quick: ..." / "Flash Soul Quick ..." (คีย์เวิร์ดภาษาอังกฤษ มีหรือไม่มีวงเล็บก็ได้)
+  const keyword =
+    rest.match(/^Flash\s*\[([^\]]+)\]\s*:?\s*/i) ?? rest.match(/^Flash\s+((?:Soul\s+)?Quick|[A-Z][A-Za-z-]*(?:\s+[A-Z][A-Za-z-]*)?)\s*:?\s*/);
   if (keyword && type !== 'magic') return { keyword: keyword[1]!.trim(), text: rest.slice(keyword[0].length) };
+  // "Flash แอทแท็คสเต็ป...: ..." เอฟเฟกต์ Flash ที่ไม่มีคีย์เวิร์ด
+  const plainFlash = rest.match(/^Flash\s*:?\s*(?=[^\x00-\x7F])/);
+  if (plainFlash && type !== 'magic') return { flash: true, text: rest.slice(plainFlash[0].length) };
 
   const timing = rest.match(/^\[(Main|Flash)\]\s*/i);
   if (timing) {

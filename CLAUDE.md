@@ -37,7 +37,8 @@ apps/web/          React 19 + Vite + Tailwind v4 + Zustand
   index.html       สคริปต์ viewport: ย่อทั้งหน้าให้พอดีจอ (กระดาน 1280×860, หน้าเมนู ×640) บนมือถือ/iPad
 assets/
   files/SD1.text … SD4.text   Starter Deck (การ์ด + รายการเด็คท้ายไฟล์)
-  files/BS01/*.text           Booster Set (โฟลเดอร์ แยกไฟล์ตามประเภทได้)
+  files/BS01/ … BS03/*.text   Booster Set (โฟลเดอร์ แยกไฟล์ตามประเภทได้) — การ์ดของ SD01–SD03 ส่วนใหญ่เขียนไว้ที่นี่
+                              BS02/BS03: การ์ดใหม่ยังไม่มีสคริปต์เอฟเฟกต์ (placeholder) ใช้สคริปต์ SD เฉพาะใบที่ซ้ำกัน
   files/แม่แบบการ์ด.txt        แม่แบบการเขียนการ์ด (ไม่ถูกอ่านเป็นชุดการ์ด)
   images/cards/<ชุด>/<cardNo>.webp   ภาพการ์ด (โหลดอัตโนมัติด้วย glob ตามชื่อไฟล์ = cardNo)
 scripts/build-cards.ts       npm run cards
@@ -69,13 +70,46 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
 5. กลไกที่ DSL ยังไม่มี: เพิ่ม type ใน `abilities.ts` → จัดการใน `effects.ts` (execStep/resolveChoice) / `rules.ts` / `game.ts`
 6. เขียนเทสต์ใน `packages/engine/test/<set>.test.ts` (ดู helper `setup/put/act/choose/passAll` ใน `bs01.test.ts`)
 
+### กลไกที่มีใน DSL แล้ว (ดู type เต็มใน `abilities.ts`) — เช็กก่อนเพิ่มของใหม่
+
+- **trigger (`on`)**: summon, attack, block, destroyed / destroyedByOpponent / depletedByOpponent (ถูกถอดคอร์จนสูญสลาย),
+  allyDestroyed (subject: soul / byOpponent), allyExhausted / oppExhausted (รวมตอนโจมตี/ป้องกัน), lifeLost (step `draw.perLifeLost`),
+  endStep, oppAttackStepStart, oppDrew, oppBurstActivated (`zone: 'hand'`), allySummoned (subject: fromTrash / minCost / paidWithSoul)
+  · ตัวเลือกของ trigger: `ownTurnOnly`, `oppTurnOnly`, `attackStepOnly`, `mainStepOnly`, `granted` (Brave), `if`
+- **ability kind ถาวร**: staticBp, extraSymbol (`granted` ได้), symbolAlsoColor, summonSymbol, costBoost, levelCostBoost,
+  trashCost / trashCostAll (`zone: 'hand'` = คอสต์ในมือ), opponentNoRefresh, coreRemovalImmune, handImmune, quickAnyCores, burstAlsoOn,
+  replaceDestroy (`mill` / `millSelf` / `discard`), drawStep (`before` = ก่อนจั่ว + step `addDrawStepDraw`)
+- **กดใช้เอง**: `activated` (Flash ของการ์ดบนสนาม, `maxPerTurn`), `trashSummon` (อัญเชิญจากแทรช), evolution, quick
+- **ในการต่อสู้นี้**: restrictBlockers, battleNoFlash, battleNoBurst, lifeOnBattlerGone, refreshOnBattleWin, chooseBlockers (`filter`)
+- **ในเทิร์นนี้**: buffAllies (`state.turnBuffs` ตัวที่ลงทีหลังก็ได้), opponentCannotAttack, turnTrigger · ล็อกฟื้นสภาพ: `exhaustOpponent.lockRefresh`
+- **คอสต์**: `baseCost` (คอสต์ในมือ/แทรช), `fieldCost` (บนสนาม: รวมคอสต์ Brave ที่ร่วมร่าง + costBoost; filter `ignoreBraveCost`),
+  `destroyChosenOpponent.costFrom` ('self' / 'subject')
+- **เงื่อนไขเฉพาะ trigger อัญเชิญ**: `summonedFromDeck` (ตรวจใน `holds` ของ effects.ts ใช้ซ้อนใน `all`/`not` ไม่ได้)
+
 ถ้าข้อความการ์ดกำกวม: ตีความให้สมเหตุสมผล แล้ว **บอกเจ้าของโปรเจกต์ว่าตีความอะไรไว้** (เขาจะแก้ถ้าไม่ตรง)
+
+### รูปประโยคเอฟเฟกต์ → วิธีเขียนสคริปต์ (กติกาจากเจ้าของโปรเจกต์)
+
+| รูปประโยค | ความหมาย | สคริปต์ |
+|---|---|---|
+| ทั่วไป "เสื่อมสภาพ…2 ตัว" | บังคับ ทำเท่าที่ทำได้ | step ตรง ๆ (ไม่มีเป้าหมาย = ข้าม) |
+| "สามารถ…" | เลือกไม่ใช้ได้ แต่ถ้าใช้ต้องทำเต็มที่เท่าที่ทำได้ (มี 3 ตัว ใช้ "2 ตัว" จะทำแค่ 1 ไม่ได้) | `chooseOne` [ทำ, ไม่ใช้] |
+| "สามารถ X เพื่อ Y" | ต้องทำได้ **ทั้งสองท่อน** ไม่งั้นไม่เกิดทั้งคู่ | `chooseOne` + `options[].if` ตรวจทั้ง X และ Y (`opponentHas`, `deckAtLeast`, `handAtLeast`, `alliesAtLeast`, `selfCoresAtLeast`…) ตัวเลือกที่ทำไม่ได้จะไม่แสดง ถ้าเหลือแต่ "ไม่ใช้" = ไม่ถาม |
+| "…หลังจากเอฟเฟกต์นี้ทำงาน…" | ทำตามลำดับ ท่อนหน้าทำไม่ได้ ท่อนหลังก็ยังเกิด และมีจังหวะให้เอฟเฟกต์ที่รออยู่ทำงานก่อน | steps ต่อกัน (เช่น `summonThisFree`) |
+| "…หลังจากนั้น…" | เหมือนข้างบน แต่ทำต่อเนื่องทันที | steps ต่อกัน |
+| "ในเทิร์นนี้…" | ติดจนจบเทิร์นแม้ตัวที่ให้ผลออกจากสนามแล้ว ถ้าเป็น "ทั้งหมด" ตัวที่ลงมาใหม่ในเทิร์นก็โดนด้วย | `buffAllies` (เก็บใน `state.turnBuffs`), `opponentCannotAttack` (`attackBans`) |
+| "ในเกมนี้…" | ติดจนจบเกม | ยังไม่มี step |
+| "…หรือ…" | เลือกทำอย่างใดอย่างหนึ่ง | `chooseOne` (ใส่ `if` ให้ตัวเลือกที่ไม่มีเป้าหมาย) |
+| "ไม่เกิน N" | รวม N | `maxBp` / `maxCost` / `lifeAtMost` |
+| "…เมื่อเป็นเช่นนั้น…" | ท่อนหน้าต้องทำได้จริงก่อน ท่อนหลังถึงเกิด | `ifDestroyed` / ตรวจใน engine (เช่น `replaceDestroy.mill` ต้องทิ้งเด็คได้ครบ) |
 
 ## หลักของ engine
 
 - `applyAction` ไม่แก้ state เดิม (clone ทุกครั้ง) และต้อง deterministic (สุ่มด้วย seed ใน state) — ออนไลน์พึ่งสิ่งนี้
 - เอฟเฟกต์เข้าคิว `state.queue` ทำทีละ step · ต้องให้ผู้เล่นเลือก = ตั้ง `state.choice` แล้วหยุด รอ action `choose`
 - trigger ที่เกิดจากเอฟเฟกต์ที่กำลังทำงานเข้าคิวต่อจากเอฟเฟกต์นั้นทันที · เอฟเฟกต์ที่เกิดพร้อมกันของผู้ควบคุมเดียวกัน = ถามลำดับ (choice kind `order`)
+- เอฟเฟกต์ที่ผู้เล่นกดใช้เอง: [Evolution] = action `evolve`, เอฟเฟกต์ Flash ของการ์ดบนสนาม (ability `activated`) = action `activate`,
+  อัญเชิญจากแทรช (ability `trashSummon`) = action `summon` ที่ cardId อยู่ในแทรช · ของใหม่แบบนี้ต้องเพิ่มใน `responseOptions` (store) ด้วย ไม่งั้น AUTO จะ pass Flash ข้ามไป
 - `config.manualDraw` (หน้าเว็บเปิดไว้): Draw Step หยุดรอ action `drawStep` · เทสต์ใช้ค่าเริ่มต้น (จั่วเอง)
 - เปลี่ยนลำดับ action ที่ engine คาดหวัง = ห้องออนไลน์ที่เล่นค้างอยู่จะเล่นต่อไม่ได้ (บอกเจ้าของโปรเจกต์ด้วย)
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { canAttackWith, cardLevel, currentBp, isSpiritLike, payableCost, type CoreTarget, type PlayerId } from '@bs/engine';
+import { activatableAbilities, baseCost, canAttackWith, cardLevel, currentBp, isSpiritLike, payableCost, type CoreTarget, type PlayerId } from '@bs/engine';
 import { playerLabel } from '../format';
 import { IMG } from '../assets';
 import type { Fx } from '../store';
@@ -416,6 +416,24 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
           </button>
         )
       )}
+      {/* เอฟเฟกต์ Flash ที่กดใช้เอง (โซอุม / โอกุมะ / Assault) */}
+      {own &&
+        !evolveMode &&
+        activatableAbilities(state, db, card.owner, cardId).map((ab) => (
+          <button
+            key={ab.source}
+            type="button"
+            onClick={() => useGame.getState().dispatch({ type: 'activate', player: card.owner, cardId, source: ab.source })}
+            onMouseEnter={() => hover(cardId)}
+            onMouseLeave={() => hover(null)}
+            title={ab.label}
+            className="w-full rounded-md bg-sky-400 py-1 text-xs font-bold text-slate-900 shadow hover:bg-sky-300"
+            style={{ animation: 'fx-choice-glow 1.4s ease-in-out infinite' }}
+          >
+            {/* ชื่อสั้นบนปุ่ม (รายละเอียดอยู่ใน title และแผงข้อมูลการ์ด) */}
+            {ab.label.startsWith('[') ? ab.label.slice(0, ab.label.indexOf(']') + 1) : '[Flash]'} ใช้เอฟเฟกต์
+          </button>
+        ))}
     </div>
   );
 }
@@ -885,7 +903,7 @@ function HandCard({ cardId, hidden, small, fan }: { cardId: string; hidden: bool
   const main = mine(card.owner) && inMain(state) && card.owner === state.turnPlayer;
   const flash = mine(card.owner) && flashPlayer(state) === card.owner;
   const timings = def.type === 'magic' ? magicTimings(card.cardNo) : [];
-  const pay = payableCost(state, db, card.owner, def);
+  const pay = payableCost(state, db, card.owner, def, baseCost(state, db, cardId));
   const affordable = pay <= state.players[card.owner].reserve.length + state.players[card.owner].field.reduce((n, id) => n + state.cards[id]!.cores.length, 0);
   const quick = canQuickSummon(state, cardId);
   const playable = ((main || (flash && timings.includes('flash'))) && affordable) || quick;

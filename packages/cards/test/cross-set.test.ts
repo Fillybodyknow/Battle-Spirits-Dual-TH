@@ -101,7 +101,7 @@ describe('การ์ดข้ามชุด (Starter Deck ที่มีก�
   });
 
   it('SD3: เบิร์สวอลล์เขียนไว้ที่ SD1 ที่เดียว เด็ค SD03 อ้างการ์ด SD01-009', () => {
-    const parsed = parseCardText(sd3Text, { setCode: 'SD03', otherCards: loadSD01Cards().all() });
+    const parsed = parseCardText(sd3Text, { setCode: 'SD03', otherCards: loadAllCards().all().filter((c) => !c.cardNo.startsWith('SD03')) });
     expect(parsed.cards).toEqual(sd03Json);
     expect(parsed.deck).toEqual(sd03DeckJson);
     expect(SD03_DECK.find((e) => e.cardNo === 'SD01-009')?.count).toBe(3);

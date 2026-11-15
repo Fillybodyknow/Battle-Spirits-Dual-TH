@@ -74,6 +74,8 @@ export function formatEvent(e: GameEvent, s: GameState): string | null {
     case 'coreGained':
       return `${playerLabel(e.player)} ได้ Core 1 ดวง`;
     case 'summoned':
+      if (e.fromTrash) return `${playerLabel(e.player)} อัญเชิญ ${name(e.cardId)} จากแทรช (จ่าย ${e.paid})`;
+      if (e.from === 'trash') return `${playerLabel(e.player)} อัญเชิญ ${name(e.cardId)} จากแทรช`;
       if (e.from) return `${playerLabel(e.player)} อัญเชิญ ${name(e.cardId)} โดยไม่จ่ายคอสต์`;
       return `${playerLabel(e.player)} อัญเชิญ ${name(e.cardId)}${e.quick ? ' [Quick]' : ''} (จ่าย ${e.paid})`;
     case 'nexusDeployed':
@@ -141,7 +143,7 @@ export function formatEvent(e: GameEvent, s: GameState): string | null {
     case 'bounced':
       return `${name(e.cardId)} กลับขึ้นมือ${playerLabel(e.player)}`;
     case 'voidCore':
-      return `นำคอร์วอยด์ ${e.count} ดวงวาง${e.cardId ? `บน ${name(e.cardId)}` : `ที่รีเสิร์ฟ${playerLabel(e.player)}`}`;
+      return `นำคอร์วอยด์ ${e.count} ดวงวาง${e.cardId ? `บน ${name(e.cardId)}` : `ที่${e.trash ? 'แทรช' : 'รีเสิร์ฟ'}${playerLabel(e.player)}`}`;
     case 'soulToReserve':
       return `${name(e.cardId)} ส่ง Soul Core ไปรีเสิร์ฟ`;
     case 'coresToTrash':
@@ -156,6 +158,12 @@ export function formatEvent(e: GameEvent, s: GameState): string | null {
       return `[Catalyze] ${name(e.cardId)} สั่งใช้ Soul Burst: ${name(e.burstId)}`;
     case 'attackBanned':
       return `ในเทิร์นนี้ สปิริตของ${playerLabel(e.player)}โจมตีไม่ได้`;
+    case 'activated': {
+      const ab = db.get(s.cards[e.cardId]!.cardNo).abilities.find((a) => a.kind === 'activated' && a.source === e.source);
+      return `${playerLabel(e.player)} ใช้เอฟเฟกต์ [Flash] ของ ${name(e.cardId)}${ab?.kind === 'activated' ? `: ${ab.label}` : ''}`;
+    }
+    case 'coresRemoved':
+      return `${name(e.cardId)} ถูกส่งคอร์ ${e.count} เม็ดไป${e.to === 'trash' ? 'แทรช' : 'รีเสิร์ฟ'}`;
     case 'gameOver':
       return `🏆 ${playerLabel(e.winner)} ชนะ (${END_REASON[e.reason]})`;
   }

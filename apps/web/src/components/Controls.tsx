@@ -1,4 +1,4 @@
-import { cardLevel, currentBp, opponentOf } from '@bs/engine';
+import { cardLevel, currentBp, opponentOf, trashSummonRule } from '@bs/engine';
 import { cardName, formatEvent, playerLabel } from '../format';
 import { actingPlayer, blockCandidates, controls, db, draftDepleting, flashPlayer, isFxBlocking, isInlineChoice, responseOptions, simulateEvolve, useGame } from '../store';
 import { CardFace } from './CardFace';
@@ -91,7 +91,7 @@ export function PromptBar() {
     const fp = battle.flash.priority;
     const o = responseOptions(state, fp);
     const attacker = `${cardName(state, battle.attackerId)} (BP ${currentBp(state, db, battle.attackerId).toLocaleString()})`;
-    highlight = o.magic.length + o.evolve.length + o.quick.length > 0;
+    highlight = o.magic.length + o.evolve.length + o.quick.length + o.activate.length + o.trash.length > 0;
     title =
       battle.step === 'flashBeforeBlock'
         ? fp === state.turnPlayer
@@ -102,6 +102,8 @@ export function PromptBar() {
       o.magic.length > 0 && `Magic [Flash] บนมือ ${o.magic.length} ใบ`,
       o.quick.length > 0 && `[Quick] บนมือ ${o.quick.length} ใบ`,
       o.evolve.length > 0 && `Evolution บนสนาม ${o.evolve.length} ตัว`,
+      o.activate.length > 0 && `เอฟเฟกต์ Flash บนสนาม ${o.activate.length} ใบ`,
+      o.trash.length > 0 && `อัญเชิญจากแทรช ${o.trash.length} ใบ`,
     ].filter(Boolean);
     detail = parts.length > 0 ? `ใช้ได้: ${parts.join(' · ')} (การ์ดที่ใช้ได้จะเรืองแสง)` : 'ไม่มีการ์ดที่ใช้ได้';
     phaseBtn = { label: 'PASS', sub: 'ไม่ใช้', onClick: () => dispatch({ type: 'passFlash', player: fp }) };
@@ -414,17 +416,34 @@ export function TrashDialog() {
   const state = useGame((s) => s.state);
   const player = useGame((s) => s.trashView);
   const openTrash = useGame((s) => s.openTrash);
+  const openPlay = useGame((s) => s.openPlay);
+  const mine = useGame((s) => !!player && controls(s, player));
+  const busy = useGame((s) => !!s.state.choice || isFxBlocking(s.fx));
   if (!player) return null;
   const cards = state.players[player].trashCards;
+  // อัญเชิญจากแทรชได้ (ร็อคแฮนด์ / มุเมอิ)
+  const summonable = (id: string) => mine && !busy && !state.winner && !!trashSummonRule(state, db, player, id);
   return (
     <Modal title={`Trash ของ${playerLabel(player)}`} subtitle={`${cards.length} ใบ · ชี้การ์ดเพื่อดูรายละเอียด`} onClose={() => openTrash(null)} wide>
       {cards.length === 0 ? (
         <p className="text-sm text-slate-500">ยังไม่มีการ์ดใน Trash</p>
       ) : (
         <div className="flex flex-wrap gap-1">
-          {[...cards].reverse().map((id) => (
-            <PickCard key={id} cardId={id} />
-          ))}
+          {[...cards].reverse().map((id) =>
+            summonable(id) ? (
+              <PickCard
+                key={id}
+                cardId={id}
+                onPick={() => {
+                  openTrash(null);
+                  openPlay(id, 'summon');
+                }}
+                note={<span className="font-bold text-purple-300">แตะเพื่ออัญเชิญ</span>}
+              />
+            ) : (
+              <PickCard key={id} cardId={id} />
+            ),
+          )}
         </div>
       )}
     </Modal>

@@ -3,7 +3,8 @@ import { loadStarterCards, SD03_DECK } from '@bs/cards';
 import { applyAction, createGame, currentBp, payableCost, type Action, type GameState, type PlayerId } from '../src';
 
 const db = loadStarterCards();
-const no = (name: string, set = 'SD03') => db.all().find((c) => c.name === name && c.cardNo.startsWith(set))!.cardNo;
+// ชื่อการ์ดไม่ซ้ำกันทั้งฐานข้อมูล (การ์ดของ Starter Deck ส่วนใหญ่เขียนไว้ใน Booster Set)
+const no = (name: string, _set?: string) => db.all().find((c) => c.name === name)!.cardNo;
 
 const WING = no('โดจิวิหคเขียว'); // คอสต์ 0 BP 1000/2000 (1/3)
 const SEA = no('โดจิทะเลฟ้า'); // [Crush] BP 5000/6000/8000 (1/2/4)
@@ -256,6 +257,36 @@ describe('SD03 ทิ้งเด็คคู่แข่ง', () => {
     expect(x.choice?.kind).toBe('placeCores');
     x = choose(x, { pay: normalReserve(x, 'p1').slice(0, 1) });
     expect(x.players.p1.field).toContain(card);
+  });
+
+  it('เมียวโอแห่งการไถ่บาป: ทิ้งเด็คสองครั้ง (ทะเลคราม Lv1 + Lv2) อัญเชิญได้ครั้งเดียว ไม่ซ้ำบนสนาม', () => {
+    // เด็คคู่แข่ง: ใบที่ 1 และใบที่ 8 มีเบิร์ส → การทิ้ง 7 ใบแต่ละครั้งเจอเบิร์ส
+    const s = setup([], [BURST_WALL, DARIU, DARIU, DARIU, DARIU, DARIU, DARIU, BURST_WALL]);
+    const card = inHand(s, 'p1', REDEEM);
+    const deep = put(s, 'p1', DEEP, 4, true);
+    // ไม่ใช้ act/choose (เลือกลำดับอัตโนมัติ): ต้องเลือกลำดับเองให้เกิดสถานการณ์เดียวกับในเกม
+    const pickRaw = (st: GameState, pick: Extract<Action, { type: 'choose' }>['pick']) => actRaw(st, { type: 'choose', player: st.choice!.player, pick });
+    let x = actRaw(toAttack(s), { type: 'declareAttack', player: 'p1', attackerId: deep }); // ทิ้ง 7 → ไถ่บาป (บนมือ) + ทะเลคราม Lv2
+    let summoned = 0;
+    let pendingRedeem = 0;
+    for (let guard = 0; guard < 20 && x.choice; guard++) {
+      const c = x.choice;
+      pendingRedeem = Math.max(pendingRedeem, x.queue.filter((q) => q.sourceId === card).length);
+      if (c.kind === 'order') {
+        // ให้ทะเคราม Lv2 (ทิ้งเพิ่ม) ทำงานก่อนการไถ่บาป: การไถ่บาปจะค้างอยู่สองอัน
+        const i = c.effects.findIndex((e) => e.sourceId === deep);
+        x = actRaw(x, { type: 'choose', player: c.player, pick: i >= 0 ? i : 0 });
+      } else if (c.kind === 'option') {
+        x = pickRaw(x, 0); // ใช้ทุกตัวเลือก (ส่ง Soul Core ทิ้ง 7 / อัญเชิญ)
+      } else if (c.kind === 'placeCores') {
+        summoned++;
+        x = pickRaw(x, { pay: normalReserve(x, 'p1').slice(0, 1) });
+      } else break;
+    }
+    expect(pendingRedeem).toBe(2); // สถานการณ์ที่เกิดบั๊ก: เอฟเฟกต์ไถ่บาปค้างสองอัน
+    expect(summoned).toBe(1);
+    expect(x.players.p1.field.filter((id) => id === card)).toHaveLength(1);
+    expect(x.players.p1.hand).not.toContain(card);
   });
 
   it('เมียวโอดาบฟ้า: ทิ้ง 3 + (โซลคอร์) นำสปิริตวิญญาณนักรบในแทรชกลับขึ้นมือ', () => {

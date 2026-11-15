@@ -1,4 +1,4 @@
-import type { BurstEvent, Step } from '@bs/cards';
+import type { BurstEvent, CardFilter, Step } from '@bs/cards';
 
 export type PlayerId = 'p1' | 'p2';
 export const PLAYERS: readonly PlayerId[] = ['p1', 'p2'];
@@ -92,6 +92,16 @@ export interface Battle {
   lifeOnBlockerDestroyed: number;
   /** เหมือน lifeOnBlockerDestroyed แต่นับเฉพาะเมื่อใช้ [Consecutive Blade] */
   lifeOnBlockerDestroyedByBlade: number;
+  /** สปิริตคู่แข่งที่ต่อสู้อยู่ถูกทำลาย/สูญสลาย → ส่งคอร์ไลฟ์ของเจ้าของ (ดุ๊คคิงเทารอส) */
+  lifeOnBattlerGone?: { amount: number; to: 'reserve' | 'trash' };
+  /** สปิริตที่ฟื้นสภาพเมื่อชนะและทำลายสปิริตคู่แข่งจากการเทียบ BP */
+  refreshOnWin?: string[];
+  /** ฝ่ายป้องกันป้องกันได้เฉพาะการ์ดที่ตรงตัวกรอง */
+  blockFilter?: CardFilter;
+  /** ผู้เล่นที่ใช้เอฟเฟกต์แฟลชไม่ได้ในการต่อสู้นี้ */
+  noFlash?: PlayerId;
+  /** ผู้เล่นที่สั่งใช้เบิร์สไม่ได้ในการต่อสู้นี้ */
+  noBurst?: PlayerId;
 }
 
 /** เอฟเฟกต์ที่รอประมวลผล (หัวคิวคือที่กำลังทำ) */
@@ -123,8 +133,16 @@ export interface QueuedEffect {
   logStart?: number;
   /** สปิริตที่เป็นต้นเหตุของ trigger นี้ */
   subjectId?: string;
+  /** trigger lifeLost: จำนวนคอร์ไลฟ์ที่ลดลง */
+  lifeLost?: number;
+  /** trigger summon: การ์ดถูกอัญเชิญมาจากไหน */
+  summonFrom?: string;
+  /** เอฟเฟกต์นี้ทำให้การ์ดที่มี Soul Core สูญสลายแล้ว */
+  depletedSoul?: boolean;
   /** เอฟเฟกต์นี้มาจาก "เมื่อสปิริตนี้โจมตี" */
   fromAttack?: boolean;
+  /** trigger ที่ทำงานขณะการ์ดอยู่บนมือ/ในแทรช: การ์ดย้ายออกจากที่นั้นก่อนถึงคิว = ไม่ทำงาน */
+  zone?: 'hand' | 'trash';
   /** มี Soul Core บนการ์ดนี้ตอนเกิด trigger (การ์ดที่ออกจากสนามไปแล้ว) */
   soulSnapshot?: boolean;
 }
@@ -193,12 +211,20 @@ export interface GameState {
   /** เงื่อนไข Burst ที่เกิดขึ้นแล้ว รอถามเจ้าของ Burst เมื่อเอฟเฟกต์ที่กำลังทำงานจบ */
   pendingBursts: { player: PlayerId; on: BurstEvent }[];
   /** ขั้นตอนของเทิร์นที่ต้องเดินต่อเมื่อเลือกเสร็จ (เช่น เอฟเฟกต์ใน Draw Step ให้เลือกทิ้งการ์ด) */
-  resume: 'afterDraw' | 'endBattle' | null;
+  resume: 'afterDraw' | 'endBattle' | 'endTurn' | 'drawStepStart' | null;
   burstSetThisTurn: boolean;
   /** "ในเทิร์นนี้ ... โจมตีไม่ได้": การ์ดของ player ประเภท types โจมตีไม่ได้ในเทิร์น turn */
   attackBans?: { player: PlayerId; turn: number; types: string[] }[];
+  /** "ในเทิร์นนี้ สปิริตเราทั้งหมด BP+": สปิริตของ player ที่ตรง filter BP+amount ในเทิร์น turn */
+  turnBuffs?: { player: PlayerId; turn: number; amount: number; filter?: CardFilter }[];
   /** เอฟเฟกต์ "เทิร์นละ 1 ครั้ง" ที่ใช้ไปแล้ว (player:cardNo:source) ล้างตอนจบเทิร์น */
   usedOncePerTurn?: string[];
+  /** การ์ดที่ฟื้นสภาพไม่ได้ในรีเฟรชสเต็ปครั้งถัดไปของเจ้าของ (ล้างเมื่อผ่านรีเฟรชสเต็ปนั้น) */
+  refreshLocks?: string[];
+  /** จำนวนจั่วเพิ่มของ Draw Step ปัจจุบัน (เอฟเฟกต์ก่อนจั่ว) */
+  drawStepExtra?: number;
+  /** "ในเทิร์นนี้, เมื่อ..." ที่เมจิคตั้งไว้ (ล้างเมื่อจบเทิร์น) */
+  turnTriggers?: { player: PlayerId; turn: number; on: 'allyDestroyed'; steps: Step[]; sourceId: string; paidWithSoul: boolean }[];
   /** Draw Step แบบกดจั่วเอง: ผู้เล่นที่ต้องกดจั่ว (ระหว่างนี้ทำ action อื่นไม่ได้) */
   awaitingDraw?: PlayerId;
   players: Record<PlayerId, PlayerState>;
@@ -238,6 +264,8 @@ export type Action =
   | { type: 'choose'; player: PlayerId; pick: ChoicePick }
   /** Flash [Evolution]: ย้าย Core จากสปิริตอื่นของเรามาวางบน cardId */
   | { type: 'evolve'; player: PlayerId; cardId: string; cores: string[] }
+  /** ใช้เอฟเฟกต์ Flash ของการ์ดบนสนาม (ability kind activated ที่บรรทัด source) */
+  | { type: 'activate'; player: PlayerId; cardId: string; source: number }
   /**
    * Main Step: ย้าย Brave บนสนามของเรา
    *  - Brave เดี่ยว → ร่วมร่างกับ hostId (Core บน Brave กลับรีเสิร์ฟ, ผู้ร่วมร่างมีสภาพตาม Brave)
@@ -266,7 +294,7 @@ export type GameEvent =
   | { type: 'cardDrawn'; player: PlayerId; cardId: string }
   | { type: 'refreshed'; player: PlayerId }
   /** from = ที่มาเมื่ออัญเชิญด้วยเอฟเฟกต์ (ไม่จ่ายคอสต์) */
-  | { type: 'summoned'; player: PlayerId; cardId: string; paid: number; from?: 'deck' | 'burst' | 'hand' | 'other'; quick?: boolean }
+  | { type: 'summoned'; player: PlayerId; cardId: string; paid: number; from?: 'deck' | 'burst' | 'hand' | 'trash' | 'other'; quick?: boolean; /** อัญเชิญจากแทรชแบบจ่ายคอสต์ */ fromTrash?: true }
   | { type: 'nexusDeployed'; player: PlayerId; cardId: string; paid: number }
   | { type: 'magicUsed'; player: PlayerId; cardId: string; paid: number; timing: 'main' | 'flash' }
   | { type: 'coresMoved'; player: PlayerId; count: number }
@@ -280,6 +308,10 @@ export type GameEvent =
   | { type: 'lifeLost'; player: PlayerId; amount: number }
   /** bySource = การ์ดที่เป็นเจ้าของเอฟเฟกต์ที่ทำลาย */
   | { type: 'destroyed'; cardId: string; bySource?: string; stays?: true }
+  /** คอร์บนการ์ดถูกส่งออก (เอฟเฟกต์ถอดคอร์) */
+  | { type: 'coresRemoved'; cardId: string; count: number; to: 'reserve' | 'trash' }
+  /** ผู้เล่นกดใช้เอฟเฟกต์ Flash ของการ์ดบนสนาม */
+  | { type: 'activated'; player: PlayerId; cardId: string; source: number }
   | { type: 'battleEnded' }
   | { type: 'gameOver'; winner: PlayerId; reason: EndReason }
   /** source = index บรรทัดเอฟเฟกต์ใน CardDef.effects */
@@ -306,7 +338,7 @@ export type GameEvent =
   /** การ์ดบนสนามกลับขึ้นมือเจ้าของ */
   | { type: 'bounced'; player: PlayerId; cardId: string }
   /** Core ใหม่จากวอยด์ (cardId null = รีเสิร์ฟ) */
-  | { type: 'voidCore'; player: PlayerId; cardId: string | null; count: number }
+  | { type: 'voidCore'; player: PlayerId; cardId: string | null; count: number; trash?: true }
   | { type: 'soulToReserve'; cardId: string }
   | { type: 'coresToTrash'; cardId: string; count: number }
   | { type: 'cardsToDeckBottom'; player: PlayerId; cardIds: string[] }

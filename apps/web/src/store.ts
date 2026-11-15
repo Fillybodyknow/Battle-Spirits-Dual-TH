@@ -8,6 +8,10 @@ import { expandDeck, loadAllCards, validateDeck } from '@bs/cards';
 import { deckChoices, deckInfo, deckToken, STARTER_DECKS, type DeckId } from './decks';
 import { rarityOf, type TextEffect } from '@bs/cards';
 import {
+  activatableAbilities,
+  baseCost,
+  quickAnyCores,
+  trashSummonRule,
   applyAction,
   blockersFor,
   magicUsedUp,
@@ -108,7 +112,9 @@ export function canQuickSummon(s: GameState, cardId: string): boolean {
   const reserve = s.players[card.owner].reserve;
   const normal = reserve.filter((id) => !s.cores[id]!.isSoul).length;
   if (quick.soul) return normal + 0 >= minCores(def) && reserve.some((id) => s.cores[id]!.isSoul);
-  return reserve.length >= payableCost(s, db, card.owner, def) + minCores(def);
+  // ไซเลนท์ฮิล: ใช้คอร์บนการ์ดในสนามได้ด้วย
+  const extra = quickAnyCores(s, db, card.owner) ? s.players[card.owner].field.reduce((n, id) => n + s.cards[id]!.cores.length, 0) : 0;
+  return reserve.length + extra >= payableCost(s, db, card.owner, def, baseCost(s, db, cardId)) + minCores(def);
 }
 
 /** ผู้ร่วมร่างปัจจุบันของ Brave (null = ไม่ได้ร่วมร่าง) */
@@ -142,9 +148,16 @@ export function separatePlacement(s: GameState, braveId: string): string[] | nul
   return reserve.length >= need ? reserve.slice(0, need) : null;
 }
 
-/** ตัวเลือกที่ผู้เล่นใช้ได้ใน Flash timing ตอนนี้: Magic [Flash] ที่จ่ายไหว, สปิริตที่ใช้ [Evolution] ได้ และการ์ด [Quick] */
-export function responseOptions(s: GameState, player: PlayerId): { magic: string[]; evolve: string[]; quick: string[] } {
-  if (flashPlayer(s) !== player) return { magic: [], evolve: [], quick: [] };
+/**
+ * ตัวเลือกที่ผู้เล่นใช้ได้ใน Flash timing ตอนนี้: Magic [Flash] ที่จ่ายไหว, สปิริตที่ใช้ [Evolution] ได้, การ์ด [Quick],
+ * การ์ดบนสนามที่มีเอฟเฟกต์ Flash กดใช้ได้ (activate) และการ์ดในแทรชที่อัญเชิญได้ (trash)
+ */
+export function responseOptions(
+  s: GameState,
+  player: PlayerId,
+): { magic: string[]; evolve: string[]; quick: string[]; activate: string[]; trash: string[] } {
+  // ในการต่อสู้นี้ใช้เอฟเฟกต์แฟลชไม่ได้ (ดุ๊คคิงเทารอส)
+  if (flashPlayer(s) !== player || s.battle?.noFlash === player) return { magic: [], evolve: [], quick: [], activate: [], trash: [] };
   const p = s.players[player];
   const cores = p.reserve.length + p.field.reduce((n, id) => n + s.cards[id]!.cores.length, 0);
   const magic = p.hand.filter((id) => {
@@ -162,7 +175,9 @@ export function responseOptions(s: GameState, player: PlayerId): { magic: string
       p.field.some((o) => o !== id && isSpiritLike(db.get(s.cards[o]!.cardNo)) && s.cards[o]!.cores.length > 0),
   );
   const quick = p.hand.filter((id) => canQuickSummon(s, id));
-  return { magic, evolve, quick };
+  const activate = p.field.filter((id) => activatableAbilities(s, db, player, id).length > 0);
+  const trash = p.trashCards.filter((id) => trashSummonRule(s, db, player, id) !== null);
+  return { magic, evolve, quick, activate, trash };
 }
 
 /**
@@ -228,7 +243,7 @@ function autoAdvance(s: GameState, events: GameEvent[]): GameState {
     let action: Action | null = null;
     if (fp) {
       const o = responseOptions(s, fp);
-      if (o.magic.length === 0 && o.evolve.length === 0 && o.quick.length === 0) action = { type: 'passFlash', player: fp };
+      if (o.magic.length + o.evolve.length + o.quick.length + o.activate.length + o.trash.length === 0) action = { type: 'passFlash', player: fp };
     } else if (s.battle?.step === 'declareBlock' && blockCandidates(s).length === 0) {
       action = { type: 'noBlock', player: opponentOf(s.turnPlayer) };
     }
@@ -369,6 +384,7 @@ function snapRects(): Record<string, Rect> {
   grab('[data-hand-card]', (el) => `hand:${el.dataset.handCard}`);
   grab('[data-field-card] > div:first-child', (el) => `field:${el.parentElement!.dataset.fieldCard}`);
   grab('[data-burst-card]', (el) => `burst:${el.dataset.burstCard}`);
+  grab('[data-trash]', (el) => `trash:${el.dataset.trash}`);
   return out;
 }
 
@@ -605,7 +621,9 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
               ? fromReveal(e.cardId, `[data-deck="${e.player}"]`)
               : origin === 'burst'
                 ? (rects[`burst:${e.player}`] ?? 'center')
-                : (rects[`hand:${e.cardId}`] ?? null);
+                : origin === 'trash' || (e.type === 'summoned' && e.fromTrash)
+                  ? (rects[`trash:${e.player}`] ?? 'center')
+                  : (rects[`hand:${e.cardId}`] ?? null);
           // Brave ที่ร่วมร่าง: บินไปที่ผู้ร่วมร่าง
           const host = Object.values(s.cards).find((c) => c.braves.includes(e.cardId));
           const dest = host ? `[data-brave-card="${e.cardId}"]` : to;
@@ -722,6 +740,10 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         break;
       case 'coresToTrash':
         out.push({ kind: 'float', anchor: `[data-field-card="${e.cardId}"]`, text: `-${e.count} Core`, tone: 'bad', delay: t });
+        break;
+      case 'coresRemoved':
+        out.push({ kind: 'float', anchor: `[data-field-card="${e.cardId}"]`, text: `-${e.count} Core`, tone: 'bad', delay: t });
+        t += 350;
         break;
       case 'cardsToDeckBottom':
         e.cardIds.forEach((id, i) =>
@@ -1493,7 +1515,9 @@ async function startRound(code: string, setup: RoomSetup, opponentHere: boolean)
   unsubActions = null;
   buffer.clear();
   const decks = { p1: setup.decks.p1, p2: setup.decks.p2 ?? setup.decks.p1 } as DeckChoice;
-  if (!DECKS[decks.p1] || !DECKS[decks.p2]) {
+  // Starter Deck หรือเด็คที่จัดเอง (รหัส "c:..." มีรายการการ์ดในตัว) ที่ถอดได้และถูกกติกา
+  const known = (id: DeckId) => !!DECKS[id] || (id.startsWith('c:') && deckInfo(id).custom && validateDeck(deckInfo(id).entries, db).valid);
+  if (!known(decks.p1) || !known(decks.p2)) {
     useGame.setState({ error: 'เด็คในห้องนี้ไม่มีในเกมเวอร์ชันนี้' });
     return;
   }

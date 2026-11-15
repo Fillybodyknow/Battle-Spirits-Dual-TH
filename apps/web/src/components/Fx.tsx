@@ -1428,12 +1428,14 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
           { transform: `translate(0,0) ${rotEnd} scale(1)` },
         ];
     const anim = el.animate(
+      // ทึบตลอดทาง: ตัวการ์ดตั้ง opacity 0 ไว้ (ซ่อนก่อนถึงคิว) ถ้าคีย์เฟรมท้าย ๆ ไม่ระบุ
+      // เบราว์เซอร์จะไล่ความทึบกลับไปหา 0 ทำให้การ์ดจางลงตอนวิ่งกลับ
       [
-        { transform: `translate(0,0) ${rot} scale(1)`, opacity: 1 },
+        { transform: `translate(0,0) ${rot} scale(1)` },
         { transform: `translate(${-hx * 0.08}px,${-hy * 0.08}px) rotate(0deg) scale(1.12)`, offset: 0.2 },
         { transform: `translate(${hx}px,${hy}px) rotate(0deg) scale(1.18)`, offset: HIT_AT, easing: 'ease-out' },
         ...end,
-      ],
+      ].map((k) => ({ ...k, opacity: 1 })),
       // ผู้โจมตีที่ยังอยู่บนสนาม: ก่อนถึงคิวแสดงการ์ดตัวจริง (มี Core / BP / Brave) แล้วค่อยสลับเป็นภาพที่วิ่ง
       // ผู้โจมตีที่แพ้ (ออกจากสนามแล้ว): ภาพนี้ยืนแทนที่ช่องเดิมไปจนวิ่ง
       { duration: CHARGE_MS, delay: fx.delay, easing: 'cubic-bezier(.5,0,.3,1)', fill: onBoard ? 'forwards' : 'both' },
