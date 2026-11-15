@@ -10,6 +10,7 @@ import { BTN } from './components/Modal';
 import { setSfx, sfx, sfxSettings } from './sfx';
 import { AttackArrow, FxLayer } from './components/Fx';
 import { DrawPrompt } from './components/DrawPrompt';
+import { Icon } from './components/Icon';
 import { CoreDragGhost, DragGhost } from './components/DragGhost';
 import { DeckViewer } from './screens/DeckViewer';
 import { Home } from './screens/Home';
@@ -50,14 +51,14 @@ function Toolbar() {
           } else useGame.getState().setScreen('home');
         }}
       >
-        ⌂
+        <Icon name="home" />
       </button>
       <Settings />
       <button type="button" disabled={!canUndo && !(online && hasDraft)} onClick={online ? cancelCores : undo} className={ICON_BTN} title={online ? 'ยกเลิกการจัด Core' : 'ย้อน action'}>
-        ↶
+        <Icon name="undo" />
       </button>
       <button type="button" disabled={!canRestart} onClick={restart} className={ICON_BTN} title={online ? 'เกมใหม่ (เจ้าของห้อง)' : 'เกมใหม่'}>
-        ⟳
+        <Icon name="restart" />
       </button>
       <OnlinePanel />
     </div>
@@ -107,7 +108,7 @@ function OnlinePanel() {
   return (
     <div className="relative flex items-center gap-1.5">
       <button type="button" className={ICON_BTN} onClick={() => setOpen((o) => !o)} title="เล่นออนไลน์">
-        🌐
+        <Icon name="globe" />
       </button>
       {online && (
         <span className="rounded-full border border-emerald-300/40 bg-black/70 px-3 py-1 text-xs text-emerald-200 shadow">
@@ -207,7 +208,7 @@ function Settings() {
   return (
     <div className="relative">
       <button type="button" className={ICON_BTN} onClick={() => setOpen((o) => !o)} title="ตั้งค่า">
-        ⚙
+        <Icon name="settings" />
       </button>
       {open && (
         <div className="absolute left-0 z-50 mt-1 flex w-72 flex-col gap-3 rounded-lg border border-slate-600 bg-slate-900 p-3 text-sm shadow-xl">

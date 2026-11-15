@@ -16,6 +16,7 @@ export type SfxName =
   | 'burst'
   | 'turn'
   | 'step'
+  | 'tick'
   | 'chain'
   | 'resolve'
   | 'swish'
@@ -139,8 +140,8 @@ const SYNTH: Record<SfxName, (t: number) => void> = {
   },
   draw: (t) => noise(t, 0.18, { type: 'highpass', freq: 2500, to: 6000, gain: 0.12 }),
   place: (t) => {
-    tone(t, 140, 0.25, { type: 'sine', gain: 0.45, to: 55 });
-    noise(t, 0.12, { type: 'lowpass', freq: 900, gain: 0.25 });
+    tone(t, 140, 0.25, { type: 'sine', gain: 0.28, to: 55 });
+    noise(t, 0.12, { type: 'lowpass', freq: 900, gain: 0.16 });
   },
   activate: (t) => {
     [880, 1320, 1760].forEach((f, i) => tone(t + i * 0.06, f, 0.5, { type: 'sine', gain: 0.12 }));
@@ -156,18 +157,22 @@ const SYNTH: Record<SfxName, (t: number) => void> = {
     tone(t + 0.15, 1800, 0.5, { type: 'sine', gain: 0.1 });
   },
   burst: (t) => {
-    tone(t, 90, 0.8, { type: 'sawtooth', gain: 0.25, to: 40 });
-    noise(t, 0.9, { type: 'lowpass', freq: 2000, to: 200, gain: 0.35 });
-    [392, 523, 784].forEach((f) => tone(t + 0.1, f, 0.9, { type: 'square', gain: 0.05 }));
+    tone(t, 90, 0.8, { type: 'sawtooth', gain: 0.15, to: 40 });
+    noise(t, 0.9, { type: 'lowpass', freq: 2000, to: 200, gain: 0.22 });
+    [392, 523, 784].forEach((f) => tone(t + 0.1, f, 0.9, { type: 'square', gain: 0.035 }));
   },
   turn: (t) => {
-    tone(t, 196, 1.2, { type: 'sine', gain: 0.25 });
+    tone(t, 196, 1.2, { type: 'sine', gain: 0.16 });
     tone(t, 392, 1.0, { type: 'triangle', gain: 0.08 });
     noise(t, 0.4, { type: 'highpass', freq: 3000, gain: 0.06 });
   },
   step: (t) => {
     noise(t, 0.3, { type: 'bandpass', freq: 800, to: 3000, q: 1.5, gain: 0.15 });
     tone(t + 0.1, 660, 0.3, { type: 'triangle', gain: 0.1 });
+  },
+  tick: (t) => {
+    tone(t, 1046, 0.12, { type: 'triangle', gain: 0.06 });
+    noise(t, 0.08, { type: 'highpass', freq: 3500, gain: 0.03 });
   },
   chain: (t) => {
     // เสียงโซ่โลหะ: ความถี่สูงหลายเสียงไม่เป็นฮาร์โมนิก
@@ -179,13 +184,13 @@ const SYNTH: Record<SfxName, (t: number) => void> = {
     tone(t + 0.05, 440, 0.5, { type: 'sawtooth', gain: 0.06, to: 880 });
   },
   swish: (t) => noise(t, 0.2, { type: 'bandpass', freq: 600, to: 2400, q: 1.2, gain: 0.15 }),
-  whoosh: (t) => noise(t, 0.35, { type: 'bandpass', freq: 300, to: 3000, q: 0.8, gain: 0.3, attack: 0.15 }),
+  whoosh: (t) => noise(t, 0.35, { type: 'bandpass', freq: 300, to: 3000, q: 0.8, gain: 0.2, attack: 0.15 }),
   impact: (t) => {
-    tone(t, 120, 0.4, { type: 'sine', gain: 0.6, to: 35 });
-    noise(t, 0.3, { type: 'lowpass', freq: 3000, to: 300, gain: 0.45 });
+    tone(t, 120, 0.4, { type: 'sine', gain: 0.34, to: 35 });
+    noise(t, 0.3, { type: 'lowpass', freq: 3000, to: 300, gain: 0.26 });
   },
   shatter: (t) => {
-    noise(t, 0.5, { type: 'highpass', freq: 3500, gain: 0.3 });
+    noise(t, 0.5, { type: 'highpass', freq: 3500, gain: 0.2 });
     [3000, 4300, 5200, 6100].forEach((f, i) => tone(t + i * 0.03, f, 0.15, { type: 'square', gain: 0.03 }));
     tone(t, 200, 0.3, { type: 'sine', gain: 0.2, to: 60 });
   },
@@ -195,15 +200,15 @@ const SYNTH: Record<SfxName, (t: number) => void> = {
     noise(t, 0.25, { type: 'lowpass', freq: 1800, gain: 0.25 });
   },
   bigdamage: (t) => {
-    tone(t, 160, 0.7, { type: 'sawtooth', gain: 0.22, to: 50 });
-    tone(t, 80, 0.9, { type: 'sine', gain: 0.4, to: 30 });
-    noise(t, 0.6, { type: 'lowpass', freq: 4000, to: 200, gain: 0.4 });
+    tone(t, 160, 0.7, { type: 'sawtooth', gain: 0.14, to: 50 });
+    tone(t, 80, 0.9, { type: 'sine', gain: 0.26, to: 30 });
+    noise(t, 0.6, { type: 'lowpass', freq: 4000, to: 200, gain: 0.25 });
   },
   buff: (t) => [660, 880, 1100].forEach((f, i) => tone(t + i * 0.05, f, 0.25, { type: 'triangle', gain: 0.1 })),
   xrare: (t) => {
-    noise(t, 1.0, { type: 'bandpass', freq: 200, to: 5000, q: 1, gain: 0.25, attack: 0.5 });
-    [262, 330, 392, 523].forEach((f) => tone(t + 0.45, f, 1.4, { type: 'sawtooth', gain: 0.05 }));
-    tone(t + 0.45, 65, 1.2, { type: 'sine', gain: 0.4 });
+    noise(t, 1.0, { type: 'bandpass', freq: 200, to: 5000, q: 1, gain: 0.18, attack: 0.5 });
+    [262, 330, 392, 523].forEach((f) => tone(t + 0.45, f, 1.4, { type: 'sawtooth', gain: 0.035 }));
+    tone(t + 0.45, 65, 1.2, { type: 'sine', gain: 0.26 });
   },
   win: (t) => [523, 659, 784, 1047, 784, 1047].forEach((f, i) => tone(t + i * 0.14, f, 0.5, { type: 'triangle', gain: 0.15 })),
   error: (t) => {

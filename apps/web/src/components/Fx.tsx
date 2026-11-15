@@ -51,9 +51,12 @@ function Banner({ fx, onDone }: { fx: Extract<Fx, { kind: 'banner' }>; onDone: (
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shown]);
+  // เสียงเล่นตอนป้ายขึ้นจริง (ป้ายแสดงทีละอันตามคิว)
   useEffect(() => {
-    if (shown && win) sfx('win');
-  }, [shown, win]);
+    if (!shown) return;
+    sfx(win ? 'win' : fx.tone === 'turn' ? 'turn' : fx.tone === 'step' ? 'step' : fx.tone === 'mini' ? 'tick' : 'burst');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shown]);
   if (!shown) return null;
   return (
     <div className={`${BOARD} z-50 flex items-center overflow-hidden ${win ? 'bg-black/70' : 'pointer-events-none'}`} onClick={onDone}>

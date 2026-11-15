@@ -6,6 +6,7 @@ import { actingPlayer, chainEntries, db, isFxBlocking, useGame, viewPlayer } fro
 import { CardFace } from './CardFace';
 import { CardInspector } from './CardInspector';
 import { GameLog } from './Controls';
+import { Icon } from './Icon';
 
 /** ชื่อที่แสดงของผู้เล่น (ออนไลน์ = ชื่อที่ตั้ง, เครื่องเดียว = ผู้เล่น 1/2) */
 function useSeatName(p: PlayerId): string {
@@ -106,16 +107,16 @@ export function CornerButtons({ inspector, setInspector }: { inspector: boolean;
           AUTO
         </button>
         <button type="button" onClick={() => setInspector(!inspector)} className={`${CORNER_BTN} ${on(inspector)}`} title="แสดงรายละเอียดการ์ดเมื่อชี้">
-          ℹ
+          <Icon name="info" />
         </button>
         <button type="button" onClick={() => setPanel(panel === 'chain' ? null : 'chain')} className={`${CORNER_BTN} ${on(panel === 'chain' || chain.length > 0)}`} title="Chain ปัจจุบัน">
-          ⛓
+          <Icon name="chain" />
           {chain.length > 0 && (
             <span className="absolute -top-2 left-1/2 -translate-x-1/2 rounded-full bg-amber-400 px-1.5 text-xs font-black text-slate-900 shadow">{chain.length}</span>
           )}
         </button>
         <button type="button" onClick={() => setPanel(panel === 'log' ? null : 'log')} className={`${CORNER_BTN} ${on(panel === 'log')}`} title="Log">
-          📋
+          <Icon name="log" />
         </button>
       </div>
 

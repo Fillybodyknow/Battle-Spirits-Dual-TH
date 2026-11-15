@@ -173,7 +173,6 @@ export function MatchIntro({ fx, onDone }: { fx: Extract<Fx, { kind: 'intro' }>;
     const timers = [
       setTimeout(() => (setPhase('warp'), sfx('whoosh')), AFTER.warp),
       setTimeout(() => (setPhase('setup'), sfx('place')), AFTER.setup),
-      setTimeout(() => sfx('place'), AFTER.setup + 150),
       setTimeout(() => sfx('swish'), AFTER.setup + 950),
       setTimeout(() => sfx('draw'), AFTER.setup + 1200),
       setTimeout(() => (setPhase('duel'), sfx('xrare')), AFTER.duel),

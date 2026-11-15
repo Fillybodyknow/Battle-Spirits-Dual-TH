@@ -1119,9 +1119,6 @@ function computeHolds(prev: GameState, next: GameState, events: GameEvent[], del
 function playFxSounds(list: Fx[]) {
   for (const f of list) {
     switch (f.kind) {
-      case 'banner':
-        if (f.tone !== 'win') sfx(f.tone === 'turn' ? 'turn' : f.tone === 'step' ? 'step' : 'burst');
-        break;
       case 'finalBlow':
         sfx('impact', f.delay);
         sfx('shatter', f.delay + 120);
