@@ -163,6 +163,53 @@ describe('SD03 ทิ้งเด็คคู่แข่ง', () => {
     expect(x.choice?.kind === 'order' && x.choice.effects.map((e) => e.sourceId)).toContain(brave);
   });
 
+  it('ทะเลคราม Lv2 เกิดสองครั้ง (ทิ้ง 7 ของตัวเอง + ทิ้ง 1 ของไฮดร้าชิพ): หน้าเลือกรวมเป็นอันเดียว และใช้ Soul Core ได้ครั้งเดียว', () => {
+    const s = setup();
+    put(s, 'p1', TEMPLE, 1);
+    const deep = put(s, 'p1', DEEP, 4, true);
+    const brave = `t-card-${++seq}`;
+    s.cards[brave] = { id: brave, cardNo: HYDRA, owner: 'p1', state: 'refresh', cores: [], turnBp: 0, usedThisTurn: [], braves: [] };
+    s.cards[deep]!.braves.push(brave);
+    let x = actRaw(toAttack(s), { type: 'declareAttack', player: 'p1', attackerId: deep });
+    const pickSource = (st: GameState, sourceId: string) => {
+      if (st.choice?.kind !== 'order') throw new Error('ไม่ใช่หน้าเลือกลำดับ');
+      return actRaw(st, { type: 'choose', player: 'p1', pick: st.choice.effects.findIndex((e) => e.sourceId === sourceId) });
+    };
+    x = pickSource(x, deep); // ทะเลคราม ทิ้ง 7 → ทะเลคราม Lv2 + อาราม เกิด
+    x = pickSource(x, brave); // ไฮดร้าชิพ (ให้ทะเลคราม) ทิ้ง 1 → ทะเลคราม Lv2 เกิดอีกครั้ง + อาราม
+    expect(x.choice?.kind).toBe('order');
+    if (x.choice?.kind !== 'order') return;
+    // ทะเลคราม Lv2 สองอันมี key เดียวกัน (หน้าจอรวมเป็น ×2)
+    const deepKeys = x.choice.effects.filter((e) => e.sourceId === deep).map((e) => e.key);
+    expect(deepKeys).toHaveLength(2);
+    expect(new Set(deepKeys).size).toBe(1);
+
+    // ใช้ Soul Core ครั้งแรก → ครั้งที่สองไม่มี Soul Core แล้ว จึงไม่ถามอีก
+    x = pickSource(x, deep);
+    expect(x.choice?.kind).toBe('option');
+    const before = trashCount(x, 'p2');
+    x = choose(x, 0);
+    expect(trashCount(x, 'p2')).toBeGreaterThanOrEqual(before + 7);
+    expect(x.cards[deep]!.cores.some((id) => x.cores[id]!.isSoul)).toBe(false);
+    while (x.choice?.kind === 'order') x = actRaw(x, { type: 'choose', player: 'p1', pick: 0 });
+    expect(x.choice?.kind === 'option' && x.choice.sourceId === deep).toBe(false);
+  });
+
+  it('เอฟเฟกต์ที่เหมือนกันทุกอย่างค้างอยู่สองอัน (ไม่มีอันอื่น): ไม่ต้องถามลำดับ', () => {
+    const s = setup();
+    const deep = put(s, 'p1', DEEP, 4, true);
+    const brave = `t-card-${++seq}`;
+    s.cards[brave] = { id: brave, cardNo: HYDRA, owner: 'p1', state: 'refresh', cores: [], turnBp: 0, usedThisTurn: [], braves: [] };
+    s.cards[deep]!.braves.push(brave);
+    let x = actRaw(toAttack(s), { type: 'declareAttack', player: 'p1', attackerId: deep });
+    if (x.choice?.kind !== 'order') throw new Error('ต้องเลือกลำดับตอนโจมตี');
+    x = actRaw(x, { type: 'choose', player: 'p1', pick: x.choice.effects.findIndex((e) => e.sourceId === deep) }); // ทิ้ง 7 → Lv2
+    if (x.choice?.kind !== 'order') throw new Error('ต้องเลือกระหว่าง Lv2 กับไฮดร้าชิพ');
+    x = actRaw(x, { type: 'choose', player: 'p1', pick: x.choice.effects.findIndex((e) => e.sourceId === brave) }); // ทิ้ง 1 → Lv2 อีกอัน
+    // เหลือทะเลคราม Lv2 สองอันที่เหมือนกัน: ไปที่ตัวเลือกใช้ Soul Core เลย
+    expect(x.choice?.kind).toBe('option');
+  });
+
   it('เมียวโอญาณวารี Lv2: เมจิคถูกทิ้งในแอทแท็คสเต็ปของเรา → คอร์วอยด์ 1 เม็ดบนสปิริตเรา', () => {
     const s = setup([], [SOULDRAW]);
     const water = put(s, 'p1', WATER, 2);

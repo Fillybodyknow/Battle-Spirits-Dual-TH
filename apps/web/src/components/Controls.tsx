@@ -354,6 +354,15 @@ function OrderPanel() {
   const hover = useGame((s) => s.hover);
   const choice = state.choice;
   if (choice?.kind !== 'order') return null;
+  // เอฟเฟกต์ที่เหมือนกันทุกอย่างแสดงอันเดียวพร้อมจำนวน (เลือกอันไหนก็ผลเท่ากัน)
+  const entries: { eff: (typeof choice.effects)[number]; index: number; count: number }[] = [];
+  choice.effects.forEach((eff, index) => {
+    const keyOf = (x: typeof eff) => x.key ?? `${x.sourceId}|${x.source}`;
+    const key = keyOf(eff);
+    const same = entries.find((e) => keyOf(e.eff) === key);
+    if (same) same.count++;
+    else entries.push({ eff, index, count: 1 });
+  });
   return (
     <div className="pointer-events-none fixed inset-y-0 left-0 right-[var(--sidebar)] z-40 flex items-center justify-center bg-black/55">
       <div className="hud-panel pointer-events-auto flex max-w-4xl flex-col gap-3 rounded-xl p-4">
@@ -363,7 +372,7 @@ function OrderPanel() {
           <div className="text-xs text-slate-400">อันที่เลือกเกิดผลทันที แล้วค่อยเลือกอันถัดไป</div>
         </div>
         <div className="flex flex-wrap justify-center gap-3">
-          {choice.effects.map((eff, i) => {
+          {entries.map(({ eff, index: i, count }) => {
             const card = state.cards[eff.sourceId]!;
             const def = db.get(card.cardNo);
             const text = eff.source === null ? '' : ((def.effects as { text: string }[])[eff.source]?.text ?? '');
@@ -380,7 +389,14 @@ function OrderPanel() {
                   <CardFace def={def} size="xs" />
                 </div>
                 <div className="flex min-w-0 flex-col gap-1">
-                  <span className="truncate text-sm font-bold text-white">{def.name}</span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="truncate text-sm font-bold text-white">{def.name}</span>
+                    {count > 1 && (
+                      <span className="shrink-0 rounded-full bg-amber-400 px-1.5 text-[11px] font-black text-slate-900" title={`เกิดขึ้น ${count} ครั้ง`}>
+                        ×{count}
+                      </span>
+                    )}
+                  </span>
                   <span className="line-clamp-4 text-xs text-slate-300">{text}</span>
                   <span className="mt-auto rounded bg-fuchsia-500 px-1.5 py-0.5 text-center text-xs font-black text-white group-hover:bg-fuchsia-400">ทำงานก่อน</span>
                 </div>

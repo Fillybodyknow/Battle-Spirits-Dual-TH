@@ -326,6 +326,11 @@ export function enqueue(ctx: Ctx, item: QueuedEffect): void {
   ctx.s.queue.push(item);
 }
 
+/** เอฟเฟกต์สองอันที่ผลเหมือนกันทุกอย่าง (ใช้ตัดสินว่าต้องถามลำดับไหม) */
+export function effectKey(q: { sourceId: string; source?: number | null; subjectId?: string; fromAttack?: boolean; soulSnapshot?: boolean; paidWithSoul?: boolean }): string {
+  return [q.sourceId, q.source ?? '-', q.subjectId ?? '-', q.fromAttack ? 1 : 0, q.soulSnapshot ?? '-', q.paidWithSoul ? 1 : 0].join('|');
+}
+
 /** เดินคิวจนหมด หรือจนต้องรอผู้เล่นเลือก */
 export function runQueue(ctx: Ctx): void {
   const { s } = ctx;
@@ -350,13 +355,16 @@ function drainQueue(ctx: Ctx): void {
         if (q.started || q.batch === undefined || item.batch === undefined || q.controller !== item.controller) break;
         group.push(q);
       }
-      if (group.length >= 2) {
+      // เอฟเฟกต์ที่เหมือนกันทุกอย่าง (การ์ด/บรรทัด/ต้นเหตุเดียวกัน) ลำดับไม่มีผล: ไม่ต้องถาม
+      // เช่น เมียวโอทะเลคราม Lv2 ที่เกิดสองครั้งจากการทิ้งเด็คของตัวเอง + ของเรือมังกรคู่ที่ร่วมร่าง
+      const distinct = new Set(group.map(effectKey));
+      if (group.length >= 2 && distinct.size >= 2) {
         s.choice = {
           kind: 'order',
           player: item.controller,
           sourceId: item.sourceId,
           prompt: 'เอฟเฟกต์เกิดพร้อมกัน: เลือกอันที่จะทำงานก่อน',
-          effects: group.map((q) => ({ sourceId: q.sourceId, source: q.source ?? null })),
+          effects: group.map((q) => ({ sourceId: q.sourceId, source: q.source ?? null, key: effectKey(q) })),
         };
         break;
       }

@@ -166,7 +166,14 @@ export type PendingChoice =
       step: Step;
     }
   /** เอฟเฟกต์หลายอันเกิดพร้อมกัน: เลือกอันที่จะทำงานก่อน (pick = index ใน effects) ที่เหลือจะถามต่อ */
-  | { kind: 'order'; player: PlayerId; sourceId: string; prompt: string; effects: { sourceId: string; source: number | null }[] };
+  | {
+      kind: 'order';
+      player: PlayerId;
+      sourceId: string;
+      prompt: string;
+      /** key: เอฟเฟกต์ที่ key เท่ากันผลเหมือนกันทุกอย่าง (หน้าจอรวมเป็นอันเดียว ×N) */
+      effects: { sourceId: string; source: number | null; key?: string }[];
+    };
 
 export interface GameState {
   config: GameConfig;
