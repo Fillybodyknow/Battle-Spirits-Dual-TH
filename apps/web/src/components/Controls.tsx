@@ -4,6 +4,7 @@ import { actingPlayer, blockCandidates, controls, db, draftDepleting, flashPlaye
 import { CardFace } from './CardFace';
 import { ChainTracker, RevealFan } from './Fx';
 import { BTN, Modal } from './Modal';
+import { TurnBadge } from './StepSelect';
 import { MultiSummonDialog } from './MultiSummonDialog';
 
 /**
@@ -45,6 +46,9 @@ export function PromptBar() {
     // แอนิเมชันเอฟเฟกต์กำลังเล่น: ยังไม่ให้ตัดสินใจ
     title = 'กำลังแสดงเอฟเฟกต์…';
     detail = 'คลิกกระดานเพื่อข้าม';
+  } else if (state.awaitingDraw) {
+    title = 'Draw Step';
+    detail = mine ? 'กดการ์ดที่ลอยขึ้นมาเพื่อจั่ว' : 'รอคู่แข่งจั่วการ์ด…';
   } else if (!mine) {
     // ออนไลน์: ตาของคู่แข่ง
     title = `รอ${actor ? playerLabel(actor) : 'คู่แข่ง'}…`;
@@ -136,11 +140,9 @@ export function PromptBar() {
         ? `เลือก Core ไว้ ${selectedCores.length} ดวง: ลากไปวาง หรือคลิกการ์ด/Reserve ปลายทาง`
         : 'คลิกการ์ดบนมือเพื่อเล่น · ลาก Core ไปวางบนการ์ดหรือ Reserve (คลิก Core เพื่อเลือกหลายดวง)';
     if (selectedCores.length > 0) add('clear', 'ยกเลิกเลือก Core', clearCores, 'secondary');
-    phaseBtn = { label: 'END', sub: 'จบ Main', onClick: () => dispatch({ type: 'endMain', player: state.turnPlayer }) };
   } else if (state.phase === 'attack') {
     title = 'Attack Step';
     detail = 'คลิกสปิริตที่มีกรอบสีเหลืองเพื่อโจมตี';
-    phaseBtn = { label: 'END', sub: 'จบ Attack', onClick: () => dispatch({ type: 'endAttackStep', player: state.turnPlayer }) };
   }
 
   const fighter = (id: string) => (
@@ -154,11 +156,11 @@ export function PromptBar() {
     <div className="relative">
       {/* แถบบางบรรทัดเดียวบนเส้นกลางกระดาน */}
       <div
-        className={`hud-panel flex flex-col gap-1 rounded-xl py-1 pr-28 pl-3 ${highlight ? 'ring-1 ring-fuchsia-400/70' : ''}`}
+        className={`hud-panel flex flex-col gap-1 rounded-xl py-1 pr-1.5 pl-3 ${highlight ? 'ring-1 ring-fuchsia-400/70' : ''}`}
         style={highlight ? { animation: 'fx-choice-glow 1.8s ease-in-out infinite' } : undefined}
       >
         {battle && (
-          <div className="flex flex-wrap items-center gap-2 text-xs">
+          <div className="flex max-w-[calc(50%-44px)] flex-wrap items-center gap-2 text-xs">
             <span className="rounded bg-rose-600 px-2 text-[10px] font-black tracking-wide">BATTLE</span>
             {fighter(battle.attackerId)}
             <span className="text-slate-500">vs</span>
@@ -169,43 +171,43 @@ export function PromptBar() {
             {lifePerBlocker > 0 && <span className="rounded bg-slate-600 px-1.5">ผู้ป้องกันถูกทำลาย → ไลฟ์ −{lifePerBlocker}/ตัว</span>}
           </div>
         )}
-        <div className="flex min-h-8 items-center gap-2.5">
-          <span className="shrink-0 rounded-md border border-slate-600 px-1.5 py-0.5 text-[11px] text-slate-300">T{state.turn}</span>
-          {actor && <span className="player-tag-active shrink-0 rounded-md px-2 py-0.5 text-xs font-black">ตาของ {playerLabel(actor)}</span>}
-          <ChainTracker side="self" />
-          <div className="flex min-w-0 flex-1 items-baseline gap-2" title={typeof detail === 'string' ? detail : undefined}>
-            <span className="shrink-0 truncate text-sm font-black tracking-wide text-white [text-shadow:0_1px_0_#000,0_0_12px_rgba(56,189,248,0.35)]">{title}</span>
-            {detail && <span className="min-w-0 truncate text-xs text-slate-400">{detail}</span>}
+        {/* ซ้าย: ใคร/ทำอะไร · กลาง: ป้ายเทิร์น (เว้นช่องไว้) · ขวา: ปุ่ม */}
+        <div className="relative flex min-h-8 items-center gap-2.5">
+          <div className="flex min-w-0 flex-1 items-center gap-2.5">
+            {actor && <span className="player-tag-active shrink-0 rounded-md px-2 py-0.5 text-xs font-black">ตาของ {playerLabel(actor)}</span>}
+            <ChainTracker side="self" />
+            <div className="flex min-w-0 flex-1 items-baseline gap-2" title={typeof detail === 'string' ? detail : undefined}>
+              <span className="shrink-0 truncate text-sm font-black tracking-wide text-white [text-shadow:0_1px_0_#000,0_0_12px_rgba(56,189,248,0.35)]">{title}</span>
+              {detail && <span className="min-w-0 truncate text-xs text-slate-400">{detail}</span>}
+            </div>
           </div>
-          {buttons.length > 0 && <div className="btn-row flex shrink-0 flex-wrap justify-end gap-1.5">{buttons}</div>}
-          <ChainTracker side="opp" />
+          <div className="w-[76px] shrink-0" />
+          <div className="flex min-w-0 flex-1 items-center justify-end gap-2.5">
+            {buttons.length > 0 && <div className="btn-row flex shrink-0 flex-wrap justify-end gap-1.5">{buttons}</div>}
+            <ChainTracker side="opp" />
+            <PhaseButton btn={phaseBtn} />
+          </div>
+          <TurnBadge />
         </div>
       </div>
-      {/* ปุ่ม Phase กลมใหญ่ คร่อมเส้นกลางกระดานด้านขวา */}
-      <PhaseButton btn={phaseBtn} />
     </div>
   );
 }
 
-/** ปุ่มกลมใหญ่ปลายขวาของแถบกลาง (จบ Step / Pass) — ไม่มีอะไรให้กดก็แสดงเป็นวงจาง ๆ */
+/** ปุ่มจบ Step / Pass ทรงแคปซูล อยู่ปลายขวาในแถบกลาง (ไม่ทับช่องบนกระดาน) — ไม่มีอะไรให้กดก็ไม่แสดง */
 function PhaseButton({ btn }: { btn: { label: string; sub: string; onClick: () => void } | null }) {
+  if (!btn) return null;
   return (
-    <div className="pointer-events-none absolute top-1/2 right-3 z-40 -translate-y-1/2">
-      <button
-        type="button"
-        disabled={!btn}
-        onClick={btn?.onClick}
-        className={`pointer-events-auto flex h-[5.5rem] w-[5.5rem] flex-col items-center justify-center rounded-full border-4 font-black transition ${
-          btn
-            ? 'border-amber-200 bg-gradient-to-b from-amber-300 via-amber-500 to-orange-700 text-slate-950 shadow-[0_0_24px_rgba(251,191,36,0.6),inset_0_2px_0_rgba(255,255,255,0.5)] hover:scale-105 active:scale-95'
-            : 'border-slate-600 bg-gradient-to-b from-slate-700 to-slate-900 text-slate-500 shadow-[0_4px_16px_rgba(0,0,0,0.6)]'
-        }`}
-        style={btn ? { animation: 'phase-btn-pulse 2s ease-in-out infinite' } : undefined}
-      >
-        <span className="text-xl leading-none tracking-wider">{btn?.label ?? '···'}</span>
-        {btn && <span className="mt-0.5 text-[10px] leading-none">{btn.sub}</span>}
-      </button>
-    </div>
+    <button
+      type="button"
+      onClick={btn.onClick}
+      className="flex h-8 shrink-0 items-center gap-2 rounded-full border border-amber-200/80 bg-gradient-to-b from-amber-300 via-amber-500 to-orange-600 pr-4 pl-1.5 font-black text-slate-950 shadow-[0_0_14px_rgba(251,191,36,0.45),inset_0_1px_0_rgba(255,255,255,0.5)] transition hover:brightness-110 active:scale-95"
+      style={{ animation: 'phase-btn-pulse 2s ease-in-out infinite' }}
+    >
+      <span className="rounded-full bg-slate-950/85 px-2 py-0.5 text-[10px] leading-none tracking-wider text-amber-200">{btn.label}</span>
+      <span className="text-sm leading-none">{btn.sub}</span>
+      <span className="text-xs leading-none">▶</span>
+    </button>
   );
 }
 

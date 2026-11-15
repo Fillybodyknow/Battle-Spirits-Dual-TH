@@ -14,7 +14,7 @@
  * ไฟล์นี้ import แค่ type เพื่อให้สคริปต์รันด้วย node ได้ตรง ๆ (type stripping)
  */
 import type { CardDefInput, Color } from './schema';
-import type { DeckEntry } from './deck';
+import type { DeckEntry, Foil } from './deck';
 
 export interface TextEffect {
   /** เลเวลที่เอฟเฟกต์ทำงาน เช่น [Lv1][Lv2] → [1, 2] */
@@ -295,6 +295,8 @@ function parseEffectLine(line: Line, type: CardDefInput['type'] | undefined, err
   if (levels.length > 0) return { levels, text: rest };
 
   if (/^การ์ด\S*นี้บนมือ/.test(rest)) return { hand: true, text: rest };
+  // กฎของการ์ดเองที่ไม่ผูกกับเลเวล/จังหวะ เช่น "การ์ดสปิริตนี้ เมื่อถูกทิ้ง..." หรือ "ถ้าเรามี ... การลดคอสต์..."
+  if (/^(การ์ด|ถ้า)/.test(rest)) return { text: rest };
 
   const keyword = rest.match(/^Flash\s*\[([^\]]+)\]\s*:?\s*/i);
   if (keyword && type !== 'magic') return { keyword: keyword[1]!.trim(), text: rest.slice(keyword[0].length) };
@@ -309,13 +311,20 @@ function parseEffectLine(line: Line, type: CardDefInput['type'] | undefined, err
   return { text: rest };
 }
 
+const FOIL_NAMES: Record<string, Foil> = { ฟอยรุ้ง: 'rainbow', ฟอยขาว: 'white' };
+
+/**
+ * รายการเด็ค: "<ชื่อการ์ด> <จำนวน>" ต่อท้ายฟอยได้ เช่น "ฟูริน 3 (ฟอยรุ้ง 1)" หรือ "(ฟอยรุ้ง 1, ฟอยขาว 1)"
+ * ใบที่ไม่ได้ระบุฟอยเป็นการ์ดปกติ
+ */
 function parseDeck(lines: Line[], cards: CardDefInput[], errors: string[]): DeckEntry[] {
   const byName = new Map(cards.map((c) => [c.name, c.cardNo]));
   const counts = new Map<string, number>();
+  const foils = new Map<string, Foil[]>();
   for (const line of lines) {
-    const m = line.text.trim().match(/^(.+?)\s+(\d+)$/);
+    const m = line.text.trim().match(/^(.+?)\s+(\d+)(?:\s*\(([^)]*)\))?$/);
     if (!m) {
-      errors.push(`บรรทัด ${line.no}: รายการเด็คต้องเป็นรูปแบบ "<ชื่อการ์ด> <จำนวน>": "${line.text.trim()}"`);
+      errors.push(`บรรทัด ${line.no}: รายการเด็คต้องเป็นรูปแบบ "<ชื่อการ์ด> <จำนวน>" หรือ "<ชื่อการ์ด> <จำนวน> (ฟอยรุ้ง 1)": "${line.text.trim()}"`);
       continue;
     }
     const cardNo = byName.get(m[1]!);
@@ -324,6 +333,22 @@ function parseDeck(lines: Line[], cards: CardDefInput[], errors: string[]): Deck
       continue;
     }
     counts.set(cardNo, (counts.get(cardNo) ?? 0) + Number(m[2]));
+    if (m[3] === undefined) continue;
+    const list = foils.get(cardNo) ?? [];
+    for (const part of m[3].split(/[,，]/)) {
+      const fm = part.trim().match(/^(\S+)\s+(\d+)$/);
+      const foil = fm ? FOIL_NAMES[fm[1]!] : undefined;
+      if (!fm || !foil) {
+        errors.push(`บรรทัด ${line.no}: ฟอยต้องเป็น "ฟอยรุ้ง <จำนวน>" หรือ "ฟอยขาว <จำนวน>": "${part.trim()}"`);
+        continue;
+      }
+      for (let i = 0; i < Number(fm[2]); i++) list.push(foil);
+    }
+    foils.set(cardNo, list);
   }
-  return [...counts].map(([cardNo, count]) => ({ cardNo, count }));
+  return [...counts].map(([cardNo, count]) => {
+    const list = foils.get(cardNo);
+    if (list && list.length > count) errors.push(`การ์ด ${cardNo}: จำนวนฟอย (${list.length}) มากกว่าจำนวนในเด็ค (${count})`);
+    return list && list.length > 0 ? { cardNo, count, foils: list.slice(0, count) } : { cardNo, count };
+  });
 }

@@ -15,6 +15,9 @@ import { SD02_SCRIPTS } from '../data/sd02-scripts';
 import sd03 from '../data/sd03.json';
 import sd03Deck from '../data/sd03-deck.json';
 import { SD03_SCRIPTS } from '../data/sd03-scripts';
+import sd04 from '../data/sd04.json';
+import sd04Deck from '../data/sd04-deck.json';
+import { SD04_SCRIPTS } from '../data/sd04-scripts';
 import { attachScripts } from './abilities';
 import { createCardDatabase, type CardDatabase } from './database';
 import type { DeckEntry } from './deck';
@@ -42,14 +45,21 @@ export function loadSD03Cards(): CardDatabase {
   return createCardDatabase(attachScripts(sd03, SD03_SCRIPTS));
 }
 
+/** การ์ดชุด Starter Deck 04 (assets/files/SD4.text + data/sd04-scripts.ts) */
+export function loadSD04Cards(): CardDatabase {
+  return createCardDatabase(attachScripts(sd04, SD04_SCRIPTS));
+}
+
 /** การ์ด Starter Deck ทุกชุดในฐานข้อมูลเดียว (ใช้เล่นข้ามชุด) */
 export function loadStarterCards(): CardDatabase {
-  return createCardDatabase([...loadSD01Cards().all(), ...loadSD02Cards().all(), ...loadSD03Cards().all()]);
+  return createCardDatabase([...loadSD01Cards().all(), ...loadSD02Cards().all(), ...loadSD03Cards().all(), ...loadSD04Cards().all()]);
 }
 
 /** รายการการ์ดในกล่อง Starter Deck 01 (40 ใบ) */
-export const SD01_DECK: readonly DeckEntry[] = sd01Deck;
+export const SD01_DECK: readonly DeckEntry[] = sd01Deck as readonly DeckEntry[];
 /** รายการการ์ดในกล่อง Starter Deck 02 (40 ใบ) */
-export const SD02_DECK: readonly DeckEntry[] = sd02Deck;
+export const SD02_DECK: readonly DeckEntry[] = sd02Deck as readonly DeckEntry[];
 /** รายการการ์ดในกล่อง Starter Deck 03 (40 ใบ) */
-export const SD03_DECK: readonly DeckEntry[] = sd03Deck;
+export const SD03_DECK: readonly DeckEntry[] = sd03Deck as readonly DeckEntry[];
+/** รายการการ์ดในกล่อง Starter Deck 04 (40 ใบ) */
+export const SD04_DECK: readonly DeckEntry[] = sd04Deck as readonly DeckEntry[];

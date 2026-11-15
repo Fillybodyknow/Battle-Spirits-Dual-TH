@@ -4,10 +4,12 @@ import { primeCoreMotion, snapCores } from './motion';
 import { firebaseConfigured, firebaseTransport } from './online/firebase';
 import { localTransport } from './online/local';
 import type { RoomInfo, RoomSetup, Transport } from './online/transport';
-import { createCardDatabase, expandDeck, loadSD01Cards, loadSD02Cards, loadSD03Cards, SD01_DECK, SD02_DECK, SD03_DECK, type DeckEntry } from '@bs/cards';
+import { createCardDatabase, expandDeck, loadSD01Cards, loadSD02Cards, loadSD03Cards, loadSD04Cards, SD01_DECK, SD02_DECK, SD03_DECK, SD04_DECK, type DeckEntry } from '@bs/cards';
 import { rarityOf, type TextEffect } from '@bs/cards';
 import {
   applyAction,
+  blockersFor,
+  magicUsedUp,
   cardLevel,
   currentBp,
   minCores,
@@ -26,13 +28,14 @@ import {
   type PlayerId,
 } from '@bs/engine';
 
-/** การ์ดทุกชุดที่ UI ใช้: Starter Deck 01/02/03 (SD01-, SD02-, SD03-) */
-export const db = createCardDatabase([...loadSD01Cards().all(), ...loadSD02Cards().all(), ...loadSD03Cards().all()]);
+/** การ์ดทุกชุดที่ UI ใช้: Starter Deck 01–04 (SD01-…SD04-) */
+export const db = createCardDatabase([...loadSD01Cards().all(), ...loadSD02Cards().all(), ...loadSD03Cards().all(), ...loadSD04Cards().all()]);
 
 export const DECKS = {
   sd01: { label: 'Starter Deck 01', entries: [...SD01_DECK] },
   sd02: { label: 'Starter Deck 02', entries: [...SD02_DECK] },
   sd03: { label: 'Starter Deck 03', entries: [...SD03_DECK] },
+  sd04: { label: 'Starter Deck 04', entries: [...SD04_DECK] },
 } satisfies Record<string, { label: string; entries: DeckEntry[] }>;
 export type DeckId = keyof typeof DECKS;
 type DeckChoice = Record<PlayerId, DeckId>;
@@ -146,7 +149,12 @@ export function responseOptions(s: GameState, player: PlayerId): { magic: string
   const cores = p.reserve.length + p.field.reduce((n, id) => n + s.cards[id]!.cores.length, 0);
   const magic = p.hand.filter((id) => {
     const def = db.get(s.cards[id]!.cardNo);
-    return def.type === 'magic' && magicTimings(def.cardNo).includes('flash') && payableCost(s, db, player, def) <= cores;
+    return (
+      def.type === 'magic' &&
+      magicTimings(def.cardNo).includes('flash') &&
+      payableCost(s, db, player, def) <= cores &&
+      !magicUsedUp(s, db, player, def.cardNo, 'flash')
+    );
   });
   const evolve = p.field.filter(
     (id) =>
@@ -204,8 +212,7 @@ export function simulateEvolve(s: GameState, cardId: string, cores: string[]): G
 /** สปิริตของฝ่ายป้องกันที่ประกาศป้องกันได้ตอนนี้ */
 export function blockCandidates(s: GameState): string[] {
   if (!s.battle || s.battle.step !== 'declareBlock' || s.choice || s.winner) return [];
-  const defender = opponentOf(s.turnPlayer);
-  return s.players[defender].field.filter((id) => s.cards[id]!.state === 'refresh' && isSpiritLike(db.get(s.cards[id]!.cardNo)));
+  return blockersFor(s, db, opponentOf(s.turnPlayer));
 }
 
 /**
@@ -236,7 +243,18 @@ function autoAdvance(s: GameState, events: GameEvent[]): GameState {
 
 export type Fx =
   /** delay: ป้ายผู้ชนะรอให้แอนิเมชันทั้งหมดเล่นจบก่อน (ระหว่างรอนับเป็นแอนิเมชันที่ต้องเล่นให้จบ) */
-  | { id: number; kind: 'banner'; title: string; sub?: string; tone: 'turn' | 'step' | 'burst' | 'win'; delay?: number }
+  | {
+      id: number;
+      kind: 'banner';
+      title: string;
+      sub?: string;
+      tone: 'turn' | 'step' | 'burst' | 'win' | 'mini';
+      delay?: number;
+      /** เจ้าของสเต็ป (ป้ายเล็ก: ฝั่งเราสีฟ้า / คู่แข่งสีแดง) */
+      player?: PlayerId;
+      /** ห้ามพลิกกระดานจนกว่าป้ายนี้จะแสดงจบ (END STEP) */
+      holdView?: boolean;
+    }
   /** ฉากจบเกม: สนามผู้แพ้แตก → VICTORY/DEFEAT → แผงสรุปผล (delay = รอแอนิเมชันก่อนหน้า, ระหว่างรอนับเป็นแอนิเมชันที่ต้องเล่นให้จบ) */
   | { id: number; kind: 'result'; winner: PlayerId; reason: EndReason; delay: number }
   /** ฉากเปิดเกม: READY → VS → โยนเหรียญ (heads = ด้านทอง: คนที่ดูจอนี้เริ่มก่อน) → วาร์ป → DUEL */
@@ -358,8 +376,10 @@ const effectText = (cardNo: string, i: number) => (db.get(cardNo).effects as Tex
 
 /** เวลาของแต่ละช่วงในไทม์ไลน์ (ms) */
 const T = {
-  /** ป้ายเทิร์นใหม่ก่อนจั่ว */
-  turnBanner: 900,
+  /** ป้ายสเต็ปเล็ก (Start/Core/Draw/Refresh/Main/End) */
+  miniBanner: 900,
+  /** ป้ายเทิร์นขึ้นจริง 1.4 วินาที (ป้ายสเต็ปที่ตามมาต้องรอจนจบ) */
+  turnBannerFull: 1400,
   /** การ์ดบินลงสนาม + กระแทก */
   land: 820,
   /** X-Rare ลอยค้างแล้วทุบลงสนาม + แรงกระแทก */
@@ -512,16 +532,39 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
       case 'turnStarted':
         // รอแอนิเมชันก่อนหน้าเล่นจบก่อน (กระดานจะพลิกฝั่งพร้อมป้ายนี้)
         out.push({ kind: 'banner', tone: 'turn', title: `เทิร์นที่ ${e.turn}`, sub: `${who(e.player)}`, delay: t });
-        t += T.turnBanner;
+        t += T.turnBannerFull;
         break;
-      case 'phaseChanged':
+      case 'phaseChanged': {
         if (e.phase === 'attack' && !newTurn) out.push({ kind: 'banner', tone: 'step', title: 'ATTACK STEP', sub: 'เลือกสปิริตที่จะโจมตี' });
+        // ป้ายเล็กของสเต็ปช่วงต้นเทิร์น (Start → Core → Draw → Refresh → Main) และ End
+        const gotCore = events.some((x) => x.type === 'coreGained' && x.player === s.turnPlayer);
+        const mini: Partial<Record<typeof e.phase, [string, string]>> = {
+          start: ['START STEP', 'เริ่มเทิร์น'],
+          core: ['CORE STEP', gotCore ? 'ได้รับ Core 1 ดวง' : 'เทิร์นแรกของผู้เริ่มก่อน: ไม่ได้รับ Core'],
+          draw: ['DRAW STEP', 'จั่วการ์ด'],
+          refresh: ['REFRESH STEP', 'ฟื้นสภาพการ์ดและนำ Core ใน Trash กลับ Reserve'],
+          main: ['MAIN STEP', 'เล่นการ์ดและจัด Core'],
+          end: ['END STEP', 'จบเทิร์น'],
+        };
+        const m = mini[e.phase];
+        if (m) {
+          // End Step เป็นของผู้เล่นเทิร์นก่อน (เหตุการณ์ก่อนเปลี่ยนเทิร์น) ที่เหลือเป็นของผู้ถือเทิร์นใหม่
+          const owner = e.phase === 'end' ? prev.turnPlayer : s.turnPlayer;
+          out.push({ kind: 'banner', tone: 'mini', title: m[0], sub: m[1], delay: t, player: owner, ...(e.phase === 'end' ? { holdView: true } : {}) });
+          // Core Step: Core ใหม่โผล่กลางป้าย (ครึ่งหลังนับต่อที่ coreGained)
+          t += e.phase === 'core' && gotCore ? T.miniBanner / 2 : T.miniBanner;
+        }
+        break;
+      }
+      case 'coreGained':
+        if (newTurn) t += T.miniBanner / 2;
         break;
       case 'cardDrawn':
         out.push({
           kind: 'fly',
           cardId: e.cardId,
-          from: `[data-deck="${e.player}"]`,
+          // กดจั่วใน Draw Step: ใบแรกบินออกจากการ์ดที่ลอยอยู่กลางจอ
+          from: (prev.awaitingDraw === e.player && draws === 0 && promptRect()) || `[data-deck="${e.player}"]`,
           to: `[data-hand-card="${e.cardId}"]`,
           mode: 'draw',
           delay: t + draws * T.drawGap,
@@ -711,7 +754,18 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         out.push({ kind: 'float', anchor: `[data-life="${e.player}"]`, text: `+${e.amount} Life`, tone: 'good', delay: t });
         break;
       case 'bpBuffed':
-        out.push({ kind: 'float', anchor: `[data-field-card="${e.cardId}"]`, text: `BP +${e.amount.toLocaleString()}`, tone: 'good', delay: t });
+        out.push({
+          kind: 'float',
+          anchor: `[data-field-card="${e.cardId}"]`,
+          text: e.amount >= 0 ? `BP +${e.amount.toLocaleString()}` : `BP -${(-e.amount).toLocaleString()}`,
+          tone: e.amount >= 0 ? 'good' : 'bad',
+          delay: t,
+        });
+        if (e.amount < 0) t += 500;
+        break;
+      case 'attackBanned':
+        out.push({ kind: 'banner', tone: 'step', title: 'ห้ามโจมตี', sub: `สปิริตของ${who(e.player)}โจมตีไม่ได้ในเทิร์นนี้`, delay: t });
+        t += 900;
         break;
       case 'discarded':
         out.push({ kind: 'fly', cardId: e.cardId, from: rects[`hand:${e.cardId}`] ?? null, to: `[data-trash="${e.player}"]`, mode: 'move', shrink: true, delay: t, hideTarget: false });
@@ -783,6 +837,13 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         break;
       }
     }
+  }
+  // ป้ายแสดงทีละอัน และนับ delay ตอนขึ้นมาเป็นอันแรกในคิว: อันที่ตามหลังป้ายอื่นในชุดเดียวกันจึงไม่ต้องรอซ้ำ
+  let bannerSeen = false;
+  for (const f of out) {
+    if (f.kind !== 'banner' || f.tone === 'win') continue;
+    if (bannerSeen) f.delay = 0;
+    bannerSeen = true;
   }
   return out.map((f) => ({ ...f, id: ++fxSeq }) as Fx);
 }
@@ -918,9 +979,33 @@ function chainLogIndices(s: GameState): number[] {
   return out;
 }
 
+/** ตำแหน่งการ์ดที่ลอยรอให้กดจั่ว (DrawPrompt) */
+function promptRect(): Rect | null {
+  const el = typeof document === 'undefined' ? null : document.querySelector('[data-draw-prompt]');
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  return { x: r.x, y: r.y, w: r.width, h: r.height };
+}
+
+/** ยังพลิกกระดานไม่ได้: แอนิเมชันที่ต้องเล่นจบ หรือป้าย END STEP ของเทิร์นก่อนยังแสดงอยู่ */
+function viewHeld(fx: Fx[]): boolean {
+  return isFxBlocking(fx) || fx.some((f) => f.kind === 'banner' && f.holdView);
+}
+
+/** เวลา (performance.now) ที่ Core เกิดใหม่แต่ละดวงต้องโผล่ ใช้ตั้งเวลาใหม่เมื่อกระดานพลิก (Core ถูกวาดใหม่ทั้งหมด) */
+const coreAppearAt = new Map<string, number>();
+
 /** อัปเดต fx และพลิกกระดานไปฝั่งผู้เล่นเทิร์นปัจจุบันเมื่อไม่มีแอนิเมชันที่ต้องเล่นให้จบแล้ว */
 function settleView(s: { state: GameState; viewTurn: PlayerId }, fx: Fx[]): { fx: Fx[]; viewTurn: PlayerId } {
-  return { fx, viewTurn: isFxBlocking(fx) ? s.viewTurn : s.state.turnPlayer };
+  const viewTurn = viewHeld(fx) ? s.viewTurn : s.state.turnPlayer;
+  if (viewTurn !== s.viewTurn) {
+    const now = performance.now();
+    const left = new Map<string, number>();
+    for (const [id, at] of coreAppearAt) if (at > now) left.set(id, at - now);
+    coreAppearAt.clear();
+    primeCoreMotion(new Map(), left);
+  }
+  return { fx, viewTurn };
 }
 
 /** แอนิเมชันที่ต้องเล่นให้จบก่อนผู้เล่นตัดสินใจต่อ (ลงการ์ด, เอฟเฟกต์ทำงาน, Magic/Burst, วิ่งชน, cut-in) */
@@ -976,12 +1061,15 @@ function coreDelays(prev: GameState, next: GameState, fx: Fx[], events: GameEven
       if (at) out.set(id, at);
     }
   }
-  // Core ที่เกิดใหม่ (Void Core): โผล่ตอนเอฟเฟกต์ทำงานจริง
+  // Core ที่เกิดใหม่ (Core Step / Void Core): โผล่ตามจังหวะในไทม์ไลน์
   for (const id of Object.keys(next.cores)) {
     if (prev.cores[id]) continue;
     const loc = locateCore(next, id);
     const at =
-      timeOf((e) => e.type === 'voidCore' && (loc?.area === 'card' ? e.cardId === loc.cardId : e.cardId === null)) ?? timeOf((e) => e.type === 'voidCore');
+      // Core จาก Core Step: โผล่ตอนป้าย CORE STEP แสดงจบ
+      timeOf((e) => e.type === 'coreGained' && e.coreId === id) ??
+      timeOf((e) => e.type === 'voidCore' && (loc?.area === 'card' ? e.cardId === loc.cardId : e.cardId === null)) ??
+      timeOf((e) => e.type === 'voidCore');
     if (at !== undefined) out.set(id, at);
   }
   return out;
@@ -1545,6 +1633,8 @@ function startGame(seed: number, decks: DeckChoice, firstPlayer?: PlayerId): Gam
     // เด็คที่ไม่มีแล้ว (เช่น เด็คตัวอย่างเดิมจากห้องออนไลน์เก่า) ใช้ Starter Deck 01 แทน
     decks: { p1: expandDeck((DECKS[decks.p1] ?? DECKS.sd01).entries), p2: expandDeck((DECKS[decks.p2] ?? DECKS.sd01).entries) },
     ...(firstPlayer ? { firstPlayer } : {}),
+    // Draw Step รอผู้เล่นกดจั่วเอง (DrawPrompt)
+    config: { manualDraw: true },
   }).state;
 }
 
@@ -1805,9 +1895,14 @@ export const useGame = create<Store>((set, get) => {
         playFxSounds(newFx);
         // มุมมองสลับฝั่งเมื่อเปลี่ยนเทิร์น: ไม่ให้ Core ทั้งกระดานบินข้ามฝั่ง
         // ออนไลน์กระดานไม่พลิกฝั่ง: Core บินตามปกติแม้เปลี่ยนเทิร์น
-        const flipped = !get().online && !get().fixedView && !isFxBlocking(fx) && next.turnPlayer !== get().viewTurn;
+        const flipped = !get().online && !get().fixedView && !viewHeld(fx) && next.turnPlayer !== get().viewTurn;
         const delays = coreDelays(state, next, newFx, events);
+        // จำเวลาโผล่ของ Core เกิดใหม่ไว้ เผื่อกระดานพลิกทีหลัง
+        const now = performance.now();
+        for (const [id, d] of delays) if (!state.cores[id]) coreAppearAt.set(id, now + d);
         if (!flipped) primeCoreMotion(coreRects, delays);
+        // กระดานพลิก: ไม่ให้ Core บิน แต่ Core ที่เกิดใหม่ (Core Step) ยังโผล่ตามจังหวะ
+        else primeCoreMotion(new Map(), new Map([...delays].filter(([id]) => !state.cores[id])));
         holds = { ...get().holds, ...computeHolds(state, next, events, delays) };
       }
       else if (!silent && pre.length + result.events.length > 0) sfx('click');
@@ -1819,7 +1914,7 @@ export const useGame = create<Store>((set, get) => {
             ? [...next.players[c.player].reserve].sort((a, b) => Number(next.cores[a]!.isSoul) - Number(next.cores[b]!.isSoul)).slice(0, c.min)
             : [];
       // กระดานพลิกเมื่อแอนิเมชันที่กำลังเล่นจบแล้ว (ดู settleView)
-      const viewTurn = isFxBlocking(fx) ? get().viewTurn : next.turnPlayer;
+      const viewTurn = viewHeld(fx) ? get().viewTurn : next.turnPlayer;
       set({ ...resetUi, state: next, truth: null, history: [...history, state].slice(-100), error: null, fx, holds, selectedCores: preselect, viewTurn });
       return true;
     },

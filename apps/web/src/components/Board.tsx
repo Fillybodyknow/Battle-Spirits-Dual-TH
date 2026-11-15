@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { cardLevel, currentBp, isSpiritLike, payableCost, type CoreTarget, type PlayerId } from '@bs/engine';
+import { canAttackWith, cardLevel, currentBp, isSpiritLike, payableCost, type CoreTarget, type PlayerId } from '@bs/engine';
 import { playerLabel } from '../format';
 import { IMG } from '../assets';
 import type { Fx } from '../store';
@@ -159,7 +159,7 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
   // ออนไลน์: จับต้องได้เฉพาะการ์ดของที่นั่งเรา
   const own = mine(card.owner);
   const ready = own && spirit && !exhausted && !state.winner && !state.choice;
-  const canAttack = ready && state.phase === 'attack' && !battle && card.owner === state.turnPlayer;
+  const canAttack = ready && state.phase === 'attack' && !battle && card.owner === state.turnPlayer && canAttackWith(state, db, cardId);
   const canBlock = ready && battle?.step === 'declareBlock' && card.owner !== state.turnPlayer;
   const ownTurnMain = own && inMain(state) && card.owner === state.turnPlayer;
   const dropTarget = ownTurnMain && (!!dragging || hasSelection);
@@ -680,22 +680,6 @@ function TrashSlot({ player }: { player: PlayerId }) {
 }
 
 /** ป้ายหกเหลี่ยม "Turn N · สเต็ป" บนสนามของผู้ถือเทิร์น */
-function TurnBadge() {
-  const turn = useGame((s) => s.state.turn);
-  const phase = useGame((s) => s.state.phase);
-  const label = { start: 'Start', core: 'Core', draw: 'Draw', refresh: 'Refresh', main: 'Main', attack: 'Attack', end: 'End' }[phase];
-  return (
-    <div
-      key={`${turn}-${phase}`}
-      className="pointer-events-none absolute top-1/2 right-2 z-10 flex h-[72px] w-[84px] -translate-y-1/2 flex-col items-center justify-center bg-gradient-to-b from-amber-300 via-amber-500 to-amber-700 text-slate-950 shadow-lg"
-      style={{ clipPath: 'polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%)', animation: 'fx-chain-in 0.4s ease-out both' }}
-    >
-      <span className="text-[11px] leading-none font-bold">Turn {turn}</span>
-      <span className="text-lg leading-tight font-black italic">{label}</span>
-    </div>
-  );
-}
-
 /**
  * แผ่นรองเล่นของผู้เล่น
  *  ซ้าย: Burst / Life / Reserve · กลาง: Field · ขวา: Deck / Trash
@@ -813,7 +797,6 @@ export function PlayerMat({ player, top }: { player: PlayerId; top?: boolean }) 
 
         {/* แถว Spirit / Ultimate */}
         <div className="relative flex flex-1 flex-wrap items-start justify-center gap-3 [align-content:safe_center]">
-          {myTurn && <TurnBadge />}
           {slots.map((slot) =>
             'id' in slot ? (
               <FieldCard key={slot.id} cardId={slot.id} depleting={depleting.has(slot.id)} />
@@ -983,6 +966,7 @@ export function HandFan({ player, top }: { player: PlayerId; top?: boolean }) {
   return (
     <div
       data-player-target={player}
+      data-setup={top ? "hand-top" : "hand-bottom"}
       className={`pointer-events-none fixed left-0 right-[var(--sidebar)] z-20 flex h-0 justify-center ${top ? 'top-0 items-start' : 'bottom-0 items-end'}`}
     >
       <div className={`flex ${top ? 'items-start' : 'items-end'}`}>

@@ -118,7 +118,7 @@ export function currentBp(state: GameState, db: CardDatabase, cardId: string): n
       if (applies) bp += ab.amount;
     }
   }
-  return bp;
+  return Math.max(0, bp);
 }
 
 /** การ์ดตรงตัวกรองหรือไม่ (maxBp ใช้ BP ปัจจุบันบนสนาม) */
@@ -134,6 +134,7 @@ export function matchesFilter(state: GameState, db: CardDatabase, cardId: string
   if (filter.cost !== undefined && def.cost !== filter.cost) return false;
   if (filter.nameIncludes && !filter.nameIncludes.some((w) => def.name.includes(w))) return false;
   if (filter.hasBurst && !def.burst) return false;
+  if (filter.color && !def.colors.includes(filter.color)) return false;
   return true;
 }
 
@@ -179,6 +180,10 @@ export function fieldSymbols(
 
 /** คอสต์ที่ต้องจ่ายจริงหลังลดด้วย gem symbol บนสนาม (หมวด 3 ข้อ 1-4) */
 export function payableCost(state: GameState, db: CardDatabase, player: PlayerId, def: CardDef): number {
+  const full = def.abilities.some(
+    (a) => a.kind === 'fullReductionIfAlly' && state.players[player].field.some((id) => db.get(state.cards[id]!.cardNo).name === a.name),
+  );
+  if (full) return Math.max(0, def.cost - Object.values(def.reduction).reduce<number>((n, v) => n + (v ?? 0), 0));
   const symbols = fieldSymbols(state, db, player);
   let reduced = 0;
   for (const [color, max] of Object.entries(def.reduction) as [SymbolColor, number][]) {
@@ -234,4 +239,46 @@ export function burstBlocked(state: GameState, db: CardDatabase, player: PlayerI
     const level = cardLevel(state, db, id);
     return def.abilities.some((a) => a.kind === 'blockOpponentBurst' && a.levels.includes(level) && conditionHolds(state, id, a.if));
   });
+}
+
+/** การ์ดนี้ประกาศโจมตีได้ตอนนี้หรือไม่ (ไม่ดูเฟส): สปิริตที่ฟื้นสภาพ และไม่ถูกห้ามโจมตีในเทิร์นนี้ */
+export function canAttackWith(state: GameState, db: CardDatabase, cardId: string): boolean {
+  const card = state.cards[cardId];
+  if (!card) return false;
+  const def = db.get(card.cardNo);
+  if (!isSpiritLike(def) || card.state !== 'refresh') return false;
+  return !(state.attackBans ?? []).some((b) => b.player === card.owner && b.turn === state.turn && b.types.includes(def.type));
+}
+
+/**
+ * สปิริตของ defender ที่ป้องกันการโจมตีปัจจุบันได้
+ * โดโระเทอร์โบ: ถ้าผู้โจมตีเป็นเผ่าที่กำหนด ป้องกันได้เฉพาะตัวที่คอสต์เท่ากับผู้โจมตี
+ */
+export function blockersFor(state: GameState, db: CardDatabase, defender: PlayerId): string[] {
+  const attacker = state.battle ? state.cards[state.battle.attackerId] : undefined;
+  let sameCost: number | null = null;
+  if (attacker) {
+    const aDef = db.get(attacker.cardNo);
+    const locked = state.players[attacker.owner].field.some((id) => {
+      if (effectsNegated(state, db, id)) return false;
+      const level = cardLevel(state, db, id);
+      return db
+        .get(state.cards[id]!.cardNo)
+        .abilities.some((a) => a.kind === 'blockSameCost' && a.levels.includes(level) && aDef.family.includes(a.family) && conditionHolds(state, id, a.if, false, false, db));
+    });
+    if (locked) sameCost = aDef.cost;
+  }
+  return state.players[defender].field.filter((id) => {
+    const card = state.cards[id]!;
+    const def = db.get(card.cardNo);
+    return card.state === 'refresh' && isSpiritLike(def) && (sameCost === null || def.cost === sameCost);
+  });
+}
+
+/** Magic "เอฟเฟกต์นี้ใช้ได้เทิร์นละ 1 ครั้ง" ที่ใช้ไปแล้วในเทิร์นนี้ */
+export function magicUsedUp(state: GameState, db: CardDatabase, player: PlayerId, cardNo: string, timing: 'main' | 'flash'): boolean {
+  const def = db.get(cardNo);
+  const ab = def.abilities.find((a) => a.kind === 'magic' && a.timing === timing);
+  if (!ab || ab.kind !== 'magic' || !ab.oncePerTurn) return false;
+  return (state.usedOncePerTurn ?? []).includes(`${player}:${cardNo}:${ab.source}`);
 }

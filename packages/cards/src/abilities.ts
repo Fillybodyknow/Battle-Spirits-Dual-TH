@@ -50,6 +50,8 @@ export interface CardFilter {
   nameIncludes?: string[];
   /** การ์ดมีเอฟเฟกต์ Burst */
   hasBurst?: true;
+  /** สีของการ์ด */
+  color?: Color;
 }
 
 /** ปลายทางของ Core จากวอยด์ */
@@ -98,7 +100,7 @@ export type Step =
    */
   | { do: 'chooseBlockers' }
   /** เราเลือกทิ้งการ์ดในมือ N ใบ */
-  | { do: 'discard'; count: number; if?: Condition }
+  | { do: 'discard'; count: number; if?: Condition; filter?: CardFilter }
   /** นำ Core จากวอยด์ (Core ใหม่) วางที่ไลฟ์เรา */
   | { do: 'gainLifeFromVoid'; count: number }
   /** Burst: "หลังจากนั้นสามารถจ่ายคอสต์ เพื่อให้เอฟเฟกต์ [Flash] ของการ์ดนี้ทำงาน" (จ่ายหรือไม่ก็ได้) */
@@ -132,8 +134,19 @@ export type Step =
   | { do: 'destroyCard'; cardId: string; by: 'p1' | 'p2'; bySource?: string }
   /** (engine ใช้ภายใน) การ์ดอยู่บนสนามต่อในรูปแบบเสื่อมสภาพ */
   | { do: 'exhaustCard'; cardId: string }
-  /** (engine ใช้ภายใน) ถือว่าถูกทำลายแล้ว แต่ยังอยู่บนสนามในรูปแบบเสื่อมสภาพ (เอฟเฟกต์แทนที่ของโดจินกาขาว) */
-  | { do: 'destroyedButStays'; cardId: string; by: 'p1' | 'p2'; bySource?: string }
+  /** (engine ใช้ภายใน) ถือว่าถูกทำลายแล้ว แต่ยังอยู่บนสนาม (เอฟเฟกต์แทนที่) ในสภาพ state (ไม่ระบุ = เสื่อมสภาพ) */
+  | { do: 'destroyedButStays'; cardId: string; by: 'p1' | 'p2'; bySource?: string; state?: 'refresh' | 'exhausted' }
+  /** นำการ์ดทั้งหมดในแทรชเราไปไว้ใต้สุดเด็ค (เรียงลำดับได้) */
+  | { do: 'trashToDeckBottom' }
+  /** สามารถอัญเชิญไม่จ่ายคอสต์การ์ดบนมือเรา 1 ใบที่ตรงตัวกรอง */
+  | { do: 'summonFromHandFree'; filter: CardFilter }
+  /**
+   * ในเทิร์นนี้ เลือกการ์ดของคู่แข่งที่ตรงตัวกรอง BP-amount แล้วทำลายตัวที่ BP กลายเป็น 0
+   * count = จำนวนตัว (ไม่ระบุ = 1), countPerAllyFamily = จำนวนตัวเท่าสปิริตเราเผ่านี้
+   */
+  | { do: 'debuffChosenOpponent'; amount: number; filter: CardFilter; count?: number; countPerAllyFamily?: string; if?: Condition; exclude?: string[] }
+  /** ในเทิร์นนี้ การ์ดของคู่แข่งประเภทเหล่านี้ทั้งหมดโจมตีไม่ได้ */
+  | { do: 'opponentCannotAttack'; types: CardType[]; if?: Condition }
   /** เสื่อมสภาพสปิริตคู่แข่ง N ตัว (เลือกทีละตัว จากตัวที่ยังฟื้นสภาพ) */
   | { do: 'exhaustOpponent'; count: number; filter?: CardFilter; if?: Condition }
   /** เสื่อมสภาพสปิริตคู่แข่งกี่ตัวก็ได้ BP รวมไม่เกิน maxTotal */
@@ -210,7 +223,19 @@ export type TriggerEvent =
   /** เราทิ้งเด็คคู่แข่งด้วยเอฟเฟกต์ (subject = สปิริตที่เป็นเจ้าของเอฟเฟกต์นั้น) */
   | 'oppDeckMilled'
   /** การ์ดนี้ถูกทำลายโดยคู่แข่ง (ต่อสู้หรือเอฟเฟกต์) */
-  | 'destroyedByOpponent';
+  | 'destroyedByOpponent'
+  /** การ์ดนี้ถูกทำลาย (โดยใครก็ได้) */
+  | 'destroyed'
+  /** สปิริตเรา (subject) ถูกทำลาย */
+  | 'allyDestroyed'
+  /** สปิริตเรา (subject) ถูกอัญเชิญ */
+  | 'allySummoned'
+  /** การ์ดนี้ถูกทิ้งจากเด็คโดยเอฟเฟกต์ของคู่แข่ง (การ์ดอยู่ในแทรชแล้ว) */
+  | 'milledByOpponent'
+  /** เราเสียไลฟ์ */
+  | 'lifeLost'
+  /** เราใช้การ์ดเมจิค (ทำงานหลังเอฟเฟกต์ของเมจิคนั้น) */
+  | 'allyMagicUsed';
 
 /** เงื่อนไขของสปิริตที่ทำให้ trigger แบบ ally* ทำงาน */
 export interface SubjectFilter {
@@ -223,6 +248,8 @@ export interface SubjectFilter {
   self?: true;
   /** เอฟเฟกต์ต้นเหตุเป็นเอฟเฟกต์ "เมื่อสปิริตนี้โจมตี" */
   attackEffect?: true;
+  /** ต้นเหตุไม่ใช่การ์ดนี้ */
+  other?: true;
 }
 
 /** เงื่อนไขเปิด Burst */
@@ -247,8 +274,12 @@ export type Ability =
       oncePerTurn?: true;
       /** oppDeckMilled: การ์ดที่ถูกทิ้งต้องมีอย่างน้อย 1 ใบตรงตัวกรองนี้ */
       milled?: CardFilter;
-      /** ทำงานขณะการ์ดอยู่บนมือ (ไม่ดูเลเวล) */
-      zone?: 'hand';
+      /** ทำงานขณะการ์ดอยู่บนมือ / ในแทรช (ไม่ดูเลเวล) */
+      zone?: 'hand' | 'trash';
+      /** "เมนสเต็ป...": ทำงานเฉพาะ Main Step */
+      mainStepOnly?: true;
+      /** "...ของคู่แข่ง": ทำงานเฉพาะเทิร์นของคู่แข่ง */
+      oppTurnOnly?: true;
       /** Brave: เอฟเฟกต์ที่ผู้ร่วมร่างได้รับ (ทำงานเมื่อผู้ร่วมร่างเกิดเหตุการณ์, "สปิริตนี้" = ผู้ร่วมร่าง) */
       granted?: true;
     }
@@ -258,7 +289,28 @@ export type Ability =
    * เมื่อสปิริตเราที่ตรง subject ถูกทำลายโดยเอฟเฟกต์ของคู่แข่ง: สามารถทิ้งใบบนสุดเด็คคู่แข่ง mill ใบ
    * เพื่อให้สปิริตนั้นอยู่บนสนามต่อในรูปแบบเสื่อมสภาพ
    */
-  | { kind: 'replaceDestroy'; source: number; levels: number[]; subject: SubjectFilter; mill: number }
+  | {
+      kind: 'replaceDestroy';
+      source: number;
+      levels: number[];
+      /** การ์ดที่ถูกทำลายต้องตรงเงื่อนไขนี้ (self = การ์ดนี้เอง) */
+      subject: SubjectFilter;
+      /** จ่ายด้วยการทิ้งเด็คคู่แข่ง N ใบ */
+      mill?: number;
+      /** จ่ายด้วยการทิ้งการ์ดบนมือเรา 1 ใบที่ตรงตัวกรอง */
+      discard?: CardFilter;
+      /** สภาพที่อยู่ต่อ (ไม่ระบุ = เสื่อมสภาพ) */
+      state?: 'refresh' | 'exhausted';
+      /** ใช้กับการถูกทำลายจากการต่อสู้ด้วย (ไม่ระบุ = เฉพาะเอฟเฟกต์ของคู่แข่ง) */
+      battle?: true;
+      /** ไม่ถาม: ทำงานเองเมื่อเงื่อนไขครบ */
+      auto?: true;
+      if?: Condition;
+    }
+  /** "ถ้าเรามี <name> อยู่, การลดคอสต์ทั้งหมดของการ์ดนี้ถือว่าลดจนครบแล้ว" */
+  | { kind: 'fullReductionIfAlly'; source: number; name: string }
+  /** "แอทแท็คสเต็ปของเรา: เมื่อสปิริตเราเผ่านี้โจมตี คู่แข่งป้องกันได้เฉพาะตัวที่คอสต์เท่ากับผู้โจมตี" */
+  | { kind: 'blockSameCost'; source: number; levels: number[]; family: string; if?: Condition }
   /**
    * "ดรอว์สเต็ปของเรา: จำนวนจั่วการ์ด +N" แต่ละรายการใน extraDraw บวกเพิ่มถ้าเงื่อนไขเป็นจริง
    * after = สิ่งที่ทำหลังจั่ว (เช่น ทิ้งการ์ด)
@@ -278,10 +330,10 @@ export type Ability =
   /** BP+ ที่มีผลตลอดเวลาขณะการ์ดอยู่บนสนาม */
   | { kind: 'staticBp'; source: number; levels: number[]; if?: Condition; scope: StaticScope; amount: number }
   /** เอฟเฟกต์ Magic: [Main] หรือ [Flash] */
-  | { kind: 'magic'; source: number; timing: 'main' | 'flash'; steps: Step[] };
+  | { kind: 'magic'; source: number; timing: 'main' | 'flash'; steps: Step[]; oncePerTurn?: true };
 
-/** สคริปต์ของการ์ดหนึ่งใบ เรียงตาม effects (null = ยังไม่รองรับ) */
-export type CardScript = (DistributiveOmit<Ability, 'source'> | null)[];
+/** สคริปต์ของการ์ดหนึ่งใบ เรียงตาม effects (null = ยังไม่รองรับ, array = บรรทัดเดียวมีหลายความสามารถ) */
+export type CardScript = (DistributiveOmit<Ability, 'source'> | DistributiveOmit<Ability, 'source'>[] | null)[];
 
 type DistributiveOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : never;
 
@@ -299,7 +351,7 @@ export function attachScripts<T extends { name: string; effects?: unknown[] }>(
     if (scripts[card.name] && script.length !== effectCount) {
       throw new Error(`สคริปต์ของ ${card.name} มี ${script.length} ช่อง แต่การ์ดมีเอฟเฟกต์ ${effectCount} บรรทัด`);
     }
-    const abilities = script.flatMap((a, source) => (a ? [{ ...a, source } as Ability] : []));
+    const abilities = script.flatMap((a, source) => (a ? (Array.isArray(a) ? a : [a]).map((x) => ({ ...x, source }) as Ability) : []));
     return { ...card, abilities };
   });
 }

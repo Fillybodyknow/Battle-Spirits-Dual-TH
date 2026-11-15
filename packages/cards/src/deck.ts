@@ -1,8 +1,13 @@
 import type { CardDatabase } from './database';
 
+/** ฟอยของการ์ดแต่ละใบ: ฟอยขาว หรือ ฟอยรุ้ง (ไม่มี = การ์ดปกติ) */
+export type Foil = 'white' | 'rainbow';
+
 export interface DeckEntry {
   cardNo: string;
   count: number;
+  /** ฟอยของแต่ละใบตามลำดับ (ยาวไม่เกิน count) เช่น ['rainbow'] = ใบแรกเป็นฟอยรุ้ง ที่เหลือปกติ */
+  foils?: (Foil | null)[];
 }
 
 export interface DeckRules {

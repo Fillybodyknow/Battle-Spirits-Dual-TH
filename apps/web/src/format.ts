@@ -154,6 +154,8 @@ export function formatEvent(e: GameEvent, s: GameState): string | null {
       return e.stays ? `${name(e.cardId)} แยกร่างและอยู่บนสนามต่อ` : `${name(e.cardId)} ลง Trash พร้อมผู้ร่วมร่าง`;
     case 'catalyze':
       return `[Catalyze] ${name(e.cardId)} สั่งใช้ Soul Burst: ${name(e.burstId)}`;
+    case 'attackBanned':
+      return `ในเทิร์นนี้ สปิริตของ${playerLabel(e.player)}โจมตีไม่ได้`;
     case 'gameOver':
       return `🏆 ${playerLabel(e.winner)} ชนะ (${END_REASON[e.reason]})`;
   }

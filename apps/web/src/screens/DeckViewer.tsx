@@ -10,7 +10,9 @@ export function DeckViewer() {
   const deckView = useGame((s) => s.deckView);
   const [deck, setDeck] = useState<DeckId>(deckView);
   const entries = DECKS[deck].entries;
+  const copies = entries.flatMap((e) => Array.from({ length: e.count }, (_, k) => ({ cardNo: e.cardNo, foil: e.foils?.[k] ?? null })));
   const [focus, setFocus] = useState<string>(entries[0]!.cardNo);
+  const [focusIdx, setFocusIdx] = useState(0);
   const def = db.get(focus);
   const ids = Object.keys(DECKS) as DeckId[];
 
@@ -38,32 +40,39 @@ export function DeckViewer() {
               onClick={() => {
                 setDeck(id);
                 setFocus(DECKS[id].entries[0]!.cardNo);
+                setFocusIdx(0);
               }}
             />
           ))}
         </aside>
 
-        <main className="grid min-w-0 flex-1 auto-rows-max grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-4 overflow-y-auto rounded-xl border border-white/10 bg-black/30 p-4">
-          {entries.map((e) => (
-            <button
-              key={e.cardNo}
-              type="button"
-              onMouseEnter={() => setFocus(e.cardNo)}
-              onClick={() => setFocus(e.cardNo)}
-              className={`relative rounded-xl transition hover:-translate-y-1 ${focus === e.cardNo ? 'ring-2 ring-yellow-300 shadow-[0_0_18px_rgba(250,204,21,0.5)]' : ''}`}
-            >
-              <CardArt cardNo={e.cardNo} className="aspect-[0.686] w-full" />
-              <span className="absolute -right-1.5 -bottom-1.5 rounded-full bg-slate-950 px-2 py-0.5 text-sm font-black text-yellow-300 ring-1 ring-yellow-300/60">×{e.count}</span>
-              {(() => {
-                const r = rarityOf(db.get(e.cardNo).rarity);
-                return r ? (
-                  <span className={`absolute -top-1.5 -left-1.5 rounded px-1.5 text-[10px] font-black shadow ${RARITY_BADGE[r.rank]}`} title={r.label}>
-                    {r.code}
-                  </span>
-                ) : null;
-              })()}
-            </button>
-          ))}
+        <main className="min-w-0 flex-1 overflow-y-auto rounded-xl border border-white/10 bg-black/30 p-3">
+          {/* แสดงการ์ดทุกใบแยกกันแบบเรียงชิด (ไม่รวมเป็น ×N) */}
+          <div className="grid grid-cols-10 gap-1.5">
+            {copies.map(({ cardNo, foil }, i) => {
+              const r = rarityOf(db.get(cardNo).rarity);
+              const pick = () => {
+                setFocus(cardNo);
+                setFocusIdx(i);
+              };
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  onMouseEnter={pick}
+                  onClick={pick}
+                  className={`relative rounded-md transition hover:z-10 hover:-translate-y-0.5 ${focusIdx === i ? 'z-10 ring-2 ring-yellow-300 shadow-[0_0_14px_rgba(250,204,21,0.55)]' : ''}`}
+                >
+                  <CardArt cardNo={cardNo} foil={foil} className="aspect-[0.686] w-full" />
+                  {r && (
+                    <span className={`absolute top-0.5 left-0.5 rounded px-1 text-[9px] leading-tight font-black shadow ${RARITY_BADGE[r.rank]}`} title={r.label}>
+                      {r.code}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
         </main>
 
         <aside className="hud-panel flex w-[360px] shrink-0 flex-col gap-3 overflow-y-auto rounded-xl p-4">

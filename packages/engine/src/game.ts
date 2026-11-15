@@ -1,9 +1,12 @@
 import type { CardDatabase, CardDef, Step } from '@bs/cards';
 import { assertUsableCore, checkDepletion, destroy, drawCard, emit, endGame, loseLife, newCore, payCost, setPhase, type Ctx } from './ctx';
-import { destroyCard, enqueue, fireTriggers, newBatch, queueTriggers, resolveChoice, runQueue } from './effects';
+import { destroyCard, enqueue, fireTriggers, newBatch, queueLifeLostTriggers, queueMagicUsedTriggers, queueSummonTriggers, queueTriggers, resolveChoice, runQueue } from './effects';
 import { nextRandom, shuffle } from './rng';
 import {
   RuleError,
+  blockersFor,
+  canAttackWith,
+  magicUsedUp,
   braveHostOf,
   cardLevel,
   conditionHolds,
@@ -138,6 +141,17 @@ function beginTurn(ctx: Ctx): void {
   }
 
   setPhase(ctx, 'draw');
+  if (s.config.manualDraw) {
+    // รอผู้เล่นกดจั่ว (action 'drawStep')
+    s.awaitingDraw = player;
+    return;
+  }
+  continueDraw(ctx);
+}
+
+/** จั่วของ Draw Step แล้วเดินต่อไป Refresh → Main */
+function continueDraw(ctx: Ctx): void {
+  const { s } = ctx;
   drawStep(ctx);
   if (s.choice) {
     s.resume = 'afterDraw'; // เดินต่อเมื่อผู้เล่นเลือกเสร็จ (ดู applyAction)
@@ -189,6 +203,7 @@ function endTurn(ctx: Ctx): void {
     card.turnBp = 0;
     card.usedThisTurn = [];
   }
+  s.usedOncePerTurn = [];
   s.turn += 1;
   s.turnPlayer = opponentOf(s.turnPlayer);
   s.burstSetThisTurn = false;
@@ -277,7 +292,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     }
     checkDepletion(ctx);
     if (p.field.includes(cardId)) {
-      queueTriggers(ctx, cardId, 'summon', newBatch(ctx), { paidWithSoul });
+      queueSummonTriggers(ctx, cardId, newBatch(ctx), { paidWithSoul });
       runQueue(ctx);
     }
   },
@@ -316,8 +331,11 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     if (def.effects.length > 0 && !has(use)) fail('NO_SUCH_EFFECT', `การ์ดนี้ไม่มีเอฟเฟกต์ [${use === 'main' ? 'Main' : 'Flash'}]`);
     if (flash && def.effects.length === 0) fail('NO_SUCH_EFFECT', 'การ์ดนี้ไม่มีเอฟเฟกต์ [Flash]');
 
+    if (magicUsedUp(s, ctx.db, player, def.cardNo, use)) fail('ONCE_PER_TURN', 'เอฟเฟกต์นี้ใช้ได้เทิร์นละ 1 ครั้ง');
     const paidWithSoul = payment.some((id) => s.cores[id]?.isSoul);
     const { paid } = payCost(ctx, player, def, payment, []);
+    const once = def.abilities.find((a) => a.kind === 'magic' && a.timing === use && a.oncePerTurn);
+    if (once) s.usedOncePerTurn = [...(s.usedOncePerTurn ?? []), `${player}:${def.cardNo}:${once.source}`];
     removeFrom(s.players[player].hand, cardId);
     emit(ctx, { type: 'magicUsed', player, cardId, paid, timing: use });
     checkDepletion(ctx);
@@ -334,6 +352,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
       paidWithSoul,
       trashWhenDone: true,
     });
+    queueMagicUsedTriggers(ctx, player);
     runQueue(ctx);
   },
 
@@ -389,6 +408,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     const card = fieldCard(s, player, attackerId);
     if (!isSpiritLike(ctx.db.get(card.cardNo))) fail('CANNOT_ATTACK', 'การ์ดนี้โจมตีไม่ได้');
     if (card.state !== 'refresh') fail('EXHAUSTED', 'การ์ดเสื่อมสภาพอยู่');
+    if (!canAttackWith(s, ctx.db, attackerId)) fail('CANNOT_ATTACK', 'การ์ดนี้โจมตีไม่ได้ในเทิร์นนี้');
 
     card.state = 'exhausted';
     s.battle = {
@@ -555,6 +575,12 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     resolveChoice(ctx, player, pick);
   },
 
+  drawStep(ctx, { player }) {
+    const { s } = ctx;
+    if (s.awaitingDraw !== player || s.phase !== 'draw') fail('NOT_DRAW_STEP', 'ตอนนี้ไม่ใช่ Draw Step ของผู้เล่นนี้');
+    delete s.awaitingDraw;
+    continueDraw(ctx);
+  },
   concede(ctx, { player }) {
     endGame(ctx, opponentOf(player), 'concede');
   },
@@ -582,10 +608,7 @@ function magicTimings(def: CardDef): ('main' | 'flash')[] {
 
 /** Spirit/Ultimate ที่ฟื้นสภาพของผู้เล่น (ใช้ป้องกันได้) */
 function canBlockWith(ctx: Ctx, player: PlayerId): string[] {
-  return ctx.s.players[player].field.filter((id) => {
-    const card = ctx.s.cards[id]!;
-    return card.state === 'refresh' && isSpiritLike(ctx.db.get(card.cardNo));
-  });
+  return blockersFor(ctx.s, ctx.db, player);
 }
 
 /** ผู้ป้องกันที่ฝ่ายโจมตีเลือกไว้ (ฮากาเนะวูม) ประกาศบล็อกอัตโนมัติ ตัวที่ออกจากสนามไปแล้วไม่นับ */
@@ -632,6 +655,7 @@ function resolveBattle(ctx: Ctx): void {
   if (blockers.length === 0) {
     if (loseLife(ctx, defender, symbolCount(attackerDef) + braveSymbols(ctx, attacker.id), attacker.owner)) return;
     lostLife = true;
+    queueLifeLostTriggers(ctx, defender);
   } else {
     // เทียบ BP กับผู้ป้องกันทีละตัว โดยใช้ BP ก่อนมีใครถูกทำลาย (ต่อสู้พร้อมกัน)
     const bpA = currentBp(s, db, attacker.id);
@@ -645,6 +669,7 @@ function resolveBattle(ctx: Ctx): void {
     if (destroyedBlockers.length > 0 && perBlocker > 0) {
       if (loseLife(ctx, defender, perBlocker * destroyedBlockers.length, attacker.owner)) return;
       lostLife = true;
+      queueLifeLostTriggers(ctx, defender);
     }
   }
 
@@ -709,6 +734,9 @@ export function applyAction(state: GameState, input: Action, db: CardDatabase): 
   try {
     if (state.choice && action.type !== 'choose' && action.type !== 'concede') {
       fail('CHOICE_PENDING', 'ต้องเลือกให้เสร็จก่อน');
+    }
+    if (state.awaitingDraw && action.type !== 'drawStep' && action.type !== 'concede') {
+      fail('DRAW_PENDING', 'ต้องจั่วการ์ดใน Draw Step ก่อน');
     }
     (handlers[action.type] as Handler<Action['type']>)(ctx, action);
     // งานค้าง (Brave ที่ผู้ร่วมร่างสูญสลายจากการย้าย Core, Burst ที่เงื่อนไขเกิด)

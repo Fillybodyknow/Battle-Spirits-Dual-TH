@@ -1,0 +1,61 @@
+[
+  {
+    "cardNo": "SD04-001",
+    "count": 3
+  },
+  {
+    "cardNo": "SD04-002",
+    "count": 3
+  },
+  {
+    "cardNo": "SD04-003",
+    "count": 3
+  },
+  {
+    "cardNo": "SD04-004",
+    "count": 3
+  },
+  {
+    "cardNo": "SD04-005",
+    "count": 3
+  },
+  {
+    "cardNo": "SD04-006",
+    "count": 3
+  },
+  {
+    "cardNo": "SD04-011",
+    "count": 2
+  },
+  {
+    "cardNo": "SD04-007",
+    "count": 3
+  },
+  {
+    "cardNo": "SD04-008",
+    "count": 3
+  },
+  {
+    "cardNo": "SD04-012",
+    "count": 3
+  },
+  {
+    "cardNo": "SD04-010",
+    "count": 3
+  },
+  {
+    "cardNo": "SD04-009",
+    "count": 2
+  },
+  {
+    "cardNo": "SD04-013",
+    "count": 3,
+    "foils": [
+      "rainbow"
+    ]
+  },
+  {
+    "cardNo": "SD04-014",
+    "count": 3
+  }
+]

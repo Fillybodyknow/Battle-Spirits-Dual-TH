@@ -18,6 +18,8 @@ export interface GameConfig {
   firstPlayerSkipsCoreStep: boolean;
   /** ผู้เริ่มก่อนข้าม Attack Step ในเทิร์นแรก (ยังไม่ยืนยัน: แหล่งอื่นบอกว่าข้าม) */
   firstPlayerSkipsAttackStep: boolean;
+  /** Draw Step รอให้ผู้เล่นกดจั่วเอง (action 'drawStep') แทนจั่วอัตโนมัติ (หน้าเว็บเปิดไว้) */
+  manualDraw?: boolean;
 }
 
 export const DEFAULT_CONFIG: GameConfig = {
@@ -184,6 +186,12 @@ export interface GameState {
   /** ขั้นตอนของเทิร์นที่ต้องเดินต่อเมื่อเลือกเสร็จ (เช่น เอฟเฟกต์ใน Draw Step ให้เลือกทิ้งการ์ด) */
   resume: 'afterDraw' | 'endBattle' | null;
   burstSetThisTurn: boolean;
+  /** "ในเทิร์นนี้ ... โจมตีไม่ได้": การ์ดของ player ประเภท types โจมตีไม่ได้ในเทิร์น turn */
+  attackBans?: { player: PlayerId; turn: number; types: string[] }[];
+  /** เอฟเฟกต์ "เทิร์นละ 1 ครั้ง" ที่ใช้ไปแล้ว (player:cardNo:source) ล้างตอนจบเทิร์น */
+  usedOncePerTurn?: string[];
+  /** Draw Step แบบกดจั่วเอง: ผู้เล่นที่ต้องกดจั่ว (ระหว่างนี้ทำ action อื่นไม่ได้) */
+  awaitingDraw?: PlayerId;
   players: Record<PlayerId, PlayerState>;
   cards: Record<string, CardInstance>;
   cores: Record<string, CoreInstance>;
@@ -228,7 +236,9 @@ export type Action =
    *  - hostId null = แยกร่าง: วาง Core (placement) บน Brave, Brave มีสภาพตามผู้ร่วมร่างเดิม
    */
   | { type: 'brave'; player: PlayerId; braveId: string; hostId: string | null; placement?: string[] }
-  | { type: 'concede'; player: PlayerId };
+  | { type: 'concede'; player: PlayerId }
+  /** Draw Step แบบกดจั่วเอง (config.manualDraw) */
+  | { type: 'drawStep'; player: PlayerId };
 
 /** การ์ดหนึ่งใบที่อัญเชิญพร้อมกัน: วาง Core (cores) หรือ Brave ร่วมร่างกับ braveOnto */
 export interface SummonPick {
@@ -294,7 +304,9 @@ export type GameEvent =
   | { type: 'braved'; cardId: string; hostId: string }
   /** ผู้ร่วมร่างออกจากสนาม: Brave อยู่ต่อ (stays) หรือลง Trash */
   | { type: 'braveSeparated'; cardId: string; stays: boolean }
-  | { type: 'catalyze'; cardId: string; burstId: string };
+  | { type: 'catalyze'; cardId: string; burstId: string }
+  /** การ์ดของ player โจมตีไม่ได้ในเทิร์นนี้ */
+  | { type: 'attackBanned'; player: PlayerId };
 
 export type ActionResult =
   | { ok: true; state: GameState; events: GameEvent[] }

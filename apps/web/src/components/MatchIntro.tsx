@@ -32,11 +32,21 @@ export function CoinFace({ gold }: { gold: boolean }) {
   );
 }
 
-type Phase = 'ready' | 'vs' | 'coin' | 'result' | 'choose' | 'final' | 'warp' | 'duel';
+type Phase = 'ready' | 'vs' | 'coin' | 'result' | 'choose' | 'final' | 'warp' | 'setup' | 'duel';
 /** เวลาเริ่มของแต่ละช่วง (ms) */
 const AT = { vs: 1100, coin: 2700, result: 4400, choose: 5500 };
-/** เวลาหลังเลือกผู้เริ่มก่อนแล้ว (ms นับจากตอนเลือก) */
-const AFTER = { warp: 1300, duel: 2250, end: 3400 };
+/** เวลาหลังเลือกผู้เริ่มก่อนแล้ว (ms นับจากตอนเลือก): ... วาร์ป → ประกอบกระดาน → DUEL */
+const AFTER = { warp: 1300, setup: 2250, duel: 4150, end: 5400 };
+
+/**
+ * สถานะแอนิเมชันประกอบกระดาน ใส่ไว้ที่ <html data-board-setup>
+ * pre = ซ่อนกระดานไว้ระหว่างฉากเปิด, run = เล่นแอนิเมชันประกอบกระดาน (ดู index.css)
+ */
+function setBoardSetup(v: 'pre' | 'run' | null) {
+  const el = document.documentElement;
+  if (v) el.dataset.boardSetup = v;
+  else delete el.dataset.boardSetup;
+}
 const COIN_FLIGHT = 1700;
 
 /** ป้ายผู้เล่นมุมล่าง + การ์ดปกเด็คลอย (ฝั่งซ้ายสีฟ้า / ฝั่งขวาสีแดง) */
@@ -129,6 +139,15 @@ export function MatchIntro({ fx, onDone }: { fx: Extract<Fx, { kind: 'intro' }>;
   const [reached, setReached] = useState(false);
   const chosen = pregame?.chosen ?? null;
 
+  // ซ่อนกระดานไว้ตลอดฉากเปิด แล้วค่อยประกอบตอนช่วง setup (ออกจากฉาก = แสดงกระดานปกติ)
+  useEffect(() => {
+    setBoardSetup('pre');
+    return () => setBoardSetup(null);
+  }, []);
+  useEffect(() => {
+    if (phase === 'setup' || phase === 'duel') setBoardSetup('run');
+  }, [phase]);
+
   // ช่วงก่อนเลือก: เวลาตายตัว
   useEffect(() => {
     const timers = [
@@ -153,6 +172,10 @@ export function MatchIntro({ fx, onDone }: { fx: Extract<Fx, { kind: 'intro' }>;
     sfx('buff');
     const timers = [
       setTimeout(() => (setPhase('warp'), sfx('whoosh')), AFTER.warp),
+      setTimeout(() => (setPhase('setup'), sfx('place')), AFTER.setup),
+      setTimeout(() => sfx('place'), AFTER.setup + 150),
+      setTimeout(() => sfx('swish'), AFTER.setup + 950),
+      setTimeout(() => sfx('draw'), AFTER.setup + 1200),
       setTimeout(() => (setPhase('duel'), sfx('xrare')), AFTER.duel),
       setTimeout(onDone, AFTER.end),
     ];
@@ -197,8 +220,8 @@ export function MatchIntro({ fx, onDone }: { fx: Extract<Fx, { kind: 'intro' }>;
 
   return (
     <div className="fixed inset-0 z-[70] overflow-hidden">
-      {/* พื้นหลังฉาก (หายตอน DUEL ให้เห็นกระดาน) */}
-      {phase !== 'duel' && (
+      {/* พื้นหลังฉาก (หายตอนประกอบกระดาน/DUEL ให้เห็นกระดาน) */}
+      {phase !== 'setup' && phase !== 'duel' && (
         <div className="absolute inset-0 bg-[#05040d]">
           <div className="absolute inset-0" style={{ background: 'radial-gradient(ellipse at 15% 80%, rgba(56,189,248,0.25), transparent 50%), radial-gradient(ellipse at 85% 80%, rgba(244,63,94,0.25), transparent 50%)' }} />
           <div className="absolute -top-1/4 left-[22%] h-[150%] w-[34%] rotate-[32deg] bg-gradient-to-b from-indigo-400/0 via-indigo-400/20 to-indigo-400/0" style={{ animation: 'intro-band 1.2s ease-out both' }} />

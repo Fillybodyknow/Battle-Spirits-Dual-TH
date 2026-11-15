@@ -9,6 +9,7 @@ import { PlayDialog } from './components/PlayDialog';
 import { BTN } from './components/Modal';
 import { setSfx, sfx, sfxSettings } from './sfx';
 import { AttackArrow, FxLayer } from './components/Fx';
+import { DrawPrompt } from './components/DrawPrompt';
 import { CoreDragGhost, DragGhost } from './components/DragGhost';
 import { DeckViewer } from './screens/DeckViewer';
 import { Home } from './screens/Home';
@@ -322,7 +323,7 @@ function GameScreen() {
           {/* เว้นที่ให้มือคู่แข่งแบบพัดที่ลอยอยู่ขอบบน */}
           <div className="h-[56px] shrink-0" />
           <PlayerMat player={top} top />
-          <div className="sticky top-0 bottom-0 z-30 shrink-0">
+          <div data-setup="bar" className="sticky top-0 bottom-0 z-30 shrink-0">
             <PromptBar />
           </div>
           <PlayerMat player={bottom} />
@@ -344,6 +345,7 @@ function GameScreen() {
       <DragGhost />
       <CoreDragGhost />
       <FxLayer />
+      <DrawPrompt />
       <PlayDialog />
       <ChoiceDialog />
       <TrashDialog />

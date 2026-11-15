@@ -53,6 +53,9 @@
   },
   {
     "cardNo": "SD02-013",
-    "count": 3
+    "count": 3,
+    "foils": [
+      "rainbow"
+    ]
   }
 ]

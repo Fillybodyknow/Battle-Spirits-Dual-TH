@@ -1,3 +1,4 @@
+import type { Foil } from '@bs/cards';
 import { isXRare } from '@bs/cards';
 import { cardArt } from '../assets';
 import { CardFace } from '../components/CardFace';
@@ -31,12 +32,39 @@ export const GLOW: Record<string, string> = {
 };
 
 /** ภาพการ์ดเต็มใบ (ใช้ภาพจริงถ้ามี ไม่งั้นการ์ดข้อความ) */
-export function CardArt({ cardNo, className = '' }: { cardNo: string; className?: string }) {
+export function CardArt({ cardNo, className = '', foil }: { cardNo: string; className?: string; foil?: Foil | null }) {
   const art = cardArt(cardNo);
-  if (art) return <img src={art} alt={db.get(cardNo).name} draggable={false} className={`rounded-xl object-cover ${className}`} />;
-  return (
-    <div className={className}>
+  const face = art ? (
+    <img src={art} alt={db.get(cardNo).name} draggable={false} className={`rounded-xl object-cover ${foil ? 'h-full w-full' : className}`} />
+  ) : (
+    <div className={foil ? 'h-full w-full' : className}>
       <CardFace def={db.get(cardNo)} />
+    </div>
+  );
+  if (!foil) return face;
+  return (
+    <div className={`relative overflow-hidden rounded-xl ${className}`}>
+      {face}
+      <div className={`foil foil-${foil} pointer-events-none absolute inset-0 rounded-xl`}>
+        {/* ฟอยรุ้ง: ลายเส้นเรขาคณิตสีรุ้ง จะสว่างขึ้นเฉพาะช่วงที่แสงวิ่งผ่าน */}
+        {/* ฟอยรุ้งที่ขอบการ์ด: วงแหวนสีรุ้งหมุนวนรอบกรอบ */}
+        {foil === 'rainbow' && (
+          <div className="foil-edge absolute inset-0 rounded-xl">
+            <div className="foil-edge-spin" />
+          </div>
+        )}
+        {foil === 'rainbow' && (
+          <div className="foil-idle absolute inset-0">
+            <div className="foil-geo foil-geo-idle absolute inset-0" />
+          </div>
+        )}
+        {foil === 'rainbow' && (
+          <div className="foil-band absolute inset-0">
+            <div className="foil-geo absolute inset-0" />
+            <div className="foil-shine absolute inset-0" />
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -10,6 +10,7 @@ const SETS = [
   { source: 'assets/files/SD1.text', setCode: 'SD01', out: 'sd01' },
   { source: 'assets/files/SD2.text', setCode: 'SD02', out: 'sd02' },
   { source: 'assets/files/SD3.text', setCode: 'SD03', out: 'sd03' },
+  { source: 'assets/files/SD4.text', setCode: 'SD04', out: 'sd04' },
 ];
 
 const root = fileURLToPath(new URL('..', import.meta.url));

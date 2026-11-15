@@ -24,7 +24,7 @@ export function PlayerPlate({ player, corner }: { player: PlayerId; corner: 'bot
   const bottom = corner === 'bottom-left';
   const accent = bottom ? '#38bdf8' : '#f43f5e';
   return (
-    <div className={`pointer-events-none fixed z-[42] flex items-center gap-2 ${bottom ? 'bottom-4 left-5' : 'top-4 right-5 flex-row-reverse'}`}>
+    <div data-setup="plate" className={`pointer-events-none fixed z-[42] flex items-center gap-2 ${bottom ? 'bottom-4 left-5' : 'top-4 right-5 flex-row-reverse'}`}>
       <div
         className="flex h-14 w-14 rotate-45 items-center justify-center border-2 bg-slate-950/90 shadow-lg"
         style={{ borderColor: accent, boxShadow: `0 0 14px ${accent}88` }}

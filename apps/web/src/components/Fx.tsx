@@ -28,16 +28,20 @@ const BANNER_TONE = {
   step: 'from-sky-600/0 via-sky-500/95 to-sky-600/0 text-white',
   burst: 'from-orange-600/0 via-orange-500/95 to-orange-600/0 text-white',
   win: 'from-yellow-500/0 via-yellow-300 to-yellow-500/0 text-slate-950',
+  mini: 'from-sky-700/0 via-sky-600/90 to-sky-700/0 text-white',
 };
 
 function Banner({ fx, onDone }: { fx: Extract<Fx, { kind: 'banner' }>; onDone: () => void }) {
   const win = fx.tone === 'win';
+  const mini = fx.tone === 'mini';
+  // ป้ายสเต็ป: ของเราสีฟ้า ของคู่แข่งสีแดง
+  const theirs = useGame((s) => mini && !!fx.player && viewPlayer(s) !== fx.player);
   const showFx = useGame((s) => s.showFx);
   const shown = (fx.delay ?? 0) === 0;
   // นับเวลาปิดเมื่อป้ายแสดงจริงแล้ว (ป้ายที่มี delay ต้องรอแอนิเมชันก่อนหน้า เช่น โยนเหรียญ)
   useEffect(() => {
     if (!shown || win) return;
-    const t = setTimeout(onDone, 1400);
+    const t = setTimeout(onDone, mini ? 900 : 1400);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shown]);
@@ -66,14 +70,14 @@ function Banner({ fx, onDone }: { fx: Extract<Fx, { kind: 'banner' }>; onDone: (
         />
       )}
       <div
-        className={`pointer-events-auto w-full bg-gradient-to-r py-4 shadow-[0_0_40px_rgba(0,0,0,0.6)] ${BANNER_TONE[fx.tone]}`}
-        style={{ animation: win ? 'fx-slide-up 0.4s ease-out both' : 'fx-banner 1.4s cubic-bezier(.2,.8,.2,1) both' }}
+        className={`pointer-events-auto w-full bg-gradient-to-r shadow-[0_0_40px_rgba(0,0,0,0.6)] ${mini ? 'py-1.5' : 'py-4'} ${theirs ? 'from-rose-700/0 via-rose-600/90 to-rose-700/0 text-white' : BANNER_TONE[fx.tone]}`}
+        style={{ animation: win ? 'fx-slide-up 0.4s ease-out both' : `fx-banner ${mini ? 0.9 : 1.4}s cubic-bezier(.2,.8,.2,1) both` }}
       >
         <div className="flex flex-col items-center" style={{ transform: win ? undefined : 'skewX(12deg)' }}>
-          <span className="text-4xl font-black tracking-wider italic drop-shadow" style={{ animation: 'fx-banner-text 0.6s ease-out both' }}>
+          <span className={`${mini ? 'text-2xl' : 'text-4xl'} font-black tracking-wider italic drop-shadow`} style={{ animation: 'fx-banner-text 0.6s ease-out both' }}>
             {fx.title}
           </span>
-          {fx.sub && <span className="text-sm font-semibold opacity-80">{fx.sub}</span>}
+          {fx.sub && <span className={`${mini ? 'text-xs' : 'text-sm'} font-semibold opacity-80`}>{fx.sub}</span>}
           {win && <span className="mt-2 text-xs opacity-70">คลิกเพื่อปิด</span>}
         </div>
       </div>

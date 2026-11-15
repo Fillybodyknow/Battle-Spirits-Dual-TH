@@ -22,6 +22,7 @@ import {
   removeFrom,
 } from './rules';
 import { PLAYERS, opponentOf, type ChoicePick, type PendingChoice, type PlayerId, type QueuedEffect } from './types';
+import type { Ability } from '@bs/cards';
 
 /** ยิง trigger ของการ์ดตามเหตุการณ์ (ตรวจเลเวล ณ ตอนนี้) แล้วประมวลผล */
 export function fireTriggers(ctx: Ctx, cardId: string, on: TriggerEvent): void {
@@ -45,12 +46,15 @@ export function queueTriggers(
     /** เลเวลก่อนออกจากสนาม (trigger ของการ์ดที่ถูกทำลายไปแล้ว) */
     level?: number;
     soulSnapshot?: boolean;
+    /** subject ออกจากสนามไปแล้ว: มี Soul Core อยู่ตอนนั้นหรือไม่ */
+    subjectSoul?: boolean;
   } = {},
 ): void {
   const { s, db } = ctx;
   const card = s.cards[cardId]!;
   const def = db.get(card.cardNo);
   const inHand = s.players[card.owner].hand.includes(cardId);
+  const inTrash = s.players[card.owner].trashCards.includes(cardId);
   // เอฟเฟกต์ของการ์ดบนสนามที่ถูกปิด (เมียวโอดาบแดง)
   if (!inHand && opts.level === undefined && effectsNegated(s, db, cardId)) return;
   const level = opts.level ?? cardLevel(s, db, cardId);
@@ -65,15 +69,19 @@ export function queueTriggers(
     if (!isGranted && ab.granted) continue;
     if (ab.zone === 'hand') {
       if (!inHand) continue;
+    } else if (ab.zone === 'trash') {
+      if (!inTrash) continue;
     } else {
       if (inHand) continue;
       if (!isGranted && !ab.levels.includes(level)) continue;
     }
     if (Array.isArray(ab.on) ? !ab.on.includes(on) : ab.on !== on) continue;
-    if (ab.subject && !(opts.subject && subjectMatches(ctx, opts.subject, ab.subject, cardId, !!opts.srcFromAttack))) continue;
+    if (ab.subject && !(opts.subject && subjectMatches(ctx, opts.subject, ab.subject, cardId, !!opts.srcFromAttack, opts.subjectSoul))) continue;
     if (ab.milled && !(opts.milled ?? []).some((id) => matchesFilter(s, db, id, ab.milled!))) continue;
     if (ab.attackStepOnly && s.phase !== 'attack') continue;
     if (ab.ownTurnOnly && s.turnPlayer !== card.owner) continue;
+    if (ab.oppTurnOnly && s.turnPlayer === card.owner) continue;
+    if (ab.mainStepOnly && s.phase !== 'main') continue;
     if (ab.oncePerTurn) {
       const used = s.cards[src]!.usedThisTurn;
       if (used.includes(ab.source)) continue;
@@ -96,10 +104,12 @@ export function queueTriggers(
 }
 
 /** สปิริตต้นเหตุ (เช่น ผู้โจมตี / สปิริตที่ทิ้งเด็ค) ตรงเงื่อนไขของ trigger หรือไม่ */
-function subjectMatches(ctx: Ctx, cardId: string, f: SubjectFilter, holderId: string, srcFromAttack: boolean): boolean {
+function subjectMatches(ctx: Ctx, cardId: string, f: SubjectFilter, holderId: string, srcFromAttack: boolean, soulSnapshot?: boolean): boolean {
   const card = ctx.s.cards[cardId]!;
   const def = ctx.db.get(card.cardNo);
   if (f.self && cardId !== holderId) return false;
+  if (f.other && cardId === holderId) return false;
+  if (f.soul && soulSnapshot !== undefined) return soulSnapshot && subjectMatches(ctx, cardId, { ...f, soul: undefined }, holderId, srcFromAttack);
   if (f.attackEffect && !srcFromAttack) return false;
   if (f.family && !def.family.includes(f.family)) return false;
   if (f.nameIncludes && !f.nameIncludes.some((w) => def.name.includes(w))) return false;
@@ -137,48 +147,93 @@ function queueMillTriggers(ctx: Ctx, item: QueuedEffect, milled: string[]): void
   });
 }
 
-/** เอฟเฟกต์แทนที่การถูกทำลาย (โดจินกาขาว) ที่ใช้ได้กับการ์ดนี้ */
-function findReplacement(ctx: Ctx, cardId: string): { id: string; source: number; mill: number } | null {
+/**
+ * เอฟเฟกต์แทนที่การถูกทำลายที่ใช้ได้กับการ์ดนี้ (ถูกทำลายโดยคู่แข่ง)
+ *  - โดจินกาขาว: เมียวโอ/โดจิที่ถูกทำลายโดยเอฟเฟกต์ → ทิ้งเด็คคู่แข่ง 3 ใบ อยู่ต่อแบบเสื่อมสภาพ
+ *  - คัปปัปปะ: มี Soul Core → อยู่ต่อแบบเสื่อมสภาพเอง (ต่อสู้ด้วย)
+ *  - อินุงามิ: ทิ้งเมจิคบนมือ 1 ใบ → อยู่ต่อแบบฟื้นสภาพ (ต่อสู้ด้วย)
+ */
+function findReplacement(ctx: Ctx, cardId: string, byEffect: boolean): { id: string; ab: Extract<Ability, { kind: 'replaceDestroy' }> } | null {
   const { s, db } = ctx;
-  const owner = s.cards[cardId]!.owner;
+  const owner = s.players[s.cards[cardId]!.owner];
   const name = db.get(s.cards[cardId]!.cardNo).name;
-  for (const id of s.players[owner].field) {
+  for (const id of owner.field) {
     if (effectsNegated(s, db, id)) continue;
     const level = cardLevel(s, db, id);
     for (const ab of db.get(s.cards[id]!.cardNo).abilities) {
       if (ab.kind !== 'replaceDestroy' || !ab.levels.includes(level)) continue;
+      if (!byEffect && !ab.battle) continue;
+      if (ab.subject.self && id !== cardId) continue;
       if (ab.subject.nameIncludes && !ab.subject.nameIncludes.some((w) => name.includes(w))) continue;
-      return { id, source: ab.source, mill: ab.mill };
+      if (ab.if && !conditionHolds(s, id, ab.if, false, false, db)) continue;
+      if (ab.discard && !owner.hand.some((h) => matchesFilter(s, db, h, ab.discard!))) continue;
+      return { id, ab };
     }
   }
   return null;
 }
 
+/** trigger หลังการ์ดถูกทำลาย: "เมื่อถูกทำลาย" / "ถูกทำลายโดยคู่แข่ง" ของการ์ดนั้น และ "เมื่อสปิริตเราถูกทำลาย" ของการ์ดอื่น (สนาม/มือ) */
+function queueDestroyTriggers(ctx: Ctx, cardId: string, by: PlayerId, level: number, hadSoul: boolean, negated: boolean): void {
+  const { s } = ctx;
+  const owner = s.cards[cardId]!.owner;
+  queueRightAfterCurrent(ctx, () => {
+    const batch = newBatch(ctx);
+    if (level > 0 && !negated) {
+      queueTriggers(ctx, cardId, 'destroyed', batch, { level, soulSnapshot: hadSoul });
+      if (by !== owner) queueTriggers(ctx, cardId, 'destroyedByOpponent', batch, { level, soulSnapshot: hadSoul });
+    }
+    for (const id of [...s.players[owner].field, ...s.players[owner].hand]) {
+      if (id !== cardId) queueTriggers(ctx, id, 'allyDestroyed', batch, { subject: cardId, subjectSoul: hadSoul });
+    }
+  });
+}
+
+/** ถือว่าถูกทำลายแล้ว แต่ยังอยู่บนสนามในสภาพ state (นับเป็นการ์ดที่ถูกทำลาย / trigger และ Burst "ถูกทำลาย" ทำงาน) */
+function stayDestroyed(ctx: Ctx, cardId: string, by: PlayerId, bySource: string | undefined, state: 'refresh' | 'exhausted'): void {
+  const { s, db } = ctx;
+  if (!onField(ctx, cardId)) return;
+  const card = s.cards[cardId]!;
+  const level = cardLevel(s, db, cardId);
+  const hadSoul = card.cores.some((id) => s.cores[id]!.isSoul);
+  const negated = effectsNegated(s, db, cardId);
+  card.state = state;
+  emit(ctx, { type: 'destroyed', cardId, stays: true, ...(bySource ? { bySource } : {}) });
+  if (by !== card.owner) pendBurst(ctx, card.owner, 'afterAllyDestroyedByOpponent');
+  queueDestroyTriggers(ctx, cardId, by, level, hadSoul, negated);
+}
+
 /**
  * ทำลายการ์ดบนสนาม (ต่อสู้ / เอฟเฟกต์)
- *  - เอฟเฟกต์ของคู่แข่ง + มีเอฟเฟกต์แทนที่: ถามเจ้าของก่อน (เข้าคิวหน้าสุด ทำก่อนขั้นถัดไปของเอฟเฟกต์ที่ทำลาย)
- *  - trigger "ถูกทำลายโดยคู่แข่ง" ของการ์ดที่ถูกทำลาย (ใช้เลเวล/Soul Core ก่อนออกจากสนาม)
+ *  - มีเอฟเฟกต์แทนที่: ทำเองเลย (auto) หรือถามเจ้าของก่อน (เข้าคิวหน้าสุด ทำก่อนขั้นถัดไปของเอฟเฟกต์ที่ทำลาย)
+ *  - trigger "ถูกทำลาย" ของการ์ดที่ถูกทำลาย (ใช้เลเวล/Soul Core ก่อนออกจากสนาม) และของการ์ดอื่นของเจ้าของ
  */
 export function destroyCard(ctx: Ctx, cardId: string, by: PlayerId, opts: { bySource?: string; effect?: boolean; noReplace?: boolean } = {}): void {
   const { s, db } = ctx;
   const card = s.cards[cardId]!;
   const owner = card.owner;
-  if (opts.effect && !opts.noReplace && by !== owner) {
-    const repl = findReplacement(ctx, cardId);
+  if (!opts.noReplace && by !== owner) {
+    const repl = findReplacement(ctx, cardId, !!opts.effect);
     if (repl) {
+      const { ab } = repl;
+      const state = ab.state ?? 'exhausted';
+      if (ab.auto) {
+        stayDestroyed(ctx, cardId, by, opts.bySource, state);
+        return;
+      }
       const name = db.get(card.cardNo).name;
+      const stay: Step = { do: 'destroyedButStays', cardId, by, state, ...(opts.bySource ? { bySource: opts.bySource } : {}) };
+      const pay: Step[] = ab.mill ? [{ do: 'mill', count: ab.mill }] : ab.discard ? [{ do: 'discard', count: 1, filter: ab.discard }] : [];
+      const price = ab.mill ? `ทิ้งเด็คคู่แข่ง ${ab.mill} ใบ` : ab.discard ? 'ทิ้งการ์ดเมจิคบนมือ 1 ใบ' : 'ใช้เอฟเฟกต์';
       s.queue.unshift({
         controller: owner,
         sourceId: repl.id,
-        source: repl.source,
+        source: ab.source,
         steps: [
           {
             do: 'chooseOne',
             options: [
-              {
-                label: `ทิ้งเด็คคู่แข่ง ${repl.mill} ใบ: ${name} อยู่ต่อแบบเสื่อมสภาพ`,
-                steps: [{ do: 'mill', count: repl.mill }, { do: 'destroyedButStays', cardId, by, ...(opts.bySource ? { bySource: opts.bySource } : {}) }],
-              },
+              { label: `${price}: ${name} อยู่ต่อแบบ${state === 'refresh' ? 'ฟื้นสภาพ' : 'เสื่อมสภาพ'}`, steps: [...pay, stay] },
               { label: `ให้ ${name} ถูกทำลาย`, steps: [{ do: 'destroyCard', cardId, by, ...(opts.bySource ? { bySource: opts.bySource } : {}) }] },
             ],
           },
@@ -193,9 +248,29 @@ export function destroyCard(ctx: Ctx, cardId: string, by: PlayerId, opts: { bySo
   const hadSoul = card.cores.some((id) => s.cores[id]!.isSoul);
   const negated = effectsNegated(s, db, cardId);
   destroy(ctx, cardId, by, opts.bySource);
-  if (by !== owner && level > 0 && !negated) {
-    queueRightAfterCurrent(ctx, () => queueTriggers(ctx, cardId, 'destroyedByOpponent', newBatch(ctx), { level, soulSnapshot: hadSoul }));
-  }
+  queueDestroyTriggers(ctx, cardId, by, level, hadSoul, negated);
+}
+
+/** การ์ดถูกอัญเชิญ: "เมื่อสปิริตนี้ถูกอัญเชิญ" + "เมื่อสปิริตเรา...ถูกอัญเชิญ" ของการ์ดบนสนามของเจ้าของ */
+export function queueSummonTriggers(ctx: Ctx, cardId: string, batch: number = newBatch(ctx), opts: { paidWithSoul?: boolean } = {}): void {
+  const owner = ctx.s.cards[cardId]!.owner;
+  if (cardLevel(ctx.s, ctx.db, cardId) > 0) queueTriggers(ctx, cardId, 'summon', batch, opts);
+  for (const id of [...ctx.s.players[owner].field]) queueTriggers(ctx, id, 'allySummoned', batch, { subject: cardId });
+}
+
+/** ผู้เล่นเสียไลฟ์: trigger "เมื่อเราเสียไลฟ์" ของการ์ดบนสนามของผู้เล่นนั้น */
+export function queueLifeLostTriggers(ctx: Ctx, player: PlayerId): void {
+  if (ctx.s.winner) return;
+  queueRightAfterCurrent(ctx, () => {
+    const batch = newBatch(ctx);
+    for (const id of [...ctx.s.players[player].field]) queueTriggers(ctx, id, 'lifeLost', batch);
+  });
+}
+
+/** ผู้เล่นใช้การ์ดเมจิค: trigger "เมื่อเราใช้งานการ์ดเมจิค" (เข้าคิวหลังเอฟเฟกต์ของเมจิค = ทำงานหลังจากนั้น) */
+export function queueMagicUsedTriggers(ctx: Ctx, player: PlayerId): void {
+  const batch = newBatch(ctx);
+  for (const id of [...ctx.s.players[player].field]) queueTriggers(ctx, id, 'allyMagicUsed', batch);
 }
 
 /** id ของกลุ่มเอฟเฟกต์ที่เกิดพร้อมกัน (ตำแหน่งใน log ตอนนี้: deterministic) */
@@ -498,7 +573,7 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
     }
 
     case 'opponentLifeToReserve':
-      loseLife(ctx, opp, step.count, me);
+      if (!loseLife(ctx, opp, step.count, me)) queueLifeLostTriggers(ctx, opp);
       return;
 
     case 'selfCoresToTrash': {
@@ -655,9 +730,9 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
     }
 
     case 'discard': {
-      const hand = s.players[me].hand;
+      const hand = s.players[me].hand.filter((id) => !step.filter || matchesFilter(s, db, id, step.filter));
       if (step.count < 1 || hand.length === 0 || !holds(step.if)) return;
-      ask(ctx, item, { kind: 'card', prompt: 'เลือกการ์ดบนมือ 1 ใบที่จะทิ้ง', candidates: [...hand], step });
+      ask(ctx, item, { kind: 'card', prompt: step.filter ? 'เลือกการ์ดบนมือ 1 ใบที่จะทิ้ง (ตามเงื่อนไข)' : 'เลือกการ์ดบนมือ 1 ใบที่จะทิ้ง', candidates: hand, step });
       return;
     }
 
@@ -721,8 +796,53 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       if (ids.length === 0) return;
       mill(ctx, opp, ids);
       queueMillTriggers(ctx, item, ids);
+      // การ์ดที่ถูกทิ้ง: "เมื่อถูกทิ้งโดยเอฟเฟกต์ทิ้งเด็คของคู่แข่ง" (วันโคมะ)
+      queueRightAfterCurrent(ctx, () => {
+        const batch = newBatch(ctx);
+        for (const id of ids) queueTriggers(ctx, id, 'milledByOpponent', batch);
+      });
       return;
     }
+
+    case 'trashToDeckBottom': {
+      const p = s.players[me];
+      const ids = [...p.trashCards];
+      if (ids.length === 0) return;
+      p.trashCards = [];
+      p.deck.push(...ids);
+      item.steps.unshift({ do: 'toDeckBottom', cardIds: ids });
+      return;
+    }
+
+    case 'summonFromHandFree': {
+      const candidates = s.players[me].hand.filter((id) => matchesFilter(s, db, id, step.filter));
+      if (candidates.length === 0) return;
+      ask(ctx, item, { kind: 'card', prompt: 'เลือกการ์ดบนมือที่จะอัญเชิญไม่จ่ายคอสต์', candidates, optional: true, skipLabel: 'ไม่อัญเชิญ', step });
+      return;
+    }
+
+    case 'debuffChosenOpponent': {
+      if (!holds(step.if)) return;
+      const n = step.countPerAllyFamily
+        ? s.players[me].field.filter((id) => spiritLike(id) && db.get(s.cards[id]!.cardNo).family.includes(step.countPerAllyFamily!)).length
+        : (step.count ?? 1);
+      if (n <= 0) return;
+      const candidates = s.players[opp].field.filter((id) => spiritLike(id) && matchesFilter(s, db, id, step.filter) && !step.exclude?.includes(id));
+      if (candidates.length === 0) return;
+      ask(ctx, item, {
+        kind: 'card',
+        prompt: `เลือกสปิริตของคู่แข่งที่จะ BP-${step.amount.toLocaleString()} (อีก ${n} ตัว)`,
+        candidates,
+        step: { ...step, count: n, countPerAllyFamily: undefined, if: undefined },
+      });
+      return;
+    }
+
+    case 'opponentCannotAttack':
+      if (!holds(step.if)) return;
+      s.attackBans = [...(s.attackBans ?? []), { player: opp, turn: s.turn, types: step.types }];
+      emit(ctx, { type: 'attackBanned', player: opp });
+      return;
 
     case 'ifMilled':
       if ((item.milled ?? []).some((id) => matchesFilter(s, db, id, step.filter))) item.steps.unshift(...step.steps);
@@ -777,23 +897,9 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       if (onField(ctx, step.cardId)) destroyCard(ctx, step.cardId, step.by, { ...(step.bySource ? { bySource: step.bySource } : {}), effect: true, noReplace: true });
       return;
 
-    case 'destroyedButStays': {
-      // ถือว่าถูกทำลายแล้ว (นับเป็นการ์ดที่ถูกทำลาย / trigger และ Burst "ถูกทำลาย" ทำงาน) แต่ยังอยู่บนสนาม
-      if (!onField(ctx, step.cardId)) return;
-      const card = s.cards[step.cardId]!;
-      const level = cardLevel(s, db, step.cardId);
-      const hadSoul = card.cores.some((id) => s.cores[id]!.isSoul);
-      const negated = effectsNegated(s, db, step.cardId);
-      card.state = 'exhausted';
-      emit(ctx, { type: 'destroyed', cardId: step.cardId, stays: true, ...(step.bySource ? { bySource: step.bySource } : {}) });
-      if (step.by !== card.owner) {
-        pendBurst(ctx, card.owner, 'afterAllyDestroyedByOpponent');
-        if (level > 0 && !negated) {
-          queueRightAfterCurrent(ctx, () => queueTriggers(ctx, step.cardId, 'destroyedByOpponent', newBatch(ctx), { level, soulSnapshot: hadSoul }));
-        }
-      }
+    case 'destroyedButStays':
+      stayDestroyed(ctx, step.cardId, step.by, step.bySource, step.state ?? 'exhausted');
       return;
-    }
 
     case 'exhaustCard':
       if (onField(ctx, step.cardId)) {
@@ -872,8 +978,7 @@ function putOnField(ctx: Ctx, item: QueuedEffect, step: Extract<Step, { do: 'pla
   }
   emit(ctx, { type: 'summoned', player: me, cardId: step.cardId, paid: 0, from: from === 'other' && item.sourceId === step.cardId ? 'burst' : from });
   // trigger ของการ์ดที่ลงสนามทำงานหลังเอฟเฟกต์นี้จบ
-  const level = cardLevel(s, ctx.db, step.cardId);
-  if (level > 0) queueTriggers(ctx, step.cardId, 'summon');
+  queueSummonTriggers(ctx, step.cardId);
 }
 
 /**
@@ -930,7 +1035,7 @@ function multiSummon(ctx: Ctx, player: PlayerId, choice: Extract<PendingChoice, 
     summoned.push(pk.cardId);
   }
   const batch = newBatch(ctx);
-  for (const id of summoned) if (cardLevel(s, db, id) > 0) queueTriggers(ctx, id, 'summon', batch);
+  for (const id of summoned) queueSummonTriggers(ctx, id, batch);
   const rest = choice.revealed.filter((id) => !usedCards.has(id));
   if (rest.length > 0) s.queue[0]!.steps.unshift({ do: 'toDeckBottom', cardIds: rest });
 }
@@ -1048,6 +1153,17 @@ export function resolveChoice(ctx: Ctx, player: PlayerId, pick: ChoicePick): voi
       case 'destroyHighestCostOpponent':
         destroyCard(ctx, pick, player, { bySource: cur.sourceId, effect: true });
         break;
+      case 'summonFromHandFree':
+        cur.steps.unshift({ do: 'placeCores', cardId: pick });
+        break;
+      case 'debuffChosenOpponent': {
+        s.cards[pick]!.turnBp -= step.amount;
+        emit(ctx, { type: 'bpBuffed', cardId: pick, amount: -step.amount });
+        const rest = (step.count ?? 1) - 1;
+        if (rest > 0) cur.steps.unshift({ ...step, count: rest, exclude: [...(step.exclude ?? []), pick] });
+        if (currentBp(s, ctx.db, pick) <= 0) destroyCard(ctx, pick, player, { bySource: cur.sourceId, effect: true });
+        break;
+      }
       case 'summonFromHand': {
         const def = ctx.db.get(s.cards[pick]!.cardNo);
         const full = step.fullReductionIf && conditionHoldsFor(ctx, cur, step.fullReductionIf);
@@ -1107,7 +1223,7 @@ export function resolveChoice(ctx: Ctx, player: PlayerId, pick: ChoicePick): voi
         removeFrom(p.hand, pick);
         p.trashCards.push(pick);
         emit(ctx, { type: 'discarded', player, cardId: pick });
-        if (step.count > 1) cur.steps.unshift({ do: 'discard', count: step.count - 1 });
+        if (step.count > 1) cur.steps.unshift({ do: 'discard', count: step.count - 1, ...(step.filter ? { filter: step.filter } : {}) });
         break;
       case 'returnFromTrash':
         removeFrom(p.trashCards, pick);
