@@ -289,12 +289,21 @@ export function effectsNegated(state: GameState, db: CardDatabase, cardId: strin
   if (!state.players[card.owner].field.includes(cardId)) return false;
   const def = db.get(card.cardNo);
   if (def.type !== 'spirit' && def.type !== 'ultimate' && def.type !== 'brave') return false;
-  return state.players[state.turnPlayer].field.some((id) => {
-    const srcDef = db.get(state.cards[id]!.cardNo);
-    const level = cardLevel(state, db, id);
-    return srcDef.abilities.some((a) => a.kind === 'negateOpponentEffects' && a.levels.includes(level) && def.cost <= a.maxCost);
-  });
+  // กันวนไม่จบ: เลเวลของการ์ดที่ปิดเอฟเฟกต์อาจขึ้นกับเอฟเฟกต์ของฝั่งนี้ (ราโชว: เน็กซัสคู่แข่ง Lv คอสต์ +2)
+  // ระหว่างตรวจ ถือว่าการ์ดอื่นไม่ถูกปิดเอฟเฟกต์
+  if (checkingNegation) return false;
+  checkingNegation = true;
+  try {
+    return state.players[state.turnPlayer].field.some((id) => {
+      const srcDef = db.get(state.cards[id]!.cardNo);
+      const level = cardLevel(state, db, id);
+      return srcDef.abilities.some((a) => a.kind === 'negateOpponentEffects' && a.levels.includes(level) && def.cost <= a.maxCost);
+    });
+  } finally {
+    checkingNegation = false;
+  }
 }
+let checkingNegation = false;
 
 /** จำนวน gem symbol ทั้งหมด = Life ที่ลดเมื่อโจมตีสำเร็จ */
 export function symbolCount(def: CardDef): number {

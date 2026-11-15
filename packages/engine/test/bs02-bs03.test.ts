@@ -377,6 +377,32 @@ describe('Booster Set 02 / 03', () => {
       expect(cardLevel(s, db, nexus)).toBe(1);
     });
 
+    it('ราโชว Lv2 ฝั่งที่ไม่ใช่เทิร์น + เน็กซัสฝั่งเทิร์น ในแอทแท็คสเต็ป: คำนวณ BP/เลเวลได้ (ไม่วนไม่จบ)', () => {
+      const s = setup();
+      const rasho = put(s, 'p2', no('ยักษ์นักสู้สวมเกราะ ราโชว'), 3);
+      const nexus = put(s, 'p1', no('No.3 ร็อคแฮนด์'), 1);
+      s.phase = 'attack';
+      expect(currentBp(s, db, rasho)).toBeGreaterThan(0);
+      expect(cardLevel(s, db, nexus)).toBe(2);
+      const soul = s.players.p2.reserve.find((id) => s.cores[id]!.isSoul)!;
+      s.players.p2.reserve = s.players.p2.reserve.filter((id) => id !== soul);
+      s.players.p2.trashCores.push(soul);
+      expect(cardLevel(s, db, nexus)).toBe(0); // Lv คอสต์ +2: 1 คอร์ไม่พอ Lv1 (ต้อง 2) → สูญสลายตอนตรวจครั้งถัดไป
+    });
+
+    it('ราโชว Lv2: Soul Core ลงแทรชเรา → เน็กซัสคู่แข่งที่คอร์ไม่ถึง Lv คอสต์ใหม่สูญสลายทันที', () => {
+      const s = setup();
+      put(s, 'p1', no('ยักษ์นักสู้สวมเกราะ ราโชว'), 3);
+      const weak = put(s, 'p2', no('No.3 ร็อคแฮนด์'), 1); // Lv1 ต้อง 0+2 = 2 คอร์
+      const strong = put(s, 'p2', no('No.3 ร็อคแฮนด์'), 2);
+      const target = put(s, 'p2', DARIU, 3);
+      // จ่ายโซลชูทด้วย Soul Core → Soul Core อยู่ในแทรชเรา
+      const x = choose(choose(magic(s, 'โซลชูท', true), target), target);
+      expect(x.players.p2.field).not.toContain(weak);
+      expect(x.players.p2.trashCards).toContain(weak);
+      expect(x.players.p2.field).toContain(strong);
+    });
+
     it('กาโอว Lv2 (Soul Core) โจมตี: คู่แข่งป้องกันได้เฉพาะสปิริตที่มี Soul Core', () => {
       let s = setup();
       const gaou = put(s, 'p1', no('มนุษย์สมิงนักฟันดาบ กาโอว'), 4, true);
@@ -673,5 +699,47 @@ describe('Booster Set 02 / 03', () => {
       const r = applyAction(s, { type: 'summon', player: 'p1', cardId: mumei, payment: [soul, ...normal.slice(0, 5)], placement: normal.slice(5, 6) }, db);
       expect(r.ok).toBe(false);
     });
+  });
+});
+
+describe('ความปลอดภัยของการคำนวณ', () => {
+  it('สุ่มการ์ดลงสนามทั้งสองฝั่ง (ฝั่งละ 12 ใบ) ทุกเฟส/ทุกฝั่งเทิร์น: คำนวณ BP / เลเวล / คอสต์ ได้โดยไม่วนไม่จบ', () => {
+    const all = db.all();
+    let seed = 12345;
+    const rand = (n: number) => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return seed % n;
+    };
+    for (let round = 0; round < 60; round++) {
+      const s = setup();
+      const ids: string[] = [];
+      for (const p of ['p1', 'p2'] as const) {
+        for (let i = 0; i < 12; i++) {
+          const def = all[rand(all.length)]!;
+          ids.push(def.type === 'magic' ? inHand(s, p, def.cardNo) : put(s, p, def.cardNo, 1 + rand(5), rand(2) === 0));
+        }
+        for (let i = 0; i < 3; i++) {
+          const id = inHand(s, p, all[rand(all.length)]!.cardNo);
+          s.players[p].hand = s.players[p].hand.filter((x) => x !== id);
+          s.players[p].trashCards.push(id);
+          ids.push(id);
+        }
+      }
+      for (const phase of ['main', 'attack'] as const) {
+        for (const turn of ['p1', 'p2'] as const) {
+          s.phase = phase;
+          s.turnPlayer = turn;
+          for (const id of ids) {
+            currentBp(s, db, id);
+            cardLevel(s, db, id);
+            payableCost(s, db, s.cards[id]!.owner, db.get(s.cards[id]!.cardNo), baseCost(s, db, id));
+            matchesFilter(s, db, id, { maxCost: 5, maxBp: 5000 });
+          }
+          fieldSymbols(s, db, 'p1');
+          fieldSymbols(s, db, 'p2');
+        }
+      }
+    }
+    expect(true).toBe(true);
   });
 });

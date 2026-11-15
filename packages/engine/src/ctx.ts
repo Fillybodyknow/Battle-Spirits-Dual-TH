@@ -1,5 +1,5 @@
 import type { CardDatabase, CardDef } from '@bs/cards';
-import { fail, isSpiritLike, levelOf, locateCore, minCores, payableCost, removeCore, removeFrom } from './rules';
+import { cardLevel, fail, isSpiritLike, levelOf, locateCore, minCores, payableCost, removeCore, removeFrom } from './rules';
 import { PLAYERS, opponentOf, type EndReason, type GameEvent, type GameState, type Phase, type PlayerId } from './types';
 import { newBatch, queueLifeLostTriggers, queueTriggers } from './effects';
 
@@ -137,7 +137,9 @@ export function checkDepletion(ctx: Ctx): string[] {
     for (const cardId of [...ctx.s.players[player].field]) {
       const card = ctx.s.cards[cardId]!;
       const def = ctx.db.get(card.cardNo);
-      if (isSpiritLike(def) && levelOf(def, card.cores.length) === 0) {
+      // คอร์ไม่ถึงเลเวลต่ำสุด (รวม "Lv คอสต์ +N" จากเอฟเฟกต์ เช่นราโชว) = สูญสลาย ทั้งสปิริตและเน็กซัส
+      const counts = isSpiritLike(def) || (def.type === 'nexus' && def.levels.length > 0);
+      if (counts && (levelOf(def, card.cores.length) === 0 || cardLevel(ctx.s, ctx.db, cardId) === 0)) {
         sendToTrash(ctx, cardId);
         emit(ctx, { type: 'depleted', cardId });
         depleted.push(cardId);
