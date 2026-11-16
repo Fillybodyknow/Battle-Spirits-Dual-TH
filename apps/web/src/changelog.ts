@@ -16,6 +16,11 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '5.0.1',
+    date: '2026-11-16',
+    items: ['แก้: สั่งป้องกันด้วยสปิริตที่ "ป้องกันได้แม้อยู่ในรูปแบบเสื่อมสภาพ" (ชิงุเระ / ชิรานุอิ / ราดัน) ไม่ได้ เพราะคลิกการ์ดที่เสื่อมสภาพไม่ได้'],
+  },
+  {
     version: '5.0.0',
     date: '2026-11-16',
     items: [

@@ -169,7 +169,8 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
   const own = mine(card.owner);
   const ready = own && spirit && !exhausted && !state.winner && !state.choice;
   const canAttack = ready && state.phase === 'attack' && !battle && card.owner === state.turnPlayer && canAttackWith(state, db, cardId);
-  const canBlock = ready && battle?.step === 'declareBlock' && card.owner !== state.turnPlayer;
+  // ป้องกัน: ใช้รายชื่อจาก engine (รวมตัวที่ป้องกันได้แม้เสื่อมสภาพ / กฎป้องกันพิเศษ)
+  const canBlock = own && !state.winner && !state.choice && battle?.step === 'declareBlock' && card.owner !== state.turnPlayer && blockCandidates(state).includes(cardId);
   const ownTurnMain = own && inMain(state) && card.owner === state.turnPlayer;
   const dropTarget = ownTurnMain && (!!dragging || hasSelection);
 

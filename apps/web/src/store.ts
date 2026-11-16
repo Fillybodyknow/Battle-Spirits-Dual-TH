@@ -2302,7 +2302,13 @@ export const useGame = create<Store>((set, get) => {
         moveCoresTo({ cardId });
         return;
       }
-      if (state.choice || !isSpiritLike(def) || card.state !== 'refresh') return;
+      if (state.choice || !isSpiritLike(def)) return;
+      // ป้องกัน: ตามรายชื่อจาก engine (บางตัวป้องกันได้แม้เสื่อมสภาพ เช่น ชิงุเระ / ชิรานุอิ / ราดัน)
+      if (state.battle?.step === 'declareBlock' && card.owner !== state.turnPlayer) {
+        if (blockCandidates(state).includes(cardId)) dispatch({ type: 'declareBlock', player: card.owner, blockerId: cardId });
+        return;
+      }
+      if (card.state !== 'refresh') return;
       if (state.phase === 'attack' && !state.battle && card.owner === state.turnPlayer) {
         dispatch({ type: 'declareAttack', player: card.owner, attackerId: cardId });
       } else if (state.battle?.step === 'declareBlock' && card.owner !== state.turnPlayer) {
