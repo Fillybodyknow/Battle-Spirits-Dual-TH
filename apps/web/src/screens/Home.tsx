@@ -1,5 +1,6 @@
 import { isXRare } from '@bs/cards';
 import { browserKind, useInstall } from '../pwa';
+import { VersionBadge } from '../components/Updates';
 import { useEffect, useMemo, useState } from 'react';
 import { cardArt } from '../assets';
 import { BTN } from '../components/Modal';
@@ -311,6 +312,8 @@ export function Home() {
 
       {/* มุมขวาบน */}
       <div className="absolute top-5 right-6 flex items-center gap-2">
+        {/* เลขเวอร์ชัน (กดดู Changelog) */}
+        <VersionBadge />
         <InstallButton />
         <span
           className={`rounded-full border px-3 py-1 text-xs font-bold ${

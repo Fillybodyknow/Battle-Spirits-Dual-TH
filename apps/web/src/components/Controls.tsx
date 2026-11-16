@@ -1,16 +1,96 @@
-import { cardLevel, currentBp, opponentOf, trashSummonRule } from '@bs/engine';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { cardLevel, currentBp, opponentOf, trashSummonRule, type PlayerId } from '@bs/engine';
 import { cardName, formatEvent, playerLabel } from '../format';
-import { actingPlayer, blockCandidates, controls, db, draftDepleting, flashPlayer, isFxBlocking, isInlineChoice, responseOptions, simulateEvolve, useGame } from '../store';
+import { actingPlayer, blockCandidates, controls, db, draftDepleting, flashPlayer, isFxBlocking, isInlineChoice, responseOptions, simulateEvolve, useGame, viewPlayer } from '../store';
 import { CardFace } from './CardFace';
 import { ChainTracker, RevealFan } from './Fx';
 import { BTN, Modal } from './Modal';
 import { TurnBadge } from './StepSelect';
 import { MultiSummonDialog } from './MultiSummonDialog';
 
+/** ประเภทของสิ่งที่ผู้เล่นต้องทำ: สีเดียวกับกรอบของการ์ดที่ต้องคลิก ใช้เหมือนกันทั้งเกม */
+type PromptTag = 'flash' | 'target' | 'block' | 'attack' | 'core' | 'option';
+const TAGS: Record<PromptTag, { label: string; chip: string; ring: string; border: string; glow: string; icon: React.ReactNode }> = {
+  flash: {
+    label: 'FLASH',
+    chip: 'bg-cyan-300 text-slate-950',
+    ring: 'ring-2 ring-cyan-300',
+    border: 'border-cyan-300',
+    glow: 'rgba(103, 232, 249, 0.9)',
+    icon: <path d="M13.5 2 4 13.5h6.5L9 22l11-12.5h-6.8L13.5 2Z" fill="currentColor" />,
+  },
+  target: {
+    label: 'เลือก',
+    chip: 'bg-fuchsia-400 text-slate-950',
+    ring: 'ring-2 ring-fuchsia-400',
+    border: 'border-fuchsia-400',
+    glow: 'rgba(232, 121, 249, 0.85)',
+    icon: (
+      <g fill="none" stroke="currentColor" strokeWidth="2.6">
+        <circle cx="12" cy="12" r="8" />
+        <circle cx="12" cy="12" r="3" fill="currentColor" />
+      </g>
+    ),
+  },
+  block: {
+    label: 'ป้องกัน',
+    chip: 'bg-sky-400 text-slate-950',
+    ring: 'ring-2 ring-sky-400',
+    border: 'border-sky-400',
+    glow: 'rgba(56, 189, 248, 0.85)',
+    icon: <path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Z" fill="currentColor" />,
+  },
+  attack: {
+    label: 'โจมตี',
+    chip: 'bg-amber-400 text-slate-950',
+    ring: 'ring-2 ring-amber-400',
+    border: 'border-amber-400',
+    glow: 'rgba(251, 191, 36, 0.85)',
+    icon: <path d="M20 2h2v2L10.5 15.5l2 2-1.5 1.5-2-2-3.5 3.5-2-2L7 15l-2-2 1.5-1.5 2 2L20 2Z" fill="currentColor" />,
+  },
+  core: {
+    label: 'Core',
+    chip: 'bg-emerald-400 text-slate-950',
+    ring: 'ring-2 ring-emerald-400',
+    border: 'border-emerald-400',
+    glow: 'rgba(52, 211, 153, 0.85)',
+    icon: <polygon points="12,2 21,7 21,17 12,22 3,17 3,7" fill="currentColor" />,
+  },
+  option: {
+    label: 'ตัวเลือก',
+    chip: 'bg-violet-400 text-slate-950',
+    ring: 'ring-2 ring-violet-400',
+    border: 'border-violet-400',
+    glow: 'rgba(167, 139, 250, 0.85)',
+    icon: (
+      <g fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round">
+        <path d="M9 9a3 3 0 1 1 4.2 2.8c-.8.4-1.2 1-1.2 1.9V15" />
+        <circle cx="12" cy="19" r="0.6" fill="currentColor" />
+      </g>
+    ),
+  },
+};
+
+function TagChip({ tag }: { tag: PromptTag }) {
+  const t = TAGS[tag];
+  return (
+    <span className={`flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-xs font-black tracking-wider shadow ${t.chip}`}>
+      <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" aria-hidden="true">
+        {t.icon}
+      </svg>
+      {t.label}
+    </span>
+  );
+}
+
+type PromptAction = { key: string; label: string; onClick: () => void; kind: keyof typeof BTN; disabled: boolean };
+
 /**
- * แถบกลางกระดาน: บอกว่าตอนนี้ใครต้องทำอะไร พร้อมปุ่มหลัก
- * การตัดสินใจที่เกี่ยวกับการ์ดบนกระดาน (เลือกเป้าหมาย, ป้องกัน, Evolution, จ่ายคอสต์, ทิ้งการ์ด) ทำบนกระดานโดยตรง
- * แถบนี้แสดงคำถามและปุ่มยืนยัน/ข้าม
+ * แถบกลางกระดาน: ที่เดียวของทุกการตัดสินใจ
+ *  - แถบ: บรรทัดเดียวเสมอ = ใครต้องทำ · ป้ายประเภท (สี) · คำถามสั้น · ปุ่มไม่เกิน 2 + ปุ่มหลักของสเต็ป
+ *  - แผงกางออกจากแถบ (ลอยทับ ไม่ดันกระดาน) ไปทางฝั่งของคนที่ต้องตัดสินใจ: คำถามเต็ม + การ์ดต้นเหตุ + ตัวเลือกเรียงแนวตั้ง
+ *    กางเองเมื่อเป็นคำถามแบบตัวเลือก หรือมีปุ่มตั้งแต่ 3 ปุ่ม · ข้อความยาวจนถูกตัด = กดที่คำถามเพื่อกางอ่าน · กด "ซ่อน" เพื่อดูกระดาน
+ * การตัดสินใจที่เกี่ยวกับการ์ดบนกระดาน (เลือกเป้าหมาย, ป้องกัน, Evolution, จ่ายคอสต์) ยังคลิกบนกระดานโดยตรง
  */
 export function PromptBar() {
   const state = useGame((s) => s.state);
@@ -18,22 +98,23 @@ export function PromptBar() {
   const evolveCard = useGame((s) => s.evolveCard);
   const blocking = useGame((s) => isFxBlocking(s.fx));
   const truth = useGame((s) => s.truth);
+  const bottom = useGame(viewPlayer);
   const { dispatch, clearCores, choose, confirmEvolve, closeEvolve, confirmCores, cancelCores } = useGame.getState();
   const actor = actingPlayer(state);
   const { battle, choice } = state;
 
   let title: React.ReactNode = '';
   let detail: React.ReactNode = null;
+  /** ต้องตัดสินใจ: แถบมีกรอบเรืองแสงสีของประเภท */
   let highlight = false;
-  const buttons: React.ReactNode[] = [];
+  let tag: PromptTag | null = null;
+  /** การ์ดต้นเหตุของคำถาม (แสดงในแผงกาง) */
+  let source: string | null = null;
+  const actions: PromptAction[] = [];
   /** ปุ่มหลักของ Phase (จบ Main / จบ Attack / Pass Flash): ปุ่มกลมใหญ่ที่ปลายขวาของเส้นกลางกระดาน */
   let phaseBtn: { label: string; sub: string; onClick: () => void } | null = null;
   const add = (key: string, label: string, onClick: () => void, kind: keyof typeof BTN = 'primary', disabled = false) =>
-    buttons.push(
-      <button key={key} type="button" className={BTN[kind]} onClick={onClick} disabled={disabled}>
-        {label}
-      </button>,
-    );
+    actions.push({ key, label, onClick, kind, disabled });
 
   const online = useGame((s) => s.online);
   const mine = controls({ online }, actor);
@@ -57,6 +138,8 @@ export function PromptBar() {
     // [Evolution]: เลือก Core บนสปิริตอื่นของเรา
     const after = simulateEvolve(state, evolveCard, selectedCores);
     highlight = true;
+    tag = 'core';
+    source = evolveCard;
     title = `[Evolution] ${cardName(state, evolveCard)}`;
     detail = after
       ? `ย้าย Core ${selectedCores.length} ดวง → Lv${cardLevel(after, db, evolveCard)} · BP ${currentBp(after, db, evolveCard).toLocaleString()}`
@@ -66,37 +149,46 @@ export function PromptBar() {
   } else if (choice) {
     highlight = true;
     title = choice.prompt;
-    const source = `เอฟเฟกต์ของ ${cardName(state, choice.sourceId)}`;
+    source = choice.sourceId;
+    const src = `เอฟเฟกต์ของ ${cardName(state, choice.sourceId)}`;
     if (choice.kind === 'order') {
+      tag = 'option';
       detail = `${playerLabel(choice.player)} · เอฟเฟกต์ ${choice.effects.length} อันเกิดพร้อมกัน คลิกอันที่จะทำงานก่อน (ผลเกิดทันที แล้วค่อยเลือกอันถัดไป)`;
     } else if (choice.kind === 'option') {
-      detail = source;
+      tag = 'option';
+      detail = src;
       choice.options.forEach((label, i) => add(`opt${i}`, label, () => choose(i)));
     } else if (choice.kind === 'payCost') {
-      detail = `${source} · คลิก Core ใน Reserve หรือบนการ์ดเพื่อเลือก (เลือกแล้ว ${selectedCores.length}/${choice.cost})`;
+      tag = 'core';
+      detail = `${src} · คลิก Core ใน Reserve หรือบนการ์ดเพื่อเลือก (เลือกแล้ว ${selectedCores.length}/${choice.cost})`;
       add('skip', 'ไม่จ่าย', () => choose(null), 'secondary');
       add('pay', `จ่าย ${choice.cost}`, () => choose({ pay: selectedCores }), 'primary', selectedCores.length !== choice.cost);
     } else if (choice.kind === 'multiSummon') {
-      detail = `${source} · เลือกในหน้าต่าง`;
+      tag = 'option';
+      detail = `${src} · เลือกในหน้าต่าง`;
     } else if (choice.kind === 'placeCores') {
-      detail = `${source} · คลิก Core ใน Reserve หรือบนการ์ดในสนามเพื่อเลือก (เลือกแล้ว ${selectedCores.length}, ขั้นต่ำ ${choice.min})`;
+      tag = 'core';
+      detail = `${src} · คลิก Core ใน Reserve หรือบนการ์ดในสนามเพื่อเลือก (เลือกแล้ว ${selectedCores.length}, ขั้นต่ำ ${choice.min})`;
       add('place', `วาง ${selectedCores.length} ดวง`, () => choose({ pay: selectedCores }), 'primary', selectedCores.length < choice.min);
     } else if (isInlineChoice(state)) {
-      detail = `${source} · คลิกการ์ดที่เรืองแสงสีชมพู`;
+      tag = 'target';
+      detail = `${src} · คลิกการ์ดที่เรืองแสงสีชมพู`;
       if (choice.optional) add('skip', choice.skipLabel ?? 'ไม่เลือก', () => choose(null), 'secondary');
     } else {
-      detail = choice.revealed ? `${source} · คลิกการ์ดที่เรืองแสงจากที่แสดง` : `${source} · เลือกในหน้าต่าง`;
+      tag = 'target';
+      detail = choice.revealed ? `${src} · คลิกการ์ดที่เรืองแสงจากที่แสดง` : `${src} · เลือกในหน้าต่าง`;
     }
   } else if (battle?.flash) {
     const fp = battle.flash.priority;
     const o = responseOptions(state, fp);
-    const attacker = `${cardName(state, battle.attackerId)} (BP ${currentBp(state, db, battle.attackerId).toLocaleString()})`;
     highlight = o.magic.length + o.evolve.length + o.quick.length + o.activate.length + o.trash.length > 0;
+    tag = 'flash';
+    source = battle.attackerId;
     title =
       battle.step === 'flashBeforeBlock'
         ? fp === state.turnPlayer
           ? 'ก่อนคู่แข่งประกาศป้องกัน ใช้การ์ดหรือเอฟเฟกต์ไหม?'
-          : `${attacker} ประกาศโจมตี! ใช้การ์ดหรือเอฟเฟกต์ไหม?`
+          : 'ถูกโจมตี! ใช้การ์ดหรือเอฟเฟกต์ไหม?'
         : 'ก่อนตัดสินการต่อสู้ ใช้การ์ดหรือเอฟเฟกต์ไหม?';
     const parts = [
       o.magic.length > 0 && `Magic [Flash] บนมือ ${o.magic.length} ใบ`,
@@ -105,15 +197,17 @@ export function PromptBar() {
       o.activate.length > 0 && `เอฟเฟกต์ Flash บนสนาม ${o.activate.length} ใบ`,
       o.trash.length > 0 && `อัญเชิญจากแทรช ${o.trash.length} ใบ`,
     ].filter(Boolean);
-    detail = parts.length > 0 ? `ใช้ได้: ${parts.join(' · ')} (การ์ดที่ใช้ได้จะเรืองแสง)` : 'ไม่มีการ์ดที่ใช้ได้';
+    detail = parts.length > 0 ? `ใช้ได้: ${parts.join(' · ')} (การ์ดที่ใช้ได้มีกรอบสีฟ้า) · ไม่ใช้ = กด PASS` : 'ไม่มีการ์ดที่ใช้ได้';
     phaseBtn = { label: 'PASS', sub: 'ไม่ใช้', onClick: () => dispatch({ type: 'passFlash', player: fp }) };
   } else if (battle?.step === 'declareBlock') {
     const candidates = blockCandidates(state);
     highlight = true;
+    tag = 'block';
+    source = battle.attackerId;
     title =
       battle.blockers.length > 0
         ? 'ป้องกันตัวที่ 2 ด้วยสปิริตตัวไหน?'
-        : `${cardName(state, battle.attackerId)} (BP ${currentBp(state, db, battle.attackerId).toLocaleString()}) โจมตี! จะป้องกันด้วยสปิริตตัวไหน?`;
+        : 'ถูกโจมตี! จะป้องกันด้วยสปิริตตัวไหน?';
     detail = battle.consecutiveBlade
       ? '[Consecutive Blade] ต้องป้องกัน 2 ตัวถ้าทำได้ · คลิกสปิริตที่มีกรอบสีฟ้า'
       : battle.mustBlock
@@ -127,6 +221,7 @@ export function PromptBar() {
     // กำลังจัด Core: ยังไม่สูญสลายจนกว่าจะยืนยัน
     const dying = draftDepleting(truth, state);
     highlight = true;
+    tag = 'core';
     title = 'กำลังจัด Core';
     detail =
       dying.length > 0
@@ -143,34 +238,90 @@ export function PromptBar() {
         : 'คลิกการ์ดบนมือเพื่อเล่น · ลาก Core ไปวางบนการ์ดหรือ Reserve (คลิก Core เพื่อเลือกหลายดวง)';
     if (selectedCores.length > 0) add('clear', 'ยกเลิกเลือก Core', clearCores, 'secondary');
   } else if (state.phase === 'attack') {
+    tag = 'attack';
     title = 'Attack Step';
     detail = 'คลิกสปิริตที่มีกรอบสีเหลืองเพื่อโจมตี';
   }
 
+  // ---- แผงกาง: ตัวเลือกแบบปุ่ม / ปุ่มเยอะ = กางเอง · ข้อความถูกตัด = กดที่คำถามเพื่อกาง
+  const titleRef = useRef<HTMLSpanElement>(null);
+  const detailRef = useRef<HTMLSpanElement>(null);
+  const [truncated, setTruncated] = useState(false);
+  useLayoutEffect(() => {
+    const cut = (el: HTMLElement | null) => !!el && el.scrollWidth > el.clientWidth + 1;
+    const t = cut(titleRef.current) || cut(detailRef.current);
+    if (t !== truncated) setTruncated(t);
+  });
+  const panelKey = `${tag}|${typeof title === 'string' ? title : ''}|${source}|${actions.map((a) => a.key).join(',')}`;
+  const actionsInPanel = mine && (tag === 'option' || actions.length >= 3) && actions.length > 0;
+  const [hiddenKey, setHiddenKey] = useState<string | null>(null);
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  const canExpand = mine && !blocking && (actionsInPanel || truncated);
+  const panelOpen = canExpand && (actionsInPanel ? hiddenKey !== panelKey : openKey === panelKey);
+  const togglePanel = () => {
+    if (!canExpand) return;
+    if (panelOpen) {
+      setHiddenKey(panelKey);
+      setOpenKey(null);
+    } else {
+      setHiddenKey(null);
+      setOpenKey(panelKey);
+    }
+  };
+  // ทิศที่กาง: ห้ามทับการ์ดที่ต้องคลิก
+  //  ตัวเลือกแบบปุ่ม (ไม่ต้องคลิกกระดาน) / เลือกเป้าหมายที่อยู่ฝั่งคู่แข่งทั้งหมด = กางไปฝั่งคนตัดสินใจ (ใกล้มือ)
+  //  อย่างอื่น (ป้องกัน, Flash, จ่าย/วาง Core, เป้าหมายฝั่งเรา) = การ์ดที่ต้องคลิกอยู่ฝั่งเรา จึงกางไปฝั่งคู่แข่ง
+  const targetsAllOpp =
+    tag === 'target' && choice?.kind === 'card' && choice.candidates.every((id) => state.cards[id] && state.cards[id]!.owner !== actor);
+  const towardActor = tag === 'option' || targetsAllOpp;
+  const actorBelow = actor ? actor === bottom : true;
+  const dropDown = towardActor ? actorBelow : !actorBelow;
+  const t = tag ? TAGS[tag] : null;
+
+  const renderBtn = (a: PromptAction, wide = false) => (
+    <button
+      key={a.key}
+      type="button"
+      title={a.label}
+      className={`${BTN[a.kind]} ${wide ? 'w-full text-left whitespace-normal' : 'max-w-full min-w-0 truncate'}`}
+      onClick={a.onClick}
+      disabled={a.disabled}
+    >
+      {a.label}
+    </button>
+  );
+
   const fighter = (id: string) => (
-    <span key={id} className="rounded bg-black/40 px-2 py-0.5">
-      {cardName(state, id)} <b className="text-yellow-300">{currentBp(state, db, id).toLocaleString()}</b>
+    <span key={id} title={cardName(state, id)} className="flex min-w-0 items-baseline gap-1 rounded bg-black/40 px-2 py-0.5">
+      <span className="min-w-0 truncate">{cardName(state, id)}</span>
+      <b className="shrink-0 text-yellow-300">{currentBp(state, db, id).toLocaleString()}</b>
     </span>
   );
   const lifePerBlocker = battle ? battle.lifeOnBlockerDestroyed + (battle.consecutiveBlade ? battle.lifeOnBlockerDestroyedByBlade : 0) : 0;
+  const sourceDef = source && state.cards[source] ? db.get(state.cards[source]!.cardNo) : null;
 
   return (
     <div className="relative">
       {/* แถบบางบรรทัดเดียวบนเส้นกลางกระดาน */}
       <div
-        className={`hud-panel flex flex-col gap-1 rounded-xl py-1 pr-1.5 pl-3 ${highlight ? 'ring-1 ring-fuchsia-400/70' : ''}`}
-        style={highlight ? { animation: 'fx-choice-glow 1.8s ease-in-out infinite' } : undefined}
+        className={`hud-panel flex flex-col gap-1 rounded-xl py-1 pr-1.5 pl-3 ${highlight && t ? t.ring : ''}`}
+        style={highlight && t ? ({ animation: 'fx-tag-glow 1.8s ease-in-out infinite', '--tag-glow': t.glow } as React.CSSProperties) : undefined}
       >
         {battle && (
-          <div className="flex max-w-[calc(50%-44px)] flex-wrap items-center gap-2 text-xs">
-            <span className="rounded bg-rose-600 px-2 text-[10px] font-black tracking-wide">BATTLE</span>
-            {fighter(battle.attackerId)}
-            <span className="text-slate-500">vs</span>
-            {battle.blockers.length === 0 ? <span className="text-slate-500">ยังไม่มีผู้ป้องกัน</span> : battle.blockers.map(fighter)}
-            {battle.consecutiveBlade && <span className="rounded bg-orange-600 px-1.5 font-bold">Consecutive Blade</span>}
-            {battle.mustBlock && !battle.consecutiveBlade && <span className="rounded bg-orange-600 px-1.5 font-bold">True-Rage</span>}
-            {battle.endAttackStepAfter && <span className="rounded bg-slate-600 px-1.5">จบ Attack Step หลังการต่อสู้นี้</span>}
-            {lifePerBlocker > 0 && <span className="rounded bg-slate-600 px-1.5">ผู้ป้องกันถูกทำลาย → ไลฟ์ −{lifePerBlocker}/ตัว</span>}
+          <div className="flex items-center gap-2.5 text-xs whitespace-nowrap">
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <span className="shrink-0 rounded bg-rose-600 px-2 text-[10px] font-black tracking-wide">BATTLE</span>
+              {fighter(battle.attackerId)}
+              <span className="shrink-0 text-slate-500">vs</span>
+              {battle.blockers.length === 0 ? <span className="min-w-0 truncate text-slate-500">ยังไม่มีผู้ป้องกัน</span> : battle.blockers.map(fighter)}
+            </div>
+            <div className="w-[76px] shrink-0" />
+            <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
+              {battle.consecutiveBlade && <span className="shrink-0 rounded bg-orange-600 px-1.5 font-bold">Consecutive Blade</span>}
+              {battle.mustBlock && !battle.consecutiveBlade && <span className="shrink-0 rounded bg-orange-600 px-1.5 font-bold">True-Rage</span>}
+              {battle.endAttackStepAfter && <span title="จบ Attack Step หลังการต่อสู้นี้" className="min-w-0 truncate rounded bg-slate-600 px-1.5">จบ Attack Step หลังการต่อสู้นี้</span>}
+              {lifePerBlocker > 0 && <span title={`ผู้ป้องกันถูกทำลาย → ไลฟ์ −${lifePerBlocker}/ตัว`} className="min-w-0 truncate rounded bg-slate-600 px-1.5">ผู้ป้องกันถูกทำลาย → ไลฟ์ −{lifePerBlocker}/ตัว</span>}
+            </div>
           </div>
         )}
         {/* ซ้าย: ใคร/ทำอะไร · กลาง: ป้ายเทิร์น (เว้นช่องไว้) · ขวา: ปุ่ม */}
@@ -178,20 +329,130 @@ export function PromptBar() {
           <div className="flex min-w-0 flex-1 items-center gap-2.5">
             {actor && <span className="player-tag-active shrink-0 rounded-md px-2 py-0.5 text-xs font-black">ตาของ {playerLabel(actor)}</span>}
             <ChainTracker side="self" />
-            <div className="flex min-w-0 flex-1 items-baseline gap-2" title={typeof detail === 'string' ? detail : undefined}>
-              <span className="shrink-0 truncate text-sm font-black tracking-wide text-white [text-shadow:0_1px_0_#000,0_0_12px_rgba(56,189,248,0.35)]">{title}</span>
-              {detail && <span className="min-w-0 truncate text-xs text-slate-400">{detail}</span>}
+            {tag && mine && <TagChip tag={tag} />}
+            <div
+              className={`flex min-w-0 flex-1 items-baseline gap-2 ${canExpand ? 'cursor-pointer' : ''}`}
+              title={[typeof title === 'string' ? title : '', typeof detail === 'string' ? detail : ''].filter(Boolean).join(' · ') || undefined}
+              onClick={togglePanel}
+            >
+              <span ref={titleRef} className="min-w-0 truncate text-sm font-black tracking-wide text-white [text-shadow:0_1px_0_#000,0_0_12px_rgba(56,189,248,0.35)]">
+                {title}
+              </span>
+              {detail && (
+                <span ref={detailRef} className={`min-w-0 flex-1 truncate text-xs ${highlight ? 'font-semibold text-slate-200' : 'text-slate-400'}`}>
+                  {detail}
+                </span>
+              )}
             </div>
+            {canExpand && (
+              <button
+                type="button"
+                onClick={togglePanel}
+                title={panelOpen ? 'ซ่อนเพื่อดูกระดาน' : 'อ่านทั้งหมด'}
+                className={`shrink-0 rounded-md px-2 py-0.5 text-xs font-bold ring-1 ring-white/25 hover:bg-white/10 ${panelOpen ? 'text-slate-300' : 'text-white'}`}
+              >
+                {/* ข้อความถูกตัด: ปุ่มเป็นแค่ลูกศร (ไม่กินที่ของคำถาม) */}
+                {panelOpen ? 'ซ่อน ' : actionsInPanel ? `ตัวเลือก ${actions.length} ` : ''}
+                {panelOpen === dropDown ? '▴' : '▾'}
+              </button>
+            )}
           </div>
           <div className="w-[76px] shrink-0" />
           <div className="flex min-w-0 flex-1 items-center justify-end gap-2.5">
-            {buttons.length > 0 && <div className="btn-row flex shrink-0 flex-wrap justify-end gap-1.5">{buttons}</div>}
+            {!actionsInPanel && actions.length > 0 && <div className="btn-row flex min-w-0 justify-end gap-1.5">{actions.map((a) => renderBtn(a))}</div>}
             <ChainTracker side="opp" />
             <PhaseButton btn={phaseBtn} />
           </div>
           <TurnBadge />
         </div>
       </div>
+
+      {/* แผงกาง: ลอยทับกระดาน ไปทางฝั่งของคนที่ต้องตัดสินใจ */}
+      {panelOpen && (
+        <div
+          className={`absolute left-1/2 z-40 w-[min(600px,92%)] -translate-x-1/2 rounded-xl border-2 bg-slate-950/95 p-3 shadow-[0_12px_40px_rgba(0,0,0,0.7)] ${
+            t ? t.border : 'border-slate-500'
+          } ${dropDown ? 'top-full mt-1.5' : 'bottom-full mb-1.5'}`}
+          style={{ animation: 'fx-chain-pop 0.2s ease-out both' }}
+        >
+          <div className="flex gap-3">
+            {sourceDef && (
+              <div className="h-28 w-20 shrink-0">
+                <CardFace def={sourceDef} size="xs" />
+              </div>
+            )}
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <div className="flex items-center gap-2">
+                {tag && <TagChip tag={tag} />}
+                <span className="min-w-0 truncate text-xs text-slate-400">
+                  {actor ? `ตาของ ${playerLabel(actor)}` : ''}
+                  {sourceDef ? ` · ${sourceDef.name}` : ''}
+                </span>
+                <button type="button" onClick={togglePanel} className="ml-auto shrink-0 rounded px-2 py-0.5 text-xs text-slate-400 ring-1 ring-white/15 hover:bg-white/10 hover:text-white">
+                  ซ่อน {dropDown ? '▴' : '▾'}
+                </button>
+              </div>
+              <div className="text-base leading-snug font-black text-white">{title}</div>
+              {detail && <div className="text-xs leading-relaxed text-slate-300">{detail}</div>}
+            </div>
+          </div>
+          {actionsInPanel && <div className="btn-row mt-3 flex flex-col gap-1.5">{actions.map((a) => renderBtn(a, true))}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** สายฟ้า (SVG: อีโมจิเป็นกล่องว่างบน Windows 7) */
+function Bolt({ className = '' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden="true">
+      <path d="M13.5 2 4 13.5h6.5L9 22l11-12.5h-6.8L13.5 2Z" />
+    </svg>
+  );
+}
+
+/**
+ * ป้าย "FLASH TIMING" กลางจอชั่วครู่ เมื่อสิทธิ์ใช้ Flash มาถึงผู้เล่นที่มีการ์ดใช้ได้ (ไม่บังการคลิก)
+ * แสดงครั้งเดียวต่อช่วง (สเต็ปของการต่อสู้ + ผู้ถือสิทธิ์) ถึงจะสลับสิทธิ์ไปมาก็ไม่ขึ้นซ้ำ
+ */
+export function FlashCue() {
+  const cue = useGame((s) => {
+    const fp = flashPlayer(s.state);
+    const b = s.state.battle;
+    if (!fp || !b || isFxBlocking(s.fx) || !controls(s, fp)) return null;
+    const o = responseOptions(s.state, fp);
+    const n = o.magic.length + o.evolve.length + o.quick.length + o.activate.length + o.trash.length;
+    if (n === 0) return null;
+    return `${s.state.turn}|${b.attackerId}|${b.step}|${b.blockers.join(',')}|${fp}|${n}`;
+  });
+  const [shown, setShown] = useState<string | null>(null);
+  const seen = useRef(new Set<string>());
+  useEffect(() => {
+    if (!cue) return;
+    const key = cue.slice(0, cue.lastIndexOf('|'));
+    if (seen.current.has(key)) return;
+    seen.current.add(key);
+    setShown(cue);
+    const t = setTimeout(() => setShown((c) => (c === cue ? null : c)), 1700);
+    return () => clearTimeout(t);
+  }, [cue]);
+  if (!shown) return null;
+  const [, , step, , fp, n] = shown.split('|');
+  return (
+    <div
+      key={shown}
+      className="pointer-events-none fixed top-1/2 left-1/2 z-[70] flex flex-col items-center gap-1 rounded-2xl border-2 border-cyan-300 bg-slate-950/85 px-10 py-4 text-center shadow-[0_0_60px_rgba(103,232,249,0.55)]"
+      style={{ animation: 'flash-cue 1.7s ease-out both' }}
+    >
+      <div className="flex items-center gap-2 text-4xl font-black tracking-[0.2em] text-cyan-200 [text-shadow:0_0_18px_rgba(103,232,249,0.9)]">
+        <Bolt className="h-9 w-9" />
+        FLASH TIMING
+      </div>
+      <div className="text-sm font-semibold text-white">
+        {playerLabel(fp as PlayerId)} {step === 'flashBeforeBlock' ? 'ก่อนประกาศป้องกัน' : 'ก่อนตัดสินการต่อสู้'} · มีการ์ด/เอฟเฟกต์ที่ใช้ได้ {n} อย่าง
+      </div>
+      <div className="text-xs text-cyan-100">การ์ดที่ใช้ได้มีกรอบสีฟ้า · ไม่ใช้ = กด PASS</div>
     </div>
   );
 }

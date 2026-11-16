@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
-import { activatableAbilities, baseCost, canAttackWith, cardLevel, currentBp, isSpiritLike, payableCost, type CoreTarget, type PlayerId } from '@bs/engine';
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { activatableAbilities, baseCost, canAttackWith, cardLevel, currentBp, isSpiritLike, payableCost, trashSummonRule, type CoreTarget, type PlayerId } from '@bs/engine';
 import { playerLabel } from '../format';
 import { IMG } from '../assets';
 import type { Fx } from '../store';
 import { blockCandidates, controls, hiddenFrom, mine, braveHostOf, braveHosts, canDropBurst, canQuickSummon, handFieldAction, separatePlacement } from '../store';
-import { actingPlayer, canEvolve, db, flashPlayer, inMain, isChoiceCandidate, isFxBlocking, magicTimings, simulateEvolve, simulateMove, useGame } from '../store';
+import { actingPlayer, canEvolve, db, flashPlayer, inMain, isChoiceCandidate, isFxBlocking, magicTimings, responseOptions, simulateEvolve, simulateMove, useGame } from '../store';
 import { useFlashUsable } from './Controls';
 import { CardBack, CardFace } from './CardFace';
 import { Core, CoreRow, CoreTray } from './Core';
@@ -141,6 +141,13 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
   const fieldBraveDrop = useGame((s) => !!s.braveDrag && braveHosts(s.state, s.braveDrag).includes(cardId));
   const draggingThis = useGame((s) => s.braveDrag === cardId);
   const fxBlocking = useGame((s) => isFxBlocking(s.fx));
+  /** Flash Timing: การ์ดนี้มีเอฟเฟกต์ Flash / [Evolution] ที่กดใช้ได้ตอนนี้ */
+  const flashReady = useGame((s) => {
+    const fp = flashPlayer(s.state);
+    if (!fp || !mine(fp) || isFxBlocking(s.fx)) return false;
+    const o = responseOptions(s.state, fp);
+    return o.activate.includes(cardId) || o.evolve.includes(cardId);
+  });
   /** เมนู Brave ที่เปิดอยู่ (Brave เดี่ยวตัวนี้ หรือ Brave ที่ร่วมร่างกับตัวนี้) */
   const [braveMenu, setBraveMenu] = useState<string | null>(null);
 
@@ -182,6 +189,7 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
     (
       [
         [candidate, 'ring-4 ring-fuchsia-400 cursor-pointer'],
+        [flashReady, 'ring-4 ring-cyan-300'],
         [evolving || over, 'ring-4 ring-emerald-400'],
         [canAttack, 'ring-4 ring-amber-400 cursor-pointer'],
         [canBlock, 'ring-4 ring-sky-400 cursor-pointer'],
@@ -285,7 +293,13 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
       >
         <div
           className={`h-40 w-28 shrink-0 rounded-lg transition-transform duration-300 ${exhausted ? 'rotate-90 brightness-75' : ''} ${ring}`}
-          style={candidate ? { animation: 'fx-choice-glow 1.4s ease-in-out infinite' } : undefined}
+          style={
+            candidate
+              ? { animation: 'fx-choice-glow 1.4s ease-in-out infinite' }
+              : flashReady
+                ? { animation: 'fx-flash-glow 1.2s ease-in-out infinite' }
+                : undefined
+          }
         >
           <CardFace def={def} level={level} />
         </div>
@@ -410,7 +424,7 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
             type="button"
             onClick={() => openEvolve(cardId)}
             className="w-full rounded-md bg-emerald-500 py-1 text-xs font-bold text-slate-900 shadow hover:bg-emerald-400"
-            style={flashPlayer(state) ? { animation: 'fx-choice-glow 1.4s ease-in-out infinite' } : undefined}
+            style={flashPlayer(state) ? { animation: 'fx-flash-glow 1.2s ease-in-out infinite' } : undefined}
           >
             [Evolution] ดึง Core มาวาง
           </button>
@@ -427,8 +441,8 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
             onMouseEnter={() => hover(cardId)}
             onMouseLeave={() => hover(null)}
             title={ab.label}
-            className="w-full rounded-md bg-sky-400 py-1 text-xs font-bold text-slate-900 shadow hover:bg-sky-300"
-            style={{ animation: 'fx-choice-glow 1.4s ease-in-out infinite' }}
+            className="w-full rounded-md bg-cyan-300 py-1 text-xs font-bold text-slate-900 shadow hover:bg-cyan-200"
+            style={{ animation: 'fx-flash-glow 1.2s ease-in-out infinite' }}
           >
             {/* ชื่อสั้นบนปุ่ม (รายละเอียดอยู่ใน title และแผงข้อมูลการ์ด) */}
             {ab.label.startsWith('[') ? ab.label.slice(0, ab.label.indexOf(']') + 1) : '[Flash]'} ใช้เอฟเฟกต์
@@ -661,14 +675,24 @@ function TrashSlot({ player }: { player: PlayerId }) {
   // ลาก Burst ของผู้เล่นนี้มาปล่อย = ทิ้ง Burst
   const burstDrop = useGame((s) => !!s.burstDrag && s.state.players[player].burst === s.burstDrag);
   const [over, setOver] = useState(false);
+  /** การ์ดใน Trash ที่อัญเชิญได้ตอนนี้ (Flash Timing หรือ Main Step) */
+  const summonable = useGame((s) =>
+    !mine(player) || isFxBlocking(s.fx) || s.state.choice || s.state.winner
+      ? 0
+      : s.state.players[player].trashCards.filter((id) => trashSummonRule(s.state, db, player, id) !== null).length,
+  );
+  const inFlash = !!state.battle?.flash;
   return (
     <MatSlot
       data-trash={player}
+      style={summonable > 0 && !burstDrop ? { animation: `${inFlash ? 'fx-flash-glow 1.2s' : 'fx-choice-glow 1.4s'} ease-in-out infinite` } : undefined}
       label="Trash"
       sub="แทรช"
-      className={`min-h-20 flex-1 cursor-pointer hover:border-slate-200/50 ${burstDrop ? (over ? 'border-rose-300 bg-rose-500/30' : 'border-dashed border-rose-300') : ''}`}
+      className={`min-h-20 flex-1 cursor-pointer hover:border-slate-200/50 ${
+        burstDrop ? (over ? 'border-rose-300 bg-rose-500/30' : 'border-dashed border-rose-300') : summonable > 0 ? (inFlash ? 'border-cyan-300 bg-cyan-400/10' : 'border-yellow-300 bg-yellow-300/10') : ''
+      }`}
       onClick={() => openTrash(player)}
-      title="คลิกดูการ์ดใน Trash"
+      title={summonable > 0 ? `อัญเชิญจาก Trash ได้ ${summonable} ใบ · คลิกเพื่อเปิด` : 'คลิกดูการ์ดใน Trash'}
       {...dropHandlers(burstDrop, () => {
         useGame.setState({ burstDrag: null });
         useGame.getState().dispatch({ type: 'discardBurst', player });
@@ -676,6 +700,13 @@ function TrashSlot({ player }: { player: PlayerId }) {
     >
       {burstDrop && (
         <div className="pointer-events-none absolute inset-x-1 -top-2 z-10 rounded bg-rose-600 py-0.5 text-center text-[11px] font-bold text-white shadow">ปล่อยเพื่อทิ้ง Burst</div>
+      )}
+      {summonable > 0 && !burstDrop && (
+        <div
+          className={`pointer-events-none absolute inset-x-1 -top-2.5 z-10 rounded py-0.5 text-center text-[11px] font-black text-slate-950 shadow ${inFlash ? 'bg-cyan-300' : 'bg-yellow-300'}`}
+        >
+          {inFlash ? 'FLASH · ' : ''}อัญเชิญได้ {summonable} ใบ · คลิก
+        </div>
       )}
       {/* การ์ดใบล่าสุดใน Trash (หงายหน้า) */}
       <div className="flex items-center gap-2 border-b border-slate-500/40 pb-1.5">
@@ -735,6 +766,23 @@ export function PlayerMat({ player, top }: { player: PlayerId; top?: boolean }) 
   );
   const slots: ({ id: string } | { gap: Extract<Fx, { kind: 'ghost' }> })[] = spirits.map((id) => ({ id }));
   [...leaving].sort((a, b) => a.slot - b.slot).forEach((g) => slots.splice(Math.min(g.slot, slots.length), 0, { gap: g }));
+
+  // แถว Spirit เป็นแถวเดียวเสมอ: ถ้ากว้างเกินสนาม ย่อทั้งแถวให้พอดี (กระดานจึงสูงคงที่ ไม่ต้องเลื่อนจอ)
+  const rowOuter = useRef<HTMLDivElement>(null);
+  const rowInner = useRef<HTMLDivElement>(null);
+  const [fieldScale, setFieldScale] = useState(1);
+  useLayoutEffect(() => {
+    const outer = rowOuter.current;
+    const inner = rowInner.current;
+    if (!outer || !inner) return;
+    // offsetWidth ไม่นับ transform จึงวัดความกว้างจริงของแถวได้แม้กำลังย่ออยู่ (+16 เผื่อป้าย BP ที่ยื่นออกขอบ)
+    const fit = () => setFieldScale(Math.min(1, outer.clientWidth / (inner.offsetWidth + 16)));
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(outer);
+    ro.observe(inner);
+    return () => ro.disconnect();
+  }, []);
 
   return (
     <section
@@ -824,15 +872,27 @@ export function PlayerMat({ player, top }: { player: PlayerId; top?: boolean }) 
           <div className="w-36 shrink-0" />
         </div>
 
-        {/* แถว Spirit / Ultimate */}
-        <div className="relative flex flex-1 flex-wrap items-start justify-center gap-3 [align-content:safe_center]">
-          {slots.map((slot) =>
-            'id' in slot ? (
-              <FieldCard key={slot.id} cardId={slot.id} depleting={depleting.has(slot.id)} />
-            ) : (
-              <div key={`gap-${slot.gap.id}`} className="shrink-0" style={{ width: slot.gap.rect.w, height: slot.gap.rect.h + 32 }} />
-            ),
-          )}
+        {/* แถว Spirit / Ultimate: แถวเดียว ย่อตามจำนวนตัว (data-field-scale ให้แอนิเมชันวัดขนาดการ์ดที่ย่อแล้วได้ถูก) */}
+        <div ref={rowOuter} className="relative flex min-w-0 flex-1 items-center justify-center">
+          <div
+            ref={rowInner}
+            data-field-scale={fieldScale}
+            className="flex shrink-0 items-start gap-3 transition-transform duration-300"
+            style={fieldScale < 1 ? { transform: `scale(${fieldScale})` } : undefined}
+          >
+            {slots.map((slot) =>
+              'id' in slot ? (
+                <FieldCard key={slot.id} cardId={slot.id} depleting={depleting.has(slot.id)} />
+              ) : (
+                // ช่องว่างของการ์ดที่กำลังแตก: rect วัดจากจอ (ย่อแล้ว) จึงหารกลับเป็นขนาดก่อนย่อ
+                <div
+                  key={`gap-${slot.gap.id}`}
+                  className="shrink-0"
+                  style={{ width: slot.gap.rect.w / fieldScale, height: slot.gap.rect.h / fieldScale + 32 }}
+                />
+              ),
+            )}
+          </div>
         </div>
       </div>
 
@@ -846,27 +906,32 @@ export function PlayerMat({ player, top }: { player: PlayerId; top?: boolean }) 
 
 // ---------------------------------------------------------------- hand
 
-/** ตำแหน่งในพัด: index/จำนวนใบ */
-type FanPos = { index: number; count: number; top?: boolean };
+/**
+ * ตำแหน่งในพัด: off = ห่างจากกลางส่วนที่มองเห็นกี่ใบ (ติดลบ = ซ้าย) · spread = จำนวนใบที่เห็นพร้อมกัน
+ * มือยาวเกินจอ (เลื่อนได้): ความโค้งคิดจากกลางหน้าต่าง ใบที่อยู่ในจอจึงไม่จมลึก
+ */
+type FanPos = { index: number; off: number; spread: number; top?: boolean };
 
 /** ท่าของการ์ดในพัด: เอียงตามตำแหน่ง ใบริมจมลึกกว่า ชี้/เลือกแล้วยกขึ้นตั้งตรง */
-function fanStyle(fan: FanPos, raised: boolean): React.CSSProperties {
-  const off = fan.index - (fan.count - 1) / 2;
-  const angle = off * Math.min(6, 36 / Math.max(fan.count, 1));
+function fanStyle(fan: FanPos, raised: boolean, lift = false): React.CSSProperties {
+  // ใบที่เลยขอบหน้าต่างไปแล้ว (ถูกตัดไม่ให้เห็น): ไม่ต้องเอียง/จมเพิ่ม เวลาเลื่อนเข้ามาจะได้ไม่โผล่ขึ้นจากใต้จอ
+  const edge = fan.spread / 2 + 0.5;
+  const off = Math.max(-edge, Math.min(edge, fan.off));
+  const angle = off * Math.min(6, 36 / Math.max(fan.spread, 1));
   if (fan.top) {
     // มือคู่แข่ง: พัดกลับหัวที่ขอบบน (เหมือนนั่งถือการ์ดอยู่ฝั่งตรงข้าม) จมเหนือขอบจอ
     return {
-      transform: raised ? 'translateY(8%) rotate(0deg) scale(1.1)' : `translateY(calc(-50% - ${off * off * 2}px)) rotate(${-angle}deg)`,
+      transform: raised ? 'translateY(8%) rotate(0deg) scale(1.1)' : `translateY(calc(${lift ? -32 : -50}% - ${off * off * 2}px)) rotate(${-angle}deg)`,
       transformOrigin: '50% 0%',
-      zIndex: raised ? 50 : fan.index + 1,
+      zIndex: raised ? 50 : lift ? 40 + fan.index : fan.index + 1,
       marginLeft: fan.index === 0 ? 0 : '-1.6rem',
       transition: 'transform 160ms ease-out',
     };
   }
   return {
-    transform: raised ? 'translateY(-8%) rotate(0deg) scale(1.1)' : `translateY(calc(42% + ${off * off * 2.5}px)) rotate(${angle}deg)`,
+    transform: raised ? 'translateY(-8%) rotate(0deg) scale(1.1)' : `translateY(calc(${lift ? 26 : 42}% + ${off * off * 2.5}px)) rotate(${angle}deg)`,
     transformOrigin: '50% 100%',
-    zIndex: raised ? 50 : fan.index + 1,
+    zIndex: raised ? 50 : lift ? 40 + fan.index : fan.index + 1,
     marginLeft: fan.index === 0 ? 0 : '-2.25rem',
     transition: 'transform 160ms ease-out',
   };
@@ -883,11 +948,12 @@ function HandCard({ cardId, hidden, small, fan }: { cardId: string; hidden: bool
   const dragged = useGame((s) => s.handDrag === cardId);
   const fxBlocking = useGame((s) => isFxBlocking(s.fx));
   const { startHandDrag, endHandDrag } = useGame.getState();
+  const scroller = useContext(HandScrollCtx);
   const card = state.cards[cardId]!;
   const def = db.get(card.cardNo);
   const size = small ? 'h-16 w-11' : fan?.top ? 'h-32 w-[5.75rem]' : fan ? 'h-48 w-34' : 'h-36 w-26';
   const draggable = !hidden && !fxBlocking && (!!handFieldAction(state, cardId) || canDropBurst(state, cardId));
-  const style = fan ? fanStyle(fan, hovering || selected) : undefined;
+  const style = fan ? fanStyle(fan, hovering || selected, flashUsable && !hidden) : undefined;
 
   if (hidden) {
     // ใส่ data-hand-card ด้วย: แอนิเมชันจั่ว/ลงการ์ด/กลับขึ้นมือของมือที่คว่ำไว้ (มือคู่แข่ง) ต้องใช้ตำแหน่งนี้
@@ -942,6 +1008,11 @@ function HandCard({ cardId, hidden, small, fan }: { cardId: string; hidden: bool
         onClick={() => clickHandCard(cardId)}
         draggable={draggable}
         onDragStart={(e) => {
+          // ลากไปทางซ้าย/ขวาบนมือที่ยาวเกินจอ = เลื่อนมือ ไม่ใช่หยิบการ์ดไปเล่น
+          if (scroller?.claimDrag()) {
+            e.preventDefault();
+            return;
+          }
           e.dataTransfer.effectAllowed = 'move';
           e.dataTransfer.setData('text/plain', 'hand:' + cardId);
           beginCardDrag(e);
@@ -951,15 +1022,32 @@ function HandCard({ cardId, hidden, small, fan }: { cardId: string; hidden: bool
         onDragEnd={endHandDrag}
         title={draggable ? 'ลากไปที่สนามเพื่อเล่น หรือช่อง Burst เพื่อเซ็ท · คลิกเพื่อเปิดเมนู' : undefined}
         className={`h-full w-full rounded-lg shadow-[0_6px_18px_rgba(0,0,0,0.6)] transition ${dragged ? 'opacity-40' : ''} ${draggable ? 'active:cursor-grabbing' : ''} ${
-          playable ? `cursor-pointer ring-2 ring-yellow-300/70 ${fan ? '' : 'hover:-translate-y-2'}` : main || flash ? 'brightness-75' : ''
+          flashUsable
+            ? `cursor-pointer ring-4 ring-cyan-300 ${fan ? '' : 'hover:-translate-y-2'}`
+            : playable
+              ? `cursor-pointer ring-2 ring-yellow-300/70 ${fan ? '' : 'hover:-translate-y-2'}`
+              : flash
+                ? 'brightness-50 saturate-50'
+                : main
+                  ? 'brightness-75'
+                  : ''
         } ${selected ? `ring-4 ring-yellow-300 ${fan ? '' : '-translate-y-3'}` : ''} ${candidate ? 'cursor-pointer ring-4 ring-fuchsia-400' : ''}`}
-        style={candidate || flashUsable ? { animation: 'fx-choice-glow 1.4s ease-in-out infinite' } : undefined}
+        style={candidate ? { animation: 'fx-choice-glow 1.4s ease-in-out infinite' } : flashUsable ? { animation: 'fx-flash-glow 1.2s ease-in-out infinite' } : undefined}
       >
         <div className={`h-full w-full ${fan?.top && !(hovering || selected) ? 'rotate-180' : ''}`}>
           <CardFace def={def} size={small || fan?.top ? 'xs' : 'md'} payCost={pay} />
         </div>
         {candidate && (
           <div className="absolute inset-x-1 top-1 rounded bg-fuchsia-500 py-0.5 text-center text-xs font-bold text-white shadow">คลิกเพื่อเลือก</div>
+        )}
+        {/* ป้าย FLASH บนส่วนที่โผล่พ้นขอบจอ (มือคู่แข่งกลับหัว: ส่วนที่เห็นคือขอบล่าง) */}
+        {flashUsable && !candidate && (
+          <div
+            title="ใช้ได้ใน Flash Timing นี้ · คลิกเพื่อใช้"
+            className={`pointer-events-none absolute inset-x-1 rounded bg-cyan-300 py-0.5 text-center text-xs font-black tracking-[0.2em] text-slate-950 shadow ${fan?.top && !(hovering || selected) ? 'bottom-1' : 'top-1'}`}
+          >
+            FLASH
+          </div>
         )}
       </div>
       {selected && (
@@ -987,21 +1075,226 @@ function HandCard({ cardId, hidden, small, fan }: { cardId: string; hidden: bool
   );
 }
 
-/** มือของผู้เล่นด้านล่าง: เรียงแบบพัด ลอยทับขอบล่างของกระดาน และจมลงใต้ขอบเล็กน้อย */
+/** การ์ดบนมือขอใช้การลากนี้เป็นการเลื่อนมือ (คืน true = ห้ามเริ่มลากการ์ดไปเล่น) */
+const HandScrollCtx = createContext<{ claimDrag: () => boolean } | null>(null);
+
+/** เว้นขอบซ้าย/ขวาของหน้าต่างมือ ไม่ให้ทับป้ายผู้เล่นและปุ่มมุมจอ · หน้าต่างแคบสุดเท่านี้ (จอเล็กยอมทับมุมเล็กน้อย) */
+const HAND_SIDE = 290;
+const HAND_MIN_WINDOW = 760;
+/** ระยะจากขอบหน้าต่างที่เอาเมาส์ไปค้างแล้วมือเลื่อนเอง และความเร็วสูงสุด (px ต่อเฟรม) */
+const EDGE_ZONE = 110;
+const EDGE_SPEED = 14;
+/** ลากเกินระยะนี้ถึงนับเป็นการเลื่อน (น้อยกว่านี้ = คลิก) */
+const DRAG_START = 6;
+
+/**
+ * มือแบบพัด ลอยทับขอบล่าง (มือคู่แข่ง = ขอบบน) และจมลงใต้ขอบเล็กน้อย
+ * การ์ดขนาดเดิมเสมอ ถ้ามือยาวเกินหน้าต่าง: เลื่อนซ้าย/ขวาได้ด้วย เอาเมาส์ค้างที่ขอบ, กดลาก (เมาส์/นิ้ว), ลูกศรที่ขอบ, ลูกล้อเมาส์
+ */
 export function HandFan({ player, top }: { player: PlayerId; top?: boolean }) {
   const state = useGame((s) => s.state);
   const hand = state.players[player].hand;
   const hidden = useGame((s) => hiddenFrom(s, player));
+  const selected = useGame((s) => s.selectedHandCard);
+  const outerRef = useRef<HTMLDivElement>(null);
+  const rowRef = useRef<HTMLDivElement>(null);
+  /** ขนาดที่วัดจาก layout: หน้าต่าง / ทั้งแถว / การ์ดหนึ่งใบ / ระยะระหว่างใบ */
+  const [geo, setGeo] = useState({ win: 0, row: 0, card: 0, step: 1 });
+  const overflow = geo.row > geo.win + 1;
+  const maxOffset = overflow ? geo.row - geo.win : 0;
+  const [offset, setOffsetState] = useState(0);
+  const offsetRef = useRef(0);
+  const maxRef = useRef(0);
+  maxRef.current = maxOffset;
+  const scrollTo = (v: number) => {
+    const next = Math.max(0, Math.min(maxRef.current, v));
+    offsetRef.current = next;
+    setOffsetState(next);
+  };
+
+  // วัดขนาดใหม่เมื่อจำนวนใบ/ขนาดจอเปลี่ยน (offsetLeft ไม่นับ transform ของพัด)
+  const prevLen = useRef(hand.length);
+  useLayoutEffect(() => {
+    const measure = () => {
+      const outer = outerRef.current;
+      const kids = rowRef.current?.children;
+      if (!outer || !kids || kids.length === 0) return setGeo({ win: 0, row: 0, card: 0, step: 1 });
+      const first = kids[0] as HTMLElement;
+      const last = kids[kids.length - 1] as HTMLElement;
+      const card = first.offsetWidth;
+      const step = kids.length > 1 ? (kids[1] as HTMLElement).offsetLeft - first.offsetLeft : card;
+      const win = Math.min(outer.clientWidth, Math.max(HAND_MIN_WINDOW, outer.clientWidth - HAND_SIDE * 2));
+      const row = last.offsetLeft + last.offsetWidth - first.offsetLeft;
+      maxRef.current = row > win + 1 ? row - win : 0;
+      setGeo({ win, row, card, step });
+      // จั่ว/ได้การ์ดขึ้นมือ (ใบใหม่ต่อท้าย): เลื่อนไปให้เห็นใบใหม่ · มือลดลง: ไม่ให้เลื่อนเลยขอบ
+      scrollTo(hand.length > prevLen.current ? maxRef.current : offsetRef.current);
+      prevLen.current = hand.length;
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hand.length]);
+
+  // เลือกการ์ดที่อยู่ชิดขอบ: เลื่อนให้เห็นทั้งใบ (เมนูเล่นการ์ดจะได้ไม่ถูกตัด)
+  const showCard = (i: number) => {
+    if (i < 0 || !overflow) return;
+    const left = i * geo.step;
+    if (left < offsetRef.current) scrollTo(left);
+    else if (left + geo.card > offsetRef.current + geo.win) scrollTo(left + geo.card - geo.win);
+  };
+  useEffect(() => {
+    showCard(selected ? hand.indexOf(selected) : -1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected]);
+  // Flash Timing ของผู้เล่นนี้: เลื่อนให้เห็นการ์ดใบแรกที่ใช้ได้ (ถ้าไม่มีใบไหนอยู่ในจอ)
+  const flashCards = useGame((s) => {
+    // มือที่คว่ำไว้ (ออนไลน์ = มือคู่แข่ง) ห้ามเลื่อนตาม ไม่งั้นตำแหน่งที่เลื่อนไปจะบอกว่าการ์ด Flash อยู่ใบไหน
+    if (flashPlayer(s.state) !== player || isFxBlocking(s.fx) || hiddenFrom(s, player)) return '';
+    const o = responseOptions(s.state, player);
+    return s.state.players[player].hand.filter((id) => o.magic.includes(id) || o.quick.includes(id)).join(',');
+  });
+  useEffect(() => {
+    if (!flashCards || !overflow) return;
+    const idx = flashCards.split(',').map((id) => hand.indexOf(id));
+    const visible = idx.some((i) => i * geo.step >= offsetRef.current - 1 && i * geo.step + geo.card <= offsetRef.current + geo.win + 1);
+    if (!visible) showCard(idx[0]!);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flashCards]);
+
+  // เลื่อนเองต่อเนื่องตอนเมาส์ค้างที่ขอบ (ความเร็ว: ติดลบ = ไปซ้าย)
+  const vel = useRef(0);
+  const raf = useRef(0);
+  const setVel = (v: number) => {
+    vel.current = v;
+    if (!v || raf.current) return;
+    const tick = () => {
+      if (!vel.current) {
+        raf.current = 0;
+        return;
+      }
+      scrollTo(offsetRef.current + vel.current);
+      raf.current = requestAnimationFrame(tick);
+    };
+    raf.current = requestAnimationFrame(tick);
+  };
+  useEffect(() => () => cancelAnimationFrame(raf.current), []);
+
+  // กดลากเลื่อน: เริ่มนับเมื่อขยับแนวนอนเกิน DRAG_START · ลากแล้วปล่อย = ไม่นับเป็นคลิก
+  const drag = useRef<{ x: number; y: number; start: number; moved: boolean; lastX: number; lastY: number } | null>(null);
+  const suppressClick = useRef(false);
+  const startDrag = (e: React.PointerEvent) => {
+    if (!overflow || e.button !== 0) return;
+    drag.current = { x: e.clientX, y: e.clientY, start: offsetRef.current, moved: false, lastX: e.clientX, lastY: e.clientY };
+    const move = (ev: PointerEvent) => {
+      const d = drag.current;
+      if (!d) return;
+      d.lastX = ev.clientX;
+      d.lastY = ev.clientY;
+      const dx = ev.clientX - d.x;
+      if (!d.moved && Math.abs(dx) > DRAG_START && Math.abs(dx) >= Math.abs(ev.clientY - d.y)) {
+        d.moved = true;
+        setVel(0);
+      }
+      if (d.moved) scrollTo(d.start - dx);
+    };
+    const end = () => {
+      if (drag.current?.moved) {
+        suppressClick.current = true;
+        setTimeout(() => (suppressClick.current = false), 0);
+      }
+      drag.current = null;
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', end);
+      window.removeEventListener('pointercancel', end);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
+  };
+  const scrollCtx = useMemo(
+    () => ({
+      // เบราว์เซอร์เริ่มลากการ์ด (HTML5 drag) หลังขยับไม่กี่ px: ถ้าลากไปทางข้างบนมือที่เลื่อนได้ ให้เป็นการเลื่อนมือแทน
+      claimDrag: () => {
+        const d = drag.current;
+        setVel(0);
+        if (!d) return false;
+        const dx = Math.abs(d.lastX - d.x);
+        const dy = Math.abs(d.lastY - d.y);
+        if (d.moved || dx >= dy) {
+          d.moved = true;
+          return true;
+        }
+        drag.current = null; // ลากขึ้น/ลง = หยิบการ์ดไปเล่นตามปกติ
+        return false;
+      },
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  // ตำแหน่งกลางของส่วนที่มองเห็น (หน่วย: ใบ) ใช้คิดความโค้งของพัด
+  const center = overflow ? (offset + geo.win / 2 - geo.card / 2) / geo.step : (hand.length - 1) / 2;
+  const spread = overflow ? geo.win / geo.step : hand.length;
+  const arrow = (dir: -1 | 1) => (
+    <button
+      type="button"
+      aria-label={dir < 0 ? 'เลื่อนมือไปทางซ้าย' : 'เลื่อนมือไปทางขวา'}
+      className={`pointer-events-auto absolute z-[60] flex h-14 w-9 items-center justify-center rounded-full bg-slate-950/80 text-yellow-200 shadow-lg ring-1 ring-yellow-300/50 hover:bg-slate-900 ${
+        dir < 0 ? 'left-1' : 'right-1'
+      } ${top ? 'top-12' : 'bottom-12'}`}
+      onPointerDown={(e) => e.stopPropagation()}
+      onPointerEnter={(e) => e.pointerType === 'mouse' && setVel(dir * EDGE_SPEED)}
+      onPointerLeave={() => setVel(0)}
+      onClick={() => scrollTo(offsetRef.current + dir * geo.win * 0.6)}
+    >
+      <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points={dir < 0 ? '15 5 8 12 15 19' : '9 5 16 12 9 19'} />
+      </svg>
+    </button>
+  );
+
   return (
     <div
+      ref={outerRef}
       data-player-target={player}
-      data-setup={top ? "hand-top" : "hand-bottom"}
+      data-setup={top ? 'hand-top' : 'hand-bottom'}
       className={`pointer-events-none fixed left-0 right-[var(--sidebar)] z-20 flex h-0 justify-center ${top ? 'top-0 items-start' : 'bottom-0 items-end'}`}
     >
-      <div className={`flex ${top ? 'items-start' : 'items-end'}`}>
-        {hand.map((id, index) => (
-          <HandCard key={id} cardId={id} hidden={hidden} fan={{ index, count: hand.length, top }} />
-        ))}
+      {/* หน้าต่างของมือ: มือยาวเกิน = ตัดส่วนที่เลยซ้าย/ขวา (ด้านบน/ล่างยังยื่นได้ ให้ใบที่ยกขึ้นและเมนูการ์ดแสดงครบ) */}
+      <div
+        className={`relative flex shrink-0 ${top ? 'items-start' : 'items-end'}`}
+        style={
+          overflow
+            ? { width: geo.win, clipPath: top ? 'inset(-60px 0 -800px 0)' : 'inset(-800px 0 -60px 0)', touchAction: 'none' }
+            : undefined
+        }
+        onPointerDown={startDrag}
+        onPointerMove={(e) => {
+          if (!overflow || e.pointerType !== 'mouse' || drag.current?.moved) return;
+          const r = e.currentTarget.getBoundingClientRect();
+          const x = e.clientX - r.left;
+          setVel(x < EDGE_ZONE ? -(1 - x / EDGE_ZONE) * EDGE_SPEED : x > r.width - EDGE_ZONE ? (1 - (r.width - x) / EDGE_ZONE) * EDGE_SPEED : 0);
+        }}
+        onPointerLeave={() => setVel(0)}
+        onWheel={(e) => overflow && scrollTo(offsetRef.current + (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY))}
+        onClickCapture={(e) => {
+          if (!suppressClick.current) return;
+          suppressClick.current = false;
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+      >
+        <HandScrollCtx.Provider value={scrollCtx}>
+          <div ref={rowRef} className={`flex shrink-0 ${top ? 'items-start' : 'items-end'}`} style={overflow ? { transform: `translateX(${-offset}px)` } : undefined}>
+            {hand.map((id, index) => (
+              <HandCard key={id} cardId={id} hidden={hidden} fan={{ index, off: index - center, spread, top }} />
+            ))}
+          </div>
+        </HandScrollCtx.Provider>
+        {overflow && offset > 0.5 && arrow(-1)}
+        {overflow && offset < maxOffset - 0.5 && arrow(1)}
       </div>
     </div>
   );

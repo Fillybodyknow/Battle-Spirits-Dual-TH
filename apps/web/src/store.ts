@@ -367,9 +367,16 @@ export function layoutRect(el: Element | null): Rect | null {
   if (!el) return null;
   const r = el.getBoundingClientRect();
   if (r.width <= 0) return null;
-  const w = el instanceof HTMLElement && el.offsetWidth > 0 ? el.offsetWidth : r.width;
-  const h = el instanceof HTMLElement && el.offsetHeight > 0 ? el.offsetHeight : r.height;
+  const k = fieldScaleOf(el);
+  const w = el instanceof HTMLElement && el.offsetWidth > 0 ? el.offsetWidth * k : r.width;
+  const h = el instanceof HTMLElement && el.offsetHeight > 0 ? el.offsetHeight * k : r.height;
   return { x: r.left + r.width / 2 - w / 2, y: r.top + r.height / 2 - h / 2, w, h };
+}
+
+/** อัตราย่อของแถว Spirit ที่การ์ดนี้อยู่ (แถวที่การ์ดเยอะถูกย่อด้วย transform: offsetWidth ไม่นับ) */
+export function fieldScaleOf(el: Element): number {
+  const k = Number(el.closest<HTMLElement>('[data-field-scale]')?.dataset.fieldScale);
+  return k > 0 ? k : 1;
 }
 
 function snapRects(): Record<string, Rect> {

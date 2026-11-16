@@ -24,6 +24,8 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
+  // เลขเวอร์ชันบนเว็บ: ต้องถามเน็ตทุกครั้ง (ห้ามใช้ที่เก็บไว้ ไม่งั้นไม่รู้ว่ามีเวอร์ชันใหม่)
+  if (url.pathname.endsWith('/version.json')) return;
 
   if (req.mode === 'navigate') {
     event.respondWith(

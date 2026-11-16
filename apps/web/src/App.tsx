@@ -4,7 +4,8 @@ import { playerLabel } from './format';
 import { onlineAvailable, onlineVia, playableDecks, useGame, viewPlayer, type CutInMode, type DeckId } from './store';
 import { deckInfo } from './decks';
 import { HandFan, PlayerMat } from './components/Board';
-import { ChoiceDialog, ErrorToast, PromptBar, TrashDialog } from './components/Controls';
+import { ChoiceDialog, ErrorToast, FlashCue, PromptBar, TrashDialog } from './components/Controls';
+import { UpdateNotice, WhatsNew } from './components/Updates';
 import { CornerButtons, FinalBlowWarning, FloatingInspector, PlayerPlate, TurnAura } from './components/Hud';
 import { PlayDialog } from './components/PlayDialog';
 import { BTN } from './components/Modal';
@@ -312,6 +313,9 @@ export function App() {
     <>
       {screen === 'home' ? <Home /> : screen === 'lobby' ? <Lobby /> : screen === 'decks' ? <DeckViewer /> : screen === 'builder' ? <DeckBuilder /> : <GameScreen />}
       {screen !== 'game' && <ErrorToast />}
+      {/* อัปเดตแอป: แจ้งเวอร์ชันใหม่ / มีอะไรใหม่หลังอัปเดต */}
+      <UpdateNotice />
+      <WhatsNew />
       {/* มือถือ: เล่นแนวนอนเท่านั้น (ทุกหน้า) */}
       <RotateHint />
     </>
@@ -362,6 +366,7 @@ function GameScreen() {
 
       {/* HUD: ป้ายผู้เล่น / รายละเอียดการ์ดลอย / ปุ่มมุมขวาล่าง */}
       <FinalBlowWarning />
+      <FlashCue />
       <PlayerPlate player={bottom} corner="bottom-left" />
       <PlayerPlate player={top} corner="top-right" />
       <FloatingInspector enabled={inspector} />

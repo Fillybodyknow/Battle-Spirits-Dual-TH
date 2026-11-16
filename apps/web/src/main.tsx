@@ -6,9 +6,11 @@ import './index.css';
 import './legacy-colors.css';
 import { registerPwa } from './pwa';
 import { installTouch } from './touch';
+import { startUpdateCheck } from './version';
 
 registerPwa();
 installTouch();
+startUpdateCheck();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

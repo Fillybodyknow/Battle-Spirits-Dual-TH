@@ -141,6 +141,16 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
 - `scripts/build-cards.ts` รันด้วย node (type stripping): import ภายใน packages ต้องมีนามสกุล `.ts` และ import ค่าได้เฉพาะไฟล์ที่ไม่ import ต่อแบบไม่มีนามสกุล
 - ไฟล์ข้อมูลใน `packages/cards/data/*.json` สร้างใหม่ทุกครั้งที่ `npm run cards` — แก้ที่ `.text` เสมอ
 
+## เวอร์ชัน / Changelog
+
+- เลขเวอร์ชันและ Changelog อยู่ที่ `apps/web/src/changelog.ts` ที่เดียว (เวอร์ชันของแอป = รายการบนสุดของ `CHANGELOG`)
+- **ทุกครั้งที่จะ push ของที่ผู้เล่นเห็นได้ขึ้นเว็บ**: เพิ่มรายการใหม่บนสุด (PATCH = แก้บั๊ก, MINOR = ของใหม่,
+  MAJOR = เปลี่ยนใหญ่/ลำดับ action ของ engine เปลี่ยนจนเล่นออนไลน์กับเวอร์ชันเก่าไม่ได้) เขียนเป็นภาษาไทยแบบที่ผู้เล่นอ่านเข้าใจ
+  แล้วให้เจ้าของโปรเจกต์ดูข้อความก่อน commit
+- build เขียน `version.json` (vite.config.ts อ่านเลขจาก changelog.ts) แอปที่เปิดค้างไว้เช็กไฟล์นี้ทุก 10 นาที/ตอนกลับมาที่แท็บ
+  ถ้าใหม่กว่า = ขึ้นป้ายให้อัปเดต · เปิดเวอร์ชันใหม่ครั้งแรก = เด้ง "มีอะไรใหม่" (`version.ts`, `components/Updates.tsx`)
+- Service Worker (`public/sw.js`) ห้าม cache `version.json`
+
 ## Git / deploy
 
 - commit และ push **เฉพาะเมื่อเจ้าของโปรเจกต์สั่ง** (มักพูดว่า "commit และ push ขึ้นเว็บ") ทำงานบน `main`

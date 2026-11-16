@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { opponentOf } from '@bs/engine';
 import { cardArt } from '../assets';
-import { actingPlayer, chainEntries, viewPlayer, db, GHOST_MS, isFxBlocking, layoutRect, MILL_MS, millBreakAt, millDuration, PLAY_HIT, useGame, type Fx, type Rect, hiddenFrom } from '../store';
+import { actingPlayer, chainEntries, viewPlayer, db, fieldScaleOf, GHOST_MS, isFxBlocking, layoutRect, MILL_MS, millBreakAt, millDuration, PLAY_HIT, useGame, type Fx, type Rect, hiddenFrom } from '../store';
 import { CardBack, CardFace } from './CardFace';
 import { sfx } from '../sfx';
 import { playerLabel } from '../format';
@@ -645,9 +645,11 @@ function CardActivate({ fx, onDone }: { fx: Extract<Fx, { kind: 'cardActivate' }
     // การ์ดบนสนาม: ซ่อนแค่หน้าการ์ด (ป้าย BP / Brave ที่ร่วมร่างยังอยู่)
     const face = !fx.hand && !fx.brave ? ((el.firstElementChild as HTMLElement | null) ?? el) : el;
     // ขนาดจริงของกล่อง (ไม่รวมการหมุนของพัดบนมือ) วางกลางกรอบที่เห็นบนจอ
+    // (การ์ดบนสนามที่แถวถูกย่อ: ใช้ขนาดหลังย่อ)
     const bb = el.getBoundingClientRect();
-    const w = el.offsetWidth;
-    const h = el.offsetHeight;
+    const k = fieldScaleOf(el);
+    const w = el.offsetWidth * k;
+    const h = el.offsetHeight * k;
     const rect = { x: bb.x + bb.width / 2 - w / 2, y: bb.y + bb.height / 2 - h / 2, w, h };
     const upside = upsideFor(owner);
     // "ยกขึ้น" เข้าหาเจ้าของการ์ด: ฝั่งตรงข้ามเลื่อนลงบนจอ
