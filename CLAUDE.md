@@ -40,8 +40,8 @@ apps/web/          React 19 + Vite + Tailwind v4 + Zustand
 docs/rules/        กติกาเกม 14 เรื่อง (README = สารบัญ)
 assets/
   files/SD1.text … SD4.text   Starter Deck (การ์ด + รายการเด็คท้ายไฟล์)
-  files/BS01/ … BS03/*.text   Booster Set (โฟลเดอร์ แยกไฟล์ตามประเภทได้) — การ์ดของ SD01–SD03 ส่วนใหญ่เขียนไว้ที่นี่
-                              BS02/BS03: การ์ดใหม่ยังไม่มีสคริปต์เอฟเฟกต์ (placeholder) ใช้สคริปต์ SD เฉพาะใบที่ซ้ำกัน
+  files/BS01/ … BS04/*.text   Booster Set (โฟลเดอร์ แยกไฟล์ตามประเภทได้) — การ์ดของ SD01–SD04 เขียนเต็มไว้ที่นี่ (SD*.text เหลือแค่รายการเด็ค)
+                              สคริปต์ของการ์ดที่อยู่ใน Starter ด้วย: `...SD0n_SCRIPTS` ใน bs0n-scripts.ts
   files/แม่แบบการ์ด.txt        แม่แบบการเขียนการ์ด (ไม่ถูกอ่านเป็นชุดการ์ด)
   images/cards/<ชุด>/<cardNo>.webp   ภาพการ์ด (โหลดอัตโนมัติด้วย glob ตามชื่อไฟล์ = cardNo)
 scripts/build-cards.ts       npm run cards
@@ -88,6 +88,12 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
 - **คอสต์**: `baseCost` (คอสต์ในมือ/แทรช), `fieldCost` (บนสนาม: รวมคอสต์ Brave ที่ร่วมร่าง + costBoost; filter `ignoreBraveCost`),
   `destroyChosenOpponent.costFrom` ('self' / 'subject')
 - **เงื่อนไขเฉพาะ trigger อัญเชิญ**: `summonedFromDeck` (ตรวจใน `holds` ของ effects.ts ใช้ซ้อนใน `all`/`not` ไม่ได้)
+- **BS04**: `effectImmune` (Ultra Shield / "ไม่รับผลเอฟเฟกต์...ของคู่แข่ง" ตามสี/ประเภทการ์ดต้นเหตุ ตรวจด้วย `effectBlocked` = ตัวช่วย `hits()` ใน execStep
+  ทุก step ที่เลือก/ทำกับการ์ดคู่แข่งต้องกรองด้วย `hits`), `bounceOpponent` (`to`: มือ/บนสุด/ใต้สุดเด็ค, `anySide`, `costFrom`) / `bounceAllOpponent` / `bounceToBottom`,
+  `blockWhileExhausted`, `battleUnblockable` / `unblockableThisTurn`, `battleNoHandFlash`, `battleStaysOnDestroy`, `useMagicFromHandFree`, `handCostDelta`,
+  `negateOpponentNexus`, trigger `oppEndStep` / `oppHandIncreased` / `oncePerTurnByName`, เงื่อนไข `noLifeDamageThisTurn` / `oppTurn` / `selfInBattle` / `attackerFamily`
+- **ย้ายการ์ดไปเขียนเต็มที่ชุดอื่น = รหัสการ์ดเปลี่ยน**: เพิ่มรหัสเดิม → รหัสใหม่ใน `packages/cards/src/legacy-card-no.ts`
+  (เด็คที่ผู้เล่นจัดไว้ / รหัสเด็คออนไลน์แปลงตอนโหลดด้วย `migrateEntries` ใน decks.ts) ไม่งั้นเด็คเก่าหาการ์ดไม่เจอ
 
 ถ้าข้อความการ์ดกำกวม: ตีความให้สมเหตุสมผล แล้ว **บอกเจ้าของโปรเจกต์ว่าตีความอะไรไว้** (เขาจะแก้ถ้าไม่ตรง)
 

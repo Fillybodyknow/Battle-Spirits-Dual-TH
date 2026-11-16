@@ -22,6 +22,11 @@ import {
   removeCore,
   removeFrom,
   symbolCount,
+  effectBlocked,
+  forcedAttackers,
+  forceAttackHolders,
+  attackerUnblockable,
+  canBlockExhausted,
   matchesFilter,
   quickAnyCores,
   trashSummonRule,
@@ -132,6 +137,7 @@ function beginTurn(ctx: Ctx): void {
   const player = s.turnPlayer;
   const p = s.players[player];
   emit(ctx, { type: 'turnStarted', turn: s.turn, player });
+  if (s.lifeDamagedThisTurn?.length) s.lifeDamagedThisTurn = [];
 
   setPhase(ctx, 'start');
   if (p.deck.length === 0) {
@@ -244,6 +250,7 @@ function endTurn(ctx: Ctx): void {
   // "เอนด์สเต็ปของเรา"
   const batch = newBatch(ctx);
   for (const id of [...s.players[s.turnPlayer].field]) queueTriggers(ctx, id, 'endStep', batch);
+  for (const id of [...s.players[opponentOf(s.turnPlayer)].field]) queueTriggers(ctx, id, 'oppEndStep', batch);
   if (s.queue.length > 0) {
     runQueue(ctx);
     if (s.winner) return;
@@ -303,6 +310,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
       if (flash.priority !== player) fail('NOT_YOUR_PRIORITY', 'ยังไม่ถึงตาคุณใน Flash timing');
       if (!quick && !trashRule) fail('WRONG_PHASE', 'อัญเชิญใน Flash timing ได้เฉพาะการ์ดที่มี [Quick]');
       if (s.battle?.noFlash === player) fail('NO_FLASH', 'ในการต่อสู้นี้ใช้เอฟเฟกต์แฟลชไม่ได้');
+      if (!inTrash && s.battle?.noHandFlash === player && !(s.shownCards ?? []).includes(cardId)) fail('NO_FLASH', 'ในการต่อสู้นี้ใช้การ์ดในมือในช่วง Flash ไม่ได้');
       // เบรฟที่มี [Quick] อัญเชิญมาร่วมร่างทันทีในแอทแท็คสเต็ปได้ (กติกา 04)
       if (braveOnto && !quick) fail('WRONG_PHASE', 'ร่วมร่าง Brave ได้เฉพาะ Main Step');
     }
@@ -402,6 +410,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     if (flash) {
       if (flash.priority !== player) fail('NOT_YOUR_PRIORITY', 'ยังไม่ถึงตาคุณใน Flash timing');
       if (s.battle?.noFlash === player) fail('NO_FLASH', 'ในการต่อสู้นี้ใช้เอฟเฟกต์แฟลชไม่ได้');
+      if (s.battle?.noHandFlash === player && !(s.shownCards ?? []).includes(cardId)) fail('NO_FLASH', 'ในการต่อสู้นี้ใช้การ์ดในมือในช่วง Flash ไม่ได้');
     } else {
       requireMain(ctx, player);
     }
@@ -436,7 +445,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
       paidWithSoul,
       trashWhenDone: true,
     });
-    queueMagicUsedTriggers(ctx, player);
+    queueMagicUsedTriggers(ctx, player, cardId);
     runQueue(ctx);
   },
 
@@ -459,6 +468,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     if (ctx.s.burstSetThisTurn) fail('BURST_ALREADY_SET', 'เซ็ท Burst ได้เทิร์นละครั้ง');
     const def = cardInHand(ctx, player, cardId);
     if (!def.burst) fail('NO_BURST_EFFECT', 'การ์ดที่ไม่มีเอฟเฟกต์ Burst เซ็ทไม่ได้');
+    if ((ctx.s.shownCards ?? []).includes(cardId)) fail('SHOWN_CARD', 'การ์ดที่วางแสดงนอกมือเซ็ทเป็น Burst ไม่ได้ (กติกา 06 Q&A 5)');
 
     const p = ctx.s.players[player];
     const replaced = p.burst;
@@ -488,6 +498,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     }
     // "เมื่อเริ่มแอทแท็คสเต็ปของคู่แข่ง"
     const batch = newBatch(ctx);
+    for (const id of [...ctx.s.players[player].field]) queueTriggers(ctx, id, 'ownAttackStepStart', batch);
     for (const id of [...ctx.s.players[opponentOf(player)].field]) queueTriggers(ctx, id, 'oppAttackStepStart', batch);
     runQueue(ctx);
   },
@@ -517,6 +528,17 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
       lifeOnBlockerDestroyedByBlade: 0,
     };
     emit(ctx, { type: 'attackDeclared', attackerId });
+    // "ต้องโจมตีมาที่สปิริตนี้" (ราดัน): สปิริตนั้นเข้าป้องกันเองถ้าป้องกันได้
+    for (const h of forceAttackHolders(s, ctx.db, player)) {
+      if (!matchesFilter(s, ctx.db, attackerId, h.filter)) continue;
+      const hc = s.cards[h.id]!;
+      const ok = (hc.state === 'refresh' || canBlockExhausted(s, ctx.db, h.id)) && !attackerUnblockable(s, attackerId, ctx.db.get(hc.cardNo).type);
+      if (ok) {
+        s.battle.chosenBlockers.push(h.id);
+        s.battle.skipFlash1 = true;
+        break;
+      }
+    }
     // เอฟเฟกต์ "เมื่อสปิริตนี้โจมตี" + "เมื่อสปิริตเรา...โจมตี" (เกิดพร้อมกัน) ประมวลผลก่อนเปิด Flash timing
     const batch = newBatch(ctx);
     queueTriggers(ctx, attackerId, 'attack', batch);
@@ -553,7 +575,8 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     const battle = requireBlockStep(ctx, player);
     const card = fieldCard(ctx.s, player, blockerId);
     if (!isSpiritLike(ctx.db.get(card.cardNo))) fail('CANNOT_BLOCK', 'การ์ดนี้ป้องกันไม่ได้');
-    if (card.state !== 'refresh') fail('EXHAUSTED', 'การ์ดเสื่อมสภาพอยู่');
+    if (card.state !== 'refresh' && !canBlockExhausted(ctx.s, ctx.db, blockerId)) fail('EXHAUSTED', 'การ์ดเสื่อมสภาพอยู่');
+    if (attackerUnblockable(ctx.s, battle.attackerId, ctx.db.get(card.cardNo).type)) fail('CANNOT_BLOCK', 'การโจมตีนี้ป้องกันไม่ได้');
     if (battle.blockFilter && !matchesFilter(ctx.s, ctx.db, blockerId, battle.blockFilter)) fail('CANNOT_BLOCK', 'การต่อสู้นี้ป้องกันด้วยการ์ดนี้ไม่ได้');
 
     card.state = 'exhausted';
@@ -571,7 +594,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
   /** ไม่บล็อก หรือ (เมื่อบล็อกได้หลายตัว) ไม่บล็อกเพิ่ม */
   noBlock(ctx, { player }) {
     const battle = requireBlockStep(ctx, player);
-    if (battle.mustBlock && canBlockWith(ctx, player).length > 0) {
+    if (battle.mustBlock && canBlockWith(ctx, player).some((id) => !effectBlocked(ctx.s, ctx.db, battle.attackerId, id))) {
       fail('MUST_BLOCK', battle.consecutiveBlade ? 'ต้องป้องกัน 2 ตัวถ้าทำได้ ([Consecutive Blade])' : 'ต้องป้องกันถ้าทำได้ ([True-Rage])');
     }
     if (battle.blockers.length > 0) {
@@ -586,6 +609,10 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     const { s } = ctx;
     if (s.turnPlayer !== player) fail('NOT_YOUR_TURN', 'ไม่ใช่เทิร์นของคุณ');
     if (s.phase !== 'attack' || s.battle) fail('WRONG_PHASE', 'จบ Attack Step ได้เมื่อไม่มีการต่อสู้ค้างอยู่');
+    const forced = forcedAttackers(s, ctx.db, player);
+    if (forced.length > 0) {
+      fail('MUST_ATTACK', `ต้องโจมตีก่อนจบ Attack Step (เอฟเฟกต์ของ ${ctx.db.get(s.cards[forceAttackHolders(s, ctx.db, player)[0]!.id]!.cardNo).name}): ${forced.map((id) => ctx.db.get(s.cards[id]!.cardNo).name).join(', ')}`);
+    }
     endTurn(ctx);
   },
 
@@ -809,7 +836,8 @@ function resolveBattle(ctx: Ctx): void {
   const blockers = battle.blockers.filter((id) => s.players[defender].field.includes(id));
   if (blockers.length === 0) {
     const extra = Object.values(extraSymbols(s, db, attacker.id)).reduce<number>((n, v) => n + (v ?? 0), 0);
-    const dmg = symbolCount(attackerDef) + braveSymbols(ctx, attacker.id) + extra;
+    const override = battle.symbolOverride?.cardId === attacker.id ? battle.symbolOverride.count : null;
+    const dmg = override ?? symbolCount(attackerDef) + braveSymbols(ctx, attacker.id) + extra;
     if (loseLife(ctx, defender, dmg, attacker.owner)) return;
     lostLife = true;
     queueLifeLostTriggers(ctx, defender, dmg);
@@ -907,6 +935,16 @@ export function applyAction(state: GameState, input: Action, db: CardDatabase): 
     // งานค้าง (Brave ที่ผู้ร่วมร่างสูญสลายจากการย้าย Core, Burst ที่เงื่อนไขเกิด)
     if (!ctx.s.choice && !ctx.s.winner && (ctx.s.queue.length > 0 || ctx.s.pendingBursts.length > 0)) runQueue(ctx);
     checkBattleParticipants(ctx);
+    // ตีระบุ / ราดัน: ไม่มีแฟลชหลังโจมตี ตัวที่ถูกเลือกป้องกันทันที (กติกา 14 ตีระบุ ข้อ 3-4)
+    {
+      const b = ctx.s.battle;
+      if (b && b.skipFlash1 && b.step === 'flashBeforeBlock' && b.flash && !ctx.s.choice && !ctx.s.winner && ctx.s.queue.length === 0) {
+        b.skipFlash1 = false;
+        b.flash = null;
+        b.step = 'declareBlock';
+        applyChosenBlockers(ctx);
+      }
+    }
     if (ctx.s.resume && !ctx.s.choice && !ctx.s.winner) {
       const resume = ctx.s.resume;
       ctx.s.resume = null;

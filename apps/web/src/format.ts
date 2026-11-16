@@ -142,6 +142,10 @@ export function formatEvent(e: GameEvent, s: GameState): string | null {
       return `${name(e.cardId)} เสื่อมสภาพ`;
     case 'bounced':
       return `${name(e.cardId)} กลับขึ้นมือ${playerLabel(e.player)}`;
+    case 'cardShown':
+      return `${playerLabel(e.player)} วางแสดง ${name(e.cardId)} นอกมือ (ใช้งานได้เหมือนอยู่ในมือ)`;
+    case 'returnedToDeck':
+      return `${name(e.cardId)} กลับไปไว้${e.where === 'top' ? 'บนสุด' : 'ใต้สุด'}เด็ค${playerLabel(e.player)}`;
     case 'voidCore':
       return `นำคอร์วอยด์ ${e.count} ดวงวาง${e.cardId ? `บน ${name(e.cardId)}` : `ที่${e.trash ? 'แทรช' : 'รีเสิร์ฟ'}${playerLabel(e.player)}`}`;
     case 'soulToReserve':

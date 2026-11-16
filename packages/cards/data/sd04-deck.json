@@ -1,61 +1,61 @@
 [
   {
-    "cardNo": "SD04-001",
+    "cardNo": "BS04-SP-C009",
     "count": 3
   },
   {
-    "cardNo": "SD04-002",
+    "cardNo": "BS04-SP-C010",
     "count": 3
   },
   {
-    "cardNo": "SD04-003",
+    "cardNo": "BS04-SP-C011",
     "count": 3
   },
   {
-    "cardNo": "SD04-004",
+    "cardNo": "BS04-SP-C012",
     "count": 3
   },
   {
-    "cardNo": "SD04-005",
+    "cardNo": "BS04-SP-C013",
     "count": 3
   },
   {
-    "cardNo": "SD04-006",
+    "cardNo": "BS04-SP-C015",
     "count": 3
   },
   {
-    "cardNo": "SD04-011",
+    "cardNo": "BS04-SP-U004",
     "count": 2
   },
   {
-    "cardNo": "SD04-007",
+    "cardNo": "BS04-BR-C003",
     "count": 3
   },
   {
-    "cardNo": "SD04-008",
+    "cardNo": "BS04-NX-C002",
     "count": 3
   },
   {
-    "cardNo": "SD04-012",
+    "cardNo": "BS04-MG-U002",
     "count": 3
   },
   {
-    "cardNo": "SD04-010",
+    "cardNo": "BS04-MG-R002",
     "count": 3
   },
   {
-    "cardNo": "SD04-009",
+    "cardNo": "BS04-MG-C002",
     "count": 2
   },
   {
-    "cardNo": "SD04-013",
+    "cardNo": "BS04-SP-C018",
     "count": 3,
     "foils": [
       "rainbow"
     ]
   },
   {
-    "cardNo": "SD04-014",
+    "cardNo": "BS04-SP-R004",
     "count": 3
   }
 ]

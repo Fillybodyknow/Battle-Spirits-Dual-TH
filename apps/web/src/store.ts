@@ -183,10 +183,12 @@ export function responseOptions(
       canEvolve(s, id) &&
       p.field.some((o) => o !== id && isSpiritLike(db.get(s.cards[o]!.cardNo)) && s.cards[o]!.cores.length > 0),
   );
-  const quick = p.hand.filter((id) => canQuickSummon(s, id));
+  // ดีไวน์เชน: ในการต่อสู้นี้ใช้การ์ดในมือในช่วง Flash ไม่ได้
+  const noHand = s.battle?.noHandFlash === player;
+  const quick = noHand ? [] : p.hand.filter((id) => canQuickSummon(s, id));
   const activate = p.field.filter((id) => activatableAbilities(s, db, player, id).length > 0);
   const trash = p.trashCards.filter((id) => trashSummonRule(s, db, player, id) !== null);
-  return { magic, evolve, quick, activate, trash };
+  return { magic: noHand ? [] : magic, evolve, quick, activate, trash };
 }
 
 /**
@@ -805,6 +807,14 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         const rect = rects[`field:${e.cardId}`];
         if (rect) out.push({ kind: 'fly', cardId: e.cardId, from: rect, to: `[data-hand-card="${e.cardId}"]`, mode: 'move', delay: t, hideTarget: true });
         out.push({ kind: 'float', anchor: `[data-hand-card="${e.cardId}"]`, text: 'กลับขึ้นมือ', tone: 'bad', delay: t });
+        t += 500;
+        break;
+      }
+      case 'returnedToDeck': {
+        // การ์ดบนสนามบินกลับเด็ค (คว่ำ)
+        const rect = rects[`field:${e.cardId}`];
+        if (rect) out.push({ kind: 'fly', cardId: e.cardId, from: rect, to: `[data-deck="${e.player}"]`, mode: 'move', shrink: true, faceDown: true, delay: t, hideTarget: false });
+        out.push({ kind: 'float', anchor: `[data-deck="${e.player}"]`, text: e.where === 'top' ? 'บนสุดเด็ค' : 'ใต้สุดเด็ค', tone: 'bad', delay: t });
         t += 500;
         break;
       }

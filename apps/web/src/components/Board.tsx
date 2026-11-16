@@ -970,11 +970,13 @@ function HandCard({ cardId, hidden, small, fan }: { cardId: string; hidden: bool
   const scroller = useContext(HandScrollCtx);
   const card = state.cards[cardId]!;
   const def = db.get(card.cardNo);
+  /** วางแสดงนอกมือ (อันโกะ): หงายให้ทั้งสองฝ่ายเห็น */
+  const shown = (state.shownCards ?? []).includes(cardId);
   const size = small ? 'h-16 w-11' : fan?.top ? 'h-32 w-[5.75rem]' : fan ? 'h-48 w-34' : 'h-36 w-26';
   const draggable = !hidden && !fxBlocking && (!!handFieldAction(state, cardId) || canDropBurst(state, cardId));
   const style = fan ? fanStyle(fan, hovering || selected, flashUsable && !hidden) : undefined;
 
-  if (hidden) {
+  if (hidden && !shown) {
     // ใส่ data-hand-card ด้วย: แอนิเมชันจั่ว/ลงการ์ด/กลับขึ้นมือของมือที่คว่ำไว้ (มือคู่แข่ง) ต้องใช้ตำแหน่งนี้
     return (
       <div data-hand-card={cardId} className={`${size} shrink-0 ${flying ? 'invisible' : ''}`} style={style}>
@@ -1058,6 +1060,14 @@ function HandCard({ cardId, hidden, small, fan }: { cardId: string; hidden: bool
         </div>
         {candidate && (
           <div className="absolute inset-x-1 top-1 rounded bg-fuchsia-500 py-0.5 text-center text-xs font-bold text-white shadow">คลิกเพื่อเลือก</div>
+        )}
+        {shown && !candidate && (
+          <div
+            title="วางแสดงนอกมือ: ทั้งสองฝ่ายเห็น ใช้งานได้เหมือนอยู่ในมือ"
+            className={`pointer-events-none absolute inset-x-1 rounded bg-amber-300 py-0.5 text-center text-[10px] font-black text-slate-950 shadow ${fan?.top && !(hovering || selected) ? 'top-1' : 'bottom-1'}`}
+          >
+            วางแสดง
+          </div>
         )}
         {/* ป้าย FLASH บนส่วนที่โผล่พ้นขอบจอ (มือคู่แข่งกลับหัว: ส่วนที่เห็นคือขอบล่าง) */}
         {flashUsable && !candidate && (

@@ -75,6 +75,8 @@ function levelCostBoost(state: GameState, db: CardDatabase, cardId: string): num
   for (const src of opp.field) {
     for (const ab of db.get(state.cards[src]!.cardNo).abilities) {
       if (ab.kind !== 'levelCostBoost' || !matchesFilter(state, db, cardId, ab.filter)) continue;
+      // ชีลด์ป้องกันการเปลี่ยนแปลงของเลเวลคอสต์ได้ (กติกา 09 ข้อควรทราบ 3)
+      if (effectBlocked(state, db, src, cardId)) continue;
       if (effectsNegated(state, db, src) || !ab.levels.includes(cardLevel(state, db, src))) continue;
       if (!conditionHolds(state, src, ab.if, false, false, db)) continue;
       n += ab.amount;
@@ -151,13 +153,23 @@ export function conditionHolds(
   if ('lifeAtMost' in cond) return owner.life.length <= cond.lifeAtMost;
   if ('soulInReserve' in cond) return owner.reserve.some((id) => state.cores[id]!.isSoul);
   if ('soulInTrash' in cond) return owner.trashCores.some((id) => state.cores[id]!.isSoul);
-  if ('handHas' in cond) return !!db && owner.hand.some((id) => matchesFilter(state, db, id, cond.handHas));
+  if ('handHas' in cond) return !!db && handCards(state, card.owner).some((id) => matchesFilter(state, db, id, cond.handHas));
   if ('catalyzed' in cond) return catalyzed;
   if ('selfCoresAtLeast' in cond) return card.cores.length >= cond.selfCoresAtLeast;
-  if ('handAtLeast' in cond) return owner.hand.length >= cond.handAtLeast;
+  if ('handAtLeast' in cond) return handCards(state, card.owner).length >= cond.handAtLeast;
   if ('deckAtLeast' in cond) return owner.deck.length >= cond.deckAtLeast;
   if ('selfAttacking' in cond) return state.battle?.attackerId === sourceId;
   if ('selfExhausted' in cond) return card.state === 'exhausted';
+  if ('oppTurn' in cond) return state.turnPlayer !== card.owner;
+  if ('noLifeDamageThisTurn' in cond) return !(state.lifeDamagedThisTurn ?? []).includes(card.owner);
+  if ('selfInBattle' in cond) return !!state.battle && (state.battle.attackerId === sourceId || state.battle.blockers.includes(sourceId));
+  if ('attackerFamily' in cond) {
+    const b = state.battle;
+    if (!b || !db) return false;
+    const a = state.cards[b.attackerId]!;
+    return a.owner === card.owner && db.get(a.cardNo).family.includes(cond.attackerFamily);
+  }
+  if ('opponentHasBurst' in cond) return !!state.players[card.owner === 'p1' ? 'p2' : 'p1'].burst;
   if ('allyHas' in cond) {
     if (!db) return false;
     const f = cond.allyHas;
@@ -275,6 +287,9 @@ export function matchesFilter(state: GameState, db: CardDatabase, cardId: string
   if (filter.soul && !hasSoul) return false;
   if (filter.noSoul && hasSoul) return false;
   if (filter.hasEvolution && !def.abilities.some((a) => a.kind === 'evolution')) return false;
+  if (filter.noBurst && def.burst) return false;
+  if (filter.excludeNames && filter.excludeNames.includes(def.name)) return false;
+  if (filter.anyOf && !filter.anyOf.some((f) => matchesFilter(state, db, cardId, f))) return false;
   return true;
 }
 
@@ -283,6 +298,31 @@ export function matchesFilter(state: GameState, db: CardDatabase, cardId: string
  * การ์ดที่ปิดได้คือของฝ่ายที่ไม่ใช่ผู้เล่นเทิร์น จึงไม่วนตรวจกันเอง
  */
 export function effectsNegated(state: GameState, db: CardDatabase, cardId: string): boolean {
+  // เน็กซัส: "เน็กซัสทั้งหมดของคู่แข่งที่ไม่มีคำว่า ... ในชื่อจะสูญเสียเอฟเฟกต์ทั้งหมด"
+  {
+    const c = state.cards[cardId];
+    if (c && !checkingNegation && db.get(c.cardNo).type === 'nexus' && state.players[c.owner].field.includes(cardId)) {
+      const def = db.get(c.cardNo);
+      const opp = state.players[c.owner === 'p1' ? 'p2' : 'p1'];
+      checkingNegation = true;
+      try {
+        const hit = opp.field.some((id) =>
+          db
+            .get(state.cards[id]!.cardNo)
+            .abilities.some(
+              (a) =>
+                a.kind === 'negateOpponentNexus' &&
+                !nameHas(def, a.unlessNamed) &&
+                a.levels.includes(cardLevel(state, db, id)) &&
+                conditionHolds(state, id, a.if, false, false, db),
+            ),
+        );
+        if (hit) return true;
+      } finally {
+        checkingNegation = false;
+      }
+    }
+  }
   if (state.phase !== 'attack') return false;
   const card = state.cards[cardId];
   if (!card || card.owner === state.turnPlayer) return false;
@@ -317,14 +357,23 @@ export function fieldSymbols(
   player: PlayerId,
 ): Partial<Record<SymbolColor, number>> {
   const out: Partial<Record<SymbolColor, number>> = {};
+  // ในการต่อสู้นี้ เจ็มของการ์ดนี้ถูกเปลี่ยน (โอคิดาคุ): ใช้ค่าที่เปลี่ยนแทนเจ็มของการ์ดและ Brave ทั้งหมด
+  const override = state.battle?.symbolOverride;
   // Brave ที่ร่วมร่าง: ผู้ร่วมร่างได้รับ gem symbol ของ Brave ด้วย
-  for (const id of state.players[player].field.flatMap((f) => [f, ...state.cards[f]!.braves])) {
-    const def = db.get(state.cards[id]!.cardNo);
-    for (const [color, n] of Object.entries(def.symbols) as [SymbolColor, number][]) {
-      out[color] = (out[color] ?? 0) + n;
+  for (const f of state.players[player].field) {
+    if (override?.cardId === f) {
+      out[override.color as SymbolColor] = (out[override.color as SymbolColor] ?? 0) + override.count;
+      continue;
+    }
+    for (const id of [f, ...state.cards[f]!.braves]) {
+      const def = db.get(state.cards[id]!.cardNo);
+      for (const [color, n] of Object.entries(def.symbols) as [SymbolColor, number][]) {
+        out[color] = (out[color] ?? 0) + n;
+      }
     }
   }
   for (const id of state.players[player].field) {
+    if (override?.cardId === id) continue;
     for (const [color, n] of Object.entries(extraSymbols(state, db, id)) as [SymbolColor, number][]) {
       out[color] = (out[color] ?? 0) + n;
     }
@@ -348,7 +397,8 @@ export function baseCost(state: GameState, db: CardDatabase, cardId: string): nu
   const card = state.cards[cardId]!;
   const def = db.get(card.cardNo);
   const owner = state.players[card.owner];
-  const zone = owner.trashCards.includes(cardId) ? 'trash' : owner.hand.includes(cardId) ? 'hand' : null;
+  // การ์ดที่วางแสดงนอกมือ (อันโกะ) ไม่ใช่การ์ดในมือ: ไม่รับผล "การ์ดในมือเรา...คอสต์" (กติกา 14 นอกมือ)
+  const zone = owner.trashCards.includes(cardId) ? 'trash' : owner.hand.includes(cardId) && !(state.shownCards ?? []).includes(cardId) ? 'hand' : null;
   if (!zone) return def.cost;
   let cost: number | null = null;
   for (const id of owner.field) {
@@ -363,7 +413,20 @@ export function baseCost(state: GameState, db: CardDatabase, cardId: string): nu
     }
   }
   if (cost !== null) return cost;
-  if (zone === 'hand') return def.cost;
+  if (zone === 'hand') {
+    // "แอทแท็คสเต็ปของเรา: การ์ดเมจิคทั้งหมดในมือเราคอสต์ -1"
+    let delta = 0;
+    for (const id of owner.field) {
+      if (effectsNegated(state, db, id)) continue;
+      const level = cardLevel(state, db, id);
+      for (const ab of db.get(state.cards[id]!.cardNo).abilities) {
+        if (ab.kind !== 'handCostDelta' || !ab.levels.includes(level) || !matchesFilter(state, db, cardId, ab.filter)) continue;
+        if (ab.ownAttackStepOnly && (state.phase !== 'attack' || state.turnPlayer !== card.owner)) continue;
+        delta += ab.delta;
+      }
+    }
+    return Math.max(0, def.cost + delta);
+  }
   const own = def.abilities.find((a) => a.kind === 'trashCost');
   return own && own.kind === 'trashCost' ? own.cost : def.cost;
 }
@@ -384,6 +447,133 @@ export function activatableAbilities(state: GameState, db: CardDatabase, player:
       (a.maxPerTurn === undefined || card.usedThisTurn.filter((x) => x === a.source).length < a.maxPerTurn) &&
       conditionHolds(state, cardId, a.if, false, false, db),
   );
+}
+
+/** ผู้โจมตีนี้ไม่ถูกป้องกันโดยการ์ดประเภทนี้ */
+export function attackerUnblockable(state: GameState, attackerId: string, blockerType: string): boolean {
+  const b = state.battle;
+  if (b?.attackerId === attackerId && b.unblockable) {
+    if (b.unblockable === 'all') return true;
+    if (blockerType !== 'ultimate') return true;
+  }
+  return (state.unblockableTurn ?? []).some((u) => u.cardId === attackerId && u.turn === state.turn);
+}
+
+/** สปิริตนี้ป้องกันได้แม้อยู่ในรูปแบบเสื่อมสภาพ */
+export function canBlockExhausted(state: GameState, db: CardDatabase, cardId: string): boolean {
+  if (effectsNegated(state, db, cardId)) return false;
+  const level = cardLevel(state, db, cardId);
+  return db
+    .get(state.cards[cardId]!.cardNo)
+    .abilities.some((a) => a.kind === 'blockWhileExhausted' && a.levels.includes(level) && conditionHolds(state, cardId, a.if, false, false, db));
+}
+
+/**
+ * เอฟเฟกต์ของการ์ด sourceId ส่งผลถึงการ์ด targetId ไม่ได้ (Ultra Shield / "จะไม่รับผลเอฟเฟกต์...ของคู่แข่ง")
+ * ใช้กับเอฟเฟกต์ที่เลือก/ทำกับการ์ดของอีกฝ่ายเท่านั้น
+ */
+export function effectBlocked(state: GameState, db: CardDatabase, sourceId: string, targetId: string): boolean {
+  const src = state.cards[sourceId];
+  const target = state.cards[targetId];
+  if (!src || !target || src.owner === target.owner) return false;
+  const tDef = db.get(target.cardNo);
+  const hostOf = (braveId: string) => braveHostOf(state, braveId);
+  // ต้นเหตุเป็นสปิริตรวมร่าง (หรือเบรฟที่ให้ความสามารถแก่ผู้ร่วมร่าง): นับเป็นสปิริต ได้สีของเบรฟด้วย (กติกา 04)
+  const srcHost = db.get(src.cardNo).type === 'brave' ? (hostOf(sourceId) ?? sourceId) : sourceId;
+  const hostCard = state.cards[srcHost]!;
+  const srcType = db.get(hostCard.cardNo).type;
+  const srcColors = new Set([hostCard, ...hostCard.braves.map((b) => state.cards[b]!)].flatMap((c) => db.get(c.cardNo).colors));
+  for (const p of ['p1', 'p2'] as const) {
+    if (p === src.owner) continue; // ผู้ถือความสามารถต้องเป็นคู่แข่งของต้นเหตุ
+    for (const holder of state.players[p].field.flatMap((f) => [f, ...state.cards[f]!.braves])) {
+      const hDef = db.get(state.cards[holder]!.cardNo);
+      for (const ab of hDef.abilities) {
+        if (ab.kind !== 'effectImmune') continue;
+        const host = ab.granted ? hostOf(holder) : holder;
+        if (!host) continue;
+        if (!ab.granted && (!state.players[p].field.includes(holder) || !ab.levels.includes(cardLevel(state, db, holder)))) continue;
+        if (effectsNegated(state, db, host)) continue;
+        if (ab.oppTurnOnly && state.turnPlayer === p) continue;
+        if (!conditionHolds(state, host, ab.if, false, false, db)) continue;
+        if (ab.colors && !ab.colors.some((c) => srcColors.has(c))) continue;
+        if (ab.types && !ab.types.includes(srcType)) continue;
+        const sc = ab.scope;
+        const inScope =
+          sc === 'self'
+            ? targetId === host
+            : sc === 'allNexus'
+              ? tDef.type === 'nexus' || targetId === host
+              : target.owner === p &&
+                ('ownFamily' in sc
+                  ? tDef.family.includes(sc.ownFamily)
+                  : 'ownNamed' in sc
+                    ? nameHas(tDef, sc.ownNamed)
+                    : tDef.colors.includes(sc.ownColor));
+        if (inScope) return true;
+      }
+    }
+  }
+  return false;
+}
+
+/** การ์ดของผู้เล่นนี้ที่ถูกนำกลับขึ้นมือ ต้องไปไว้ใต้สุดเด็คแทน (คองโก) */
+export function bounceGoesBottom(state: GameState, db: CardDatabase, cardId: string): boolean {
+  const owner = state.cards[cardId]!.owner;
+  const opp = state.players[owner === 'p1' ? 'p2' : 'p1'];
+  return opp.field.some((id) => {
+    if (effectsNegated(state, db, id)) return false;
+    const level = cardLevel(state, db, id);
+    return db
+      .get(state.cards[id]!.cardNo)
+      .abilities.some(
+        (a) => a.kind === 'bounceToBottom' && a.levels.includes(level) && (!a.attackStepOnly || state.phase === 'attack') && conditionHolds(state, id, a.if, false, false, db),
+      );
+  });
+}
+
+/** การ์ดในมือจริง (ไม่รวมการ์ดที่วางแสดงนอกมือ): ใช้กับเอฟเฟกต์ทิ้งการ์ด / เงื่อนไขจำนวนการ์ดในมือ */
+export function handCards(state: GameState, player: PlayerId): string[] {
+  const shown = state.shownCards ?? [];
+  return shown.length ? state.players[player].hand.filter((id) => !shown.includes(id)) : state.players[player].hand;
+}
+
+/** การ์ดที่ต้องโจมตีของผู้เล่นนี้ (ราดัน): ฝั่งตรงข้ามมีเอฟเฟกต์บังคับ และตัวนั้นยังโจมตีได้ */
+export function forcedAttackers(state: GameState, db: CardDatabase, player: PlayerId): string[] {
+  if (state.phase !== 'attack' || state.turnPlayer !== player || state.battle) return [];
+  const filters = forceAttackHolders(state, db, player).map((h) => h.filter);
+  if (filters.length === 0) return [];
+  return state.players[player].field.filter((id) => canAttackWith(state, db, id) && filters.some((f) => matchesFilter(state, db, id, f)));
+}
+
+/** การ์ดฝั่งตรงข้ามของผู้เล่นนี้ที่บังคับให้โจมตีมาหา (ราดัน) */
+export function forceAttackHolders(state: GameState, db: CardDatabase, player: PlayerId): { id: string; filter: CardFilter }[] {
+  const opp = state.players[player === 'p1' ? 'p2' : 'p1'];
+  const out: { id: string; filter: CardFilter }[] = [];
+  for (const id of opp.field) {
+    if (effectsNegated(state, db, id)) continue;
+    const level = cardLevel(state, db, id);
+    for (const a of db.get(state.cards[id]!.cardNo).abilities) if (a.kind === 'forceAttack' && a.levels.includes(level)) out.push({ id, filter: a.filter });
+  }
+  return out;
+}
+
+/** การ์ดนี้ในแทรชไม่รับผลเอฟเฟกต์ (เทปเปคิวอลล์) */
+export function trashImmune(db: CardDatabase, state: GameState, cardId: string): boolean {
+  return db.get(state.cards[cardId]!.cardNo).abilities.some((a) => a.kind === 'trashImmune');
+}
+
+/** Dispersion ของผู้เล่นนี้ทำงานอยู่ (การ์ดที่มีความสามารถกำลังโจมตี/ป้องกัน): จำนวนเป้าใหม่ หรือ 0 */
+export function dispersionCount(state: GameState, db: CardDatabase, player: PlayerId): number {
+  const b = state.battle;
+  if (!b) return 0;
+  let n = 0;
+  for (const id of state.players[player].field) {
+    if (b.attackerId !== id && !b.blockers.includes(id)) continue;
+    if (effectsNegated(state, db, id)) continue;
+    const level = cardLevel(state, db, id);
+    for (const a of db.get(state.cards[id]!.cardNo).abilities) if (a.kind === 'dispersion' && a.levels.includes(level)) n = Math.max(n, a.count);
+  }
+  return n;
 }
 
 /** การ์ดในมือของผู้เล่นนี้ไม่รับผลเอฟเฟกต์ของคู่แข่ง (คานิคอง) */
@@ -561,7 +751,8 @@ export function blockersFor(state: GameState, db: CardDatabase, defender: Player
     const card = state.cards[id]!;
     const def = db.get(card.cardNo);
     if (state.battle?.blockFilter && !matchesFilter(state, db, id, state.battle.blockFilter)) return false;
-    return card.state === 'refresh' && isSpiritLike(def) && (sameCost === null || def.cost === sameCost);
+    if (attacker && attackerUnblockable(state, attacker.id, def.type)) return false;
+    return (card.state === 'refresh' || canBlockExhausted(state, db, id)) && isSpiritLike(def) && (sameCost === null || def.cost === sameCost);
   });
 }
 

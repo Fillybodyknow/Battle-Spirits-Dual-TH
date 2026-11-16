@@ -6,7 +6,26 @@
  *  - "u:<id>"            เด็คที่จัดเองซึ่งบันทึกไว้ในเครื่องนี้ (ใช้ตอนเลือกในเครื่อง)
  *  - "c:<ชื่อ>|<การ์ด>"   เด็คที่จัดเองแบบมีรายการการ์ดในตัว (ส่งให้อีกเครื่องตอนเล่นออนไลน์)
  */
-import { SD01_DECK, SD02_DECK, SD03_DECK, SD04_DECK, type DeckEntry, type Foil } from '@bs/cards';
+import { currentCardNo, SD01_DECK, SD02_DECK, SD03_DECK, SD04_DECK, type DeckEntry, type Foil } from '@bs/cards';
+
+/**
+ * แปลงรหัสการ์ดเดิม (เช่น SD04-001 ก่อนย้ายไป BS04) เป็นรหัสปัจจุบัน
+ * ถ้าหลายรายการกลายเป็นการ์ดใบเดียวกัน: รวมจำนวนและฟอยเข้าด้วยกัน
+ */
+export function migrateEntries(entries: DeckEntry[]): DeckEntry[] {
+  const out: DeckEntry[] = [];
+  for (const e of entries) {
+    const cardNo = currentCardNo(e.cardNo);
+    const same = out.find((x) => x.cardNo === cardNo);
+    if (!same) {
+      out.push({ ...e, cardNo });
+      continue;
+    }
+    same.count += e.count;
+    if (e.foils?.length || same.foils?.length) same.foils = [...(same.foils ?? []), ...(e.foils ?? [])];
+  }
+  return out;
+}
 
 export const STARTER_DECKS: Record<string, { label: string; entries: DeckEntry[] }> = {
   sd01: { label: 'Starter Deck 01', entries: [...SD01_DECK] },
@@ -31,7 +50,9 @@ const KEY = 'bs-my-decks';
 export function loadMyDecks(): SavedDeck[] {
   try {
     const list = JSON.parse(localStorage.getItem(KEY) ?? '[]') as SavedDeck[];
-    return Array.isArray(list) ? list.filter((d) => d && typeof d.id === 'string' && Array.isArray(d.entries)) : [];
+    return Array.isArray(list)
+      ? list.filter((d) => d && typeof d.id === 'string' && Array.isArray(d.entries)).map((d) => ({ ...d, entries: migrateEntries(d.entries) }))
+      : [];
   } catch {
     return [];
   }
@@ -79,7 +100,7 @@ function decodeDeck(token: string): { label: string; entries: DeckEntry[] } | nu
     const foils = m[3] ? [...m[3]].map((c) => (c === 'r' ? 'rainbow' : c === 'w' ? 'white' : null)) : undefined;
     entries.push({ cardNo: m[1]!, count: Number(m[2]), ...(foils ? { foils } : {}) });
   }
-  return { label, entries };
+  return { label, entries: migrateEntries(entries) };
 }
 
 // ---------------------------------------------------------------- ใช้งาน

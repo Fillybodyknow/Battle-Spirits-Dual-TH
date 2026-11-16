@@ -96,6 +96,16 @@ export interface Battle {
   lifeOnBattlerGone?: { amount: number; to: 'reserve' | 'trash' };
   /** สปิริตที่ฟื้นสภาพเมื่อชนะและทำลายสปิริตคู่แข่งจากการเทียบ BP */
   refreshOnWin?: string[];
+  /** ตีระบุ / ถูกบังคับให้โจมตีมาหา: ไม่มีแฟลชหลังโจมตี ผู้ป้องกันที่เลือกไว้ป้องกันทันที (กติกา 14 ตีระบุ) */
+  skipFlash1?: boolean;
+  /** ในการต่อสู้นี้ เจ็มของการ์ดนี้ (รวม Brave) ถือเป็นสี color จำนวน count เม็ด */
+  symbolOverride?: { cardId: string; color: string; count: number };
+  /** ผู้โจมตีไม่ถูกป้องกัน (spirits = ไม่ถูกป้องกันโดยสปิริต) */
+  unblockable?: 'all' | 'spirits';
+  /** ผู้เล่นที่ใช้การ์ดในมือในช่วง Flash ไม่ได้ในการต่อสู้นี้ */
+  noHandFlash?: PlayerId;
+  /** ผู้เล่นที่สปิริตถูกทำลายโดยคู่แข่งแล้วยังอยู่บนสนาม (เสื่อมสภาพ) ในการต่อสู้นี้ */
+  staysOnDestroy?: PlayerId;
   /** ฝ่ายป้องกันป้องกันได้เฉพาะการ์ดที่ตรงตัวกรอง */
   blockFilter?: CardFilter;
   /** ผู้เล่นที่ใช้เอฟเฟกต์แฟลชไม่ได้ในการต่อสู้นี้ */
@@ -139,6 +149,12 @@ export interface QueuedEffect {
   summonFrom?: string;
   /** เอฟเฟกต์นี้ทำให้การ์ดที่มี Soul Core สูญสลายแล้ว */
   depletedSoul?: boolean;
+  /** เอฟเฟกต์จากเบิร์ส (รวมแฟลชที่จ่ายคอสต์ต่อจากเบิร์ส: กติกา 06 Q&A 3) */
+  isBurst?: boolean;
+  /** trigger oppHandIncreased: จำนวนการ์ดที่มือคู่แข่งเพิ่มขึ้น */
+  handIncrease?: number;
+  /** เอฟเฟกต์นี้ทิ้งเบิร์สของคู่แข่งได้ */
+  burstDiscarded?: boolean;
   /** เอฟเฟกต์นี้มาจาก "เมื่อสปิริตนี้โจมตี" */
   fromAttack?: boolean;
   /** trigger ที่ทำงานขณะการ์ดอยู่บนมือ/ในแทรช: การ์ดย้ายออกจากที่นั้นก่อนถึงคิว = ไม่ทำงาน */
@@ -223,6 +239,17 @@ export interface GameState {
   refreshLocks?: string[];
   /** จำนวนจั่วเพิ่มของ Draw Step ปัจจุบัน (เอฟเฟกต์ก่อนจั่ว) */
   drawStepExtra?: number;
+  /** ผู้เล่นที่ไลฟ์ได้รับความเสียหายในเทิร์นนี้ (ล้างเมื่อเริ่มเทิร์นใหม่) */
+  lifeDamagedThisTurn?: PlayerId[];
+  /**
+   * การ์ดที่ "วางแสดงนอกมือ" (อันโกะ): ยังอยู่ใน hand เพื่อใช้งานได้เหมือนอยู่ในมือ แต่ทั้งสองฝ่ายเห็น
+   * และไม่นับเป็นการ์ดในมือสำหรับเอฟเฟกต์ทิ้งการ์ด / เงื่อนไขจำนวนการ์ดในมือ (ใช้ handCards ใน rules)
+   */
+  shownCards?: string[];
+  /** การ์ดที่อัญเชิญเป็นใบแรกสุดของเทิร์นนี้ ของแต่ละผู้เล่น */
+  firstSummon?: { turn: number; p1?: string; p2?: string };
+  /** สปิริตที่ไม่ถูกป้องกันในเทิร์นนี้ */
+  unblockableTurn?: { cardId: string; turn: number }[];
   /** "ในเทิร์นนี้, เมื่อ..." ที่เมจิคตั้งไว้ (ล้างเมื่อจบเทิร์น) */
   turnTriggers?: { player: PlayerId; turn: number; on: 'allyDestroyed'; steps: Step[]; sourceId: string; paidWithSoul: boolean }[];
   /** Draw Step แบบกดจั่วเอง: ผู้เล่นที่ต้องกดจั่ว (ระหว่างนี้ทำ action อื่นไม่ได้) */
@@ -311,6 +338,10 @@ export type GameEvent =
   | { type: 'destroyed'; cardId: string; bySource?: string; stays?: true; cost?: number }
   /** คอร์บนการ์ดถูกส่งออก (เอฟเฟกต์ถอดคอร์) */
   | { type: 'coresRemoved'; cardId: string; count: number; to: 'reserve' | 'trash' }
+  /** การ์ดในมือถูกวางแสดงนอกมือ */
+  | { type: 'cardShown'; player: PlayerId; cardId: string }
+  /** การ์ดบนสนามกลับไปไว้ในเด็ค (บนสุด/ใต้สุด) */
+  | { type: 'returnedToDeck'; player: PlayerId; cardId: string; where: 'top' | 'bottom' }
   /** ผู้เล่นกดใช้เอฟเฟกต์ Flash ของการ์ดบนสนาม */
   | { type: 'activated'; player: PlayerId; cardId: string; source: number }
   | { type: 'battleEnded' }

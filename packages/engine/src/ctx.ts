@@ -13,6 +13,18 @@ export interface Ctx {
 export function emit(ctx: Ctx, event: GameEvent): void {
   ctx.events.push(event);
   ctx.s.log.push(event);
+  // การ์ดที่วางแสดงนอกมือ ถูกนำไปใช้แล้ว (ออกจากมือ) = เลิกแสดง
+  if (ctx.s.shownCards?.length && event.type !== 'cardShown' && 'cardId' in event) {
+    const id = (event as { cardId: string }).cardId;
+    const c = ctx.s.cards[id];
+    if (c && ctx.s.shownCards.includes(id) && !ctx.s.players[c.owner].hand.includes(id)) ctx.s.shownCards = ctx.s.shownCards.filter((x) => x !== id);
+  }
+  // จดการอัญเชิญใบแรกสุดของเทิร์น (นอร์ธซีโรด)
+  if (event.type === 'summoned') {
+    const s = ctx.s;
+    if (s.firstSummon?.turn !== s.turn) s.firstSummon = { turn: s.turn };
+    if (!s.firstSummon[event.player]) s.firstSummon[event.player] = event.cardId;
+  }
 }
 
 export function newCore(ctx: Ctx, owner: PlayerId, isSoul = false): string {
@@ -128,6 +140,7 @@ export function loseLife(ctx: Ctx, player: PlayerId, amount: number, winner: Pla
   const n = Math.min(amount, p.life.length);
   (to === 'trash' ? p.trashCores : p.reserve).push(...p.life.splice(p.life.length - n, n));
   emit(ctx, { type: 'lifeLost', player, amount: n });
+  if (n > 0 && !(ctx.s.lifeDamagedThisTurn ?? []).includes(player)) ctx.s.lifeDamagedThisTurn = [...(ctx.s.lifeDamagedThisTurn ?? []), player];
   if (n > 0) pendBurst(ctx, player, 'afterLifeLost');
   if (p.life.length > 0) return false;
   endGame(ctx, winner, 'lifeZero');

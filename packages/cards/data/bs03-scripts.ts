@@ -38,7 +38,7 @@ export const BS03_SCRIPTS: Record<string, CardScript> = {
     { kind: 'trashCost', cost: 2 },
     [
       // เลือกให้สปิริตที่เสื่อมสภาพของคู่แข่ง 1 ตัวเป็นผู้ป้องกัน (ไม่เลือกก็ได้)
-      { kind: 'trigger', on: 'attack', granted: true, levels: [], steps: [{ do: 'chooseBlockers', filter: { types: SPIRIT, state: 'exhausted' } }] },
+      { kind: 'trigger', on: 'attack', granted: true, levels: [], steps: [{ do: 'chooseBlockers', filter: { types: SPIRIT, state: 'exhausted' }, direct: true }] },
       { kind: 'trigger', on: 'attack', granted: true, levels: [], if: soulOnSelf, steps: [{ do: 'destroyOpponentBrave' }] },
     ],
   ],
