@@ -1279,6 +1279,7 @@ export function HandFan({ player, top }: { player: PlayerId; top?: boolean }) {
       ref={outerRef}
       data-player-target={player}
       data-setup={top ? 'hand-top' : 'hand-bottom'}
+      data-hand-fan
       className={`pointer-events-none fixed left-0 right-[var(--sidebar)] z-20 flex h-0 justify-center ${top ? 'top-0 items-start' : 'bottom-0 items-end'}`}
     >
       {/* หน้าต่างของมือ: มือยาวเกิน = ตัดส่วนที่เลยซ้าย/ขวา (ด้านบน/ล่างยังยื่นได้ ให้ใบที่ยกขึ้นและเมนูการ์ดแสดงครบ) */}

@@ -1,10 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { opponentOf } from '@bs/engine';
 import { cardArt } from '../assets';
 import { actingPlayer, chainEntries, viewPlayer, db, fieldScaleOf, GHOST_MS, isFxBlocking, layoutRect, MILL_MS, millBreakAt, millDuration, PLAY_HIT, useGame, type Fx, type Rect, hiddenFrom } from '../store';
 import { CardBack, CardFace } from './CardFace';
 import { sfx } from '../sfx';
-import { flashScale, shakeScale } from '../gfx';
+import { effects, flashScale, shakeScale } from '../gfx';
 import { playerLabel } from '../format';
 import { MatchIntro } from './MatchIntro';
 import { MatchResult } from './MatchResult';
@@ -286,9 +286,18 @@ export function FxLayer() {
 
 const rectOf = layoutRect;
 
+/**
+ * ความกว้างแผงถาวรด้านขวา (--sidebar ตอนนี้ = 0px: กระดานเต็มจอ)
+ * เดิมเขียน `parseFloat(...) || 400` ทำให้ 0 กลายเป็น 400 จุดกึ่งกลางเยื้องซ้าย 200px (กอง Chain ของคู่แข่งเลยอยู่กลางจอ)
+ */
+function sidebarWidth(): number {
+  const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sidebar'));
+  return Number.isFinite(v) ? v : 0;
+}
+
 /** กึ่งกลางกระดาน (ไม่รวมแผงด้านขวา) ขนาดการ์ดใหญ่ */
 function boardCenter(w: number, h: number): Rect {
-  const sidebar = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sidebar')) || 400;
+  const sidebar = sidebarWidth();
   return { x: (innerWidth - sidebar) / 2 - w / 2, y: innerHeight / 2 - h / 2, w, h };
 }
 
@@ -298,9 +307,12 @@ const COLOR_HEX: Record<string, string> = { red: '#ef4444', purple: '#a855f7', g
 
 /** จอสั่นตามการตั้งค่า (ตั้งค่า → กราฟิก → จอสั่น): points = ระยะ px ของแต่ละจังหวะ ก่อนคูณความแรง */
 function shakeMain(points: [number, number][], duration: number) {
+  shakeEl(document.querySelector('main'), points, duration);
+}
+function shakeEl(el: Element | null | undefined, points: [number, number][], duration: number) {
   const k = shakeScale();
   if (k === 0) return;
-  document.querySelector('main')?.animate(
+  el?.animate(
     [{ transform: 'translate(0,0)' }, ...points.map(([x, y]) => ({ transform: `translate(${x * k}px,${y * k}px)` })), { transform: 'translate(0,0)' }],
     { duration, easing: 'ease-out' },
   );
@@ -932,9 +944,14 @@ export function ChainTracker({ side }: { side: 'self' | 'opp' }) {
 }
 
 const CHAIN_LINK_MS = 2600;
-const CHAIN_HOLD_END = 0.83; // สัดส่วนเวลาที่การ์ดค้างในกอง Chain ก่อนบินลงแถบ
-const STACK_W = 150;
-const STACK_H = 210;
+const CHAIN_HOLD_END = 0.83; // สัดส่วนเวลาที่การ์ดค้างในกอง Chain ก่อนจางหาย
+/** ขนาดการ์ดในกอง Chain (ใบที่ต่อมาก่อนจะถูกย่ออีกตอนแสดง: OLD_SCALE) */
+const STACK_W = 176;
+const STACK_H = 246;
+/** ใบ Chain ล่าสุดใหญ่ที่สุด */
+const STACK_NEW = 1.2;
+/** ระยะจากกลางจอถึงกอง Chain: ของเราอยู่ซ้าย ของคู่แข่งอยู่ขวา */
+const CHAIN_SIDE_OFFSET = 340;
 
 /** ระยะระหว่างการ์ดในกอง Chain (ความสูงการ์ด + ช่องให้เห็นโซ่) */
 const STACK_STEP = STACK_H + 48;
@@ -944,23 +961,296 @@ const STACK_STEP = STACK_H + 48;
  * ของเราอยู่ซ้าย ของคู่แข่งอยู่ขวา
  */
 function stackLayout(sides: ('self' | 'opp')[]): Rect[] {
-  const sidebar = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sidebar')) || 400;
+  const sidebar = sidebarWidth();
   const cx = (innerWidth - sidebar) / 2;
   const top = innerHeight * 0.42;
   const last = sides.length - 1;
   return sides.map((side, k) => {
-    const x = cx + (side === 'self' ? -1 : 1) * 140;
+    const x = cx + (side === 'self' ? -1 : 1) * CHAIN_SIDE_OFFSET;
     const y = top + (last - k) * STACK_STEP;
-    return { x: x - STACK_W / 2, y: y - STACK_H / 2, w: STACK_W, h: STACK_H };
+    const z = k === last ? STACK_NEW : 1;
+    return { x: x - (STACK_W * z) / 2, y: y - (STACK_H * z) / 2, w: STACK_W * z, h: STACK_H * z };
   });
 }
 
+const inRect = (r: Rect, p: { x: number; y: number }) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+/** ย่อ Rect รอบจุดกึ่งกลาง */
+const shrink = (r: Rect, k: number): Rect => ({ x: r.x + (r.w * (1 - k)) / 2, y: r.y + (r.h * (1 - k)) / 2, w: r.w * k, h: r.h * k });
+/** สุ่มแบบคงที่ตามเลข (ไม่เปลี่ยนทุกครั้งที่ render) */
+const prand = (i: number) => {
+  const x = Math.sin(i * 12.9898 + 78.233) * 43758.5453;
+  return x - Math.floor(x);
+};
+
+// เวลา (วินาที) ของข้อโซ่ที่เพิ่งต่อ สัมพันธ์กับการ์ดใหม่ที่พุ่งมาวางในกอง
+const CL_DRAW_AT = 0.42;
+const CL_DRAW_MS = 0.38;
+/** โซ่ต่อถึงการ์ดใหม่ = ล็อก: แสงวาบ คลื่นกระแทก จอสั่น เลข Chain พลิก */
+const CL_LOCK_AT = CL_DRAW_AT + CL_DRAW_MS;
+/** ช่วงโซ่ถูกกระชากให้ตึงหลังล็อก */
+const CL_SNAP = 0.4;
+/** การ์ดที่ต่อมาก่อน: ย่อลงและเอียงเล็กน้อยให้การ์ดใหม่เด่น */
+const OLD_SCALE = 0.88;
+
 /**
- * ต่อ Chain: กอง Chain กลางจอ (การ์ดที่ต่อมาก่อนซ้อนอยู่ + โซ่เชื่อมเป็นทอด ๆ)
- * การ์ดใหม่พุ่งมาวางบนสุด โซ่ข้อสุดท้ายลากต่อเข้าหา "CHAIN n" แล้วการ์ดใหม่ย่อบินลงแถบ Chain
+ * โซ่หนึ่งข้อระหว่างการ์ดสองใบในกอง Chain (วาดไว้ใต้การ์ด: การ์ดบังปลายโซ่)
+ *  - ลากจากกลางการ์ดเก่าถึงกลางการ์ดใหม่ ห้อยโค้งตามแรงโน้มถ่วง (แกว่งเบา ๆ)
+ *  - ข้อโซ่ = ห่วงรีเรียงต่อกัน + แสงสะท้อน ไล่สีจากสีของการ์ดเก่าไปการ์ดใหม่
+ *  - fresh (ข้อที่เพิ่งต่อ): เหวี่ยงหย่อน ๆ เข้าหาการ์ดใหม่ → ล็อก (แสงวาบตรงขอบการ์ด) → ถูกกระชากตึง
+ *    → สายฟ้าแลบตามโซ่ (rich) → ลูกพลังงานวิ่งไปตามโซ่
+ *  - ข้อเก่า: ประกายเล็ก ๆ ไหลผ่านช้า ๆ
+ * from/to = กรอบการ์ดที่มองเห็น (ใช้หาจุดที่โซ่โผล่พ้นขอบการ์ด)
+ */
+function ChainLink({ id, from, to, colorFrom, colorTo, glow, fresh, rich }: { id: string; from: Rect; to: Rect; colorFrom: string; colorTo: string; glow: string; fresh: boolean; rich: boolean }) {
+  const a = { x: from.x + from.w / 2, y: from.y + from.h / 2 };
+  const b = { x: to.x + to.w / 2, y: to.y + to.h / 2 };
+  const dist = Math.hypot(b.x - a.x, b.y - a.y);
+  const sag = Math.max(36, Math.min(150, dist * 0.22));
+  const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  const curve = (sx: number, sy: number) => `M ${a.x} ${a.y} Q ${mid.x + sx} ${mid.y + sy} ${b.x} ${b.y}`;
+  const d1 = curve(0, sag);
+  const d2 = curve((b.x - a.x) * 0.05, sag * 0.78);
+  // ข้อใหม่: หย่อนก่อนล็อก แล้วกระชากตึงเกินนิดหนึ่งก่อนคืนรูป
+  const dSlack = curve(0, sag * 1.5);
+  const dTaut = curve(0, sag * 0.4);
+  // จุดบนเส้นโค้ง (รูปปกติ d1)
+  const ctrl = { x: mid.x, y: mid.y + sag };
+  const at = (t: number) => ({ x: (1 - t) ** 2 * a.x + 2 * (1 - t) * t * ctrl.x + t * t * b.x, y: (1 - t) ** 2 * a.y + 2 * (1 - t) * t * ctrl.y + t * t * b.y });
+  // จุดที่โซ่โผล่พ้นขอบการ์ด (ไว้วางแสงล็อก)
+  let ta = 0;
+  while (ta < 1 && inRect(from, at(ta))) ta += 0.01;
+  let tb = 1;
+  while (tb > 0 && inRect(to, at(tb))) tb -= 0.01;
+  const exitA = at(ta);
+  const exitB = at(tb);
+  // ขนาดโซ่ (คูณทุกความกว้าง/ระยะเส้นประ)
+  const S = 2.2;
+  const P = 31 * S; // ระยะหนึ่งห่วง
+  const pathId = `${id}-p`;
+  const sway = '.45 0 .55 1;.45 0 .55 1';
+  /** การขยับของเส้น: ข้อใหม่ = หย่อน → กระชากตึง → แกว่ง · ข้อเก่า = แกว่งอย่างเดียว */
+  const motion = (
+    <>
+      {fresh && <animate attributeName="d" values={`${dSlack};${dTaut};${d1}`} keyTimes="0;0.4;1" dur={`${CL_SNAP}s`} begin={`${CL_LOCK_AT}s`} fill="freeze" calcMode="spline" keySplines=".2 .9 .3 1;.3 0 .4 1" />}
+      <animate attributeName="d" values={`${d1};${d2};${d1}`} dur="1.9s" begin={fresh ? `${CL_LOCK_AT + CL_SNAP}s` : '0s'} repeatCount="indefinite" calcMode="spline" keySplines={sway} />
+    </>
+  );
+  const base = fresh ? dSlack : d1;
+  const sparks = [0, 60, 120, 180, 240, 300];
+  const lock = (p: { x: number; y: number }, color: string) => (
+    <g transform={`translate(${p.x} ${p.y})`}>
+      <circle r={18} fill="none" stroke={color} strokeWidth={5} style={{ transformBox: 'fill-box', transformOrigin: 'center', animation: `fx-cl-lock 0.55s ${CL_LOCK_AT}s ease-out both` }} />
+      <circle r={9} fill="#fff" style={{ transformBox: 'fill-box', transformOrigin: 'center', animation: `fx-cl-lock-core 0.5s ${CL_LOCK_AT}s ease-out both` }} />
+      {sparks.map((deg) => (
+        <line key={deg} x1={0} y1={-12} x2={0} y2={-26} stroke={color} strokeWidth={3.5} strokeLinecap="round" transform={`rotate(${deg})`} style={{ animation: `fx-cl-spark 0.45s ${CL_LOCK_AT}s ease-out both` }} />
+      ))}
+    </g>
+  );
+  // สายฟ้าตามโซ่ (เฉพาะช่วงที่โผล่พ้นการ์ด): เส้นหยัก 3 แบบสลับกันกะพริบ
+  const arcs = fresh && rich && tb > ta
+    ? [0, 1, 2].map((v) => {
+        const n = Math.max(6, Math.round(((tb - ta) * dist) / 22));
+        const pts = Array.from({ length: n + 1 }, (_, i) => {
+          const t = ta + ((tb - ta) * i) / n;
+          const p = at(t);
+          const q = at(Math.min(1, t + 0.01));
+          const len = Math.hypot(q.x - p.x, q.y - p.y) || 1;
+          const off = i === 0 || i === n ? 0 : (prand(v * 97 + i) - 0.5) * 22;
+          return `${(p.x - ((q.y - p.y) / len) * off).toFixed(1)},${(p.y + ((q.x - p.x) / len) * off).toFixed(1)}`;
+        });
+        return (
+          <polyline
+            key={v}
+            points={pts.join(' ')}
+            fill="none"
+            stroke="#fff"
+            strokeWidth={2.2}
+            strokeLinejoin="round"
+            style={{ filter: `drop-shadow(0 0 4px ${colorTo}) drop-shadow(0 0 8px ${colorTo})`, animation: `fx-cl-arc 0.7s ${CL_LOCK_AT + 0.05 + v * 0.07}s linear both` }}
+          />
+        );
+      })
+    : null;
+  return (
+    <g>
+      <defs>
+        <path id={pathId} d={base}>
+          {motion}
+        </path>
+        <linearGradient id={`${id}-g`} gradientUnits="userSpaceOnUse" x1={a.x} y1={a.y} x2={b.x} y2={b.y}>
+          <stop offset="0" stopColor={colorFrom} />
+          <stop offset="1" stopColor={colorTo} />
+        </linearGradient>
+        {fresh && (
+          <mask id={`${id}-m`} maskUnits="userSpaceOnUse" x={-4000} y={-4000} width={12000} height={12000}>
+            {/* ต้องเป็น <path> จริง: pathLength ใช้กับ <use> ไม่ได้ (เส้นประจะนับเป็น px แล้วโซ่ขาดเป็นช่วง ๆ) */}
+            <path d={base} fill="none" stroke="#fff" strokeWidth={110} strokeLinecap="round" pathLength={100} style={{ strokeDasharray: 100, animation: `fx-cl-link ${CL_DRAW_MS}s ${CL_DRAW_AT}s ease-out both` }}>
+              {motion}
+            </path>
+          </mask>
+        )}
+      </defs>
+      <g mask={fresh ? `url(#${id}-m)` : undefined} style={{ filter: `drop-shadow(0 0 9px ${glow})` }}>
+        {/* เงา/ขอบมืดของโซ่ */}
+        <use href={`#${pathId}`} fill="none" stroke="#020617" strokeOpacity={0.85} strokeWidth={17 * S} strokeLinecap="round" />
+        {/* ห่วงโซ่ (รี) */}
+        <use href={`#${pathId}`} fill="none" stroke={`url(#${id}-g)`} strokeWidth={11 * S} strokeLinecap="round" strokeDasharray={`${20 * S} ${P - 20 * S}`} />
+        {/* รูกลางห่วง: ทำให้ดูเป็นห่วงกลวง */}
+        <use href={`#${pathId}`} fill="none" stroke="#0b1020" strokeWidth={3.5 * S} strokeLinecap="round" strokeDasharray={`${9 * S} ${P - 9 * S}`} strokeDashoffset={-5.5 * S} />
+        {/* ห่วงขวางที่คล้องระหว่างห่วงรี */}
+        <use href={`#${pathId}`} fill="none" stroke={`url(#${id}-g)`} strokeWidth={5 * S} strokeLinecap="butt" strokeDasharray={`${6 * S} ${P - 6 * S}`} strokeDashoffset={-22.5 * S} />
+        {/* แสงสะท้อนบนห่วง */}
+        <use href={`#${pathId}`} fill="none" stroke="#fff" strokeOpacity={0.55} strokeWidth={2 * S} strokeLinecap="round" strokeDasharray={`${10 * S} ${P - 10 * S}`} strokeDashoffset={-3 * S} transform={`translate(0 ${-3 * S})`} />
+      </g>
+      {arcs}
+      {/* ลูกพลังงานวิ่งไปตามโซ่: ข้อใหม่ = เร็วและสว่างหลังล็อก, ข้อเก่า = ประกายช้า ๆ */}
+      {(fresh ? [0, 0.12] : [0]).map((lag, i) => (
+        <circle key={i} r={(fresh ? 6 - i * 2 : 3.5) * 1.7} fill="#fff" opacity={0} style={{ filter: `drop-shadow(0 0 8px ${colorTo}) drop-shadow(0 0 3px #fff)` }}>
+          <animate
+            attributeName="opacity"
+            values="0;1;1;0"
+            keyTimes="0;0.1;0.85;1"
+            dur={fresh ? '0.6s' : '1.6s'}
+            begin={fresh ? `${CL_LOCK_AT + CL_SNAP + lag}s` : `${lag + 0.3}s`}
+            repeatCount={fresh ? 2 : 'indefinite'}
+          />
+          <animateMotion dur={fresh ? '0.6s' : '1.6s'} begin={fresh ? `${CL_LOCK_AT + CL_SNAP + lag}s` : `${lag + 0.3}s`} repeatCount={fresh ? 2 : 'indefinite'}>
+            <mpath href={`#${pathId}`} />
+          </animateMotion>
+        </circle>
+      ))}
+      {fresh && lock(exitA, colorFrom)}
+      {fresh && lock(exitB, colorTo)}
+    </g>
+  );
+}
+
+/** วงเวทรอบการ์ดใหม่ในกอง Chain: วงซ้อนหลายชั้นหมุนสวนกัน + อักษรรอบวง + ดาวหกแฉก */
+function MagicCircle({ id, color, glow, spin, scale }: { id: string; color: string; glow: string; spin: boolean; scale: number }) {
+  const rot = (sec: number, reverse: boolean) =>
+    spin ? { transformBox: 'fill-box' as const, transformOrigin: 'center', animation: `fx-cl-spin ${sec}s linear infinite${reverse ? ' reverse' : ''}` } : undefined;
+  const tri = (deg: number) =>
+    [0, 120, 240]
+      .map((k) => {
+        const r = ((k + deg - 90) * Math.PI) / 180;
+        return `${(Math.cos(r) * 134).toFixed(1)},${(Math.sin(r) * 134).toFixed(1)}`;
+      })
+      .join(' ');
+  // วงกลมโปร่งใสขนาดเท่ากันทุกชั้น: ให้กรอบของแต่ละชั้นสมมาตร หมุนรอบกึ่งกลางพอดี
+  const pad = <circle r={166} fill="none" stroke="none" />;
+  return (
+    <svg
+      width={340 * scale}
+      height={340 * scale}
+      viewBox="-170 -170 340 340"
+      className="absolute overflow-visible"
+      style={{ left: -170 * scale, top: -170 * scale, filter: `drop-shadow(0 0 8px ${glow})`, animation: 'fx-cl-ring 1.2s cubic-bezier(.2,.8,.2,1) both' }}
+    >
+      <defs>
+        <path id={`${id}-rune`} d="M 0 -147 A 147 147 0 1 1 -0.01 -147" />
+      </defs>
+      <g style={rot(26, false)}>
+        {pad}
+        <circle r={162} fill="none" stroke={color} strokeWidth={3} />
+        <circle r={155} fill="none" stroke={color} strokeWidth={9} strokeDasharray="2 9" strokeOpacity={0.85} />
+      </g>
+      <g style={rot(20, true)}>
+        {pad}
+        <text fill={color} fontSize={12} fontWeight={800} opacity={0.9}>
+          <textPath href={`#${id}-rune`} textLength={918} lengthAdjust="spacing">
+            {'CHAIN • LINK • SPIRIT • BURST • CHAIN • LINK • SPIRIT • BURST • '}
+          </textPath>
+        </text>
+        <circle r={139} fill="none" stroke={color} strokeWidth={1.5} strokeOpacity={0.8} />
+      </g>
+      <g style={rot(14, false)}>
+        {pad}
+        <polygon points={tri(0)} fill="none" stroke={color} strokeWidth={2} strokeOpacity={0.85} />
+        <polygon points={tri(180)} fill="none" stroke={color} strokeWidth={2} strokeOpacity={0.85} />
+      </g>
+      <g style={rot(9, true)}>
+        {pad}
+        <circle r={124} fill="none" stroke={color} strokeWidth={5} strokeDasharray="30 14" strokeOpacity={0.95} />
+      </g>
+    </svg>
+  );
+}
+
+/**
+ * แถบขอบจอในฉาก Chain: ปาดเข้ามาจากนอกจอ ขอบด้านในเฉียง
+ * ข้างในมีลายโซ่เลื่อนขึ้น + อักษร CHAIN แนวตั้ง · วาบสว่างตอนโซ่ล็อก
+ */
+function EdgeBand({ side, color, glow, rich }: { side: 'left' | 'right'; color: string; glow: string; rich: boolean }) {
+  const left = side === 'left';
+  const clip = left ? 'polygon(0 0, 100% 0, 62% 100%, 0 100%)' : 'polygon(0 0, 100% 0, 100% 100%, 38% 100%)';
+  // ลายโซ่หนึ่งช่วง (สูง 60): ห่วงรีด้านหน้า + ห่วงด้านข้างที่คล้องทะลุบน/ล่าง
+  const link = encodeURIComponent(
+    `<svg xmlns='http://www.w3.org/2000/svg' width='36' height='60'><rect x='15.5' y='-2' width='5' height='12' rx='2.5' fill='${color}'/><rect x='15.5' y='26' width='5' height='38' rx='2.5' fill='${color}'/><rect x='7' y='4' width='22' height='30' rx='11' fill='none' stroke='${color}' stroke-width='5'/><rect x='10' y='8' width='4' height='10' rx='2' fill='white' fill-opacity='0.6'/></svg>`,
+  );
+  const edge = left ? { left: 14 } : { right: 14 };
+  const textEdge = left ? { left: 56 } : { right: 56 };
+  return (
+    <div
+      className={`absolute inset-y-0 ${left ? 'left-0' : 'right-0'}`}
+      style={{ width: 92, filter: `drop-shadow(0 0 12px ${glow})`, ['--from' as string]: left ? '-110%' : '110%', animation: 'fx-cl-band-in 0.45s 0.05s cubic-bezier(.2,.8,.2,1) both' }}
+    >
+      <div className="absolute inset-0" style={{ clipPath: clip }}>
+        <div className="absolute inset-0" style={{ background: `linear-gradient(${left ? 90 : 270}deg, ${glow}, rgba(2,6,23,0.88) 80%)` }} />
+        {/* ลายโซ่ */}
+        <div
+          className="absolute inset-y-0"
+          style={{ ...edge, width: 36, backgroundImage: `url("data:image/svg+xml,${link}")`, backgroundRepeat: 'repeat-y', animation: rich ? 'fx-cl-band-scroll 1.4s linear infinite' : undefined }}
+        />
+        {/* อักษร CHAIN แนวตั้ง */}
+        <div className="absolute inset-y-0 overflow-hidden text-[11px] font-black tracking-[0.4em] text-white/60 italic" style={{ ...textEdge, writingMode: 'vertical-rl', transform: left ? undefined : 'rotate(180deg)' }}>
+          <span className="block whitespace-nowrap" style={{ animation: rich ? 'fx-cl-band-text 6s linear infinite' : undefined }}>
+            {'CHAIN • '.repeat(30)}
+          </span>
+        </div>
+        {/* วาบตอนโซ่ล็อก */}
+        <div className="absolute inset-0" style={{ background: `linear-gradient(${left ? 90 : 270}deg, #fff, transparent 85%)`, animation: `fx-cl-band-flash 0.5s ${CL_LOCK_AT}s ease-out both` }} />
+      </div>
+    </div>
+  );
+}
+
+/** ตราเลข Chain บนมุมการ์ด (สี่เหลี่ยมข้าวหลามตัด) */
+function ChainBadge({ n, self, ring, glow, style }: { n: number; self: boolean; ring: string; glow: string; style?: CSSProperties }) {
+  return (
+    <span className={`absolute -top-5 ${self ? '-left-5' : '-right-5'} flex h-12 w-12 items-center justify-center`} style={style}>
+      <span className="absolute inset-1.5 rotate-45 rounded-md border-2 border-white/90" style={{ background: `linear-gradient(135deg, #fff 0%, ${ring} 45%, #0f172a 100%)`, boxShadow: `0 0 16px ${glow}, 0 4px 10px rgba(0,0,0,0.6)` }} />
+      <span className="relative text-xl font-black text-slate-950 italic" style={{ textShadow: '0 1px 0 rgba(255,255,255,0.7)' }}>
+        {n}
+      </span>
+    </span>
+  );
+}
+
+/** ฉาก Chain เปิดอยู่กี่อัน (ซ่อนลูกศรโจมตี/มือระหว่างฉาก) */
+let chainFocus = 0;
+const setChainFocus = (d: number) => {
+  chainFocus = Math.max(0, chainFocus + d);
+  document.documentElement.classList.toggle('fx-chain-focus', chainFocus > 0);
+};
+
+/** สีเลข/วงเวทตามความยาว Chain: 2 = สีฝั่ง, 3 = แดงเพลิง, 4+ = ม่วงเข้ม */
+const CHAIN_HEAT = [
+  null,
+  { ring: '#fb7185', glow: 'rgba(244,63,94,0.85)', text: 'from-yellow-100 via-orange-400 to-rose-600' },
+  { ring: '#e879f9', glow: 'rgba(217,70,239,0.9)', text: 'from-white via-fuchsia-300 to-violet-600' },
+] as const;
+
+/**
+ * ต่อ Chain (แสดงเมื่อมีตั้งแต่ 2 Chain): กอง Chain ของเราซ้าย ของคู่แข่งขวา
+ *  1. ซ่อนลูกศรโจมตี/มือ + ฉากมืด แบ่งแสงสองฝั่ง (ทอง | ฟ้า) มีแนวปะทะกลางจอ สปอตไลต์หลังการ์ด ขอบจอมืด ประกายไฟลอย
+ *  2. การ์ดใหม่พุ่งมาวางบนสุด (แสงปาดหน้าการ์ด) การ์ดเก่าย่อ/เอียง ถูกดันลงไป
+ *  3. โซ่เหวี่ยงเข้าหาการ์ดใหม่ → ล็อก: คลื่นกระแทก จอสั่น การ์ดสะท้าน โซ่ถูกกระชากตึง สายฟ้าแลบ เลข CHAIN พลิก
+ *  4. Chain ยิ่งยาวยิ่งแรง (สี/คลื่น/จอสั่น/ประกายไฟ)
+ * ชุดกราฟิกต่ำ: ไม่มีประกายไฟลอย สายฟ้า และวงเวทไม่หมุน
  */
 function ChainAddFx({ fx, onDone }: { fx: Extract<Fx, { kind: 'chainAdd' }>; onDone: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
   const [on, setOn] = useState(fx.delay === 0);
   const state = useGame((s) => s.state);
   const me = useGame(viewPlayer);
@@ -973,130 +1263,247 @@ function ChainAddFx({ fx, onDone }: { fx: Extract<Fx, { kind: 'chainAdd' }>; onD
   // กองตั้งแต่ Chain 1 ถึงใบนี้
   const stack = chainEntries(state).slice(0, fx.index + 1);
   const sides = stack.map((e) => (e.player === me ? 'self' : 'opp') as 'self' | 'opp');
+  const n = fx.index + 1;
+  const heat = n >= 4 ? 2 : n >= 3 ? 1 : 0;
   useLayoutEffect(() => {
     if (!on) return;
     const el = ref.current;
-    const to = layoutRect(document.querySelector(`[data-chain-slot="${fx.index}"]`));
     const from = layoutRect(document.querySelector(`[data-field-card="${fx.cardId}"] > div:first-child`) ?? document.querySelector(`[data-brave-card="${fx.cardId}"]`)) ?? boardCenter(150, 210);
     const spot = stackLayout(sides)[fx.index];
-    if (!el || !to || !spot) return onDone();
+    if (!el || !spot) return onDone();
     const big = { x: spot.x - spot.w * 0.06, y: spot.y - spot.h * 0.06, w: spot.w * 1.12, h: spot.h * 1.12 };
+    // easing ใส่รายช่วง: ถ้าใส่ทั้งแอนิเมชัน เวลาจะถูกบีบจนการ์ดเริ่มจางตั้งแต่ราว 1.1 วิ (แทนที่จะค้างถึง CHAIN_HOLD_END)
+    const ease = 'cubic-bezier(.2,.8,.2,1)';
     const anim = el.animate(
       [
-        frame(from, { opacity: 1, transform: 'rotate(0deg)', filter: 'brightness(1.6)' }),
-        frame(big, { offset: 0.12, opacity: 1, transform: 'rotate(-4deg)', filter: 'brightness(1.5)' }),
+        frame(from, { opacity: 1, transform: 'rotate(0deg)', filter: 'brightness(1.6)', easing: ease }),
+        frame(big, { offset: 0.12, opacity: 1, transform: 'rotate(-4deg)', filter: 'brightness(1.5)', easing: ease }),
         frame(spot, { offset: 0.18, opacity: 1, transform: 'rotate(0deg)', filter: 'brightness(1)' }),
-        frame(spot, { offset: CHAIN_HOLD_END, opacity: 1, transform: 'rotate(0deg)', filter: 'brightness(1.1)', easing: 'cubic-bezier(.5,0,.3,1)' }),
-        frame(to, { opacity: 1, transform: 'rotate(0deg)', filter: 'brightness(1.8)' }),
+        frame(spot, { offset: CHAIN_HOLD_END, opacity: 1, transform: 'rotate(0deg) scale(1)', filter: 'brightness(1.1)', easing: 'ease-in' }),
+        frame(spot, { opacity: 0, transform: 'rotate(0deg) scale(0.92)', filter: 'brightness(1.4)' }),
       ],
-      { duration: CHAIN_LINK_MS, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' },
+      { duration: CHAIN_LINK_MS, fill: 'forwards' },
     );
     anim.onfinish = onDone;
-    return () => anim.cancel();
+    // ซ่อนลูกศรโจมตี/มือระหว่างฉาก (คืนตอนฉากเริ่มจาง)
+    setChainFocus(1);
+    let focused = true;
+    const unfocus = () => {
+      if (focused) setChainFocus(-1);
+      focused = false;
+    };
+    const tUnfocus = setTimeout(unfocus, CHAIN_LINK_MS * CHAIN_HOLD_END);
+    // ล็อก: จอสั่น (ยิ่ง Chain ยาวยิ่งแรง) ทั้งฉาก Chain และกระดานด้านหลัง
+    const k = 1 + heat * 0.4;
+    const tShake = setTimeout(() => {
+      const pts: [number, number][] = [[-7 * k, 3 * k], [6 * k, -3 * k], [-4 * k, 2 * k], [2 * k, -1 * k]];
+      shakeEl(stageRef.current, pts, 380);
+      shakeEl(document.querySelector('main'), pts, 380);
+    }, CL_LOCK_AT * 1000);
+    return () => {
+      anim.cancel();
+      clearTimeout(tUnfocus);
+      clearTimeout(tShake);
+      unfocus();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [on]);
   const card = state.cards[fx.cardId];
   if (!on || !card) return null;
+  const rich = effects().matMotion;
   const layout = stackLayout(sides);
   const spot = layout[fx.index]!;
-  const mine = sides[fx.index] === 'self';
-  const n = fx.index + 1;
   const toneOf = (side: 'self' | 'opp') =>
     side === 'self'
-      ? { ring: '#fbbf24', glow: 'rgba(251,191,36,0.75)', text: 'from-yellow-100 via-amber-300 to-orange-500', badge: 'bg-amber-400' }
-      : { ring: '#7dd3fc', glow: 'rgba(56,189,248,0.75)', text: 'from-white via-sky-200 to-sky-500', badge: 'bg-sky-400' };
+      ? { ring: '#fbbf24', glow: 'rgba(251,191,36,0.75)', text: 'from-yellow-100 via-amber-300 to-orange-500' }
+      : { ring: '#7dd3fc', glow: 'rgba(56,189,248,0.75)', text: 'from-white via-sky-200 to-sky-500' };
   const tone = toneOf(sides[fx.index]!);
+  // สีเลข/วงเวท/คลื่น: ตามความยาว Chain
+  const accent = CHAIN_HEAT[heat] ?? tone;
   const hold = `${CHAIN_LINK_MS * CHAIN_HOLD_END}ms`;
   const center = (r: Rect) => ({ x: r.x + r.w / 2, y: r.y + r.h / 2 });
+  const sc = center(spot);
+  // ขนาดวงเวท/คลื่น ตามขนาดการ์ดใหม่ (วงในสุดเลยมุมการ์ดเล็กน้อย)
+  const ms = Math.hypot(spot.w, spot.h) / 2 / 129;
+  const midX = (innerWidth - sidebarWidth()) / 2;
+  const push = { ['--push' as string]: `${-STACK_STEP}px`, animation: 'fx-cl-push 0.4s 0.22s cubic-bezier(.3,1.3,.5,1) both' };
+  /** ทิศสะท้านตอนล็อก: การ์ดถูกโซ่ดึงเข้าหากัน */
+  const pull = (fromR: Rect, toR: Rect, px: number) => {
+    const p = center(fromR);
+    const q = center(toR);
+    const len = Math.hypot(q.x - p.x, q.y - p.y) || 1;
+    return { ['--rx' as string]: `${((q.x - p.x) / len) * px}px`, ['--ry' as string]: `${((q.y - p.y) / len) * px}px` };
+  };
+  const prev = layout[fx.index - 1];
+  const embers = rich ? 22 + heat * 12 : 0;
   return (
     <>
-      <div className={`${BOARD} pointer-events-none z-[44] overflow-hidden`} style={{ animation: `fx-cl-backdrop ${hold} ease-out both` }}>
-        <div className="absolute inset-0 bg-black/60" />
-        {/* การ์ดที่ต่อมาก่อนหน้า */}
-        {stack.slice(0, fx.index).map((e, k) => {
-          const c = state.cards[e.cardId];
-          const r = layout[k]!;
-          if (!c) return null;
+      <div ref={stageRef} className={`${BOARD} pointer-events-none z-[44] overflow-hidden`} style={{ animation: `fx-cl-backdrop ${hold} ease-out both` }}>
+        <div className="absolute inset-0 bg-slate-950/80" />
+        {/* แสงสองฝั่ง: ของเรา (ทอง) | คู่แข่ง (ฟ้า) */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background: `radial-gradient(ellipse 34% 75% at ${midX - CHAIN_SIDE_OFFSET}px 55%, rgba(251,191,36,0.24), transparent 70%), radial-gradient(ellipse 34% 75% at ${midX + CHAIN_SIDE_OFFSET}px 55%, rgba(56,189,248,0.24), transparent 70%)`,
+          }}
+        />
+        {/* Chain ยาว: ไอร้อนกลางจอ */}
+        {heat > 0 && (
+          <div
+            className="absolute inset-0"
+            style={{ background: `radial-gradient(ellipse 45% 60% at ${midX}px ${sc.y}px, ${accent.glow}, transparent 70%)`, opacity: 0.32, animation: 'fx-cl-heat 0.9s ease-in-out infinite alternate' }}
+          />
+        )}
+        {/* แนวปะทะกลางจอ */}
+        <div
+          className="absolute -top-[10%] h-[120%] w-[3px]"
+          style={{
+            left: midX,
+            background: 'linear-gradient(to bottom, transparent, rgba(255,255,255,0.85) 30%, rgba(255,255,255,0.85) 70%, transparent)',
+            boxShadow: `0 0 26px 7px ${heat ? accent.glow : 'rgba(255,255,255,0.28)'}`,
+            animation: 'fx-cl-seam 0.5s 0.1s cubic-bezier(.2,.8,.2,1) both',
+          }}
+        />
+        {/* ขอบจอมืด */}
+        <div className="absolute inset-0" style={{ background: 'radial-gradient(ellipse at center, transparent 42%, rgba(0,0,0,0.8) 100%)' }} />
+        {/* แถบขอบจอ: ซ้าย = ฝั่งเรา (ทอง) ขวา = คู่แข่ง (ฟ้า) · Chain ยาวใช้สีตามความยาว */}
+        <EdgeBand side="left" color={heat ? accent.ring : '#fbbf24'} glow={heat ? accent.glow : 'rgba(251,191,36,0.75)'} rich={rich} />
+        <EdgeBand side="right" color={heat ? accent.ring : '#7dd3fc'} glow={heat ? accent.glow : 'rgba(56,189,248,0.75)'} rich={rich} />
+        {/* ประกายไฟลอยขึ้น */}
+        {Array.from({ length: embers }, (_, i) => {
+          const x = prand(i * 3 + 1) * (midX * 2);
+          const hot = heat > 0 && prand(i * 7 + 2) < 0.45;
+          const color = hot ? accent.ring : x < midX ? '#fcd34d' : '#7dd3fc';
+          const size = 2 + prand(i * 5 + 3) * 3.5;
           return (
-            <div
-              key={k}
-              className="absolute"
-              style={{ left: r.x, top: r.y, width: r.w, height: r.h, filter: 'brightness(0.9)', ['--push' as string]: `${-STACK_STEP}px`, animation: 'fx-cl-push 0.4s 0.22s cubic-bezier(.3,1.3,.5,1) both' }}
-            >
-              <div className="h-full w-full rounded-lg shadow-[0_8px_20px_rgba(0,0,0,0.7)]" style={{ boxShadow: `0 0 14px ${toneOf(sides[k]!).glow}` }}>
-                <CardFace def={db.get(c.cardNo)} />
-              </div>
-              <span className={`absolute -top-3 ${sides[k] === 'self' ? '-left-3' : '-right-3'} flex h-8 w-8 items-center justify-center rounded-full ${toneOf(sides[k]!).badge} text-base font-black text-slate-900 shadow-lg`}>
-                {k + 1}
-              </span>
-            </div>
+            <span
+              key={i}
+              className="absolute -bottom-3 rounded-full"
+              style={{
+                left: x,
+                width: size,
+                height: size,
+                background: color,
+                boxShadow: `0 0 ${size * 3}px ${color}`,
+                ['--dx' as string]: `${(prand(i * 11 + 4) - 0.5) * 120}px`,
+                animation: `fx-cl-ember ${1.6 + prand(i * 13 + 5) * 1.4}s ${prand(i * 17 + 6) * 1.4}s ease-out infinite both`,
+              }}
+            />
           );
         })}
-        {/* โซ่เชื่อมการ์ดในกองเป็นทอด ๆ (ข้อสุดท้ายลากต่อเข้าหาการ์ดใหม่) */}
+        {/* สปอตไลต์หลังการ์ดแต่ละใบ */}
+        {layout.map((r, k) => (
+          <div key={k} className="absolute" style={k === fx.index ? undefined : push}>
+            <div
+              className="absolute rounded-full"
+              style={{
+                left: r.x + r.w / 2 - r.w * 1.3,
+                top: r.y + r.h / 2 - r.h * 1.0,
+                width: r.w * 2.6,
+                height: r.h * 2.0,
+                background: `radial-gradient(ellipse, ${toneOf(sides[k]!).glow} 0%, transparent 62%)`,
+                opacity: k === fx.index ? 0.55 : 0.3,
+              }}
+            />
+          </div>
+        ))}
+        {/* โซ่เชื่อมการ์ดในกองเป็นทอด ๆ จากกลางการ์ดถึงกลางการ์ด (ข้อสุดท้ายลากต่อเข้าหาการ์ดใหม่) วาดก่อน = อยู่ใต้การ์ด */}
         <svg className="absolute inset-0 h-full w-full overflow-visible">
           {layout.slice(1).map((r, k) => {
-            const older = layout[k]!;
-            const a = { x: older.x + older.w / 2, y: older.y + 6 };
-            const b = { x: r.x + r.w / 2, y: r.y + r.h - 6 };
             const last = k === layout.length - 2;
-            const t = toneOf(sides[k + 1]!);
+            const older = toneOf(sides[k]!);
+            const newer = toneOf(sides[k + 1]!);
             return (
-              <g
-                key={k}
-                style={{
-                  filter: `drop-shadow(0 0 6px ${t.glow})`,
-                  ['--push' as string]: `${-STACK_STEP}px`,
-                  animation: last ? undefined : 'fx-cl-push 0.4s 0.22s cubic-bezier(.3,1.3,.5,1) both',
-                }}
-              >
-                <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#0f172a" strokeWidth={14} strokeLinecap="round" />
-                <line
-                  x1={a.x}
-                  y1={a.y}
-                  x2={b.x}
-                  y2={b.y}
-                  stroke={t.ring}
-                  strokeWidth={9}
-                  strokeLinecap="round"
-                  strokeDasharray="16 9"
-                  pathLength={last ? 100 : undefined}
-                  style={last ? { strokeDasharray: '100', animation: 'fx-cl-link 0.35s 0.42s ease-out both' } : undefined}
+              <g key={k} style={last ? undefined : push}>
+                <ChainLink
+                  id={`cl-${fx.id}-${k}`}
+                  from={shrink(layout[k]!, OLD_SCALE)}
+                  to={last ? r : shrink(r, OLD_SCALE)}
+                  colorFrom={older.ring}
+                  colorTo={newer.ring}
+                  glow={newer.glow}
+                  fresh={last}
+                  rich={rich}
                 />
               </g>
             );
           })}
         </svg>
-        {/* วงแหวนโซ่ + CHAIN n รอบการ์ดใหม่ */}
-        <div className="absolute flex items-center justify-center" style={{ left: spot.x + spot.w / 2, top: spot.y + spot.h / 2 }}>
-          <div
-            className="absolute aspect-square w-[20rem] rounded-full"
-            style={{
-              background: `repeating-conic-gradient(from 0deg, ${tone.ring} 0deg 7deg, transparent 7deg 15deg)`,
-              maskImage: 'radial-gradient(circle, transparent 54%, #000 55%, #000 60%, transparent 61%)',
-              WebkitMaskImage: 'radial-gradient(circle, transparent 54%, #000 55%, #000 60%, transparent 61%)',
-              filter: `drop-shadow(0 0 10px ${tone.glow})`,
-              animation: 'fx-cl-ring 1.2s cubic-bezier(.2,.8,.2,1) both',
-            }}
-          />
-          <div className="absolute aspect-square w-[15rem] rounded-full" style={{ boxShadow: `0 0 70px 18px ${tone.glow}, inset 0 0 50px ${tone.glow}`, animation: 'fx-cl-pulse 0.9s ease-out both' }} />
-          <div className="absolute flex flex-col items-center" style={{ transform: `translateX(${mine ? '-15rem' : '15rem'})` }}>
-            <span
-              className={`bg-gradient-to-b ${tone.text} bg-clip-text text-2xl font-black tracking-[0.35em] text-transparent italic`}
-              style={{ animation: 'fx-cl-word 0.5s 0.1s cubic-bezier(.2,.9,.3,1.3) both' }}
-            >
-              CHAIN
-            </span>
-            <span
-              className={`bg-gradient-to-b ${tone.text} bg-clip-text text-[7rem] leading-none font-black text-transparent italic`}
-              style={{ filter: `drop-shadow(0 4px 0 #0f172a) drop-shadow(0 0 20px ${tone.glow})`, animation: 'fx-cl-num 0.55s 0.15s cubic-bezier(.2,.9,.3,1.4) both' }}
-            >
-              {n}
+        {/* การ์ดที่ต่อมาก่อนหน้า: ย่อ เอียง หรี่ลง */}
+        {stack.slice(0, fx.index).map((e, k) => {
+          const c = state.cards[e.cardId];
+          const r = layout[k]!;
+          if (!c) return null;
+          const t = toneOf(sides[k]!);
+          const self = sides[k] === 'self';
+          const linked = k === fx.index - 1;
+          return (
+            <div key={k} className="absolute" style={{ left: r.x, top: r.y, width: r.w, height: r.h, ...push }}>
+              <div className="relative h-full w-full" style={{ transform: `scale(${OLD_SCALE}) rotate(${self ? -4 : 4}deg)` }}>
+                <div
+                  className="h-full w-full rounded-lg"
+                  style={{
+                    boxShadow: `0 0 0 2px ${t.ring}, 0 0 18px ${t.glow}, 0 12px 26px rgba(0,0,0,0.75)`,
+                    filter: 'brightness(0.82) saturate(0.85)',
+                    ...(linked ? { ...pull(r, spot, 12), animation: `fx-cl-recoil 0.42s ${CL_LOCK_AT}s ease-out both` } : {}),
+                  }}
+                >
+                  <CardFace def={db.get(c.cardNo)} />
+                </div>
+                <ChainBadge n={k + 1} self={self} ring={t.ring} glow={t.glow} />
+              </div>
+            </div>
+          );
+        })}
+        {/* วงเวท + คลื่นกระแทกตอนล็อก รอบการ์ดใหม่ */}
+        <div className="absolute" style={{ left: sc.x, top: sc.y }}>
+          <div className="absolute rounded-full" style={{ left: -120 * ms, top: -120 * ms, width: 240 * ms, height: 240 * ms, boxShadow: `0 0 70px 18px ${accent.glow}, inset 0 0 50px ${accent.glow}`, animation: 'fx-cl-pulse 0.9s ease-out both' }} />
+          <MagicCircle id={`mc-${fx.id}`} color={accent.ring} glow={accent.glow} spin={rich} scale={ms} />
+          {Array.from({ length: 2 + heat }, (_, i) => (
+            <div
+              key={i}
+              className="absolute rounded-full"
+              style={{ left: -70 * ms, top: -70 * ms, width: 140 * ms, height: 140 * ms, border: `${4 - i}px solid ${accent.ring}`, boxShadow: `0 0 18px ${accent.glow}, inset 0 0 14px ${accent.glow}`, animation: `fx-cl-shock 0.65s ${CL_LOCK_AT + i * 0.09}s cubic-bezier(.1,.7,.3,1) both` }}
+            />
+          ))}
+        </div>
+        {/* ป้าย CHAIN n เหนือการ์ดใหม่: เลขพลิกจาก n-1 → n ตอนโซ่ล็อก */}
+        <div className="absolute" style={{ left: sc.x, top: spot.y - 22, transform: 'translate(-50%, -100%)' }}>
+          <div className="relative flex items-center gap-3 px-9 py-1" style={{ animation: 'fx-cl-panel 0.45s 0.08s cubic-bezier(.2,.9,.3,1.3) both' }}>
+            <div
+              className="absolute inset-0 -skew-x-12 border-y-2"
+              style={{ borderColor: accent.ring, background: 'linear-gradient(90deg, transparent, rgba(2,6,23,0.94) 16%, rgba(2,6,23,0.94) 84%, transparent)', boxShadow: `0 0 26px ${accent.glow}` }}
+            />
+            <span className={`relative bg-gradient-to-b ${accent.text} bg-clip-text text-2xl font-black tracking-[0.3em] text-transparent italic`}>CHAIN</span>
+            <span className="relative inline-block h-[5.5rem]" style={{ width: n >= 10 ? '7.5rem' : '4.5rem', perspective: 400 }}>
+              {[n - 1, n].map((v, i) => (
+                <span
+                  key={v}
+                  className={`absolute inset-0 flex items-center justify-center bg-gradient-to-b ${accent.text} bg-clip-text text-[5.5rem] leading-none font-black text-transparent italic`}
+                  style={{
+                    filter: `drop-shadow(0 3px 0 #0f172a) drop-shadow(0 0 16px ${accent.glow})`,
+                    animation: i === 0 ? `fx-cl-flip-out 0.2s ${CL_LOCK_AT - 0.2}s ease-in both` : `fx-cl-flip-in 0.45s ${CL_LOCK_AT}s cubic-bezier(.2,.9,.3,1.4) both`,
+                  }}
+                >
+                  {v}
+                </span>
+              ))}
             </span>
           </div>
         </div>
       </div>
-      <div ref={ref} className="pointer-events-none fixed z-[45] rounded-lg" style={{ opacity: 0, boxShadow: `0 0 30px 8px ${tone.glow}` }}>
-        <CardFace def={db.get(card.cardNo)} />
+      {/* การ์ดใหม่: กรอบเรืองแสง + แสงปาด + สะท้านตอนโซ่ล็อก + ตราเลข Chain */}
+      <div ref={ref} data-chain-card className="pointer-events-none fixed z-[45]" style={{ opacity: 0 }}>
+        <div
+          className="relative h-full w-full rounded-lg"
+          style={{ boxShadow: `0 0 0 2px ${tone.ring}, 0 0 34px 10px ${tone.glow}`, ...(prev ? pull(spot, prev, 12) : {}), animation: `fx-cl-recoil 0.42s ${CL_LOCK_AT}s ease-out both` }}
+        >
+          <CardFace def={db.get(card.cardNo)} />
+          <div className="absolute inset-0 overflow-hidden rounded-lg">
+            <div className="absolute -inset-y-[20%] left-0 w-2/5" style={{ background: 'linear-gradient(100deg, transparent, rgba(255,255,255,0.8), transparent)', animation: 'fx-cl-sheen 0.75s 0.5s ease-in-out both' }} />
+          </div>
+        </div>
+        <ChainBadge n={n} self={sides[fx.index] === 'self'} ring={tone.ring} glow={tone.glow} style={{ animation: `fx-cl-num 0.45s ${CL_LOCK_AT}s cubic-bezier(.2,.9,.3,1.4) both` }} />
       </div>
     </>
   );
@@ -1105,7 +1512,7 @@ function ChainAddFx({ fx, onDone }: { fx: Extract<Fx, { kind: 'chainAdd' }>; onD
 /** ตำแหน่งพัดการ์ดที่เปิดจากเด็ค: กลางฝั่งของผู้เปิด */
 function fanLayout(owner: string, n: number) {
   const mat = layoutRect(document.querySelector(`[data-mat="${owner}"]`));
-  const sidebar = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sidebar')) || 400;
+  const sidebar = sidebarWidth();
   const cx = mat ? mat.x + mat.w / 2 : (innerWidth - sidebar) / 2;
   const cy = mat ? mat.y + mat.h / 2 : innerHeight / 2;
   const W = 132;
@@ -1288,7 +1695,7 @@ function ChainDisplay({ fx, onDone }: { fx: Extract<Fx, { kind: 'chain' }>; onDo
   }, []);
   if (phase === 'wait') return null;
 
-  const sidebar = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sidebar')) || 400;
+  const sidebar = sidebarWidth();
   const cx = (innerWidth - sidebar) / 2;
   const n = fx.cardIds.length;
   const W = 150;
@@ -1800,7 +2207,7 @@ export function AttackArrow() {
   if (lines.length === 0) return null;
   const color = blockers ? '#38bdf8' : '#f43f5e';
   return (
-    <svg className="pointer-events-none fixed inset-0 z-30 h-full w-full" style={{ filter: `drop-shadow(0 0 8px ${color})` }}>
+    <svg data-attack-arrow className="pointer-events-none fixed inset-0 z-30 h-full w-full" style={{ filter: `drop-shadow(0 0 8px ${color})` }}>
       <defs>
         <marker id="fx-arrowhead" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse">
           <path d="M 0 0 L 10 5 L 0 10 z" fill={color} />

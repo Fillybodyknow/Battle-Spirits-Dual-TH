@@ -390,6 +390,30 @@ body {
 @keyframes fx-cl-num { 0% { transform: scale(3); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
 @keyframes fx-cl-link { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
 @keyframes fx-cl-push { from { transform: translateY(var(--push)); } to { transform: translateY(0); } }
+/* โซ่ Chain: ล็อกแสงวาบที่ปลายโซ่ตอนต่อถึง */
+@keyframes fx-cl-lock { 0% { transform: scale(0.2); opacity: 0; } 25% { opacity: 1; } 100% { transform: scale(2.2); opacity: 0; } }
+@keyframes fx-cl-lock-core { 0% { transform: scale(0); opacity: 0; } 30% { transform: scale(1.4); opacity: 1; } 100% { transform: scale(0.6); opacity: 0; } }
+@keyframes fx-cl-spark { 0% { opacity: 0; stroke-dasharray: 0 12; } 30% { opacity: 1; } 100% { opacity: 0; stroke-dasharray: 12 0; transform: translateY(-10px); } }
+/* ฉาก Chain: วงเวทหมุน, แนวปะทะ, ไอร้อน, ประกายไฟ, คลื่นกระแทก, การ์ดสะท้าน, แสงปาดการ์ด, ป้าย/เลขพลิก, สายฟ้า */
+@keyframes fx-cl-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes fx-cl-seam { 0% { transform: skewX(-14deg) scaleY(0); opacity: 0; } 100% { transform: skewX(-14deg) scaleY(1); opacity: 1; } }
+@keyframes fx-cl-heat { from { opacity: 0.18; } to { opacity: 0.4; } }
+@keyframes fx-cl-ember { 0% { transform: translate(0, 0); opacity: 0; } 15% { opacity: 1; } 100% { transform: translate(var(--dx), -75vh); opacity: 0; } }
+@keyframes fx-cl-shock { 0% { transform: scale(0.4); opacity: 0; } 12% { opacity: 1; } 100% { transform: scale(3.4); opacity: 0; } }
+@keyframes fx-cl-recoil { 0% { transform: translate(0, 0); } 25% { transform: translate(var(--rx), var(--ry)) scale(1.03); } 55% { transform: translate(calc(var(--rx) * -0.4), calc(var(--ry) * -0.4)); } 100% { transform: translate(0, 0); } }
+@keyframes fx-cl-sheen { from { transform: translateX(-130%) skewX(-12deg); } to { transform: translateX(300%) skewX(-12deg); } }
+@keyframes fx-cl-panel { 0% { transform: scaleX(0); opacity: 0; } 100% { transform: scaleX(1); opacity: 1; } }
+@keyframes fx-cl-flip-out { 0% { transform: rotateX(0deg); opacity: 1; } 100% { transform: rotateX(90deg); opacity: 0; } }
+@keyframes fx-cl-flip-in { 0% { transform: rotateX(-90deg) scale(1.5); opacity: 0; } 100% { transform: rotateX(0deg) scale(1); opacity: 1; } }
+@keyframes fx-cl-arc { 0% { opacity: 0; } 8% { opacity: 1; } 22% { opacity: 0; } 40% { opacity: 0.9; } 52% { opacity: 0; } 70% { opacity: 0.7; } 80%, 100% { opacity: 0; } }
+/* แถบขอบจอฉาก Chain */
+@keyframes fx-cl-band-in { from { transform: translateX(var(--from)); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes fx-cl-band-scroll { from { background-position: 0 0; } to { background-position: 0 -60px; } }
+@keyframes fx-cl-band-text { from { transform: translateY(0); } to { transform: translateY(-1000px); } }
+@keyframes fx-cl-band-flash { 0% { opacity: 0; } 20% { opacity: 0.85; } 100% { opacity: 0; } }
+/* ระหว่างฉาก Chain: ซ่อนลูกศรโจมตีและการ์ดบนมือ */
+[data-attack-arrow], [data-hand-fan] { transition: opacity 0.3s ease; }
+.fx-chain-focus [data-attack-arrow], .fx-chain-focus [data-hand-fan] { opacity: 0; }
 /* ปุ่มในแถบกลางจอ: ใหญ่ขึ้นให้เห็นชัด */
 .btn-big > button { padding: 0.6rem 1.4rem; font-size: 1rem; }
 

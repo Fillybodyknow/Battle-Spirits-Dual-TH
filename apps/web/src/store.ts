@@ -661,9 +661,10 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
           out.push({ kind: 'activate', cardId: e.cardId, label: 'เอฟเฟกต์ทำงาน', text: effectText(s.cards[e.cardId]!.cardNo, e.source), delay: t });
         }
         const index = chainPos.get(e) ?? -1;
-        // ต่อ Chain: การ์ดขึ้นใหญ่กลางจอ "CHAIN n" แล้วบินลงแถบ → ผลของเอฟเฟกต์ตามมา
-        if (index >= 0) out.push({ kind: 'chainAdd', cardId: e.cardId, index, delay: t + (field ? T.activate : 0) });
-        t += (field ? T.activate : 250) + (index >= 0 ? T.chainLink : 0);
+        // ต่อ Chain: แสดงกอง "CHAIN n" เฉพาะเมื่อมีตั้งแต่ 2 Chain ขึ้นไป (Chain 1 เดี่ยว ๆ ไม่ต้องโชว์)
+        const chained = index >= 1;
+        if (chained) out.push({ kind: 'chainAdd', cardId: e.cardId, index, delay: t + (field ? T.activate : 0) });
+        t += (field ? T.activate : 250) + (chained ? T.chainLink : 0);
         draws = 0;
         break;
       }
