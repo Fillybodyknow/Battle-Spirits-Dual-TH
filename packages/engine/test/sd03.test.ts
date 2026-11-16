@@ -239,6 +239,53 @@ describe('SD03 ทิ้งเด็คคู่แข่ง', () => {
     expect(trashCount(x, 'p2')).toBe(1 + 7); // ฟง-นี้ด + ทิ้งเด็ค 7
   });
 
+  /** Brave ร่วมร่างกับ host (ไม่อยู่ในแถวสนามเอง) */
+  function fuse(s: GameState, host: string, cardNo: string): string {
+    const owner = s.cards[host]!.owner;
+    const id = inHand(s, owner, cardNo);
+    s.players[owner].hand = s.players[owner].hand.filter((x) => x !== id);
+    s.cards[host]!.braves.push(id);
+    return id;
+  }
+
+  it('เนอวาน่า: สปิริตที่ร่วมร่างกับ Brave คอสต์ = สปิริต + Brave → ทิ้งเด็คตามคอสต์รวม', () => {
+    // ฟง-นี้ด (7) + เท็ปโปนานะฟุชิ (4) = 11
+    const s = setup();
+    const big = put(s, 'p2', FONG, 1);
+    fuse(s, big, no('เท็ปโปนานะฟุชิ'));
+    const id = put(s, 'p1', NIRVANA, 1);
+    const before = s.players.p2.deck.length;
+    const x = attack(toAttack(s), id);
+    expect(x.players.p2.field).not.toContain(big);
+    expect(before - x.players.p2.deck.length).toBe(11);
+  });
+
+  it('เนอวาน่า: "คอสต์สูงสุด" นับคอสต์ Brave ที่ร่วมร่างด้วย', () => {
+    // ยาริสควิด (3) + เท็ปโปนานะฟุชิ (4) = 7 สูงกว่ารับแพนเธอร์ (3) ตัวเดียว → ไม่ต้องถามเลือก ทำลายตัวที่ร่วมร่าง
+    const s = setup();
+    const fused = put(s, 'p2', SQUID, 1);
+    fuse(s, fused, no('เท็ปโปนานะฟุชิ'));
+    const lone = put(s, 'p2', PANTHER, 1);
+    const id = put(s, 'p1', NIRVANA, 1);
+    const x = attack(toAttack(s), id);
+    expect(x.players.p2.field).not.toContain(fused);
+    expect(x.players.p2.field).toContain(lone);
+  });
+
+  it('เนอวาน่า Lv2: คอสต์ 3 ถูกทิ้งโดยเอฟเฟกต์ของอารามคันนงพันรูป (ไม่ใช่ของสปิริตเมียวโอ) → ไม่ฟื้นสภาพ', () => {
+    // เนอวาน่า (โซลคอร์) โจมตี: ทำลายมุฉะดาริว (คอสต์ 1) → ทิ้ง 1 ใบ (ดาริว ไม่เจอคอสต์ 3)
+    // → อาราม Lv2 ทิ้งอีก 5 ใบ เจอยาริสควิด (คอสต์ 3)
+    const s = setup([], [DARIU, DARIU, SQUID]);
+    put(s, 'p1', TEMPLE, 1);
+    put(s, 'p2', DARIU, 1);
+    const id = put(s, 'p1', NIRVANA, 3, true);
+    let x = attack(toAttack(s), id);
+    for (let i = 0; i < 5 && x.choice; i++) x = choose(x, 0);
+    expect(trashCount(x, 'p2')).toBe(1 + 1 + 5); // ดาริวที่ถูกทำลาย + เนอวาน่าทิ้ง 1 + อารามทิ้ง 5
+    expect(x.players.p2.trashCards.some((c) => x.cards[c]!.cardNo === SQUID)).toBe(true);
+    expect(x.cards[id]!.state).toBe('exhausted');
+  });
+
   it('เนอวาน่า Lv2 (โซลคอร์): คอสต์ 3 ถูกทิ้งโดยเอฟเฟกต์ของเมียวโอ → สปิริตนั้นฟื้นสภาพ', () => {
     const s = setup([], [SQUID]);
     put(s, 'p1', NIRVANA, 3, true);

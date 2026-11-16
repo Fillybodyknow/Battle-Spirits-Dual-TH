@@ -1,5 +1,5 @@
 import type { CardDatabase, CardDef } from '@bs/cards';
-import { cardLevel, fail, isSpiritLike, levelOf, locateCore, minCores, payableCost, removeCore, removeFrom } from './rules';
+import { cardLevel, fail, fieldCost, isSpiritLike, levelOf, locateCore, minCores, payableCost, removeCore, removeFrom } from './rules';
 import { PLAYERS, opponentOf, type EndReason, type GameEvent, type GameState, type Phase, type PlayerId } from './types';
 import { newBatch, queueLifeLostTriggers, queueTriggers } from './effects';
 
@@ -116,8 +116,9 @@ export function sendToTrash(ctx: Ctx, cardId: string): void {
 /** by = ผู้เล่นที่ทำลาย (การต่อสู้ / เอฟเฟกต์) ใช้ตรวจ Burst "ถูกทำลายโดยคู่แข่ง" */
 export function destroy(ctx: Ctx, cardId: string, by?: PlayerId, bySource?: string): void {
   const owner = ctx.s.cards[cardId]!.owner;
+  const cost = fieldCost(ctx.s, ctx.db, cardId);
   sendToTrash(ctx, cardId);
-  emit(ctx, { type: 'destroyed', cardId, ...(bySource ? { bySource } : {}) });
+  emit(ctx, { type: 'destroyed', cardId, cost, ...(bySource ? { bySource } : {}) });
   if (by && by !== owner) pendBurst(ctx, owner, 'afterAllyDestroyedByOpponent');
 }
 

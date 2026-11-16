@@ -278,7 +278,7 @@ function stayDestroyed(
   const hadSoul = card.cores.some((id) => s.cores[id]!.isSoul);
   const negated = effectsNegated(s, db, cardId);
   card.state = state;
-  emit(ctx, { type: 'destroyed', cardId, stays: true, ...(bySource ? { bySource } : {}) });
+  emit(ctx, { type: 'destroyed', cardId, stays: true, cost: fieldCost(s, db, cardId), ...(bySource ? { bySource } : {}) });
   if (withTriggers) queueDestroyTriggers(ctx, cardId, by, level, hadSoul, negated, { ...(bySource ? { bySource } : {}), effect: true });
 }
 
@@ -1070,7 +1070,8 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
     case 'destroyHighestCostOpponent': {
       const pool = s.players[opp].field.filter((id) => spiritLike(id) && matchesFilter(s, db, id, step.filter));
       if (pool.length === 0) return;
-      const costOf = (id: string) => db.get(s.cards[id]!.cardNo).cost;
+      // คอสต์บนสนาม: สปิริตที่ร่วมร่างกับ Brave = คอสต์สปิริต + คอสต์ Brave
+      const costOf = (id: string) => fieldCost(s, db, id);
       const max = Math.max(...pool.map(costOf));
       const candidates = pool.filter((id) => costOf(id) === max);
       if (candidates.length === 1) {
@@ -1145,7 +1146,7 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       let total = 0;
       for (let i = item.logStart ?? 0; i < s.log.length; i++) {
         const e = s.log[i]!;
-        if (e.type === 'destroyed' && e.bySource === item.sourceId && s.cards[e.cardId]!.owner === opp) total += db.get(s.cards[e.cardId]!.cardNo).cost;
+        if (e.type === 'destroyed' && e.bySource === item.sourceId && s.cards[e.cardId]!.owner === opp) total += e.cost ?? db.get(s.cards[e.cardId]!.cardNo).cost;
       }
       if (total > 0) item.steps.unshift({ do: 'mill', count: total });
       return;

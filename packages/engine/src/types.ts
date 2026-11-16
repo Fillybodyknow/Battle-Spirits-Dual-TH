@@ -307,7 +307,8 @@ export type GameEvent =
   | { type: 'flashPassed'; player: PlayerId }
   | { type: 'lifeLost'; player: PlayerId; amount: number }
   /** bySource = การ์ดที่เป็นเจ้าของเอฟเฟกต์ที่ทำลาย */
-  | { type: 'destroyed'; cardId: string; bySource?: string; stays?: true }
+  /** cost = คอสต์บนสนามตอนถูกทำลาย (รวมคอสต์ Brave ที่ร่วมร่าง: Brave แยกออกไปแล้วหลังทำลาย จึงต้องจดไว้ตอนนั้น) */
+  | { type: 'destroyed'; cardId: string; bySource?: string; stays?: true; cost?: number }
   /** คอร์บนการ์ดถูกส่งออก (เอฟเฟกต์ถอดคอร์) */
   | { type: 'coresRemoved'; cardId: string; count: number; to: 'reserve' | 'trash' }
   /** ผู้เล่นกดใช้เอฟเฟกต์ Flash ของการ์ดบนสนาม */
