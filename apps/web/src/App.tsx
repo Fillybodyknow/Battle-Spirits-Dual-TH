@@ -8,6 +8,7 @@ import { ChoiceDialog, ErrorToast, FlashCue, PromptBar, SummonPanel, TrashDialog
 import { UpdateNotice, WhatsNew } from './components/Updates';
 import { CornerButtons, FinalBlowWarning, FloatingInspector, PlayerPlate, TurnAura } from './components/Hud';
 import { PlayDialog } from './components/PlayDialog';
+import { MyDeck } from './screens/MyDeck';
 import { BTN } from './components/Modal';
 import { AttackArrow, FxLayer } from './components/Fx';
 import { DrawPrompt } from './components/DrawPrompt';
@@ -75,7 +76,7 @@ function OnlineExit() {
   const online = useGame((s) => s.online);
   const winner = useGame((s) => s.state.winner);
   if (!online) return null;
-  const playing = online.status === 'playing' && !winner;
+  const playing = online.status === 'playing' && !winner && !online.spectator;
   return (
     <div className="flex flex-col gap-1 border-t border-slate-700 pt-3">
       <span className="text-xs text-slate-400">
@@ -87,10 +88,10 @@ function OnlineExit() {
         onClick={() => {
           if (playing) {
             if (confirm('ยอมแพ้เกมนี้?')) useGame.getState().dispatch({ type: 'concede', player: online.me });
-          } else if (confirm('ออกจากห้องแล้วกลับหน้าหลัก?')) useGame.getState().onlineLeave();
+          } else if (confirm(online.spectator ? 'ออกจากการชมแล้วกลับห้องดวล?' : 'ออกจากเกม?')) useGame.getState().onlineLeave();
         }}
       >
-        {playing ? 'ยอมแพ้' : 'ออกจากห้อง'}
+        {playing ? 'ยอมแพ้' : online.spectator ? 'ออกจากการชม' : 'ออกจากเกม'}
       </button>
     </div>
   );
@@ -241,7 +242,7 @@ export function App() {
   }, [screen]);
   return (
     <>
-      {screen === 'home' ? <Home /> : screen === 'lobby' ? <Lobby /> : screen === 'decks' ? <DeckViewer /> : screen === 'builder' ? <DeckBuilder /> : <GameScreen />}
+      {screen === 'home' ? <Home /> : screen === 'lobby' ? <Lobby /> : screen === 'decks' ? <DeckViewer /> : screen === 'mydeck' ? <MyDeck /> : screen === 'builder' ? <DeckBuilder /> : <GameScreen />}
       {screen !== 'game' && <ErrorToast />}
       {/* อัปเดตแอป: แจ้งเวอร์ชันใหม่ / มีอะไรใหม่หลังอัปเดต */}
       <UpdateNotice />

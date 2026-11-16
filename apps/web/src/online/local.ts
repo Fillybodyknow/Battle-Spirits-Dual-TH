@@ -2,7 +2,58 @@
  * Transport จำลองสำหรับทดสอบ: เก็บข้อมูลใน localStorage และแจ้งแท็บอื่นด้วย BroadcastChannel
  * เปิดเกม 2 แท็บในเบราว์เซอร์เดียวกันด้วย ?online=local เพื่อทดสอบเล่นออนไลน์โดยไม่ต้องใช้ Firebase
  */
-import { actionKey, decodeAction, encodeAction, type RoomInfo, type Transport } from './transport';
+import { actionKey, decodeAction, encodeAction, type LobbyEntry, type RoomInfo, type Transport } from './transport';
+
+const LOBBY = 'bs-local-lobby';
+
+/** ข้อมูลแบบต้นไม้ (ห้องดวล) เก็บแยกคีย์ ใช้ path แบบ Firebase */
+const TREE = 'bs-local-tree';
+const readTree = (): Record<string, unknown> => {
+  try {
+    return JSON.parse(localStorage.getItem(TREE) ?? '{}') as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+};
+const parts = (path: string) => path.split('/').filter(Boolean);
+function getAt(tree: unknown, path: string): unknown {
+  let cur = tree;
+  for (const k of parts(path)) {
+    if (!cur || typeof cur !== 'object') return null;
+    cur = (cur as Record<string, unknown>)[k];
+  }
+  return cur ?? null;
+}
+/** ตัด object ว่างทิ้ง (เหมือน Firebase) */
+function prune(v: unknown): unknown {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return v;
+  const out: Record<string, unknown> = {};
+  for (const [k, x] of Object.entries(v)) {
+    const p = prune(x);
+    if (p !== null && p !== undefined) out[k] = p;
+  }
+  return Object.keys(out).length ? out : null;
+}
+function setAt(path: string, value: unknown) {
+  const tree = readTree();
+  const ks = parts(path);
+  let cur: Record<string, unknown> = tree;
+  for (const k of ks.slice(0, -1)) {
+    if (!cur[k] || typeof cur[k] !== 'object') cur[k] = {};
+    cur = cur[k] as Record<string, unknown>;
+  }
+  cur[ks.at(-1)!] = value === undefined ? null : JSON.parse(JSON.stringify(value));
+  localStorage.setItem(TREE, JSON.stringify(prune(tree) ?? {}));
+  channel?.postMessage('changed');
+  queueMicrotask(() => listeners.forEach((l) => l()));
+}
+const readLobby = (): Record<string, LobbyEntry> => {
+  try {
+    return JSON.parse(localStorage.getItem(LOBBY) ?? '{}') as Record<string, LobbyEntry>;
+  } catch {
+    return {};
+  }
+};
 
 const KEY = 'bs-local-online';
 type Store = Record<string, RoomInfo & { actions?: Record<string, Record<string, string>> }>;
@@ -23,6 +74,8 @@ const write = (s: Store) => {
   queueMicrotask(() => listeners.forEach((l) => l()));
 };
 channel?.addEventListener('message', () => listeners.forEach((l) => l()));
+// ข้อความจาก BroadcastChannel อาจมาถึงก่อนค่าใน localStorage ของแท็บนี้จะอัปเดต: ฟัง storage event ด้วย (มาหลังค่าเปลี่ยนแล้ว)
+if (typeof window !== 'undefined') window.addEventListener('storage', () => listeners.forEach((l) => l()));
 const subscribe = (fn: () => void) => {
   listeners.add(fn);
   return () => void listeners.delete(fn);
@@ -68,7 +121,7 @@ export const localTransport: Transport = {
     let last = '';
     const check = () => {
       const r = read()[code] ?? null;
-      const sig = JSON.stringify(r && { seats: r.seats, setup: r.setup, names: r.names, versions: r.versions });
+      const sig = JSON.stringify(r && { seats: r.seats, setup: r.setup, names: r.names, versions: r.versions, meta: r.meta });
       if (sig === last) return;
       last = sig;
       cb(r);
@@ -126,5 +179,52 @@ export const localTransport: Transport = {
     if (!s[code]) return;
     delete s[code]!.seats[seat];
     write(s);
+  },
+  async setHostDeck(code, deck) {
+    const s = read();
+    const room = s[code];
+    if (!room || room.seats.p2) return false;
+    room.setup.decks.p1 = deck;
+    write(s);
+    return true;
+  },
+  async listRooms() {
+    return Object.values(readLobby());
+  },
+  async publishRoom(entry) {
+    localStorage.setItem(LOBBY, JSON.stringify({ ...readLobby(), [entry.code]: entry }));
+  },
+  async unpublishRoom(code) {
+    const l = readLobby();
+    delete l[code];
+    localStorage.setItem(LOBBY, JSON.stringify(l));
+  },
+  watchPath(path, cb) {
+    let last = '\u0000';
+    const check = () => {
+      const v = getAt(readTree(), path);
+      const sig = JSON.stringify(v);
+      if (sig === last) return;
+      last = sig;
+      cb(v === null ? null : JSON.parse(sig));
+    };
+    queueMicrotask(check);
+    return subscribe(check);
+  },
+  async setPath(path, value) {
+    setAt(path, value);
+  },
+  async removePath(path) {
+    setAt(path, null);
+  },
+  async transactPath(path, fn) {
+    const cur = getAt(readTree(), path);
+    const next = fn(cur === null ? null : JSON.parse(JSON.stringify(cur)));
+    if (next === undefined) return { committed: false, value: cur };
+    setAt(path, next);
+    return { committed: true, value: getAt(readTree(), path) };
+  },
+  async removeOnDisconnect() {
+    /* ทดสอบในเครื่อง: ไม่มีการหลุด */
   },
 };

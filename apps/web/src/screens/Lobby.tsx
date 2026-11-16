@@ -1,122 +1,58 @@
+/**
+ * หน้า DUEL: เมนูการดวล → Free Duel → Duel Room
+ *  - Room Match: สร้างห้อง / เข้าห้อง (รายการห้อง + ค้นหาด้วยรหัส)
+ *  - สร้างห้อง: ตั้งชื่อห้อง ความคิดเห็น แสดงในรายการห้อง เด็คที่ใช้
+ *  - หน้าห้อง: โต๊ะ 1 โต๊ะ 2 ที่นั่ง กด ENTRY เพื่อนั่ง (ครบสองคน = เริ่มเกม)
+ */
 import { useEffect, useState } from 'react';
-import type { PlayerId } from '@bs/engine';
-import { BTN } from '../components/Modal';
+import { PLAYERS, type PlayerId } from '@bs/engine';
+import type { DuelRoom, LobbyEntry } from '../online/transport';
 import { sfx } from '../sfx';
-import { onlineAvailable, onlineVia, playableDecks, useGame, type DeckId } from '../store';
+import {
+  compatibleVersion,
+  duelCreate,
+  duelJoin,
+  duelLeave,
+  duelReady,
+  duelSetDeck,
+  duelSit,
+  duelSpectate,
+  duelStand,
+  listRooms,
+  onlineAvailable,
+  onlineVia,
+  playableDecks,
+  seatOf,
+  seatUid,
+  tableIds,
+  useGame,
+  type DeckId,
+} from '../store';
+import { DeckBox, keyCards } from '../components/DeckBox';
+import { COLOR_LABEL } from '../format';
 import { deckInfo } from '../decks';
-import { BackButton, CardArt, DeckTile, deckColor, deckCover } from './shared';
-
-/** ป้ายผู้เล่นฝั่งหนึ่งในหน้าจอ VS */
-function PlayerPlate({ name, deck, side, waiting }: { name?: string; deck?: DeckId | null; side: 'left' | 'right'; waiting?: boolean }) {
-  const glow = deck ? deckColor(deck) : '#64748b';
-  return (
-    <div className={`flex w-80 flex-col items-center gap-4 ${side === 'left' ? 'lobby-in-left' : 'lobby-in-right'}`}>
-      <div className="relative h-80 w-56">
-        <div className="absolute inset-[-30%] rounded-full blur-3xl" style={{ background: `radial-gradient(circle, ${glow}55, transparent 65%)` }} />
-        {deck && !waiting ? (
-          <CardArt cardNo={deckCover(deck)} className={`relative w-full shadow-[0_30px_60px_rgba(0,0,0,0.7)] ${side === 'left' ? 'rotate-[-5deg]' : 'rotate-[5deg]'}`} />
-        ) : (
-          <div className="relative flex h-full w-full items-center justify-center rounded-xl border-2 border-dashed border-sky-300/40 bg-slate-900/60">
-            <div className="flex flex-col items-center gap-3 text-sky-200/80">
-              <div className="h-12 w-12 animate-spin rounded-full border-4 border-sky-300/20 border-t-sky-300" />
-              <span className="text-sm font-bold">รอคู่แข่ง…</span>
-            </div>
-          </div>
-        )}
-      </div>
-      <div className={`w-full rounded-xl border px-4 py-2 text-center ${waiting ? 'border-white/10 bg-black/40' : 'border-yellow-300/40 bg-gradient-to-r from-slate-950/90 via-slate-900/90 to-slate-950/90'}`}>
-        <div className="truncate text-xl font-black text-white">{waiting ? '???' : (name ?? 'นักดวล')}</div>
-        <div className="text-xs text-slate-400">{deck && !waiting ? deckInfo(deck).label : 'ยังไม่มีผู้เล่น'}</div>
-      </div>
-    </div>
-  );
-}
-
-/** หน้าจอ VS: รอคู่แข่ง / พบคู่แข่งแล้วนับถอยหลังเข้าเกม */
-function Versus() {
-  const online = useGame((s) => s.online)!;
-  const setScreen = useGame((s) => s.setScreen);
-  const leave = useGame((s) => s.onlineLeave);
-  const [copied, setCopied] = useState(false);
-  const [count, setCount] = useState(3);
-  // พบคู่แข่งแล้ว (กำลังเลือกผู้เริ่มก่อน หรือเล่นอยู่): เข้ากระดานไปดูฉากเปิดเกม
-  const ready = online.status !== 'waiting';
-  const me = online.me;
-  const opp: PlayerId = me === 'p1' ? 'p2' : 'p1';
-  const decks = online.setup?.decks;
-  const myDeck = (decks?.[me] ?? useGame.getState().decks[me]) as DeckId;
-
-  // พบคู่แข่ง: นับ 3-2-1 แล้วเข้ากระดาน
-  useEffect(() => {
-    if (!ready) return;
-    // ฉากเปิดเกมบนกระดานมี VS + โยนเหรียญอยู่แล้ว: แสดงว่าพบคู่แข่งครู่เดียวแล้วเข้ากระดาน
-    setCount(1);
-    const t = setTimeout(() => setCount(0), 700);
-    return () => clearTimeout(t);
-  }, [ready]);
-  useEffect(() => {
-    if (!ready) return;
-    if (count === 0) setScreen('game');
-
-  }, [ready, count, setScreen]);
-
-  return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-6">
-      <div className="flex items-center gap-10">
-        <PlayerPlate side="left" name={online.names[me] ?? useGame.getState().playerName} deck={myDeck} />
-        <div className="flex w-56 flex-col items-center gap-4">
-          <div className={`text-8xl font-black italic ${ready ? 'lobby-vs text-yellow-300' : 'text-white/30'}`} style={{ textShadow: ready ? '0 0 30px rgba(250,204,21,0.8)' : undefined }}>
-            VS
-          </div>
-          {ready ? (
-            <div className="lobby-count text-2xl font-black text-white">พบคู่แข่ง!</div>
-          ) : (
-            <div className="flex flex-col items-center gap-2 rounded-xl border border-sky-300/30 bg-black/60 px-5 py-3">
-              <span className="text-xs tracking-widest text-sky-200/80">รหัสห้อง</span>
-              <span className="font-mono text-4xl font-black tracking-[0.3em] text-yellow-300 select-all">{online.code}</span>
-              <button
-                type="button"
-                className="rounded-full bg-sky-500/20 px-3 py-1 text-xs font-bold text-sky-100 hover:bg-sky-500/40"
-                onClick={() => {
-                  void navigator.clipboard?.writeText(online.code).then(() => {
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 1500);
-                  });
-                }}
-              >
-                {copied ? 'คัดลอกแล้ว ✓' : 'คัดลอกรหัส'}
-              </button>
-              <span className="text-center text-[11px] text-slate-400">ส่งรหัสนี้ให้เพื่อน แล้วให้เพื่อนกด "เข้าห้อง"</span>
-            </div>
-          )}
-        </div>
-        <PlayerPlate side="right" name={online.names[opp]} deck={(decks?.[opp] ?? null) as DeckId | null} waiting={!ready} />
-      </div>
-      {!ready && (
-        <button
-          type="button"
-          className={BTN.secondary}
-          onClick={() => {
-            if (confirm('ยกเลิกห้องนี้?')) leave();
-          }}
-        >
-          ยกเลิกห้อง
-        </button>
-      )}
-    </div>
-  );
-}
+import { db } from '../store';
+import { BackButton, CardArt, DeckTile, deckColor, deckSize } from './shared';
 
 const LOBBY_DECK_KEY = 'bs-lobby-deck';
+const COMMENTS = ['', 'ยินดีต้อนรับทุกคน', 'มือใหม่ ฝึกเล่น', 'เด็คสนุก ๆ', 'ดวลจริงจัง', 'Starter Deck เท่านั้น', 'ทดสอบเด็ค'];
 
-/** เลือกเด็ค + สร้างห้อง / เข้าห้องด้วยรหัส */
-function RoomSetup() {
+type View = { kind: 'menu' } | { kind: 'create' } | { kind: 'list' } | { kind: 'room'; code: string };
+
+/** หน้าที่เปิดอยู่ (จำไว้ตอนไปหน้าดู/จัดเด็คแล้วกลับมา) */
+let lastView: View = { kind: 'menu' };
+/** ไปแก้เด็คจากหน้าห้อง: กลับมาแล้วส่งเด็คที่แก้ขึ้นห้องใหม่ */
+let resyncDeck = false;
+
+/** ไปหน้าดู/จัดเด็ค แล้วกลับมาที่หน้า DUEL */
+function openDeckScreen(deck: DeckId, screen: 'decks' | 'builder') {
+  useGame.setState({ deckView: deck, deckReturn: 'lobby' });
+  useGame.getState().setScreen(screen);
+}
+
+/** เด็คที่ใช้ในหน้าห้อง: จำเด็คที่เลือกล่าสุดของเครื่องนี้ */
+function useLobbyDeck(): [DeckId, (id: DeckId) => void] {
   const decks = useGame((s) => s.decks);
-  const name = useGame((s) => s.playerName);
-  const setName = useGame((s) => s.setPlayerName);
-  const { onlineHost, onlineJoin } = useGame.getState();
-  // เด็คเริ่มต้น: เด็คที่ผู้เล่นเลือกเองครั้งล่าสุดในเครื่องนี้
-  // (ห้าม decks.p1 ตรง ๆ: หลังเล่นออนไลน์ decks.p1 = เด็คของเจ้าของห้อง ผู้เล่น 2 จะได้เด็คของอีกฝ่ายไปเล่นรอบใหม่)
   const [deck, setDeckState] = useState<DeckId>(() => {
     const ids = playableDecks();
     let saved: string | null = null;
@@ -126,9 +62,10 @@ function RoomSetup() {
       /* อ่านไม่ได้ก็ใช้ค่าอื่น */
     }
     if (saved && ids.includes(saved)) return saved;
+    // ห้าม decks.p1 ตรง ๆ หลังเล่นออนไลน์ (= เด็คของเจ้าของห้อง)
     return ids.includes(decks.p1) ? decks.p1 : (ids[0] ?? 'sd01');
   });
-  const setDeck = (id: DeckId) => {
+  const set = (id: DeckId) => {
     setDeckState(id);
     try {
       localStorage.setItem(LOBBY_DECK_KEY, id);
@@ -136,116 +73,705 @@ function RoomSetup() {
       /* เก็บไม่ได้ก็ไม่เป็นไร */
     }
   };
-  const [code, setCode] = useState('');
-  const [busy, setBusy] = useState(false);
-  const run = async (fn: () => Promise<void>) => {
-    setBusy(true);
-    sfx('click');
-    await fn();
-    setBusy(false);
-  };
-  const ids = playableDecks();
+  return [deck, set];
+}
 
+// ---------------------------------------------------------------- ส่วนประกอบ
+
+/** หัวข้อหน้า (ปุ่มย้อนกลับ + ชื่อหน้า) */
+function TopBar({ title, sub, onBack }: { title: string; sub: string; onBack: () => void }) {
   return (
-    <div className="flex flex-1 items-center justify-center gap-10 px-10">
-      {/* เลือกเด็ค */}
-      <section className="lobby-in-left flex max-w-2xl flex-col gap-4">
-        <div>
-          <div className="text-xs tracking-[0.3em] text-sky-300">STEP 1</div>
-          <div className="text-2xl font-black text-white">เลือกเด็คของคุณ</div>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          {ids.map((id) => (
-            <DeckTile key={id} id={id} selected={deck === id} onClick={() => (sfx('hover'), setDeck(id))} />
-          ))}
-        </div>
-        <label className="flex items-center gap-3 text-sm text-slate-300">
-          ชื่อของคุณ
-          <input
-            defaultValue={name}
-            maxLength={16}
-            onBlur={(e) => setName(e.target.value)}
-            className="w-48 rounded-lg bg-slate-800/80 px-3 py-1.5 font-bold text-white ring-1 ring-slate-600 outline-none focus:ring-yellow-300"
-          />
-        </label>
-      </section>
+    <header className="relative z-10 flex items-center gap-5 border-b border-white/10 bg-gradient-to-r from-slate-950/90 via-slate-950/60 to-transparent py-4 pr-6">
+      <BackButton onClick={onBack} label="ย้อนกลับ" />
+      <div>
+        <div className="text-[11px] tracking-[0.4em] text-sky-300">{sub}</div>
+        <div className="text-2xl font-black text-white">{title}</div>
+      </div>
+    </header>
+  );
+}
 
-      {/* สร้าง / เข้าห้อง */}
-      <section className="lobby-in-right flex w-[360px] flex-col gap-4">
-        <div>
-          <div className="text-xs tracking-[0.3em] text-sky-300">STEP 2</div>
-          <div className="text-2xl font-black text-white">เปิดห้องหรือเข้าห้อง</div>
+type EmblemIcon = 'room' | 'rank' | 'casual' | 'team' | 'event';
+
+/** ตราสัญลักษณ์ของเมนู: เพชรซ้อนชั้น + ไอคอน */
+function Emblem({ icon, color, size = 130 }: { icon: EmblemIcon; color: string; size?: number }) {
+  const line = { fill: 'none', stroke: color, strokeWidth: 3, strokeLinejoin: 'round' as const, strokeLinecap: 'round' as const };
+  const glyph = {
+    room: (
+      <>
+        <path d="M38 68V32h24v36" {...line} />
+        <path d="M44 68V38h12v30" {...line} />
+        <circle cx="53" cy="53" r="1.6" fill={color} />
+      </>
+    ),
+    rank: <path d="M50 30l5.5 11.5 12.5 1.8-9 8.8 2 12.4L50 58.6l-11 5.9 2-12.4-9-8.8 12.5-1.8z" {...line} />,
+    casual: (
+      <>
+        <rect x="35" y="35" width="30" height="30" rx="5" {...line} />
+        <circle cx="43" cy="43" r="2.4" fill={color} />
+        <circle cx="57" cy="57" r="2.4" fill={color} />
+        <circle cx="50" cy="50" r="2.4" fill={color} />
+      </>
+    ),
+    team: (
+      <>
+        <circle cx="42" cy="42" r="6" {...line} />
+        <circle cx="58" cy="42" r="6" {...line} />
+        <path d="M30 66c2-9 8-13 12-13s10 4 12 13M46 66c2-9 8-13 12-13s10 4 12 13" {...line} />
+      </>
+    ),
+    event: <path d="M36 66l14-34 14 34z M43 52h14" {...line} />,
+  }[icon];
+  return (
+    <svg viewBox="0 0 100 100" width={size} height={size} className="drop-shadow-[0_0_14px_rgba(0,0,0,0.6)]">
+      <path d="M50 4L96 50 50 96 4 50z" fill="none" stroke={color} strokeOpacity="0.25" strokeWidth="2" />
+      <path d="M50 14L86 50 50 86 14 50z" fill="rgba(2,6,23,0.75)" stroke={color} strokeOpacity="0.6" strokeWidth="2" />
+      <path d="M50 22L78 50 50 78 22 50z" fill="none" stroke={color} strokeOpacity="0.9" strokeWidth="1.5" />
+      {glyph}
+    </svg>
+  );
+}
+
+/** ไทล์เมนูการดวล (ไม่มี onClick = ยังไม่เปิด) */
+function DuelTile({ title, tag, icon, color, status, onClick, className = '', big }: { title: string; tag?: string; icon: EmblemIcon; color: string; status: string; onClick?: () => void; className?: string; big?: boolean }) {
+  const locked = !onClick;
+  return (
+    <button
+      type="button"
+      disabled={locked}
+      onClick={() => {
+        sfx('click');
+        onClick?.();
+      }}
+      onMouseEnter={() => !locked && sfx('hover')}
+      className={`group relative flex flex-col overflow-hidden rounded-xl border-2 bg-slate-950/80 text-left transition ${
+        locked ? 'cursor-not-allowed border-white/10 opacity-60 saturate-50' : 'border-white/15 hover:-translate-y-0.5 hover:border-lime-300 hover:shadow-[0_0_26px_rgba(190,242,100,0.45)]'
+      } ${className}`}
+    >
+      <div className="flex items-center justify-between bg-black/70 px-4 py-2">
+        <span className="text-lg font-black text-white">{title}</span>
+        {tag && <span className="text-sm font-bold text-slate-300">{tag}</span>}
+      </div>
+      <div
+        className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden"
+        style={{ background: `repeating-linear-gradient(135deg, ${color}14 0 18px, transparent 18px 36px), radial-gradient(circle at 50% 50%, ${color}33, transparent 70%)` }}
+      >
+        <div className="transition duration-300 group-hover:scale-110">
+          <Emblem icon={icon} color={color} size={big ? 170 : 96} />
         </div>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => run(() => onlineHost(deck))}
-          className="group relative overflow-hidden rounded-2xl border border-yellow-300/60 bg-gradient-to-br from-amber-400 via-yellow-300 to-amber-500 p-5 text-left shadow-[0_0_30px_rgba(250,204,21,0.35)] transition hover:-translate-y-0.5 disabled:opacity-50"
-        >
-          <div className="absolute inset-y-0 -left-1/3 w-1/3 skew-x-[-20deg] bg-white/40 transition-all duration-700 group-hover:left-[120%]" />
-          <div className="relative text-3xl font-black text-slate-950 italic">CREATE ROOM</div>
-          <div className="relative text-sm font-bold text-slate-800">สร้างห้อง แล้วส่งรหัสให้เพื่อน</div>
-        </button>
-        <div className="flex items-center gap-3 text-xs text-slate-500">
-          <span className="h-px flex-1 bg-slate-700" />
-          หรือ
-          <span className="h-px flex-1 bg-slate-700" />
-        </div>
-        <div className="flex flex-col gap-3 rounded-2xl border border-sky-300/30 bg-slate-950/70 p-5">
-          <div className="text-lg font-black text-white italic">JOIN ROOM</div>
-          <input
-            value={code}
-            onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
-            onKeyDown={(e) => e.key === 'Enter' && code.length === 5 && run(() => onlineJoin(code, deck))}
-            placeholder="รหัส 5 ตัว"
-            maxLength={5}
-            className="w-full rounded-xl bg-slate-900 px-4 py-3 text-center font-mono text-3xl font-black tracking-[0.5em] text-yellow-300 uppercase ring-1 ring-slate-600 outline-none placeholder:text-base placeholder:tracking-normal placeholder:text-slate-600 focus:ring-2 focus:ring-yellow-300"
-          />
-          <button type="button" disabled={busy || code.length < 5} onClick={() => run(() => onlineJoin(code, deck))} className={`${BTN.secondary} py-2.5 text-base`}>
-            เข้าห้อง
-          </button>
-        </div>
-        <p className="text-xs text-slate-500">ผู้สร้างห้องเป็นผู้เล่น 1 · ผู้เข้าห้องเป็นผู้เล่น 2 · ผู้เริ่มก่อนสุ่มจาก seed ของห้อง · ผ่าน {onlineVia}</p>
-      </section>
+      </div>
+      <div className={`px-4 py-2 text-center text-sm font-bold ${locked ? 'bg-black/60 text-slate-400' : 'bg-gradient-to-r from-amber-500/90 to-orange-600/80 text-white'}`}>{status}</div>
+    </button>
+  );
+}
+
+/** แถวตั้งค่าในหน้าสร้างห้อง */
+function SettingRow({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-4 border border-white/10 bg-black/70 px-5 py-3">
+      <div className="flex min-w-0 flex-1 flex-col">
+        <span className="font-bold text-white">{label}</span>
+        {hint && <span className="text-xs text-slate-400">{hint}</span>}
+      </div>
+      {children}
     </div>
   );
 }
 
-export function Lobby() {
+function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button type="button" onClick={() => (sfx('click'), onChange(!on))} className={`w-20 rounded-full py-1 text-sm font-black transition ${on ? 'bg-lime-300 text-slate-950' : 'bg-slate-700 text-slate-300'}`}>
+      {on ? 'ON' : 'OFF'}
+    </button>
+  );
+}
+
+/** กล่องเด็คที่ใช้ (มุมขวาล่างของหน้าห้อง): ชี้ = การ์ดเด่นโผล่ · กด = เมนูเด็ค */
+function DeckCard({ deck, onChange, lockedReason, onEdit, onView }: { deck: DeckId; onChange?: (id: DeckId) => void; lockedReason?: string; onEdit?: () => void; onView: () => void }) {
+  const [menu, setMenu] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => (sfx('click'), setMenu(true))}
+        onMouseEnter={() => sfx('hover')}
+        className="group flex w-full flex-col items-center rounded-2xl bg-slate-700/40 px-4 pt-2 pb-3 ring-1 ring-white/10 transition hover:bg-slate-600/45 hover:ring-lime-300/60"
+        title="เมนูเด็ค"
+      >
+        <DeckBox deck={deck} />
+        <div className="mt-1 max-w-full truncate text-lg font-black text-white">{deckInfo(deck).label}</div>
+        <div className="text-xs text-slate-400">{deckSize(deck)} ใบ · กดเพื่อเปิดเมนูเด็ค</div>
+      </button>
+      {menu && <DeckMenu deck={deck} onClose={() => setMenu(false)} onChange={onChange} lockedReason={lockedReason} onEdit={onEdit} onView={onView} />}
+    </>
+  );
+}
+
+/** เมนูเด็ค: แก้ไขเด็ค / เปลี่ยนเด็ค / ดูการ์ดในเด็ค */
+function DeckMenu({
+  deck,
+  onClose,
+  onChange,
+  lockedReason,
+  onEdit,
+  onView,
+}: {
+  deck: DeckId;
+  onClose: () => void;
+  onChange?: (id: DeckId) => void;
+  lockedReason?: string;
+  onEdit?: () => void;
+  onView: () => void;
+}) {
+  const [picking, setPicking] = useState(false);
+  const custom = deckInfo(deck).custom;
+  const item = (label: string, sub: string, onClick?: () => void) => (
+    <button
+      type="button"
+      disabled={!onClick}
+      onClick={() => (sfx('click'), onClick?.())}
+      onMouseEnter={() => onClick && sfx('hover')}
+      className="flex w-full flex-col items-center rounded-full border-2 border-white/40 bg-black py-2.5 transition enabled:hover:border-lime-300 enabled:hover:shadow-[0_0_20px_rgba(190,242,100,0.5)] disabled:opacity-40"
+    >
+      <span className="text-lg font-black text-white">{label}</span>
+      <span className="text-xs text-slate-400">{sub}</span>
+    </button>
+  );
+  const colors = [...new Set(deckInfo(deck).entries.flatMap((e) => db.find(e.cardNo)?.colors ?? []))];
+  return (
+    <div className="fixed inset-0 z-40 flex justify-center bg-black/70" onClick={onClose}>
+      <div className="flex h-full w-[52rem] max-w-full flex-col justify-center bg-gradient-to-b from-slate-800/95 via-slate-900/95 to-slate-950/95 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="border-b-2 border-sky-400 pb-3 text-center text-2xl font-black text-white">เมนูเด็ค</div>
+        <div className="bg-black/50 px-8 py-4">
+          <div className="text-center text-lg font-black text-white">{deckInfo(deck).label}</div>
+          <div className="mt-2 flex items-end justify-center gap-4">
+            <DeckBox deck={deck} open size={1.1} />
+            <div className="flex gap-2 pb-2">
+              {keyCards(deck, 8)
+                .slice(3)
+                .map((no) => (
+                  <div key={no} className="w-16 rounded-md bg-slate-800/80 p-1 ring-1 ring-white/10">
+                    <CardArt cardNo={no} className="w-full rounded" />
+                  </div>
+                ))}
+            </div>
+          </div>
+          <div className="mt-1 text-center text-xs text-slate-400">
+            {deckSize(deck)} ใบ · {deckInfo(deck).entries.length} ชนิด · สี {colors.map((c) => COLOR_LABEL[c as keyof typeof COLOR_LABEL] ?? c).join(' / ')}
+          </div>
+        </div>
+        {picking ? (
+          <div className="flex max-h-[45vh] flex-wrap justify-center gap-3 overflow-y-auto px-8 py-5">
+            {playableDecks().map((id) => (
+              <DeckTile
+                key={id}
+                id={id}
+                selected={id === deck}
+                onClick={() => {
+                  sfx('click');
+                  onChange?.(id);
+                  onClose();
+                }}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3 bg-gradient-to-b from-sky-900/30 to-transparent px-16 py-6">
+            {item(custom ? 'แก้ไขเด็ค' : 'จัดเด็คใหม่จากเด็คนี้', lockedReason ?? (custom ? 'เปิดหน้าจัดเด็ค' : 'คัดลอก Starter Deck ไปจัดเอง'), lockedReason ? undefined : onEdit)}
+            {item('เปลี่ยนเด็ค', lockedReason ?? 'เลือกเด็คอื่นที่จะใช้ในห้องนี้', lockedReason ? undefined : onChange && (() => setPicking(true)))}
+            {item('ดูการ์ดในเด็ค', 'รายการการ์ดทั้งหมดของเด็คนี้', onView)}
+          </div>
+        )}
+        <div className="flex justify-center pt-2">
+          <button type="button" onClick={() => (picking ? setPicking(false) : onClose())} className="w-96 rounded-lg border border-white/40 bg-black py-2.5 text-lg font-black text-lime-300 hover:border-lime-300">
+            {picking ? 'ย้อนกลับ' : 'ยกเลิก'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const timeText = (t: number) => new Date(t).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+
+// ---------------------------------------------------------------- หน้าต่าง ๆ
+
+function DuelMenu({ onRoom }: { onRoom: () => void }) {
+  return (
+    <div className="relative z-10 grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)] gap-10 px-16 py-6">
+      <div className="flex min-h-0 flex-col gap-2">
+        <h2 className="text-lg font-black text-white">Ranked Duel</h2>
+        <DuelTile title="แรงก์" tag="เร็ว ๆ นี้" icon="rank" color="#4ade80" status="ยังไม่เปิด" className="h-56 shrink-0" big />
+        <h2 className="mt-2 text-lg font-black text-white">Free Duel</h2>
+        <div className="grid min-h-0 flex-1 grid-cols-2 grid-rows-2 gap-4">
+          <DuelTile title="Duel Room" icon="room" color="#38bdf8" status="ใช้งานได้" onClick={onRoom} className="row-span-2" big />
+          <DuelTile title="Casual Match" tag="เร็ว ๆ นี้" icon="casual" color="#facc15" status="ยังไม่เปิด" />
+          <DuelTile title="Team Battle" tag="เร็ว ๆ นี้" icon="team" color="#c084fc" status="ยังไม่เปิด" />
+        </div>
+      </div>
+      <div className="flex min-h-0 flex-col gap-2">
+        <h2 className="text-lg font-black text-white">Event Duel</h2>
+        <div className="flex h-56 flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-white/10 bg-black/40 text-slate-400">
+          <Emblem icon="event" color="#f472b6" size={90} />
+          ยังไม่มีอีเวนต์ในตอนนี้
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** หน้าต่าง Room Match: สร้างห้อง / เข้าห้อง / ชมการดวล */
+function RoomMatch({ onClose, onCreate, onEnter }: { onClose: () => void; onCreate: () => void; onEnter: () => void }) {
+  const item = (label: string, sub: string, onClick?: () => void) => (
+    <button
+      type="button"
+      disabled={!onClick}
+      onClick={() => (sfx('click'), onClick?.())}
+      onMouseEnter={() => onClick && sfx('hover')}
+      className="flex w-full flex-col items-center rounded-full border-2 border-white/40 bg-black py-3 transition enabled:hover:border-lime-300 enabled:hover:shadow-[0_0_20px_rgba(190,242,100,0.5)] disabled:opacity-40"
+    >
+      <span className="text-lg font-black text-white">{label}</span>
+      <span className="text-xs text-slate-400">{sub}</span>
+    </button>
+  );
+  return (
+    <div className="fixed inset-0 z-40 flex justify-center bg-black/70" onClick={onClose}>
+      <div className="flex h-full w-[46rem] max-w-full flex-col justify-center bg-gradient-to-b from-slate-800/95 via-slate-900/95 to-slate-950/95 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="border-b-2 border-sky-400 pb-3 text-center text-2xl font-black text-white">Room Match</div>
+        <div className="flex flex-col gap-4 bg-gradient-to-b from-sky-900/30 to-transparent px-16 py-8">
+          {item('สร้างห้อง', 'ตั้งชื่อห้อง เลือกเด็ค แล้วรอคู่แข่ง', onCreate)}
+          {item('เข้าห้อง', 'เลือกจากรายการห้อง หรือใส่รหัสห้อง', onEnter)}
+          {item('ชมการดวล', 'เร็ว ๆ นี้')}
+        </div>
+        <div className="flex justify-center">
+          <button type="button" onClick={onClose} className="w-96 rounded-lg border border-white/40 bg-black py-2.5 text-lg font-black text-lime-300 hover:border-lime-300">
+            ยกเลิก
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CreateRoom({ deck }: { deck: DeckId }) {
+  const playerName = useGame((s) => s.playerName);
+  const setName = useGame((s) => s.setPlayerName);
+  const [roomName, setRoomName] = useState(`ห้องของ ${playerName}`);
+  const [comment, setComment] = useState('');
+  const [listed, setListed] = useState(true);
+  const [max, setMax] = useState(6);
+  const [busy, setBusy] = useState(false);
+  const input = 'w-72 rounded bg-slate-800 px-3 py-1.5 text-right font-bold text-lime-300 outline-none focus:ring-2 focus:ring-lime-300';
+  const create = async () => {
+    setBusy(true);
+    sfx('click');
+    await duelCreate({ name: roomName, comment, listed, max }, deck);
+    setBusy(false);
+  };
+  return (
+    <div className="relative z-10 flex min-h-0 flex-1 flex-col items-center px-16 py-6">
+      <div className="flex min-h-0 w-full max-w-3xl flex-1 flex-col gap-2 overflow-y-auto pr-2">
+        <h3 className="mb-1 text-lg font-black text-white">ตั้งค่าห้อง</h3>
+        <SettingRow label="ชื่อห้อง">
+          <input value={roomName} maxLength={24} onChange={(e) => setRoomName(e.target.value)} className={input} />
+        </SettingRow>
+        <SettingRow label="ความคิดเห็น" hint="แสดงในรายการห้อง">
+          <select value={comment} onChange={(e) => setComment(e.target.value)} className={input}>
+            {COMMENTS.map((c) => (
+              <option key={c} value={c}>
+                {c || 'ไม่มี'}
+              </option>
+            ))}
+          </select>
+        </SettingRow>
+        <SettingRow label="จำนวนคนในห้องสูงสุด" hint={`โต๊ะ ${Math.ceil(max / 2)} โต๊ะ · คนที่ไม่ได้นั่งโต๊ะเข้าชมการดวลได้`}>
+          <select value={max} onChange={(e) => setMax(Number(e.target.value))} className={input}>
+            {[2, 3, 4, 5, 6].map((n) => (
+              <option key={n} value={n}>
+                {n} คน
+              </option>
+            ))}
+          </select>
+        </SettingRow>
+        <h3 className="mt-4 mb-1 text-lg font-black text-white">ตั้งค่าขั้นสูง</h3>
+        <SettingRow label="แสดงในรายการห้อง" hint="ปิด = เข้าได้ด้วยรหัสห้องเท่านั้น">
+          <Toggle on={listed} onChange={setListed} />
+        </SettingRow>
+        <SettingRow label="ชื่อของคุณ">
+          <input defaultValue={playerName} maxLength={16} onBlur={(e) => setName(e.target.value)} className={input} />
+        </SettingRow>
+      </div>
+      {/* เด็คเลือก/เปลี่ยนในหน้าห้อง (สร้างห้องด้วยเด็คที่เลือกล่าสุด) */}
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => void create()}
+        className="absolute right-12 bottom-8 w-80 rounded-lg border-2 border-white/40 bg-black py-3 text-xl font-black text-lime-300 transition hover:border-lime-300 hover:shadow-[0_0_24px_rgba(190,242,100,0.5)] disabled:opacity-50"
+      >
+        {busy ? 'กำลังสร้าง…' : 'สร้างห้อง'}
+      </button>
+    </div>
+  );
+}
+
+function RoomList({ onOpen }: { onOpen: (code: string) => void }) {
+  const [rooms, setRooms] = useState<LobbyEntry[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [code, setCode] = useState('');
+  const load = () => {
+    setRooms(null);
+    setError(null);
+    listRooms().then(setRooms, (e: Error) => {
+      setRooms([]);
+      setError(`โหลดรายการห้องไม่ได้ (${e.message}) · ยังเข้าห้องด้วยรหัสได้`);
+    });
+  };
+  useEffect(load, []);
+  return (
+    <div className="relative z-10 flex min-h-0 flex-1 flex-col items-center gap-4 px-16 py-5">
+      <div className="flex w-full max-w-5xl items-center gap-3">
+        <div className="flex flex-1 items-center gap-2 rounded-full border border-white/30 bg-slate-200/10 px-4">
+          <svg viewBox="0 0 24 24" className="h-5 w-5 text-slate-300" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <circle cx="11" cy="11" r="7" />
+            <path d="M20 20l-4-4" />
+          </svg>
+          <input
+            value={code}
+            onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+            onKeyDown={(e) => e.key === 'Enter' && code.length === 5 && onOpen(code)}
+            maxLength={5}
+            placeholder="ใส่รหัสห้อง (5 ตัว)"
+            className="flex-1 bg-transparent py-2.5 font-mono text-lg font-black tracking-[0.3em] text-white uppercase outline-none placeholder:font-sans placeholder:text-sm placeholder:tracking-normal placeholder:text-slate-400"
+          />
+          <button type="button" disabled={code.length !== 5} onClick={() => onOpen(code)} className="rounded-full bg-lime-300 px-4 py-1 text-sm font-black text-slate-950 disabled:opacity-30">
+            เข้า
+          </button>
+        </div>
+        <button type="button" onClick={load} title="รีเฟรช" className="flex h-11 w-16 items-center justify-center rounded-full border border-white/40 bg-black text-white hover:border-lime-300">
+          <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5" />
+          </svg>
+        </button>
+      </div>
+      {error && <div className="text-sm text-amber-300">{error}</div>}
+      <div className="flex min-h-0 w-full max-w-5xl flex-1 flex-col gap-3 overflow-y-auto pr-1">
+        {rooms === null && <div className="py-10 text-center text-slate-400">กำลังโหลด…</div>}
+        {rooms?.length === 0 && !error && <div className="py-10 text-center text-slate-400">ยังไม่มีห้องที่เปิดอยู่ · ลองสร้างห้องเอง หรือใส่รหัสห้องจากเพื่อน</div>}
+        {rooms?.map((r) => {
+          const ok = compatibleVersion(r.version);
+          return (
+            <button
+              key={r.code}
+              type="button"
+              onClick={() => (sfx('click'), onOpen(r.code))}
+              className="group flex shrink-0 items-center gap-4 border-l-4 border-lime-300 bg-sky-950/70 px-5 py-3 text-left transition hover:bg-sky-900/80"
+            >
+              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <div className="truncate text-lg font-black text-white">{r.name}</div>
+                <div className="text-sm text-slate-300">
+                  เจ้าของห้อง: {r.host} · ความคิดเห็น: {r.comment || 'ไม่มี'}
+                </div>
+                {!ok && <div className="text-xs font-bold text-amber-300">เวอร์ชันไม่ตรงกัน ({r.version}) เล่นด้วยกันไม่ได้</div>}
+              </div>
+              <div className="flex flex-col items-end gap-0.5 text-sm text-slate-300">
+                <span className="font-bold text-white">
+                  คนในห้อง {r.count ?? 1}/{r.max ?? 2}
+                </span>
+                <span>เปิดเมื่อ {timeText(r.createdAt)}</span>
+                <span className="font-mono text-xs text-slate-400">#{r.code}</span>
+              </div>
+              <span className="text-2xl text-slate-300 transition group-hover:translate-x-1">›</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** รูปโปรไฟล์ชั่วคราว: ตัวอักษรแรกของชื่อบนพื้นสีที่ได้จากชื่อ (ยังไม่มีระบบรูปโปรไฟล์) */
+function Avatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' }) {
+  let h = 0;
+  for (const ch of name) h = (h * 31 + ch.codePointAt(0)!) % 360;
+  const letter = [...name.trim()][0]?.toUpperCase() ?? '?';
+  return (
+    <div
+      className={`flex items-center justify-center font-black text-white ${size === 'sm' ? 'h-8 w-8 rounded-full text-sm' : 'h-full w-full text-4xl'}`}
+      style={{ background: `linear-gradient(145deg, hsl(${h} 70% 50%), hsl(${(h + 50) % 360} 65% 28%))`, textShadow: '0 2px 6px rgba(0,0,0,0.5)' }}
+    >
+      {letter}
+    </div>
+  );
+}
+
+const HEX = 'polygon(25% 2%, 75% 2%, 100% 50%, 75% 98%, 25% 98%, 0 50%)';
+
+/** ที่นั่งบนโต๊ะ: กดที่ว่างเพื่อนั่ง · ที่นั่งของเรามีปุ่มลุก */
+function Seat({ name, me, ready, onSit, onStand, locked }: { name?: string; me?: boolean; ready?: boolean; onSit?: () => void; onStand?: () => void; locked?: boolean }) {
+  const filled = !!name;
+  return (
+    <div className="flex w-36 flex-col items-center gap-1.5">
+      <button
+        type="button"
+        disabled={filled || !onSit}
+        onClick={() => (sfx('click'), onSit?.())}
+        title={filled ? name : 'กดเพื่อนั่งที่นี่'}
+        className={`group relative h-24 w-28 p-[3px] transition ${me ? 'bg-lime-300' : filled ? 'bg-slate-400' : 'bg-slate-600 enabled:hover:bg-lime-300'}`}
+        style={{ clipPath: HEX }}
+      >
+        <div className="flex h-full w-full items-center justify-center overflow-hidden bg-slate-800" style={{ clipPath: HEX }}>
+          {filled ? <Avatar name={name} /> : <span className="text-sm font-bold text-slate-400 group-enabled:group-hover:text-lime-300">{onSit ? 'นั่งที่นี่' : 'ว่าง'}</span>}
+        </div>
+      </button>
+      <div className={`max-w-full truncate text-sm font-bold ${filled ? 'text-white' : 'text-slate-500'}`}>{name ?? 'ว่าง'}</div>
+      <div className="flex h-5 items-center gap-1">
+        {filled && <span className={`rounded px-1.5 text-[11px] font-black ${ready ? 'bg-lime-300 text-slate-950' : 'bg-slate-700 text-slate-300'}`}>{ready ? 'พร้อม' : 'ยังไม่พร้อม'}</span>}
+        {me && onStand && !locked && (
+          <button type="button" onClick={() => (sfx('click'), onStand())} className="rounded px-1.5 text-[11px] font-bold text-slate-300 ring-1 ring-white/20 hover:text-white">
+            ลุก
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** โต๊ะหนึ่งโต๊ะ: ที่นั่ง 2 ฝั่ง + ตรงกลาง (พร้อม / เข้าชมการดวล / รอ) */
+function TableCard({ room, t, uid }: { room: DuelRoom; t: string; uid: string }) {
+  const online = useGame((s) => s.online);
+  const tb = room.tables?.[t] ?? {};
+  const p1 = seatUid(room, t, 'p1');
+  const p2 = seatUid(room, t, 'p2');
+  const mySeat = p1 === uid ? 'p1' : p2 === uid ? 'p2' : null;
+  const name = (u?: string) => (u ? room.members?.[u]?.name : undefined);
+  const game = tb.game;
+  const ready = (s: PlayerId) => !!tb.ready?.[s];
+  const iAmReady = mySeat ? ready(mySeat) : false;
+  const starting = !!game && !!online && online.code === game && online.status === 'waiting';
+
+  let center: React.ReactNode;
+  if (game && mySeat) {
+    center = <div className="lobby-vs text-3xl font-black text-yellow-300 italic">{starting ? 'กำลังเริ่ม…' : 'กำลังดวล'}</div>;
+  } else if (game) {
+    center = (
+      <button
+        type="button"
+        onClick={() => (sfx('click'), duelSpectate(t))}
+        className="w-full rounded-xl border-2 border-sky-300/60 bg-black py-3 text-xl font-black text-sky-200 transition hover:border-lime-300 hover:text-lime-300 hover:shadow-[0_0_24px_rgba(190,242,100,0.45)]"
+      >
+        เข้าชมการดวล
+      </button>
+    );
+  } else if (p1 && p2) {
+    center = mySeat ? (
+      <>
+        <button
+          type="button"
+          onClick={() => (sfx('click'), duelReady(!iAmReady))}
+          className={`w-full rounded-xl border-2 py-3 text-2xl font-black tracking-widest transition ${
+            iAmReady ? 'border-lime-300 bg-lime-300 text-slate-950' : 'border-white/30 bg-black text-lime-300 hover:border-lime-300 hover:shadow-[0_0_24px_rgba(190,242,100,0.5)]'
+          }`}
+        >
+          {iAmReady ? 'พร้อมแล้ว ✓' : 'พร้อม'}
+        </button>
+        <div className="text-xs text-slate-300">{ready('p1') && ready('p2') ? 'กำลังเริ่มเกม…' : iAmReady ? 'รออีกฝ่ายกดพร้อม (กดอีกครั้งเพื่อยกเลิก)' : 'กดพร้อมเมื่อเลือกเด็คเสร็จ · ทั้งสองฝ่ายพร้อม = เริ่มดวล'}</div>
+      </>
+    ) : (
+      <div className="text-sm text-slate-300">{ready('p1') && ready('p2') ? 'กำลังเริ่มเกม…' : 'รอผู้เล่นกดพร้อม…'}</div>
+    );
+  } else {
+    center = (
+      <>
+        <div className="text-3xl font-black text-white/40 italic">VS</div>
+        <div className="text-sm text-sky-200">{mySeat ? 'รอคู่แข่งมานั่ง…' : 'กดที่นั่งว่างเพื่อนั่ง'}</div>
+      </>
+    );
+  }
+  const canSit = !game;
+  return (
+    <div className="shrink-0 overflow-hidden rounded-lg bg-slate-800/60 shadow-xl">
+      <div className="flex items-center justify-between bg-slate-200 px-5 py-1.5 font-black text-slate-900">
+        <span>โต๊ะ {t}</span>
+        {game && <span className="text-xs font-bold text-rose-600">● กำลังดวล</span>}
+      </div>
+      <div className="flex items-center justify-center gap-8 px-6 py-4">
+        <Seat name={name(p1)} me={mySeat === 'p1'} ready={ready('p1')} onSit={canSit ? () => duelSit(t, 'p1') : undefined} onStand={duelStand} locked={!!game || iAmReady} />
+        <div className="flex w-64 flex-col items-center gap-2 text-center">{center}</div>
+        <Seat name={name(p2)} me={mySeat === 'p2'} ready={ready('p2')} onSit={canSit ? () => duelSit(t, 'p2') : undefined} onStand={duelStand} locked={!!game || iAmReady} />
+      </div>
+    </div>
+  );
+}
+
+/** หน้าห้อง: โต๊ะทั้งหมด + เมนูห้อง + กล่องเด็ค */
+function RoomView({ deck, setDeck }: { deck: DeckId; setDeck: (id: DeckId) => void }) {
+  const duel = useGame((s) => s.duel)!;
   const online = useGame((s) => s.online);
   const setScreen = useGame((s) => s.setScreen);
-  const leave = useGame((s) => s.onlineLeave);
+  const [copied, setCopied] = useState(false);
+  const [details, setDetails] = useState(false);
+  const room = duel.room;
+  const uid = duel.uid;
+  // เกมของโต๊ะเราเริ่มแล้ว / กดเข้าชม: เข้ากระดานเมื่อพร้อม
+  const go = !!online && online.status !== 'waiting';
+  useEffect(() => {
+    if (!go) return;
+    const t = setTimeout(() => setScreen('game'), online?.spectator ? 0 : 700);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [go, setScreen]);
+  // กลับมาจากหน้าจัดเด็ค: ส่งเด็คที่แก้แล้วขึ้นห้อง
+  useEffect(() => {
+    if (!room || !resyncDeck) return;
+    resyncDeck = false;
+    duelSetDeck(deck);
+  }, [room, deck]);
+
+  if (!room) return <div className="relative z-10 flex flex-1 items-center justify-center text-slate-300">กำลังโหลดห้อง {duel.code}…</div>;
+
+  const members = Object.entries(room.members ?? {}).sort((a, b) => a[1].joinedAt - b[1].joinedAt);
+  const seated = new Set(tableIds(room).flatMap((t) => PLAYERS.map((p) => seatUid(room, t, p)).filter((x): x is string => !!x)));
+  const watchers = members.filter(([u]) => !seated.has(u)).length;
+  const mine = seatOf(room, uid);
+  const myTable = mine ? room.tables?.[mine.t] : undefined;
+  const locked = !!myTable?.game ? 'กำลังดวลอยู่ เปลี่ยนเด็คไม่ได้' : mine && myTable?.ready?.[mine.seat] ? 'กดยกเลิก "พร้อม" ก่อนเปลี่ยนเด็ค' : undefined;
+  const host = room.host === uid;
+
+  const menu = (label: string, onClick: () => void, danger?: boolean) => (
+    <button
+      type="button"
+      onClick={() => (sfx('click'), onClick())}
+      className={`flex items-center justify-between border border-white/40 bg-black px-5 py-3 text-left font-bold transition hover:border-lime-300 ${danger ? 'text-rose-400' : 'text-white'}`}
+    >
+      {label} <span className="text-slate-400">›</span>
+    </button>
+  );
+
+  return (
+    <div className="relative z-10 flex min-h-0 flex-1 flex-col">
+      <div className="flex items-center justify-end gap-6 px-16 pt-3 text-sm text-slate-200">
+        <span className="text-lg font-black text-white">{room.meta.name}</span>
+        <span>
+          รหัสห้อง <b className="font-mono tracking-widest text-lime-300">{duel.code}</b>
+        </span>
+        <span>
+          คนในห้อง {members.length}/{room.meta.max}
+        </span>
+        <span>ผู้ชม {watchers}</span>
+      </div>
+      <div className="flex min-h-0 flex-1 gap-10 px-16 py-4">
+        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
+          {tableIds(room).map((t) => (
+            <TableCard key={t} room={room} t={t} uid={uid} />
+          ))}
+        </div>
+        <div className="flex w-[22rem] shrink-0 flex-col gap-3">
+          {menu(details ? 'ซ่อนรายละเอียดห้อง' : 'รายละเอียดห้อง / สมาชิก', () => setDetails((v) => !v))}
+          {details && (
+            <div className="flex max-h-64 flex-col gap-2 overflow-y-auto rounded-lg border border-white/10 bg-black/70 p-3 text-sm text-slate-300">
+              <div>ความคิดเห็น: {room.meta.comment || 'ไม่มี'}</div>
+              <div>
+                เปิดเมื่อ {timeText(room.meta.createdAt)} · {room.meta.listed ? 'แสดงในรายการห้อง' : 'เข้าด้วยรหัสเท่านั้น'} · ผ่าน {onlineVia}
+              </div>
+              <div className="mt-1 text-xs font-bold text-sky-300">สมาชิก</div>
+              {members.map(([u, m]) => {
+                const s = seatOf(room, u);
+                return (
+                  <div key={u} className="flex items-center gap-2">
+                    <Avatar name={m.name} size="sm" />
+                    <span className="min-w-0 flex-1 truncate font-bold text-white">
+                      {m.name}
+                      {u === uid && <span className="ml-1 text-lime-300">(คุณ)</span>}
+                    </span>
+                    <span className="text-xs text-slate-400">{u === room.host ? 'เจ้าของห้อง · ' : ''}{s ? `โต๊ะ ${s.t}` : 'ผู้ชม'}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {menu(copied ? 'คัดลอกรหัสห้องแล้ว ✓' : 'คัดลอกรหัสห้อง (ส่งให้เพื่อน)', () => {
+            void navigator.clipboard?.writeText(duel.code).then(() => {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            });
+          })}
+          {menu(host ? 'ยุบห้อง' : 'ออกจากห้อง', () => confirm(host ? 'ยุบห้องนี้? (ทุกคนจะถูกพาออก)' : 'ออกจากห้อง?') && void duelLeave(), true)}
+          <div className="mt-auto">
+            <DeckCard
+              deck={deck}
+              lockedReason={locked}
+              onChange={(id) => {
+                setDeck(id);
+                duelSetDeck(id);
+              }}
+              onEdit={() => {
+                resyncDeck = true;
+                openDeckScreen(deck, 'builder');
+              }}
+              onView={() => openDeckScreen(deck, 'decks')}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- หน้าหลักของ DUEL
+
+export function Lobby() {
+  const duel = useGame((s) => s.duel);
+  const online = useGame((s) => s.online);
+  const setScreen = useGame((s) => s.setScreen);
+  const [view, setViewState] = useState<View>(lastView);
+  const setView = (v: View) => {
+    lastView = v;
+    setViewState(v);
+  };
+  const [roomMatch, setRoomMatch] = useState(false);
+  const [deck, setDeck] = useLobbyDeck();
+
+  // อยู่ในห้องดวลแล้ว (สร้าง / เข้า / กลับมาจากกระดาน): แสดงหน้าห้อง
+  const current: View = duel ? { kind: 'room', code: duel.code } : view.kind === 'room' ? { kind: 'list' } : view;
+  const back = () => {
+    if (online && online.status !== 'waiting') return setScreen('game');
+    if (duel) {
+      if (confirm(duel.room?.host === duel.uid ? 'ยุบห้องนี้? (ทุกคนจะถูกพาออก)' : 'ออกจากห้อง?')) {
+        void duelLeave();
+        setView({ kind: 'list' });
+      }
+      return;
+    }
+    if (current.kind === 'menu') return setScreen('home');
+    setView({ kind: 'menu' });
+    setRoomMatch(true);
+  };
+  const title = { menu: ['DUEL MENU', 'เมนูการดวล'], create: ['CREATE ROOM', 'สร้างห้อง'], list: ['ROOM LIST', 'รายการห้อง'], room: ['ROOM MATCH', 'ห้องดวล'] }[current.kind];
+
   return (
     <div className="game-bg relative flex h-screen min-w-[1200px] flex-col overflow-hidden">
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute -top-1/4 left-1/2 h-[150%] w-px rotate-[18deg] bg-gradient-to-b from-transparent via-sky-300/40 to-transparent" />
-        <div className="absolute right-[-3%] bottom-[-5%] font-black tracking-tighter text-white/[0.03] italic select-none" style={{ fontSize: '16vw', lineHeight: 1 }}>
-          LOBBY
-        </div>
+        <div className="absolute -top-1/4 left-[46%] h-[150%] w-72 rotate-[28deg] bg-gradient-to-b from-sky-400/0 via-sky-400/10 to-sky-400/0" />
+        <div className="absolute -top-1/4 left-[56%] h-[150%] w-10 rotate-[28deg] bg-gradient-to-b from-indigo-400/0 via-indigo-400/15 to-indigo-400/0" />
       </div>
-      <header className="relative flex items-center gap-6 pt-6">
-        <BackButton
-          onClick={() => {
-            if (online && online.status === 'waiting') {
-              if (!confirm('ออกจากห้องที่รออยู่?')) return;
-              leave();
-              return;
-            }
-            setScreen(online ? 'game' : 'home');
-          }}
-          label={online?.status === 'playing' ? 'กลับเข้ากระดาน' : 'หน้าหลัก'}
-        />
-        <div>
-          <div className="text-xs tracking-[0.4em] text-sky-300">ONLINE DUEL</div>
-          <div className="text-3xl font-black text-white italic">DUEL LOBBY</div>
-        </div>
-      </header>
+      <TopBar sub={title[1]!} title={title[0]!} onBack={back} />
       {!onlineAvailable ? (
         <div className="flex flex-1 items-center justify-center text-amber-300">ยังไม่ได้ตั้งค่า Firebase (apps/web/.env.local)</div>
-      ) : online ? (
-        <Versus />
+      ) : current.kind === 'menu' ? (
+        <DuelMenu onRoom={() => setRoomMatch(true)} />
+      ) : current.kind === 'create' ? (
+        <CreateRoom deck={deck} />
+      ) : current.kind === 'list' ? (
+        <RoomList onOpen={(code) => void duelJoin(code, deck)} />
       ) : (
-        <RoomSetup />
+        <RoomView deck={deck} setDeck={setDeck} />
+      )}
+      {roomMatch && !duel && (
+        <RoomMatch
+          onClose={() => setRoomMatch(false)}
+          onCreate={() => (setRoomMatch(false), setView({ kind: 'create' }))}
+          onEnter={() => (setRoomMatch(false), setView({ kind: 'list' }))}
+        />
       )}
     </div>
   );

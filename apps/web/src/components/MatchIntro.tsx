@@ -186,11 +186,13 @@ export function MatchIntro({ fx, onDone }: { fx: Extract<Fx, { kind: 'intro' }>;
   const stage = phase === 'vs' || phase === 'coin' || phase === 'result' || phase === 'choose' || phase === 'final';
   const tone = fx.heads ? '#facc15' : '#cbd5e1';
   const winner = pregame?.winner ?? 'p1';
-  const seatName = (p: string) => (p === 'p1' ? 'ผู้เล่น 1' : 'ผู้เล่น 2');
+  // ผู้ชม: บอกชื่อผู้เล่นจากห้อง (ไม่พูดกับ "คุณ")
+  const spec = !!online?.spectator;
+  const seatName = (p: string) => (spec ? (online?.names[p as 'p1' | 'p2'] ?? (p === 'p1' ? 'ผู้เล่น 1' : 'ผู้เล่น 2')) : p === 'p1' ? 'ผู้เล่น 1' : 'ผู้เล่น 2');
   // ข้อความ: ออนไลน์พูดกับ "คุณ" / เครื่องเดียวบอกชื่อผู้เล่น
-  const winText = online ? (fx.heads ? 'คุณชนะการเสี่ยง!' : 'คู่แข่งชนะการเสี่ยง') : `${seatName(winner)} ชนะการเสี่ยง!`;
-  const firstText = chosen === null ? '' : online ? (chosen === online.me ? 'คุณเริ่มก่อน!' : 'คุณเริ่มทีหลัง') : `${seatName(chosen)} เริ่มก่อน!`;
-  const iChoose = !online || online.me === winner;
+  const winText = online && !spec ? (fx.heads ? 'คุณชนะการเสี่ยง!' : 'คู่แข่งชนะการเสี่ยง') : `${seatName(winner)} ชนะการเสี่ยง!`;
+  const firstText = chosen === null ? '' : online && !spec ? (chosen === online.me ? 'คุณเริ่มก่อน!' : 'คุณเริ่มทีหลัง') : `${seatName(chosen)} เริ่มก่อน!`;
+  const iChoose = !online || (!online.spectator && online.me === winner);
 
   // ข้ามฉาก: ก่อนเลือก = ไปที่ช่วงเลือกเลย / เลือกแล้ว = จบฉาก
   const skip = () => {
@@ -291,7 +293,7 @@ export function MatchIntro({ fx, onDone }: { fx: Extract<Fx, { kind: 'intro' }>;
               ) : (
                 <div className="flex h-20 w-[64%] items-center justify-center gap-3 border-y border-sky-300/40 bg-gradient-to-r from-transparent via-slate-950/90 to-transparent text-2xl font-bold text-slate-200">
                   <span className="h-5 w-5 animate-spin rounded-full border-2 border-sky-300/30 border-t-sky-300" />
-                  คู่แข่งกำลังเลือกว่าจะเริ่มก่อนหรือเริ่มหลัง…
+                  {spec ? seatName(winner) : 'คู่แข่ง'}กำลังเลือกว่าจะเริ่มก่อนหรือเริ่มหลัง…
                 </div>
               )}
             </div>

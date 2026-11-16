@@ -89,7 +89,7 @@ export function encodeDeck(name: string, entries: DeckEntry[]): string {
   return `c:${encodeURIComponent(name)}|${cards.join(',')}`;
 }
 
-function decodeDeck(token: string): { label: string; entries: DeckEntry[] } | null {
+export function decodeDeck(token: string): { label: string; entries: DeckEntry[] } | null {
   const bar = token.indexOf('|');
   if (!token.startsWith('c:') || bar < 0) return null;
   const label = decodeURIComponent(token.slice(2, bar));
@@ -135,3 +135,37 @@ export function deckChoices(): DeckId[] {
 }
 
 export const deckSizeOf = (entries: DeckEntry[]) => entries.reduce((n, e) => n + e.count, 0);
+
+// ---------------------------------------------------------------- ของตกแต่งเด็ค (เก็บในเครื่อง)
+
+/**
+ * ของตกแต่งของเด็คแต่ละเด็ค (คีย์ = DeckId ของเครื่องนี้ เช่น "sd01" / "u:<id>")
+ * case: สีกล่องเด็ค (hex) / 'art' = ภาพการ์ดเด่นใบแรก / ไม่มี = สีหลักของเด็ค
+ * main: การ์ดเด่น 3 ใบ (cardNo) ที่โผล่จากกล่อง · ไม่มี = เลือกให้อัตโนมัติ
+ */
+export interface DeckAccessories {
+  case?: string;
+  main?: string[];
+}
+
+const ACC_KEY = 'bs-deck-acc';
+
+function readAcc(): Record<string, DeckAccessories> {
+  try {
+    return JSON.parse(localStorage.getItem(ACC_KEY) ?? '{}') as Record<string, DeckAccessories>;
+  } catch {
+    return {};
+  }
+}
+
+export function loadDeckAcc(id: DeckId): DeckAccessories {
+  return readAcc()[id] ?? {};
+}
+
+export function saveDeckAcc(id: DeckId, acc: DeckAccessories): void {
+  try {
+    localStorage.setItem(ACC_KEY, JSON.stringify({ ...readAcc(), [id]: acc }));
+  } catch {
+    /* เก็บไม่ได้ก็ไม่เป็นไร */
+  }
+}

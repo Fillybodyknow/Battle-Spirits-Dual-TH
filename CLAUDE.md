@@ -139,6 +139,14 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
 - ไอคอนใช้ SVG ใน `components/Icon.tsx` (อีโมจิ/สัญลักษณ์พิเศษเป็นกล่องว่างบน Windows 7)
 - สี Tailwind v4 เป็น `oklch()`: ถ้าอัปเดต Tailwind ให้รัน `npm run legacy-colors`
 - โหมดออนไลน์: `?online=local` ใช้ transport ในเครื่อง (ทดสอบสองแท็บได้โดยไม่ต้องมี Firebase)
+- หน้า DUEL (`screens/Lobby.tsx`, screen `'lobby'`): เมนูการดวล → Room Match → สร้างห้อง / รายการห้อง → หน้าห้อง
+  ห้องดวล (`store.duel`, ฟังก์ชัน `duel*` ใน store) อยู่ที่ `rooms/<code>` = `DuelRoom`: สมาชิก ≤6 (`members`, ลบเองเมื่อหลุด), โต๊ะ (`tables/<n>`: seats / ready / game)
+  ทั้งสองที่นั่งกดพร้อม → เครื่องที่นั่ง p1 สร้างห้องเกม `rooms/<code>-<id>` (โครงสร้างห้องเกม 2 คนเดิม: setup/actions) แล้วตั้ง `tables/<n>/game`
+  ผู้เล่นทั้งสองเข้าด้วย `enterRoom` เดิม · ผู้ชม = `enterRoom(..., spectator)` (`online.spectator`: mine/controls เป็น false, มือคว่ำทั้งสองฝ่าย)
+  ผู้เล่นออกจากเกม = โต๊ะกลับไปรอพร้อมใหม่ · รายการห้องอยู่ที่ `lobby/<code>` (count/max) · โหมด `?online=local` ใช้ path tree ใน localStorage
+  กฎ Realtime Database อยู่ที่ `database.rules.json` (+ `firebase.json`) ไม่ได้ deploy อัตโนมัติ: แก้ path ใหม่ใน DB ต้องแก้ไฟล์นี้
+  แล้วให้เจ้าของโปรเจกต์วางใน Firebase Console → Realtime Database → Rules (หรือ `npx firebase-tools deploy --only database`)
+  ไม่งั้น path ใหม่ถูกปฏิเสธ (เช่น `lobby` ใช้ไม่ได้ = รายการห้องว่าง แต่เข้าด้วยรหัสยังได้)
 
 ## ทดสอบ UI
 

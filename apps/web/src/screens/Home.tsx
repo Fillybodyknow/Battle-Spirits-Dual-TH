@@ -354,8 +354,7 @@ export function Home() {
           {localInProgress && <MenuItem title="CONTINUE" sub="เล่นเกมเครื่องเดียวต่อ" onClick={() => setScreen('game')} />}
           <MenuItem big title="DUEL" sub="ดวลออนไลน์กับเพื่อน" onClick={() => setScreen('lobby')} disabled={!onlineAvailable} badge={onlineAvailable ? 'ONLINE' : undefined} />
           <MenuItem title="LOCAL" sub="เล่นเครื่องเดียว สองคนสลับกัน" onClick={() => setLocal(true)} />
-          <MenuItem title="DECK" sub="ดูการ์ดในเด็ค" onClick={() => setScreen('decks')} />
-          <MenuItem title="BUILD" sub="จัดเด็คเอง" onClick={() => (useGame.setState({ deckView: '' }), setScreen('builder'))} />
+          <MenuItem title="DECK" sub="เด็คของฉัน · จัดเด็ค · ของตกแต่ง" onClick={() => setScreen('mydeck')} />
           {!onlineAvailable && <p className="mt-1 text-xs text-amber-300/80">ยังไม่ได้ตั้งค่า Firebase: ดวลออนไลน์ไม่ได้</p>}
         </nav>
 

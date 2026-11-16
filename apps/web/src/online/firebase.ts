@@ -4,8 +4,8 @@
  */
 import { initializeApp, type FirebaseApp } from 'firebase/app';
 import { getAuth, signInAnonymously } from 'firebase/auth';
-import { get, getDatabase, onChildAdded, onValue, ref, remove, runTransaction, set, type Database } from 'firebase/database';
-import { actionKey, decodeAction, encodeAction, type RoomInfo, type Transport } from './transport';
+import { get, getDatabase, onChildAdded, onDisconnect, onValue, ref, remove, runTransaction, set, type Database } from 'firebase/database';
+import { actionKey, decodeAction, encodeAction, type LobbyEntry, type RoomInfo, type Transport } from './transport';
 
 const env = import.meta.env;
 export const firebaseConfig = {
@@ -36,6 +36,7 @@ function toInfo(v: unknown): RoomInfo | null {
     seats?: RoomInfo['seats'];
     names?: RoomInfo['names'];
     versions?: RoomInfo['versions'];
+    meta?: RoomInfo['meta'];
     setup?: { round: number; seed: number; decks?: { p1?: string; p2?: string }; first?: 'p1' | 'p2' };
   };
   if (!r.setup || !r.setup.decks?.p1) return null;
@@ -43,6 +44,7 @@ function toInfo(v: unknown): RoomInfo | null {
     seats: r.seats ?? {},
     names: r.names ?? {},
     ...(r.versions ? { versions: r.versions } : {}),
+    ...(r.meta ? { meta: r.meta } : {}),
     setup: {
       round: r.setup.round,
       seed: r.setup.seed,
@@ -139,5 +141,50 @@ export const firebaseTransport: Transport = {
 
   async leave(code, seat) {
     await remove(ref(database(), `rooms/${code}/seats/${seat}`));
+  },
+
+  async setHostDeck(code, deck) {
+    const res = await runTransaction(roomRef(code), (cur) => {
+      if (!cur) return cur;
+      if (cur.seats?.p2) return undefined; // คู่แข่งนั่งแล้ว: เกมเริ่มด้วยเด็คเดิม
+      cur.setup = { ...cur.setup, decks: { ...cur.setup.decks, p1: deck } };
+      return cur;
+    });
+    return res.committed;
+  },
+
+  async listRooms() {
+    const snap = await get(ref(database(), 'lobby'));
+    const v = (snap.val() ?? {}) as Record<string, Omit<LobbyEntry, 'code'>>;
+    return Object.entries(v).map(([code, e]) => ({ ...e, code }));
+  },
+
+  async publishRoom(entry) {
+    const r = ref(database(), `lobby/${entry.code}`);
+    const { code: _code, ...data } = entry;
+    await set(r, data);
+    // ปิดแท็บ/เน็ตหลุด: เอาออกจากรายการให้เอง
+    await onDisconnect(r).remove();
+  },
+
+  async unpublishRoom(code) {
+    await remove(ref(database(), `lobby/${code}`));
+  },
+
+  watchPath(path, cb) {
+    return onValue(ref(database(), path), (snap) => cb(snap.val()));
+  },
+  async setPath(path, value) {
+    await set(ref(database(), path), value);
+  },
+  async removePath(path) {
+    await remove(ref(database(), path));
+  },
+  async transactPath(path, fn) {
+    const res = await runTransaction(ref(database(), path), (cur) => fn(cur));
+    return { committed: res.committed, value: res.snapshot.val() };
+  },
+  async removeOnDisconnect(path) {
+    await onDisconnect(ref(database(), path)).remove();
   },
 };

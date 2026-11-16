@@ -1,0 +1,17 @@
+{
+  "rules": {
+    "rooms": {
+      "$code": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "lobby": {
+      ".read": "auth != null",
+      "$code": {
+        ".write": "auth != null",
+        ".validate": "newData.hasChildren(['name', 'host', 'createdAt', 'version'])"
+      }
+    }
+  }
+}

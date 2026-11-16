@@ -4,7 +4,7 @@ import { primeCoreMotion, snapCores } from './motion';
 import { prefs, setPrefs, type HandSort } from './prefs';
 import { firebaseConfigured, firebaseTransport } from './online/firebase';
 import { localTransport } from './online/local';
-import type { RoomInfo, RoomSetup, Transport } from './online/transport';
+import type { DuelMember, DuelRoom, DuelTable, LobbyEntry, RoomInfo, RoomSetup, Transport } from './online/transport';
 import { expandDeck, loadAllCards, validateDeck } from '@bs/cards';
 import { deckChoices, deckInfo, deckToken, STARTER_DECKS, type DeckId } from './decks';
 import { rarityOf, type TextEffect } from '@bs/cards';
@@ -1071,7 +1071,7 @@ export const viewPlayer = (st: { fixedView: boolean; viewTurn: PlayerId; online:
  * ออนไลน์ = ของคู่แข่งคว่ำเสมอ, เล่นเครื่องเดียว = ตามตัวเลือก "ซ่อนมือฝ่ายที่ไม่ได้ตัดสินใจ"
  */
 export const hiddenFrom = (st: { online: OnlineState | null; hideIdleHand: boolean; state: GameState }, owner: PlayerId): boolean =>
-  st.online ? owner !== st.online.me : st.hideIdleHand && actingPlayer(st.state) !== owner;
+  st.online ? !!st.online.spectator || owner !== st.online.me : st.hideIdleHand && actingPlayer(st.state) !== owner;
 
 /**
  * การ์ด/Core/การเลือกของผู้เล่นนี้ จับต้องได้จากเครื่องนี้หรือไม่ (ออนไลน์ = เฉพาะของที่นั่งเรา)
@@ -1080,12 +1080,12 @@ export const hiddenFrom = (st: { online: OnlineState | null; hideIdleHand: boole
  */
 export function mine(player: PlayerId | null | undefined): boolean {
   const on = useGame.getState().online;
-  return !on || player === on.me;
+  return !on || (!on.spectator && player === on.me);
 }
 
 /** ผู้เล่นนี้กดสั่งงานจากเครื่องนี้ได้หรือไม่ (ออนไลน์ = เฉพาะที่นั่งของเรา) */
 export const controls = (st: { online: OnlineState | null }, player: PlayerId | null | undefined): boolean =>
-  !st.online || (st.online.status === 'playing' && player === st.online.me);
+  !st.online || (!st.online.spectator && st.online.status === 'playing' && player === st.online.me);
 
 /**
  * เอฟเฟกต์ที่กำลังทำงานอยู่ตอนนี้ (หัวคิวที่เริ่มแล้ว): การ์ด + ลำดับบรรทัดเอฟเฟกต์ใน CardDef.effects
@@ -1539,7 +1539,7 @@ interface Store {
   applyLocal(action: Action, opts?: { silent?: boolean; remote?: boolean }): boolean;
   /** การเล่นออนไลน์ (null = เล่นเครื่องเดียว) */
   online: OnlineState | null;
-  onlineHost(deck: DeckId): Promise<void>;
+  onlineHost(deck: DeckId, meta?: { name: string; comment: string; listed: boolean }): Promise<void>;
   /** หน้าที่แสดงอยู่ */
   screen: Screen;
   setScreen(screen: Screen): void;
@@ -1558,8 +1558,14 @@ interface Store {
   introDone(id: number): void;
   /** เด็คที่เปิดดูในหน้าเด็ค */
   deckView: DeckId;
+  /** หน้าดู/จัดเด็คกดย้อนกลับแล้วไปหน้านี้ (เปิดจากหน้า DUEL = lobby) */
+  deckReturn: Screen;
   onlineJoin(code: string, deck: DeckId): Promise<void>;
   onlineLeave(): void;
+  /** ห้องดวลที่อยู่ (หลายคน หลายโต๊ะ) */
+  duel: DuelState | null;
+  /** เจ้าของห้องเปลี่ยนเด็คระหว่างรอคู่แข่ง */
+  onlineSetDeck(deck: DeckId): Promise<void>;
   /** เจ้าของห้อง: เริ่มเกมใหม่ในห้องเดิม */
   onlineRematch(): void;
   undo(): void;
@@ -1629,7 +1635,7 @@ interface Store {
 
 // ---------------------------------------------------------------- เล่นออนไลน์
 
-export type Screen = 'home' | 'lobby' | 'decks' | 'builder' | 'game';
+export type Screen = 'home' | 'lobby' | 'decks' | 'mydeck' | 'builder' | 'game';
 
 function loadName(): string {
   try {
@@ -1647,6 +1653,8 @@ export interface OnlineState {
   via: string;
   /** waiting = รอคู่แข่ง, choosing = คนชนะการเสี่ยงกำลังเลือกเริ่มก่อน/หลัง, playing = เล่นอยู่ */
   status: 'waiting' | 'choosing' | 'playing';
+  /** เข้าชมการดวล (ไม่ได้เป็นผู้เล่น: สั่งอะไรไม่ได้ เห็นมือคว่ำทั้งสองฝ่าย) */
+  spectator?: boolean;
   /** ค่าตั้งต้นของรอบปัจจุบัน (null = ยังรอคู่แข่ง) */
   setup: RoomSetup | null;
   /** จำนวน action ของรอบนี้ที่ทำแล้ว */
@@ -1662,6 +1670,33 @@ const transport: Transport = useLocal ? localTransport : firebaseTransport;
 /** เล่นออนไลน์ได้หรือไม่ (ตั้งค่า Firebase แล้ว หรือใช้โหมดทดสอบในเครื่อง) */
 export const onlineAvailable = useLocal || firebaseConfigured;
 export const onlineVia = transport.name;
+
+/** รายการห้องที่เปิดให้เห็น (ใหม่สุดก่อน · ตัดห้องเก่าเกิน 6 ชั่วโมง) */
+export async function listRooms(): Promise<LobbyEntry[]> {
+  await transport.signIn(); // กฎฐานข้อมูลให้อ่านรายการห้องได้เฉพาะเครื่องที่ล็อกอินแล้ว
+  const all = await transport.listRooms();
+  const fresh = Date.now() - 6 * 3600_000;
+  return all.filter((e) => e.createdAt > fresh).sort((a, b) => b.createdAt - a.createdAt);
+}
+
+/** ดูข้อมูลห้อง (ก่อนกดเข้าที่นั่ง) */
+export function watchRoomInfo(code: string, cb: (info: RoomInfo | null) => void): () => void {
+  let stop: (() => void) | null = null;
+  let cancelled = false;
+  void transport.signIn().then(
+    () => {
+      if (!cancelled) stop = transport.watchRoom(code, cb);
+    },
+    () => cb(null),
+  );
+  return () => {
+    cancelled = true;
+    stop?.();
+  };
+}
+
+/** เลข MAJOR เดียวกัน = เล่นออนไลน์ด้วยกันได้ */
+export const compatibleVersion = (v: string | undefined) => !v || v.split('.')[0] === APP_VERSION.split('.')[0];
 
 const SESSION = 'bs-online';
 const randomCode = () => Array.from({ length: 5 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('');
@@ -1688,11 +1723,11 @@ const sameMajor = (a: string, b: string) => a.split('.')[0] === b.split('.')[0];
 const versionMismatchText = (other: string) =>
   `อีกฝ่ายใช้เวอร์ชัน ${other} แต่เครื่องนี้ใช้ ${APP_VERSION}: กติกาในเกมไม่ตรงกัน ให้ทั้งสองฝั่งอัปเดตเป็นเวอร์ชันล่าสุด (โหลดหน้าเว็บใหม่) ก่อนเล่นด้วยกัน`;
 
-function enterRoom(code: string, me: PlayerId, uid: string) {
+function enterRoom(code: string, me: PlayerId, uid: string, spectator = false) {
   stopSync();
-  sessionStorage.setItem(SESSION, JSON.stringify({ code, me, via: transport.name }));
+  if (!spectator) sessionStorage.setItem(SESSION, JSON.stringify({ code, me, via: transport.name }));
   useGame.setState({
-    online: { code, me, uid, via: transport.name, status: 'waiting', setup: null, applied: 0, opponentHere: me === 'p2', names: {} },
+    online: { code, me, uid, via: transport.name, status: 'waiting', setup: null, applied: 0, opponentHere: me === 'p2', names: {}, ...(spectator ? { spectator } : {}) },
     error: null,
   });
   unsubRoom = transport.watchRoom(code, (info) => onRoom(code, info));
@@ -1836,6 +1871,287 @@ async function sendActions(list: Action[]) {
   }
 }
 
+
+// ---------------------------------------------------------------- ห้องดวล (Duel Room: หลายคน หลายโต๊ะ)
+
+/** ห้องดวลที่เครื่องนี้อยู่ */
+export interface DuelState {
+  code: string;
+  uid: string;
+  room: DuelRoom | null;
+}
+
+const DUEL_SESSION = 'bs-duel-room';
+const roomPath = (code: string) => `rooms/${code}`;
+let unsubDuel: (() => void) | null = null;
+/** เกมที่เครื่องนี้ออกมาแล้ว (ไม่ดึงกลับเข้าไปเองอีก) */
+const leftGames = new Set<string>();
+/** กำลังสร้างเกมของโต๊ะ (กันสร้างซ้ำ) */
+let startingTable = false;
+
+/** สมาชิกที่ยังอยู่ในห้อง (คนที่หลุดถูกลบออกจาก members แล้ว ที่นั่งของเขาถือว่าว่าง) */
+export function seatUid(room: DuelRoom, t: string, seat: PlayerId): string | undefined {
+  const uid = room.tables?.[t]?.seats?.[seat];
+  return uid && room.members?.[uid] ? uid : undefined;
+}
+export const tableIds = (room: DuelRoom) => Array.from({ length: room.meta.tables }, (_, i) => String(i + 1));
+/** ที่นั่งของ uid ในห้อง */
+export function seatOf(room: DuelRoom, uid: string): { t: string; seat: PlayerId } | null {
+  for (const t of tableIds(room)) for (const seat of PLAYERS) if (seatUid(room, t, seat) === uid) return { t, seat };
+  return null;
+}
+
+function stopDuel() {
+  unsubDuel?.();
+  unsubDuel = null;
+}
+
+function watchDuel(code: string, uid: string) {
+  stopDuel();
+  try {
+    sessionStorage.setItem(DUEL_SESSION, code);
+  } catch {
+    /* */
+  }
+  useGame.setState({ duel: { code, uid, room: null }, error: null });
+  unsubDuel = transport.watchPath(roomPath(code), (v) => onDuel(code, uid, v as DuelRoom | null));
+}
+
+function onDuel(code: string, uid: string, room: DuelRoom | null) {
+  const st = useGame.getState();
+  if (st.duel?.code !== code) return;
+  if (!room || room.kind !== 'duel') {
+    stopDuel();
+    sessionStorage.removeItem(DUEL_SESSION);
+    useGame.setState({ duel: null, error: 'ห้องนี้ถูกปิดแล้ว' });
+    return;
+  }
+  // หลุดแล้วกลับมา (เน็ตหลุดชั่วคราว): ใส่ชื่อกลับเข้าห้อง
+  if (!room.members?.[uid]) {
+    const n = Object.keys(room.members ?? {}).length;
+    if (n < room.meta.max) {
+      void transport.setPath(`${roomPath(code)}/members/${uid}`, myMember(lastLobbyDeck)).then(() => transport.removeOnDisconnect(`${roomPath(code)}/members/${uid}`)).catch(() => {});
+    }
+  }
+  useGame.setState({ duel: { code, uid, room } });
+  const mine = seatOf(room, uid);
+  if (!mine) return;
+  const tb = room.tables?.[mine.t] ?? {};
+  // ทั้งสองฝั่งพร้อม: ที่นั่ง p1 เป็นคนสร้างเกม
+  if (!tb.game && mine.seat === 'p1' && seatUid(room, mine.t, 'p2') && tb.ready?.p1 && tb.ready?.p2 && !startingTable) {
+    void startTable(code, room, mine.t, uid);
+  }
+  // โต๊ะของเราเริ่มเกมแล้ว: เข้ากระดาน
+  if (tb.game && !leftGames.has(tb.game) && st.online?.code !== tb.game) enterRoom(tb.game, mine.seat, uid);
+}
+
+async function startTable(code: string, room: DuelRoom, t: string, uid: string) {
+  startingTable = true;
+  try {
+    const p2 = seatUid(room, t, 'p2')!;
+    const m1 = room.members![uid]!;
+    const m2 = room.members![p2]!;
+    const game = `${code}-${randomCode()}`;
+    const setup: RoomSetup = { round: 1, seed: randomSeed(), decks: { p1: m1.deck, p2: m2.deck } };
+    await transport.createRoom(game, { seats: { p1: uid, p2 }, setup, names: { p1: m1.name, p2: m2.name }, versions: { p1: m1.version, p2: m2.version } });
+    const res = await transport.transactPath(`${roomPath(code)}/tables/${t}`, (cur: DuelTable | null) => {
+      if (!cur) return cur;
+      if (cur.game || !cur.ready?.p1 || !cur.ready?.p2 || cur.seats?.p1 !== uid || cur.seats?.p2 !== p2) return undefined;
+      return { ...cur, game };
+    });
+    if (!res.committed || (res.value as DuelTable | null)?.game !== game) void transport.removePath(roomPath(game)).catch(() => {});
+  } catch (e) {
+    useGame.setState({ error: `เริ่มเกมไม่สำเร็จ: ${(e as Error).message}` });
+  } finally {
+    startingTable = false;
+  }
+}
+
+/** เด็คที่เลือกล่าสุดในหน้าห้อง (ใช้ตอนกลับเข้าห้องเอง) */
+let lastLobbyDeck: DeckId = 'sd01';
+function myMember(deck: DeckId): DuelMember {
+  lastLobbyDeck = deck;
+  return { name: useGame.getState().playerName, deck: deckToken(deck), version: APP_VERSION, joinedAt: Date.now() };
+}
+
+function lobbyCount(code: string, room: DuelRoom | null) {
+  if (!room?.meta.listed) return;
+  void transport.setPath(`lobby/${code}/count`, Object.keys(room.members ?? {}).length).catch(() => {});
+}
+
+export async function duelCreate(meta: { name: string; comment: string; listed: boolean; max: number }, deck: DeckId): Promise<void> {
+  try {
+    const uid = await transport.signIn();
+    const code = randomCode();
+    const name = useGame.getState().playerName;
+    const max = Math.max(2, Math.min(6, meta.max));
+    const room: DuelRoom = {
+      kind: 'duel',
+      host: uid,
+      meta: { name: meta.name.trim() || `ห้องของ ${name}`, comment: meta.comment, listed: meta.listed, createdAt: Date.now(), max, tables: Math.ceil(max / 2), version: APP_VERSION },
+      members: { [uid]: myMember(deck) },
+    };
+    const res = await transport.transactPath(roomPath(code), (cur) => (cur ? undefined : room));
+    if (!res.committed) throw new Error('รหัสห้องนี้ถูกใช้แล้ว ลองใหม่อีกครั้ง');
+    void transport.removeOnDisconnect(`${roomPath(code)}/members/${uid}`).catch(() => {});
+    if (room.meta.listed) {
+      void transport
+        .publishRoom({ code, name: room.meta.name, comment: room.meta.comment, host: name, createdAt: room.meta.createdAt, version: APP_VERSION, count: 1, max })
+        .catch(() => {});
+    }
+    watchDuel(code, uid);
+  } catch (e) {
+    useGame.setState({ error: `สร้างห้องไม่สำเร็จ: ${(e as Error).message}` });
+  }
+}
+
+export async function duelJoin(rawCode: string, deck: DeckId): Promise<boolean> {
+  try {
+    const uid = await transport.signIn();
+    const code = rawCode.trim().toUpperCase();
+    let reason = '';
+    const res = await transport.transactPath(roomPath(code), (cur: DuelRoom | null) => {
+      // ครั้งแรก SDK อาจส่ง null มาก่อนอ่านค่าจริง: คืนค่าเดิมให้ลองใหม่กับข้อมูลจริง
+      if (!cur) return cur;
+      if (cur.kind !== 'duel') {
+        reason = 'ไม่พบห้องนี้';
+        return undefined;
+      }
+      if (!compatibleVersion(cur.meta.version)) {
+        reason = versionMismatchText(cur.meta.version);
+        return undefined;
+      }
+      const members = cur.members ?? {};
+      if (!members[uid] && Object.keys(members).length >= cur.meta.max) {
+        reason = 'ห้องนี้เต็มแล้ว';
+        return undefined;
+      }
+      return { ...cur, members: { ...members, [uid]: myMember(deck) } };
+    });
+    const room = res.value as DuelRoom | null;
+    if (!res.committed || !room) throw new Error(reason || 'ไม่พบห้องนี้');
+    void transport.removeOnDisconnect(`${roomPath(code)}/members/${uid}`).catch(() => {});
+    lobbyCount(code, room);
+    watchDuel(code, uid);
+    return true;
+  } catch (e) {
+    useGame.setState({ error: `เข้าห้องไม่สำเร็จ: ${(e as Error).message}` });
+    return false;
+  }
+}
+
+/** แก้ห้องของเรา (ทรานแซกชันทั้งห้อง) */
+async function duelUpdate(fn: (room: DuelRoom, uid: string) => DuelRoom | undefined): Promise<boolean> {
+  const d = useGame.getState().duel;
+  if (!d) return false;
+  const res = await transport.transactPath(roomPath(d.code), (cur: DuelRoom | null) => {
+    if (!cur) return cur;
+    return fn(cur, d.uid);
+  });
+  return res.committed;
+}
+
+/** ลุกจากทุกที่นั่งของ uid (ในห้องที่แก้อยู่) */
+function vacate(room: DuelRoom, uid: string) {
+  for (const t of Object.keys(room.tables ?? {})) {
+    const tb = room.tables![t]!;
+    for (const seat of PLAYERS) {
+      if (tb.seats?.[seat] === uid) {
+        delete tb.seats[seat];
+        if (tb.ready) delete tb.ready[seat];
+      }
+    }
+  }
+}
+
+export async function duelLeave(): Promise<void> {
+  const st = useGame.getState();
+  const d = st.duel;
+  if (!d) return;
+  if (st.online) st.onlineLeave();
+  stopDuel();
+  sessionStorage.removeItem(DUEL_SESSION);
+  useGame.setState({ duel: null });
+  const host = d.room?.host === d.uid;
+  try {
+    if (host) {
+      await transport.removePath(roomPath(d.code));
+      await transport.unpublishRoom(d.code);
+    } else {
+      const res = await transport.transactPath(roomPath(d.code), (cur: DuelRoom | null) => {
+        if (!cur) return cur;
+        if (cur.members) delete cur.members[d.uid];
+        vacate(cur, d.uid);
+        return cur;
+      });
+      lobbyCount(d.code, res.value as DuelRoom | null);
+    }
+  } catch {
+    /* ออกแล้วฝั่งเรา */
+  }
+}
+
+export function duelSit(t: string, seat: PlayerId) {
+  void duelUpdate((room, uid) => {
+    const tb = room.tables?.[t] ?? {};
+    const taken = tb.seats?.[seat];
+    if (taken && taken !== uid && room.members?.[taken]) return undefined;
+    if (tb.game) return undefined;
+    vacate(room, uid);
+    room.tables = { ...(room.tables ?? {}), [t]: { ...(room.tables?.[t] ?? {}), seats: { ...(room.tables?.[t]?.seats ?? {}), [seat]: uid }, ready: { ...(room.tables?.[t]?.ready ?? {}), [seat]: false } } };
+    return room;
+  }).then((ok) => !ok && useGame.setState({ error: 'นั่งที่นี่ไม่ได้ (มีคนนั่งแล้ว)' }));
+}
+
+export function duelStand() {
+  void duelUpdate((room, uid) => {
+    const s = seatOf(room, uid);
+    if (s && room.tables?.[s.t]?.game) return undefined;
+    vacate(room, uid);
+    return room;
+  });
+}
+
+export function duelReady(ready: boolean) {
+  void duelUpdate((room, uid) => {
+    const s = seatOf(room, uid);
+    if (!s || room.tables?.[s.t]?.game) return undefined;
+    const tb = room.tables![s.t]!;
+    tb.ready = { ...(tb.ready ?? {}), [s.seat]: ready };
+    return room;
+  });
+}
+
+export function duelSetDeck(deck: DeckId) {
+  const d = useGame.getState().duel;
+  lastLobbyDeck = deck;
+  if (!d) return;
+  void transport.setPath(`${roomPath(d.code)}/members/${d.uid}/deck`, deckToken(deck)).catch((e: Error) => useGame.setState({ error: `เปลี่ยนเด็คไม่สำเร็จ: ${e.message}` }));
+}
+
+/** เข้าชมการดวลของโต๊ะ t (มือทั้งสองฝ่ายคว่ำ สั่งอะไรไม่ได้) */
+export function duelSpectate(t: string) {
+  const d = useGame.getState().duel;
+  const game = d?.room?.tables?.[t]?.game;
+  if (!d || !game) return;
+  leftGames.delete(game);
+  enterRoom(game, 'p1', d.uid, true);
+}
+
+/** รีเฟรชหน้า: กลับเข้าห้องดวลเดิม */
+async function resumeDuel() {
+  const code = sessionStorage.getItem(DUEL_SESSION);
+  if (!code || !onlineAvailable) return;
+  let deck: DeckId = 'sd01';
+  try {
+    deck = localStorage.getItem('bs-lobby-deck') ?? 'sd01';
+  } catch {
+    /* */
+  }
+  if (!(await duelJoin(code, deck))) sessionStorage.removeItem(DUEL_SESSION);
+}
+if (typeof window !== 'undefined') setTimeout(() => void resumeDuel(), 0);
+
 /** รีเฟรชหน้า: กลับเข้าห้องเดิม (ถ้ายังนั่งที่เดิมอยู่) */
 async function resumeSession() {
   const raw = sessionStorage.getItem(SESSION);
@@ -1933,6 +2249,7 @@ export const useGame = create<Store>((set, get) => {
     },
     localInProgress: false,
     deckView: 'sd01',
+    deckReturn: 'home',
     pregame: null,
     startLocal: (decks) => {
       set({ decks });
@@ -1945,7 +2262,7 @@ export const useGame = create<Store>((set, get) => {
       const first = goFirst ? pregame.winner : opponentOf(pregame.winner);
       sfx('click');
       if (online) {
-        if (online.me !== pregame.winner || !online.setup) return;
+        if (online.spectator || online.me !== pregame.winner || !online.setup) return;
         void transport.setFirst(online.code, online.setup.round, first);
         return;
       }
@@ -1958,14 +2275,22 @@ export const useGame = create<Store>((set, get) => {
       const banner: Fx = { id: ++fxSeq, kind: 'banner', tone: 'turn', title: 'เทิร์นที่ 1', sub: `${who(st.state.turnPlayer)} เริ่มก่อน` };
       set({ fx: [...st.fx.filter((f) => f.id !== id), ...(st.animations ? [banner] : [])], viewTurn: st.state.turnPlayer });
     },
-    onlineHost: async (deck) => {
+    onlineHost: async (deck, meta) => {
       try {
         const uid = await transport.signIn();
         const code = randomCode();
         const setup: RoomSetup = { round: 1, seed: randomSeed(), decks: { p1: deckToken(deck), p2: null } };
-        await transport.createRoom(code, { seats: { p1: uid }, setup, names: { p1: get().playerName } });
+        const name = get().playerName;
+        const roomMeta = { name: meta?.name.trim() || `ห้องของ ${name}`, comment: meta?.comment ?? '', listed: meta?.listed ?? false, createdAt: Date.now() };
+        await transport.createRoom(code, { seats: { p1: uid }, setup, names: { p1: name }, meta: roomMeta });
         // เวอร์ชันของเรา: เขียนแยก เขียนไม่ได้ก็เล่นได้ตามเดิม (แค่ตรวจเวอร์ชันไม่ได้)
         void transport.setVersion(code, 'p1', APP_VERSION).catch(() => {});
+        // ลงรายการห้อง: ลงไม่ได้ (สิทธิ์ฐานข้อมูล) ก็ยังเข้าด้วยรหัสห้องได้
+        if (roomMeta.listed) {
+          void transport
+            .publishRoom({ code, name: roomMeta.name, comment: roomMeta.comment, host: name, createdAt: roomMeta.createdAt, version: APP_VERSION })
+            .catch(() => {});
+        }
         enterRoom(code, 'p1', uid);
       } catch (e) {
         set({ error: `สร้างห้องไม่สำเร็จ: ${(e as Error).message}` });
@@ -1982,6 +2307,8 @@ export const useGame = create<Store>((set, get) => {
           return;
         }
         await transport.joinRoom(c, uid, deckToken(deck), get().playerName);
+        // ห้องเต็มแล้ว: เอาออกจากรายการห้อง
+        void transport.unpublishRoom(c).catch(() => {});
         void transport.setVersion(c, 'p2', APP_VERSION).catch(() => {});
         enterRoom(c, 'p2', uid);
       } catch (e) {
@@ -1990,15 +2317,42 @@ export const useGame = create<Store>((set, get) => {
     },
     onlineLeave: () => {
       const on = get().online;
+      const duel = get().duel;
       stopSync();
       clearSession();
-      if (on) void transport.leave(on.code, on.me).catch(() => {});
-      set({ online: null, screen: 'home', localInProgress: false });
+      if (on) leftGames.add(on.code);
+      if (on && !on.spectator) void transport.leave(on.code, on.me).catch(() => {});
+      if (on?.me === 'p1' && !duel) void transport.unpublishRoom(on.code).catch(() => {});
+      // ผู้เล่นออกจากเกมของโต๊ะ: โต๊ะกลับไปรอพร้อมใหม่ (ยังนั่งที่เดิม)
+      if (duel && on && !on.spectator) {
+        void transport
+          .transactPath(`rooms/${duel.code}/tables`, (cur: Record<string, DuelTable> | null) => {
+            if (!cur) return cur;
+            for (const tb of Object.values(cur)) {
+              if (tb?.game === on.code) {
+                delete tb.game;
+                tb.ready = {};
+              }
+            }
+            return cur;
+          })
+          .catch(() => {});
+      }
+      set({ online: null, screen: duel || (on && on.status === 'waiting') ? 'lobby' : 'home', localInProgress: false });
       get().newGame();
+    },
+    onlineSetDeck: async (deck) => {
+      const on = get().online;
+      if (!on || on.me !== 'p1' || on.status !== 'waiting') return;
+      try {
+        if (!(await transport.setHostDeck(on.code, deckToken(deck)))) set({ error: 'เปลี่ยนเด็คไม่ได้: คู่แข่งเข้าที่นั่งแล้ว' });
+      } catch (e) {
+        set({ error: `เปลี่ยนเด็คไม่สำเร็จ: ${(e as Error).message}` });
+      }
     },
     onlineRematch: () => {
       const on = get().online;
-      if (!on || on.me !== 'p1' || !on.setup) return;
+      if (!on || on.spectator || on.me !== 'p1' || !on.setup) return;
       // รอบใหม่: โยนเหรียญและเลือกผู้เริ่มก่อนใหม่ (ไม่เอา first ของรอบก่อน)
       void transport.setSetup(on.code, { round: on.setup.round + 1, seed: randomSeed(), decks: on.setup.decks });
     },
@@ -2010,6 +2364,7 @@ export const useGame = create<Store>((set, get) => {
     play: null,
     playCores: null,
     attackConfirm: null,
+    duel: null,
     evolveCard: null,
     hovered: null,
     pinned: null,

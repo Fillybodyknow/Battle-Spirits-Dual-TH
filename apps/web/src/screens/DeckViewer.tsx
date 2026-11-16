@@ -20,7 +20,7 @@ export function DeckViewer() {
   return (
     <div className="game-bg relative flex h-screen min-w-[1200px] flex-col overflow-hidden">
       <header className="flex items-center gap-6 pt-6">
-        <BackButton onClick={() => setScreen('home')} />
+        <BackButton onClick={() => (useGame.getState().setScreen(useGame.getState().deckReturn), useGame.setState({ deckReturn: 'home' }))} label={{ lobby: 'กลับห้องดวล', mydeck: 'เด็คของฉัน' }[useGame.getState().deckReturn as string] ?? 'หน้าหลัก'} />
         <div>
           <div className="text-xs tracking-[0.4em] text-sky-300">DECK</div>
           <div className="text-3xl font-black text-white italic">{deckInfo(deck).label}</div>
