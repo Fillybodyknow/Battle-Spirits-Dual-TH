@@ -4,6 +4,7 @@ import { cardArt } from '../assets';
 import { actingPlayer, chainEntries, viewPlayer, db, fieldScaleOf, GHOST_MS, isFxBlocking, layoutRect, MILL_MS, millBreakAt, millDuration, PLAY_HIT, useGame, type Fx, type Rect, hiddenFrom } from '../store';
 import { CardBack, CardFace } from './CardFace';
 import { sfx } from '../sfx';
+import { flashScale, shakeScale } from '../gfx';
 import { playerLabel } from '../format';
 import { MatchIntro } from './MatchIntro';
 import { MatchResult } from './MatchResult';
@@ -295,6 +296,16 @@ const frame = (r: Rect, extra: Keyframe = {}): Keyframe => ({ left: `${r.x}px`, 
 
 const COLOR_HEX: Record<string, string> = { red: '#ef4444', purple: '#a855f7', green: '#22c55e', white: '#e2e8f0', yellow: '#facc15', blue: '#38bdf8' };
 
+/** จอสั่นตามการตั้งค่า (ตั้งค่า → กราฟิก → จอสั่น): points = ระยะ px ของแต่ละจังหวะ ก่อนคูณความแรง */
+function shakeMain(points: [number, number][], duration: number) {
+  const k = shakeScale();
+  if (k === 0) return;
+  document.querySelector('main')?.animate(
+    [{ transform: 'translate(0,0)' }, ...points.map(([x, y]) => ({ transform: `translate(${x * k}px,${y * k}px)` })), { transform: 'translate(0,0)' }],
+    { duration, easing: 'ease-out' },
+  );
+}
+
 /** สร้าง element ชั่วคราวบน body แล้วลบทิ้งเมื่อแอนิเมชันจบ */
 function spawnFx(style: Partial<CSSStyleDeclaration>, keyframes: Keyframe[], opts: KeyframeAnimationOptions) {
   const el = document.createElement('div');
@@ -439,22 +450,20 @@ function landImpact(target: Element, color: string, heavy: boolean) {
     // แสงวาบทั้งกระดาน
     spawnFx(
       { inset: '0', background: `radial-gradient(circle at ${cx}px ${cy}px, rgba(255,255,255,0.85), ${color}66 40%, transparent 80%)` },
-      [{ opacity: 1 }, { opacity: 0 }],
+      [{ opacity: flashScale() }, { opacity: 0 }],
       { duration: 550, easing: 'ease-out' },
     );
   }
   // จอสั่น
   const k = heavy ? 14 : 5;
-  document.querySelector('main')?.animate(
+  shakeMain(
     [
-      { transform: 'translate(0,0)' },
-      { transform: `translate(${-k}px,${k * 0.7}px)` },
-      { transform: `translate(${k * 0.8}px,${-k * 0.6}px)` },
-      { transform: `translate(${-k * 0.5}px,${k * 0.4}px)` },
-      { transform: `translate(${k * 0.25}px,0)` },
-      { transform: 'translate(0,0)' },
+      [-k, k * 0.7],
+      [k * 0.8, -k * 0.6],
+      [-k * 0.5, k * 0.4],
+      [k * 0.25, 0],
     ],
-    { duration: heavy ? 520 : 300, easing: 'ease-out' },
+    heavy ? 520 : 300,
   );
 }
 
@@ -802,16 +811,14 @@ function FinalBlow({ fx, onDone }: { fx: Extract<Fx, { kind: 'finalBlow' }>; onD
     // จอสั่นแรงหลังแสงวาบ
     const shake = setTimeout(
       () =>
-        document.querySelector('main')?.animate(
+        shakeMain(
           [
-            { transform: 'translate(0,0)' },
-            { transform: 'translate(-16px,9px)' },
-            { transform: 'translate(14px,-10px)' },
-            { transform: 'translate(-10px,6px)' },
-            { transform: 'translate(6px,-4px)' },
-            { transform: 'translate(0,0)' },
+            [-16, 9],
+            [14, -10],
+            [-10, 6],
+            [6, -4],
           ],
-          { duration: 450, easing: 'ease-out' },
+          450,
         ),
       420,
     );
@@ -870,7 +877,9 @@ function FinalBlow({ fx, onDone }: { fx: Extract<Fx, { kind: 'finalBlow' }>; onD
         />
       ))}
       {/* แสงวาบ */}
-      <div className="absolute inset-0 bg-white" style={{ animation: 'fx-fb-flash 0.55s ease-out both' }} />
+      <div className="absolute inset-0" style={{ opacity: flashScale() }}>
+        <div className="absolute inset-0 bg-white" style={{ animation: 'fx-fb-flash 0.55s ease-out both' }} />
+      </div>
     </div>
   );
 }
@@ -1447,9 +1456,13 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
     const hit = setTimeout(() => {
       setImpact({ x: cx + hx, y: cy + hy });
       // จอสั่น + เป้าหมายสั่น
-      document.querySelector('main')?.animate(
-        [{ transform: 'translate(0,0)' }, { transform: 'translate(-8px,4px)' }, { transform: 'translate(7px,-5px)' }, { transform: 'translate(-4px,3px)' }, { transform: 'translate(0,0)' }],
-        { duration: 320, easing: 'ease-out' },
+      shakeMain(
+        [
+          [-8, 4],
+          [7, -5],
+          [-4, 3],
+        ],
+        320,
       );
       if (typeof fx.target === 'string') {
         document.querySelector(fx.target)?.animate([{ filter: 'brightness(2.5)' }, { filter: 'brightness(1)' }], { duration: 400 });

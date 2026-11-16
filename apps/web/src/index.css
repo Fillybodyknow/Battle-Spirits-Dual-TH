@@ -12,6 +12,32 @@ body {
   font-family: 'Noto Sans Thai', 'Segoe UI', system-ui, sans-serif;
 }
 
+/* แถบเลื่อนธีมเกม: เส้นบาง สีฟ้าโปร่ง บนพื้นใส (แทนแถบสีเทาขาวของ Windows)
+ * มาตรฐาน (Chrome 121+ / Firefox) ใช้ scrollbar-color · เบราว์เซอร์เก่า (Chrome 109 บน Windows 7) ใช้ ::-webkit-scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(125, 211, 252, 0.45) transparent;
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(125, 211, 252, 0.35);
+  border: 2px solid transparent;
+  border-radius: 9999px;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(125, 211, 252, 0.6);
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 /* ---------------------------------------------------------------- FX */
 
 /* ป้ายวิ่งผ่านจอ: เข้าจากซ้าย ค้าง แล้วออกทางขวา */
@@ -160,6 +186,7 @@ body {
   inset: -20%;
   pointer-events: none;
   z-index: 0;
+  will-change: transform;
 }
 .game-bg::before {
   background: conic-gradient(from 0deg at 50% 50%, transparent 0deg, rgba(99, 102, 241, 0.08) 60deg, transparent 120deg, rgba(14, 165, 233, 0.07) 200deg, transparent 260deg);
@@ -174,41 +201,54 @@ body {
     radial-gradient(1.5px 1.5px at 90% 15%, rgba(255, 255, 255, 0.45), transparent),
     radial-gradient(1px 1px at 65% 55%, rgba(186, 230, 253, 0.5), transparent);
   background-size: 600px 600px;
+  /* ขยายเกินจอ 1 ช่องลาย แล้วเลื่อนทั้งชั้นด้วย transform (GPU) ลายซ้ำทุก 600px จึงต่อกันเนียน */
+  inset: -600px;
   animation: bg-drift 60s linear infinite;
   opacity: 0.7;
 }
 @keyframes bg-aurora { to { transform: rotate(360deg); } }
-@keyframes bg-drift { to { background-position: 600px -600px; } }
+@keyframes bg-drift { to { transform: translate(600px, -600px); } }
 
-/* แผ่นรองเล่น: กรอบเรืองแสงไหลรอบ เมื่อเป็นตาของผู้เล่นนี้ */
-.mat-active::after {
-  content: '';
+/* แผ่นรองเล่น: กรอบเรืองแสงไหลรอบ เมื่อเป็นตาของผู้เล่นนี้ (.mat-ring > .mat-ring-spin ใน PlayerMat) */
+.mat-ring {
   position: absolute;
   inset: 0;
   border-radius: inherit;
   padding: 2px;
-  background: conic-gradient(from var(--mat-angle, 0deg), #facc15, transparent 25%, transparent 50%, #fde68a 75%, #facc15);
+  overflow: hidden;
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
-  animation: mat-spin 4s linear infinite;
   pointer-events: none;
   z-index: 5;
 }
-@property --mat-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
-@keyframes mat-spin { to { --mat-angle: 360deg; } }
+.mat-ring-spin {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2400px;
+  height: 2400px;
+  margin: -1200px 0 0 -1200px;
+  background: conic-gradient(#facc15, transparent 25%, transparent 50%, #fde68a 75%, #facc15);
+  animation: mat-spin 4s linear infinite;
+  will-change: transform;
+}
+@keyframes mat-spin { to { transform: rotate(360deg); } }
 /* แสงกวาดผ่านแผ่นรองเล่น */
 .mat-sheen::before {
   content: '';
   position: absolute;
-  inset: 0;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 250%;
   background: linear-gradient(105deg, transparent 40%, rgba(255, 255, 255, 0.06) 50%, transparent 60%);
-  background-size: 250% 100%;
   animation: mat-sheen 9s ease-in-out infinite;
+  will-change: transform;
   pointer-events: none;
   z-index: -5;
 }
-@keyframes mat-sheen { 0%, 100% { background-position: 120% 0; } 50% { background-position: -20% 0; } }
+@keyframes mat-sheen { 0%, 100% { transform: translateX(-80%); } 50% { transform: translateX(8%); } }
 
 /* ช่องบนแผ่นรองเล่น: กรอบโลหะ */
 .slot-frame {
@@ -261,8 +301,9 @@ body {
 @keyframes btn-pulse { 0%, 100% { box-shadow: 0 0 0 1px rgba(120, 53, 15, 0.6), 0 3px 0 #92400e, 0 0 0 0 rgba(250, 204, 21, 0.5); } 50% { box-shadow: 0 0 0 1px rgba(120, 53, 15, 0.6), 0 3px 0 #92400e, 0 0 18px 4px rgba(250, 204, 21, 0.55); } }
 
 /* Soul Core เรืองแสงเป็นจังหวะ */
-.soul-glow { animation: soul-glow 2.4s ease-in-out infinite; }
-@keyframes soul-glow { 0%, 100% { filter: drop-shadow(0 0 2px rgba(244, 63, 94, 0.6)); } 50% { filter: drop-shadow(0 0 8px rgba(244, 63, 94, 0.95)); } }
+/* Soul Core: แสงเรืองนิ่ง (เดิมกระพริบด้วย filter ทุกเฟรม ซึ่งหนักมากบนเครื่องช้า และ Soul Core อยู่บนกระดานแทบตลอดเวลา) */
+.soul-glow { filter: drop-shadow(0 0 6px rgba(244, 63, 94, 0.85)); }
+
 
 /* ช่อง Life: ช่องเสียบ Core เรืองแสง */
 .life-socket {
@@ -663,3 +704,43 @@ html.touch-ui textarea {
   user-select: text;
 }
 @keyframes rotate-hint { 0%, 20% { transform: rotate(0deg); } 50%, 70% { transform: rotate(-90deg); } 100% { transform: rotate(0deg); } }
+
+/* ================================================================ ตั้งค่ากราฟิก (gfx.ts: คลาส gfx-* บน <html>) */
+/* ฉากหลังนิ่ง */
+html.gfx-bg-static .game-bg::before,
+html.gfx-bg-static .game-bg::after {
+  animation: none !important;
+}
+/* กรอบสนาม + แสงกวาดนิ่ง */
+html.gfx-mat-static .mat-ring-spin,
+html.gfx-mat-static .mat-sheen::before {
+  animation: none !important;
+}
+/* แสงเรือง/ปุ่มเต้น/ของที่วนตลอด (inline animation แบบ infinite): ค้างไว้ที่จังหวะสว่าง ไม่ต้องวาดใหม่ทุกเฟรม */
+html.gfx-glow-static [style*="infinite"],
+html.gfx-glow-static .btn-row > *,
+html.gfx-glow-static .effect-firing {
+  animation-delay: -0.7s !important;
+  animation-play-state: paused !important;
+}
+/* ฟอยนิ่ง (ยังเห็นลาย) / ปิด (ไม่มีลายเลย) */
+html.gfx-foil-static .foil *,
+html.gfx-foil-static .foil::before,
+html.gfx-foil-static .foil::after,
+html.gfx-foil-static .foil-rainbow::before {
+  animation: none !important;
+}
+html.gfx-foil-off .foil::before,
+html.gfx-foil-off .foil::after,
+html.gfx-foil-off .foil-band,
+html.gfx-foil-off .foil-idle,
+html.gfx-foil-off .foil-edge {
+  display: none !important;
+}
+/* ไม่เบลอพื้นหลังหน้าต่าง (หนักบนเครื่องที่การ์ดจอไม่แรง) */
+html.gfx-no-blur *,
+html.gfx-no-blur *::before,
+html.gfx-no-blur *::after {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}

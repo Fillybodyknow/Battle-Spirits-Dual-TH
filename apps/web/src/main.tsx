@@ -7,10 +7,12 @@ import './legacy-colors.css';
 import { registerPwa } from './pwa';
 import { installTouch } from './touch';
 import { startUpdateCheck } from './version';
+import { installGfx } from './gfx';
 
 registerPwa();
 installTouch();
 startUpdateCheck();
+installGfx();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

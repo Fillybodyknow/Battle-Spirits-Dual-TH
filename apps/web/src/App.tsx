@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { PLAYERS, opponentOf } from '@bs/engine';
 import { playerLabel } from './format';
-import { onlineAvailable, onlineVia, playableDecks, useGame, viewPlayer, type CutInMode, type DeckId } from './store';
+import { onlineAvailable, onlineVia, playableDecks, useGame, viewPlayer, type DeckId } from './store';
 import { deckInfo } from './decks';
 import { HandFan, PlayerMat } from './components/Board';
 import { ChoiceDialog, ErrorToast, FlashCue, PromptBar, TrashDialog } from './components/Controls';
@@ -9,11 +9,12 @@ import { UpdateNotice, WhatsNew } from './components/Updates';
 import { CornerButtons, FinalBlowWarning, FloatingInspector, PlayerPlate, TurnAura } from './components/Hud';
 import { PlayDialog } from './components/PlayDialog';
 import { BTN } from './components/Modal';
-import { setSfx, sfx, sfxSettings } from './sfx';
 import { AttackArrow, FxLayer } from './components/Fx';
 import { DrawPrompt } from './components/DrawPrompt';
 import { Icon } from './components/Icon';
 import { usePortraitPhone } from './touch';
+import { probeGfx, useGfx } from './gfx';
+import { FpsMeter, SettingsDialog } from './components/SettingsDialog';
 import { CoreDragGhost, DragGhost } from './components/DragGhost';
 import { DeckViewer } from './screens/DeckViewer';
 import { DeckBuilder } from './screens/DeckBuilder';
@@ -192,111 +193,40 @@ function OnlinePanel() {
   );
 }
 
+/** ปุ่มตั้งค่าในเกม: เปิดหน้าต่างตั้งค่า (แท็บการเล่นมีเลือกเด็ค/seed/ออกจากห้องเพิ่ม) */
 function Settings() {
   const [open, setOpen] = useState(false);
   const decks = useGame((s) => s.decks);
-  const hideIdleHand = useGame((s) => s.hideIdleHand);
-  const fixedView = useGame((s) => s.fixedView);
-  const animations = useGame((s) => s.animations);
-  const cutIn = useGame((s) => s.cutIn);
-  const setCutIn = useGame((s) => s.setCutIn);
-  const autoPass = useGame((s) => s.autoPass);
   const seed = useGame((s) => s.seed);
   const online = useGame((s) => s.online);
-  const { setDeck, toggleHideIdleHand, toggleFixedView, toggleAnimations, toggleAutoPass } = useGame.getState();
-  const [sound, setSound] = useState(sfxSettings());
-  const updateSound = (next: Partial<typeof sound>) => {
-    setSfx(next);
-    setSound(sfxSettings());
-  };
+  const { setDeck } = useGame.getState();
+  const extra = online ? (
+    <OnlineExit />
+  ) : (
+    <section className="flex flex-col gap-2 rounded-lg bg-black/25 p-3">
+      <h3 className="text-xs font-black tracking-widest text-sky-300/90">เด็คในเกมนี้</h3>
+      {PLAYERS.map((p) => (
+        <label key={p} className="flex items-center justify-between gap-2 text-sm">
+          <span className="text-slate-300">เด็ค{playerLabel(p)}</span>
+          <select value={decks[p]} onChange={(e) => setDeck(p, e.target.value as DeckId)} className="rounded bg-slate-700 px-2 py-1 text-slate-100">
+            {playableDecks().map((id) => (
+              <option key={id} value={id}>
+                {deckInfo(id).label}
+              </option>
+            ))}
+          </select>
+        </label>
+      ))}
+      <p className="text-xs text-slate-500">เปลี่ยนเด็คจะเริ่มเกมใหม่ · seed {seed}</p>
+    </section>
+  );
   return (
-    <div className="relative">
-      <button type="button" className={ICON_BTN} onClick={() => setOpen((o) => !o)} title="ตั้งค่า">
+    <>
+      <button type="button" className={ICON_BTN} onClick={() => setOpen(true)} title="ตั้งค่า">
         <Icon name="settings" />
       </button>
-      {open && (
-        <div className="absolute left-0 z-50 mt-1 flex w-72 flex-col gap-3 rounded-lg border border-slate-600 bg-slate-900 p-3 text-sm shadow-xl">
-          {!online && (
-            <>
-          {PLAYERS.map((p) => (
-            <label key={p} className="flex items-center justify-between gap-2">
-              <span className="text-slate-300">เด็ค{playerLabel(p)}</span>
-              <select
-                value={decks[p]}
-                disabled={!!online}
-                onChange={(e) => setDeck(p, e.target.value as DeckId)}
-                className="rounded bg-slate-700 px-2 py-1 text-slate-100"
-              >
-                {playableDecks().map((id) => (
-                  <option key={id} value={id}>
-                    {deckInfo(id).label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ))}
-          <p className="-mt-1 text-xs text-slate-500">เปลี่ยนเด็คจะเริ่มเกมใหม่</p>
-          <label className="flex cursor-pointer items-center gap-2 text-slate-300">
-            <input type="checkbox" checked={hideIdleHand} onChange={toggleHideIdleHand} />
-            ซ่อนมือฝ่ายที่ไม่ได้ตัดสินใจ
-          </label>
-          <label className="flex cursor-pointer items-center gap-2 text-slate-300">
-            <input type="checkbox" checked={fixedView} onChange={toggleFixedView} />
-            มุมมองคงที่ (ผู้เล่น 1 อยู่ล่างเสมอ)
-          </label>
-            </>
-          )}
-          <label className="flex cursor-pointer items-center gap-2 text-slate-300">
-            <input type="checkbox" checked={animations} onChange={toggleAnimations} />
-            เอฟเฟกต์ภาพ (ป้ายสเต็ป, cut-in อัญเชิญ, ป๊อปอัปเอฟเฟกต์)
-          </label>
-          <label className="flex items-center gap-2 text-slate-300">
-            <span className="shrink-0">Cut-in การ์ด X</span>
-            <select
-              value={cutIn}
-              disabled={!animations}
-              onChange={(e) => setCutIn(e.target.value as CutInMode)}
-              className="min-w-0 flex-1 rounded bg-slate-800 px-2 py-1 text-sm text-slate-100 disabled:opacity-40"
-            >
-              <option value="first">ครั้งแรกของการ์ดแต่ละชนิด</option>
-              <option value="always">ทุกครั้ง</option>
-              <option value="off">ปิด (ลงสนามแบบหนักแทน)</option>
-            </select>
-          </label>
-          <div className="flex flex-col gap-1">
-            <label className="flex cursor-pointer items-center gap-2 text-slate-300">
-              <input type="checkbox" checked={sound.on} onChange={(e) => updateSound({ on: e.target.checked })} />
-              เสียงประกอบ (SFX)
-            </label>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.05}
-              value={sound.volume}
-              disabled={!sound.on}
-              onChange={(e) => updateSound({ volume: Number(e.target.value) })}
-              onPointerUp={() => sfx('activate')}
-              className="ml-6 accent-yellow-400 disabled:opacity-40"
-              aria-label="ความดังเสียง"
-            />
-          </div>
-          {!online && (
-            <>
-          <label className="flex cursor-pointer items-start gap-2 text-slate-300">
-            <input type="checkbox" checked={autoPass} onChange={toggleAutoPass} className="mt-1" />
-            <span>
-              Auto Pass
-              <span className="block text-xs text-slate-500">Pass/ไม่ป้องกันให้เองเมื่อไม่มีการ์ดหรือสปิริตที่ใช้ได้</span>
-            </span>
-          </label>
-            </>
-          )}
-          {online && <OnlineExit />}
-          {!online && <span className="text-xs text-slate-500">seed {seed}</span>}
-        </div>
-      )}
-    </div>
+      {open && <SettingsDialog onClose={() => setOpen(false)} playExtra={extra} />}
+    </>
   );
 }
 
@@ -316,6 +246,7 @@ export function App() {
       {/* อัปเดตแอป: แจ้งเวอร์ชันใหม่ / มีอะไรใหม่หลังอัปเดต */}
       <UpdateNotice />
       <WhatsNew />
+      <FpsMeter />
       {/* มือถือ: เล่นแนวนอนเท่านั้น (ทุกหน้า) */}
       <RotateHint />
     </>
@@ -336,8 +267,34 @@ function RotateHint() {
   );
 }
 
+/** ปรับคุณภาพกราฟิกเป็น "ต่ำ" ให้อัตโนมัติ: บอกผู้เล่นครั้งเดียว */
+function GfxNotice() {
+  const { autoJustLowered, dismissNotice } = useGfx();
+  useEffect(() => {
+    if (!autoJustLowered) return;
+    const t = setTimeout(dismissNotice, 7000);
+    return () => clearTimeout(t);
+  }, [autoJustLowered, dismissNotice]);
+  if (!autoJustLowered) return null;
+  return (
+    <div className="fixed top-14 left-1/2 z-[60] flex -translate-x-1/2 items-center gap-3 rounded-xl border border-sky-300/50 bg-slate-950/95 py-2 pr-2 pl-4 text-sm shadow-xl">
+      <span className="text-slate-200">
+        เครื่องนี้แสดงภาพไม่ทัน: ปรับคุณภาพกราฟิกเป็น <b className="text-sky-200">ต่ำ</b> ให้อัตโนมัติ (เปลี่ยนได้ในตั้งค่า → กราฟิก)
+      </span>
+      <button type="button" onClick={dismissNotice} className="rounded px-2 text-slate-400 hover:text-white">
+        ✕
+      </button>
+    </div>
+  );
+}
+
 function GameScreen() {
   const [inspector, setInspector] = useState(true);
+  // โหมดลดเอฟเฟกต์อัตโนมัติ: วัดเฟรมเรตบนกระดานหลังฉากเปิดเกม/แอนิเมชันจบ
+  const settled = useGame((s) => !s.fx.some((f) => f.kind === 'intro') && !(s.pregame && !s.pregame.chosen));
+  useEffect(() => {
+    if (settled) probeGfx();
+  }, [settled]);
   // ผู้เล่นที่ถือเทิร์นอยู่ด้านล่าง (มือใหญ่ กดง่าย) เว้นแต่ตั้งมุมมองคงที่
   const bottom = useGame(viewPlayer);
   const top = opponentOf(bottom);
@@ -367,6 +324,7 @@ function GameScreen() {
       {/* HUD: ป้ายผู้เล่น / รายละเอียดการ์ดลอย / ปุ่มมุมขวาล่าง */}
       <FinalBlowWarning />
       <FlashCue />
+      <GfxNotice />
       <PlayerPlate player={bottom} corner="bottom-left" />
       <PlayerPlate player={top} corner="top-right" />
       <FloatingInspector enabled={inspector} />

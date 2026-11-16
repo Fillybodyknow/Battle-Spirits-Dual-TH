@@ -1,6 +1,8 @@
 import { isXRare } from '@bs/cards';
 import { browserKind, useInstall } from '../pwa';
 import { VersionBadge } from '../components/Updates';
+import { SettingsDialog } from '../components/SettingsDialog';
+import { Icon } from '../components/Icon';
 import { useEffect, useMemo, useState } from 'react';
 import { cardArt } from '../assets';
 import { BTN } from '../components/Modal';
@@ -277,6 +279,7 @@ export function Home() {
   const localInProgress = useGame((s) => s.localInProgress);
   const [local, setLocal] = useState(false);
   const [sound, setSound] = useState(sfxSettings());
+  const [settings, setSettings] = useState(false);
 
   return (
     <div className="game-bg relative h-screen min-w-[1200px] overflow-hidden">
@@ -333,9 +336,25 @@ export function Home() {
         >
           {sound.on ? '🔊' : '🔇'}
         </button>
+        <button
+          type="button"
+          onClick={() => setSettings(true)}
+          className="flex h-10 w-10 items-center justify-center rounded-full border border-sky-300/40 bg-black/50 text-sky-100 hover:text-white"
+          title="ตั้งค่า (กราฟิก / เสียง / การเล่น)"
+        >
+          <Icon name="settings" />
+        </button>
       </div>
 
       {local && <LocalSetup onClose={() => setLocal(false)} />}
+      {settings && (
+        <SettingsDialog
+          onClose={() => {
+            setSettings(false);
+            setSound(sfxSettings());
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -791,6 +791,12 @@ export function PlayerMat({ player, top }: { player: PlayerId; top?: boolean }) 
         acting ? 'mat-active border-transparent shadow-[0_0_24px_rgba(250,204,21,0.25)]' : 'border-slate-500/30'
       }`}
     >
+      {/* กรอบเรืองแสงวิ่งรอบ (ตาของผู้เล่นนี้): ชั้นไล่สีหมุนด้วย transform ใต้ mask เส้นขอบ */}
+      {acting && (
+        <div className="mat-ring" aria-hidden="true">
+          <div className="mat-ring-spin" />
+        </div>
+      )}
       {/* พื้นแผ่นรองเล่น: ภาพของผู้ใช้ (ถ้ามี) หรือท้องฟ้า-ผืนทรายโทนเทา */}
       <div className="absolute inset-0 -z-10">
         {IMG.playmat ? (

@@ -2091,4 +2091,5 @@ export const useGame = create<Store>((set, get) => {
 });
 
 // เครื่องมือทดสอบระหว่างพัฒนา (เฉพาะ dev server)
-if (import.meta.env.DEV) (globalThis as { __game?: typeof useGame }).__game = useGame;
+// dev / build ทดสอบความลื่น (VITE_PERF_HOOKS=1 ตั้งเฉพาะตอนวัดในเครื่อง ไม่มีใน build ที่ขึ้นเว็บ): ให้สคริปต์ทดสอบเข้าถึง store
+if (import.meta.env.DEV || import.meta.env.VITE_PERF_HOOKS) Object.assign(globalThis, { __game: useGame, __db: db });
