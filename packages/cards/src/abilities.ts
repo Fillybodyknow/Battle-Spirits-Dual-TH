@@ -291,6 +291,12 @@ export type Step =
       perPick?: number;
       if?: Condition;
     }
+  /**
+   * (ภายใน engine) ส่งคอร์ n เม็ดออกจากการ์ด cardId ไป to
+   * มี Soul Core และเลือกได้ (ส่งไม่หมด และคอร์ปกติพอ) = เจ้าของการ์ดเลือกว่าจะส่ง Soul Core ด้วยหรือไม่ (กติกา 07 Q2)
+   * soul = ผลที่เลือกแล้ว · byOpponent = เอฟเฟกต์ของคู่แข่ง (เช็กสูญสลายโดยคู่แข่ง)
+   */
+  | { do: 'coresOff'; cardId: string; n: number; to: 'reserve' | 'trash'; byOpponent: boolean; soul?: boolean }
   /** ทิ้งใบบนสุดเด็คเราเอง */
   | { do: 'millSelf'; count: number }
   /** เลือกการ์ดของเราที่ฟื้นสภาพอยู่และตรงตัวกรอง 1 ใบ แล้วเสื่อมสภาพ (ไม่ระบุ types = สปิริต/อัลติเมท) */

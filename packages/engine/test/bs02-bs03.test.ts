@@ -74,17 +74,43 @@ describe('Booster Set 02 / 03', () => {
     expect(cards.filter((c) => c.abilities.length > 0).length).toBeGreaterThan(40);
   });
 
-  it('โซลชูท (จ่ายด้วย Soul Core): ส่งคอร์คู่แข่ง 2 เม็ดไปรีเสิร์ฟคู่แข่ง คอร์ธรรมดาออกก่อน Soul Core', () => {
+  // กติกา 07 Q2: สปิริตที่มี Soul Core ถูกส่งคอร์ออก เจ้าของสปิริตเลือกได้ว่าจะส่งคอร์ไหน
+  it('โซลชูท (จ่ายด้วย Soul Core): ส่งคอร์คู่แข่ง 2 เม็ด เจ้าของเลือกเก็บ Soul Core ไว้', () => {
     const s = setup();
     const target = put(s, 'p2', DARIU, 3, true);
     const reserve = s.players.p2.reserve.length;
     let x = magic(s, 'โซลชูท', true);
     x = choose(x, target);
+    // เจ้าของสปิริต (p2) เป็นคนเลือก
+    expect(x.choice?.kind).toBe('option');
+    expect(x.choice?.player).toBe('p2');
+    x = choose(x, 0);
     x = choose(x, target);
+    x = choose(x, 0);
     const left = x.cards[target]!.cores;
     expect(left).toHaveLength(1);
     expect(x.cores[left[0]!]!.isSoul).toBe(true);
     expect(x.players.p2.reserve.length).toBe(reserve + 2);
+  });
+
+  it('โซลชูท: เจ้าของเลือกส่ง Soul Core ออกได้ · เหลือแต่คอร์ปกติ = ไม่ถามอีก', () => {
+    const s = setup();
+    const target = put(s, 'p2', DARIU, 3, true);
+    let x = magic(s, 'โซลชูท', true);
+    x = choose(x, target);
+    x = choose(x, 1); // ส่ง Soul Core
+    expect(x.cards[target]!.cores.some((c) => x.cores[c]!.isSoul)).toBe(false);
+    x = choose(x, target);
+    expect(x.choice?.kind).not.toBe('option');
+    expect(x.cards[target]!.cores).toHaveLength(1);
+  });
+
+  it('ส่งคอร์ออก: Soul Core เม็ดเดียวกับคอร์ปกติไม่พอ = ไม่ถาม (ต้องออกด้วย)', () => {
+    const s = setup();
+    const target = put(s, 'p2', DARIU, 1, true); // มีแต่ Soul Core
+    const x = choose(magic(s, 'โซลชูท'), target);
+    expect(x.choice?.kind).not.toBe('option');
+    expect(x.players.p2.field).not.toContain(target);
   });
 
   it('โซลชูท: สปิริตคู่แข่งที่คอร์หมดจากเอฟเฟกต์สูญสลาย', () => {

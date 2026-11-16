@@ -794,11 +794,46 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
     case 'selfCoresToTrash': {
       const card = s.cards[self]!;
       if (!onField(ctx, self) || card.cores.length < step.count) return;
-      const sorted = [...card.cores].sort((x, y) => Number(s.cores[x]!.isSoul) - Number(s.cores[y]!.isSoul));
-      const take = sorted.slice(0, step.count);
-      for (const id of take) card.cores.splice(card.cores.indexOf(id), 1);
-      s.players[me].trashCores.push(...take);
-      emit(ctx, { type: 'coresToTrash', cardId: self, count: take.length });
+      item.steps.unshift({ do: 'coresOff', cardId: self, n: step.count, to: 'trash', byOpponent: false });
+      return;
+    }
+
+    case 'coresOff': {
+      // กติกา 07 Q2: เอฟเฟกต์ส่งคอร์ออก ถ้าการ์ดมี Soul Core เจ้าของการ์ดเลือกได้ว่าจะส่ง Soul Core หรือคอร์ปกติ
+      const card = s.cards[step.cardId];
+      if (!card || !onField(ctx, step.cardId)) return;
+      const n = Math.min(step.n, card.cores.length);
+      if (n <= 0) return;
+      const normals = card.cores.filter((c) => !s.cores[c]!.isSoul);
+      const soulCore = card.cores.find((c) => s.cores[c]!.isSoul);
+      const where = step.to === 'trash' ? 'แทรช' : 'รีเสิร์ฟ';
+      if (step.soul === undefined && soulCore && n < card.cores.length && normals.length >= n) {
+        const options = [
+          { label: `ส่งคอร์ปกติ ${n} เม็ด (เก็บ Soul Core ไว้)`, steps: [{ ...step, soul: false }] },
+          { label: n > 1 ? `ส่ง Soul Core + คอร์ปกติ ${n - 1} เม็ด` : 'ส่ง Soul Core', steps: [{ ...step, soul: true }] },
+        ];
+        ask(
+          ctx,
+          item,
+          { kind: 'option', prompt: `${db.get(card.cardNo).name}: เลือกคอร์ที่จะส่งไป${where} ${n} เม็ด`, options: options.map((o) => o.label), step: { do: 'chooseOne', options } },
+          card.owner,
+        );
+        return;
+      }
+      // ไม่ต้องเลือก: คอร์ปกติออกก่อน (คอร์ปกติไม่พอ = Soul Core ออกด้วย)
+      const moved = step.soul && soulCore ? [soulCore, ...normals.slice(0, n - 1)] : [...normals, ...(soulCore ? [soulCore] : [])].slice(0, n);
+      const owner = s.players[card.owner];
+      const preLevel = cardLevel(s, db, step.cardId);
+      const hadSoul = !!soulCore;
+      card.cores = card.cores.filter((c) => !moved.includes(c));
+      (step.to === 'trash' ? owner.trashCores : owner.reserve).push(...moved);
+      if (step.byOpponent) {
+        emit(ctx, { type: 'coresRemoved', cardId: step.cardId, count: moved.length, to: step.to });
+        const pdef = db.get(card.cardNo);
+        if (isSpiritLike(pdef) && levelOf(pdef, card.cores.length) === 0) depleteByOpponent(ctx, item, step.cardId, preLevel, hadSoul);
+      } else {
+        emit(ctx, { type: 'coresToTrash', cardId: step.cardId, count: moved.length });
+      }
       return;
     }
 
@@ -1602,20 +1637,11 @@ export function resolveChoice(ctx: Ctx, player: PlayerId, pick: ChoicePick): voi
         if (step.count > 1) cur.steps.unshift({ ...step, count: step.count - 1, if: undefined });
         break;
       case 'removeOpponentCores': {
-        // คอร์ธรรมดาออกก่อน Soul Core
+        // ส่งคอร์ออก (เจ้าของการ์ดเลือกได้ว่าจะส่ง Soul Core หรือไม่: coresOff) แล้วค่อยเลือกตัวถัดไป
         const card = s.cards[pick]!;
-        const owner = s.players[card.owner];
-        const preLevel = cardLevel(s, ctx.db, pick);
-        const hadSoul = card.cores.some((c) => s.cores[c]!.isSoul);
-        const order = [...card.cores].sort((a, b) => Number(s.cores[a]!.isSoul) - Number(s.cores[b]!.isSoul));
         const n = step.untilOne ? Math.max(0, card.cores.length - 1) : Math.min(step.perPick ?? 1, card.cores.length);
-        const moved = order.slice(0, n);
-        card.cores = card.cores.filter((c) => !moved.includes(c));
-        (step.to === 'trash' ? owner.trashCores : owner.reserve).push(...moved);
-        emit(ctx, { type: 'coresRemoved', cardId: pick, count: moved.length, to: step.to ?? 'reserve' });
-        const pdef = ctx.db.get(card.cardNo);
-        if (isSpiritLike(pdef) && levelOf(pdef, card.cores.length) === 0) depleteByOpponent(ctx, cur, pick, preLevel, hadSoul);
         if (!step.untilOne && step.count > 1) cur.steps.unshift({ ...step, count: step.count - 1, if: undefined });
+        cur.steps.unshift({ do: 'coresOff', cardId: pick, n, to: step.to ?? 'reserve', byOpponent: true });
         break;
       }
       case 'exhaustOpponentTotalBp': {
