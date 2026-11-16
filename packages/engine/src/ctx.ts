@@ -85,7 +85,10 @@ export function leaveField(ctx: Ctx, cardId: string, to: 'trash' | 'hand'): void
         {
           do: 'chooseOne',
           options: [
-            { label: 'ให้เบรฟอยู่บนสนามต่อ (วาง Core จากรีเสิร์ฟ)', steps: [{ do: 'placeCores', cardId: braveId, state: hostState, noSummon: true }] },
+            {
+              label: 'ให้เบรฟอยู่บนสนามต่อ (วาง Core จากรีเสิร์ฟ)',
+              steps: [{ do: 'placeCores', cardId: braveId, state: hostState, noSummon: true, continuesAttackOf: cardId }],
+            },
             { label: 'ส่งเบรฟลง Trash', steps: [{ do: 'braveTrash', cardId: braveId }] },
           ],
         },

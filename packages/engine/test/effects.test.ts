@@ -372,7 +372,11 @@ describe('Flash [Evolution]', () => {
     s = act(s, { type: 'choose', player: 'p2', pick: attacker });
     expect(s.players.p1.trashCards).toContain(attacker);
     expect(s.players.p2.hand).toHaveLength(hand + 2);
-    expect(s.battle).toBeNull(); // ผู้โจมตีออกจากสนาม การต่อสู้จบ
+    // ผู้โจมตีออกจากสนามระหว่าง Flash1: Flash1 ยังเปิดต่อจนทั้งสองฝ่ายผ่าน แล้วจบการต่อสู้ (กติกา 02 Q&A 3)
+    expect(s.battle?.step).toBe('flashBeforeBlock');
+    expect(s.battle?.flash).not.toBeNull();
+    while (s.battle?.flash) s = act(s, { type: 'passFlash', player: s.battle.flash.priority });
+    expect(s.battle).toBeNull();
     expect(s.players.p2.life).toHaveLength(5);
     expect(s.phase).toBe('attack');
   });

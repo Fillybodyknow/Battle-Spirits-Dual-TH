@@ -8,11 +8,13 @@ import { registerPwa } from './pwa';
 import { installTouch } from './touch';
 import { startUpdateCheck } from './version';
 import { installGfx } from './gfx';
+import { installDragCleanup } from './components/DragGhost';
 
 registerPwa();
 installTouch();
 startUpdateCheck();
 installGfx();
+installDragCleanup();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -312,7 +312,15 @@ export type Step =
   /** (engine ใช้ภายใน) ไล่วางการ์ดที่เหลือไว้ใต้สุดเด็คตามลำดับที่เลือก */
   | { do: 'toDeckBottom'; cardIds: string[] }
   /** (engine ใช้ภายใน) วาง Core จากรีเสิร์ฟบนการ์ดที่อัญเชิญไม่จ่ายคอสต์ แล้วนำลงสนาม */
-  | { do: 'placeCores'; cardId: string; state?: 'refresh' | 'exhausted'; noSummon?: true; asSpirit?: true }
+  | {
+      do: 'placeCores';
+      cardId: string;
+      state?: 'refresh' | 'exhausted';
+      noSummon?: true;
+      asSpirit?: true;
+      /** (engine ใช้ภายใน) เบรฟที่อยู่ต่อหลังร่างต้น (id นี้) ออกจากสนาม: ถ้าร่างต้นกำลังโจมตีอยู่ในแฟลชหลังโจมตี เบรฟโจมตีต่อ */
+      continuesAttackOf?: string;
+    }
   /** (engine ใช้ภายใน) Brave ที่อัญเชิญด้วยเอฟเฟกต์: เลือกสปิริตที่จะร่วมร่าง หรือไม่เลือก = ลงเป็นสปิริต */
   | { do: 'braveOrSpirit'; cardId: string }
   /** (engine ใช้ภายใน) เบรฟที่ผู้ร่วมร่างออกจากสนาม: เลือกให้อยู่ต่อหรือลง Trash */

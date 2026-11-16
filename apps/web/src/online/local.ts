@@ -68,7 +68,7 @@ export const localTransport: Transport = {
     let last = '';
     const check = () => {
       const r = read()[code] ?? null;
-      const sig = JSON.stringify(r && { seats: r.seats, setup: r.setup, names: r.names });
+      const sig = JSON.stringify(r && { seats: r.seats, setup: r.setup, names: r.names, versions: r.versions });
       if (sig === last) return;
       last = sig;
       cb(r);
@@ -100,6 +100,13 @@ export const localTransport: Transport = {
     list[actionKey(index)] = encodeAction(action);
     write(s);
     return true;
+  },
+  async setVersion(code, seat, version) {
+    const s = read();
+    const room = s[code];
+    if (!room) return;
+    room.versions = { ...(room.versions ?? {}), [seat]: version };
+    write(s);
   },
   async setFirst(code, round, first) {
     const s = read();

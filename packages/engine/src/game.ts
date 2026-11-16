@@ -303,7 +303,8 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
       if (flash.priority !== player) fail('NOT_YOUR_PRIORITY', 'ยังไม่ถึงตาคุณใน Flash timing');
       if (!quick && !trashRule) fail('WRONG_PHASE', 'อัญเชิญใน Flash timing ได้เฉพาะการ์ดที่มี [Quick]');
       if (s.battle?.noFlash === player) fail('NO_FLASH', 'ในการต่อสู้นี้ใช้เอฟเฟกต์แฟลชไม่ได้');
-      if (braveOnto) fail('WRONG_PHASE', 'ร่วมร่าง Brave ได้เฉพาะ Main Step');
+      // เบรฟที่มี [Quick] อัญเชิญมาร่วมร่างทันทีในแอทแท็คสเต็ปได้ (กติกา 04)
+      if (braveOnto && !quick) fail('WRONG_PHASE', 'ร่วมร่าง Brave ได้เฉพาะ Main Step');
     }
     if (def.type === 'ultimate') fail('NOT_SUPPORTED', 'Ultimate ยังไม่รองรับ (ขั้นที่ 3)');
     if (def.type !== 'spirit' && def.type !== 'brave') fail('WRONG_CARD_TYPE', 'อัญเชิญได้เฉพาะ Spirit/Brave');
@@ -314,17 +315,29 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     if (trashRule?.soulPayment && !paidWithSoul) fail('SOUL_REQUIRED', 'ต้องใช้ Soul Core ร่วมจ่ายคอสต์เพื่ออัญเชิญจากแทรช');
 
     if (braveOnto) {
-      // อัญเชิญเพื่อร่วมร่างทันที: จ่ายคอสต์ ไม่วาง Core บน Brave และ "เมื่อเบรฟนี้ถูกอัญเชิญ" ไม่ทำงาน
+      // อัญเชิญเพื่อร่วมร่างทันที: จ่ายคอสต์ ไม่วาง Core บน Brave
+      // "เมื่อเบรฟนี้ถูกอัญเชิญ" ทำงานเหมือนอัญเชิญเป็นสปิริต (กติกา 03 ข้อ 3, 04) โดยถือเป็นเลเวลต่ำสุดของการ์ด
+      // (ตีความ: เบรฟที่ร่วมร่างไม่มี Core จึงใช้ [Lv1])
       if (def.type !== 'brave' || !def.braveCondition) fail('WRONG_CARD_TYPE', 'ร่วมร่างได้เฉพาะ Brave');
       const host = braveHost(ctx, player, def, braveOnto);
-      const { paid } = payCost(ctx, player, def, payment, placement, { noPlacement: true });
+      // [Quick] ใน Flash timing: คอร์ที่จ่ายต้องมาจากรีเสิร์ฟ
+      const { paid } = payCost(ctx, player, def, payment, placement, { noPlacement: true, reserveOnly: !!flash && !quickAnyCores(s, db, player) });
       removeFrom(p.hand, cardId);
       host.braves.push(cardId);
       card.state = host.state;
       card.cores = [];
-      emit(ctx, { type: 'summoned', player, cardId, paid });
+      emit(ctx, { type: 'summoned', player, cardId, paid, ...(flash ? { quick: true } : {}) });
       emit(ctx, { type: 'braved', cardId, hostId: braveOnto });
+      if (flash) {
+        flash.consecutivePasses = 0;
+        flash.priority = opponentOf(player);
+      }
       checkDepletion(ctx);
+      if (host.braves.includes(cardId) && p.field.includes(braveOnto)) {
+        const lowest = Math.min(...def.levels.map((l) => l.level));
+        queueSummonTriggers(ctx, cardId, newBatch(ctx), { paidWithSoul, from: 'hand', level: Number.isFinite(lowest) ? lowest : 1 });
+        runQueue(ctx);
+      }
       return;
     }
 
@@ -523,6 +536,11 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     if (battle.flash.consecutivePasses < 2) return;
 
     battle.flash = null;
+    // ผู้โจมตีออกจากสนามไประหว่าง Flash1: จบ Flash1 แล้วจบการต่อสู้ทันที ไม่มีการป้องกัน (กติกา 02 Q&A 3)
+    if (battle.step === 'flashBeforeBlock' && !ctx.s.players[ctx.s.cards[battle.attackerId]!.owner].field.includes(battle.attackerId)) {
+      endBattle(ctx);
+      return;
+    }
     if (battle.step === 'flashBeforeBlock') {
       battle.step = 'declareBlock';
       applyChosenBlockers(ctx);
@@ -655,6 +673,30 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
       emit(ctx, { type: 'braveSeparated', cardId: braveId, stays: true });
     } else {
       if (hostId === from) fail('INVALID_HOST', 'ร่วมร่างกับสปิริตนี้อยู่แล้ว');
+      // สลับเบรฟบนสปิริตรวมร่างสองตัวได้เลย ไม่ต้องแยกร่างก่อน (กติกา 04 ข้อ 3)
+      const target = from ? s.cards[hostId] : undefined;
+      if (from && target && target.owner === player && p.field.includes(hostId) && target.braves.length > 0) {
+        const host = braveHost(ctx, player, def, hostId, true);
+        const otherId = target.braves[0]!;
+        const other = s.cards[otherId]!;
+        const fromHost = s.cards[from]!;
+        const otherMin = db.get(other.cardNo).braveCondition?.minCost ?? 0;
+        if (db.get(fromHost.cardNo).cost < otherMin) fail('INVALID_HOST', `${db.get(other.cardNo).name} ร่วมร่างกับสปิริตคอสต์ตั้งแต่ ${otherMin} ขึ้นไปเท่านั้น`);
+        // สภาพหลังสลับ: เบรฟติดสภาพของร่างเดิมมาด้วย ฝ่ายใดเสื่อมสภาพ = ร่างที่รวมแล้วเสื่อมสภาพ
+        const anyExhausted = fromHost.state === 'exhausted' || host.state === 'exhausted' ? 'exhausted' : 'refresh';
+        removeFrom(fromHost.braves, braveId);
+        removeFrom(host.braves, otherId);
+        host.braves.push(braveId);
+        fromHost.braves.push(otherId);
+        host.state = anyExhausted;
+        fromHost.state = anyExhausted;
+        brave.state = anyExhausted;
+        other.state = anyExhausted;
+        emit(ctx, { type: 'braved', cardId: braveId, hostId });
+        emit(ctx, { type: 'braved', cardId: otherId, hostId: from });
+        checkDepletion(ctx);
+        return;
+      }
       const host = braveHost(ctx, player, def, hostId);
       // สภาพที่ติดไปด้วย: Brave เดี่ยว = สภาพของ Brave, ย้ายจากผู้ร่วมร่างเดิม = สภาพของผู้ร่วมร่างเดิม
       const carried = from ? s.cards[from]!.state : brave.state;
@@ -665,8 +707,11 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
         brave.cores = [];
       }
       host.braves.push(braveId);
-      host.state = carried;
-      brave.state = carried;
+      // ฝ่ายใดฝ่ายหนึ่งเสื่อมสภาพ = ร่างที่รวมแล้วเสื่อมสภาพ (กติกา 04 สปิริตรวมร่าง ข้อ 1)
+      // (เดิมใช้สภาพของเบรฟทับ ทำให้แปะเบรฟที่ฟื้นสภาพบนสปิริตที่โจมตีไปแล้ว = ฟื้นสภาพโจมตีซ้ำได้)
+      const merged = host.state === 'exhausted' || carried === 'exhausted' ? 'exhausted' : 'refresh';
+      host.state = merged;
+      brave.state = merged;
       emit(ctx, { type: 'braved', cardId: braveId, hostId });
     }
     checkDepletion(ctx);
@@ -687,12 +732,12 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
   },
 };
 
-/** ตรวจว่าสปิริตนี้เป็นผู้ร่วมร่างของ Brave ได้ (สปิริตของเรา, คอสต์ถึง, ยังไม่มี Brave) */
-function braveHost(ctx: Ctx, player: PlayerId, def: CardDef, hostId: string) {
+/** ตรวจว่าสปิริตนี้เป็นผู้ร่วมร่างของ Brave ได้ (สปิริตของเรา, คอสต์ถึง, ยังไม่มี Brave ยกเว้นตอนสลับเบรฟ) */
+function braveHost(ctx: Ctx, player: PlayerId, def: CardDef, hostId: string, swapping = false) {
   const host = fieldCard(ctx.s, player, hostId);
   const hostDef = ctx.db.get(host.cardNo);
   if (hostDef.type !== 'spirit') fail('INVALID_HOST', 'ร่วมร่างได้กับสปิริตเท่านั้น');
-  if (host.braves.length > 0) fail('INVALID_HOST', 'สปิริตนี้มี Brave ร่วมร่างอยู่แล้ว');
+  if (host.braves.length > 0 && !swapping) fail('INVALID_HOST', 'สปิริตนี้มี Brave ร่วมร่างอยู่แล้ว');
   const min = def.braveCondition?.minCost ?? 0;
   if (hostDef.cost < min) fail('INVALID_HOST', `ผู้ร่วมร่างต้องมีคอสต์ตั้งแต่ ${min} ขึ้นไป`);
   return host;
@@ -837,6 +882,8 @@ function checkBattleParticipants(ctx: Ctx): void {
   if (!battle || s.choice || s.winner) return;
   const onField = (id: string) => s.players[s.cards[id]!.owner].field.includes(id);
   const blockersGone = battle.blockers.length > 0 && !battle.blockers.some(onField);
+  // ผู้โจมตีหายก่อน/ระหว่าง Flash1: ยังมี Flash1 ต่อจนจบ แล้วค่อยจบการต่อสู้ (กติกา 02 Q&A 3 · ดู passFlash)
+  if (!onField(battle.attackerId) && battle.step === 'flashBeforeBlock' && battle.flash) return;
   if (!onField(battle.attackerId) || blockersGone) endBattle(ctx);
 }
 

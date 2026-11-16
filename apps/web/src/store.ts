@@ -7,6 +7,7 @@ import type { RoomInfo, RoomSetup, Transport } from './online/transport';
 import { expandDeck, loadAllCards, validateDeck } from '@bs/cards';
 import { deckChoices, deckInfo, deckToken, STARTER_DECKS, type DeckId } from './decks';
 import { rarityOf, type TextEffect } from '@bs/cards';
+import { APP_VERSION } from './changelog';
 import {
   activatableAbilities,
   baseCost,
@@ -126,7 +127,10 @@ export function braveHostOf(s: GameState, braveId: string): string | null {
 /** สปิริตบนสนามที่ Brave ใบนี้ (บนมือ / บนสนาม / ร่วมร่างอยู่) ร่วมร่างได้ตอนนี้ใน Main Step */
 export function braveHosts(s: GameState, cardId: string): string[] {
   const card = s.cards[cardId];
-  if (!card || !inMain(s) || card.owner !== s.turnPlayer || !mine(card.owner)) return [];
+  if (!card || !mine(card.owner)) return [];
+  // Main Step ของเรา หรือ Flash timing ที่เบรฟ [Quick] บนมืออัญเชิญได้ (ร่วมร่างทันทีในแอทแท็คสเต็ป: กติกา 04)
+  const quickNow = canQuickSummon(s, cardId) && s.players[card.owner].hand.includes(cardId);
+  if (!(inMain(s) && card.owner === s.turnPlayer) && !quickNow) return [];
   const def = db.get(card.cardNo);
   const p = s.players[card.owner];
   const current = braveHostOf(s, cardId);
@@ -136,7 +140,12 @@ export function braveHosts(s: GameState, cardId: string): string[] {
   return p.field.filter((id) => {
     const host = s.cards[id]!;
     const hd = db.get(host.cardNo);
-    return id !== current && hd.type === 'spirit' && hd.cost >= min && host.braves.length === 0;
+    if (id === current || hd.type !== 'spirit' || hd.cost < min) return false;
+    if (host.braves.length === 0) return true;
+    // สปิริตที่มีเบรฟอยู่แล้ว: สลับเบรฟได้ถ้าเบรฟนี้ร่วมร่างอยู่ และเบรฟอีกตัวร่วมร่างกับร่างเดิมของเบรฟนี้ได้ (กติกา 04)
+    if (!current) return false;
+    const otherMin = db.get(s.cards[host.braves[0]!]!.cardNo).braveCondition?.minCost ?? 0;
+    return db.get(s.cards[current]!.cardNo).cost >= otherMin;
   });
 }
 
@@ -1482,6 +1491,11 @@ function stopSync() {
   buffer.clear();
 }
 
+/** เลข MAJOR เดียวกัน = engine เดินเหมือนกัน เล่นออนไลน์ด้วยกันได้ (ดูกติกาเลขเวอร์ชันใน changelog.ts) */
+const sameMajor = (a: string, b: string) => a.split('.')[0] === b.split('.')[0];
+const versionMismatchText = (other: string) =>
+  `อีกฝ่ายใช้เวอร์ชัน ${other} แต่เครื่องนี้ใช้ ${APP_VERSION}: กติกาในเกมไม่ตรงกัน ให้ทั้งสองฝั่งอัปเดตเป็นเวอร์ชันล่าสุด (โหลดหน้าเว็บใหม่) ก่อนเล่นด้วยกัน`;
+
 function enterRoom(code: string, me: PlayerId, uid: string) {
   stopSync();
   sessionStorage.setItem(SESSION, JSON.stringify({ code, me, via: transport.name }));
@@ -1502,6 +1516,11 @@ function onRoom(code: string, info: RoomInfo | null) {
     return;
   }
   const opponentHere = !!info.seats[opponentOf(on.me)];
+  // คู่แข่งใช้เวอร์ชันที่ engine ไม่ตรงกับเรา: เตือน (เครื่องเวอร์ชันเก่ามากจะไม่มีข้อมูลนี้ = ตรวจไม่ได้)
+  const oppVersion = info.versions?.[opponentOf(on.me)];
+  if (oppVersion && !sameMajor(oppVersion, APP_VERSION) && useGame.getState().error !== versionMismatchText(oppVersion)) {
+    useGame.setState({ error: versionMismatchText(oppVersion) });
+  }
   const ready = !!info.setup.decks.p2 && !!info.seats.p2;
   const names = info.names ?? {};
   if (ready && (on.status === 'waiting' || on.setup?.round !== info.setup.round)) {
@@ -1750,6 +1769,8 @@ export const useGame = create<Store>((set, get) => {
         const code = randomCode();
         const setup: RoomSetup = { round: 1, seed: randomSeed(), decks: { p1: deckToken(deck), p2: null } };
         await transport.createRoom(code, { seats: { p1: uid }, setup, names: { p1: get().playerName } });
+        // เวอร์ชันของเรา: เขียนแยก เขียนไม่ได้ก็เล่นได้ตามเดิม (แค่ตรวจเวอร์ชันไม่ได้)
+        void transport.setVersion(code, 'p1', APP_VERSION).catch(() => {});
         enterRoom(code, 'p1', uid);
       } catch (e) {
         set({ error: `สร้างห้องไม่สำเร็จ: ${(e as Error).message}` });
@@ -1759,7 +1780,14 @@ export const useGame = create<Store>((set, get) => {
       try {
         const uid = await transport.signIn();
         const c = code.trim().toUpperCase();
+        // เจ้าของห้องใช้เวอร์ชันที่ engine ไม่ตรงกับเรา (MAJOR ต่างกัน): เล่นด้วยกันจะเดินไม่ตรงกัน ไม่ให้เข้า
+        const host = (await transport.readRoom(c))?.versions?.p1;
+        if (host && !sameMajor(host, APP_VERSION)) {
+          set({ error: versionMismatchText(host) });
+          return;
+        }
         await transport.joinRoom(c, uid, deckToken(deck), get().playerName);
+        void transport.setVersion(c, 'p2', APP_VERSION).catch(() => {});
         enterRoom(c, 'p2', uid);
       } catch (e) {
         set({ error: `เข้าห้องไม่สำเร็จ: ${(e as Error).message}` });

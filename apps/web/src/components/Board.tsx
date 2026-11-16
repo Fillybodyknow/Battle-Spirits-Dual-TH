@@ -76,7 +76,9 @@ function BraveMenu({ braveId, onClose }: { braveId: string; onClose: () => void 
       <span className="px-1 text-[11px] font-bold text-emerald-300">{db.get(card.cardNo).name}</span>
       {hosts.map((h) => (
         <button key={h} type="button" className="rounded bg-emerald-500/20 px-2 py-1 text-left text-xs text-emerald-100 hover:bg-emerald-500/40" onClick={() => run(h)}>
-          {attached ? 'ย้ายไปร่วมร่างกับ' : 'ร่วมร่างกับ'} {db.get(state.cards[h]!.cardNo).name}
+          {state.cards[h]!.braves.length > 0
+            ? `สลับกับ ${db.get(state.cards[state.cards[h]!.braves[0]!]!.cardNo).name} (บน ${db.get(state.cards[h]!.cardNo).name})`
+            : `${attached ? 'ย้ายไปร่วมร่างกับ' : 'ร่วมร่างกับ'} ${db.get(state.cards[h]!.cardNo).name}`}
         </button>
       ))}
       {attached && (
@@ -767,16 +769,26 @@ export function PlayerMat({ player, top }: { player: PlayerId; top?: boolean }) 
   const slots: ({ id: string } | { gap: Extract<Fx, { kind: 'ghost' }> })[] = spirits.map((id) => ({ id }));
   [...leaving].sort((a, b) => a.slot - b.slot).forEach((g) => slots.splice(Math.min(g.slot, slots.length), 0, { gap: g }));
 
-  // แถว Spirit เป็นแถวเดียวเสมอ: ถ้ากว้างเกินสนาม ย่อทั้งแถวให้พอดี (กระดานจึงสูงคงที่ ไม่ต้องเลื่อนจอ)
+  // แถว Spirit เป็นแถวเดียวเสมอ: ถ้ากว้างหรือสูงเกินสนาม ย่อทั้งแถวให้พอดี (กระดานจึงสูงคงที่ ไม่ต้องเลื่อนจอ)
+  // ต้องดูความสูงด้วย: จอที่เตี้ยกว่า (iPad) หรือมีปุ่ม [Evolution]/Flash ใต้การ์ด แถวจะยาวลงจนถาด Core/ปุ่มล้นขอบล่างถูกตัด กดไม่ได้
   const rowOuter = useRef<HTMLDivElement>(null);
   const rowInner = useRef<HTMLDivElement>(null);
   const [fieldScale, setFieldScale] = useState(1);
+  /** ย่อตามความสูงได้ถึงแค่นี้ เกินกว่านั้นให้แผ่นสนามสูงขึ้น (เลื่อนจอดูได้) แทนการย่อจนเล็กเกิน/ตัดปุ่มทิ้ง */
+  const MIN_HEIGHT_SCALE = 0.7;
+  /** ความสูงจริงของแถว (ก่อนย่อ): ใช้จองความสูงขั้นต่ำ = แถวที่ย่อถึง MIN_HEIGHT_SCALE (ไม่ขึ้นกับพื้นที่ จึงไม่วนแก้กันไปมา) */
+  const [rowNeedH, setRowNeedH] = useState(0);
   useLayoutEffect(() => {
     const outer = rowOuter.current;
     const inner = rowInner.current;
     if (!outer || !inner) return;
-    // offsetWidth ไม่นับ transform จึงวัดความกว้างจริงของแถวได้แม้กำลังย่ออยู่ (+16 เผื่อป้าย BP ที่ยื่นออกขอบ)
-    const fit = () => setFieldScale(Math.min(1, outer.clientWidth / (inner.offsetWidth + 16)));
+    // offsetWidth/Height ไม่นับ transform จึงวัดขนาดจริงของแถวได้แม้กำลังย่ออยู่ (+เผื่อป้าย BP / ป้ายโจมตีที่ยื่นออกขอบ)
+    const fit = () => {
+      const needH = inner.offsetHeight + 28;
+      setRowNeedH(needH);
+      // พื้นที่ไม่เคยเตี้ยกว่า needH * MIN_HEIGHT_SCALE (จองไว้ด้วย minHeight) จึงย่อตามความสูงได้ไม่ต่ำกว่าขั้นต่ำเอง
+      setFieldScale(Math.min(1, outer.clientWidth / (inner.offsetWidth + 16), outer.clientHeight / needH));
+    };
     fit();
     const ro = new ResizeObserver(fit);
     ro.observe(outer);
@@ -879,12 +891,13 @@ export function PlayerMat({ player, top }: { player: PlayerId; top?: boolean }) 
         </div>
 
         {/* แถว Spirit / Ultimate: แถวเดียว ย่อตามจำนวนตัว (data-field-scale ให้แอนิเมชันวัดขนาดการ์ดที่ย่อแล้วได้ถูก) */}
-        <div ref={rowOuter} className="relative flex min-w-0 flex-1 items-center justify-center">
+        {/* แถวลอยกลางพื้นที่ (absolute): ความสูงของแถวไม่ดันแผ่นสนามให้สูงขึ้น ย่อให้พอดีพื้นที่แทน */}
+        <div ref={rowOuter} className="relative min-h-0 min-w-0 flex-1" style={rowNeedH ? { minHeight: Math.ceil(rowNeedH * MIN_HEIGHT_SCALE) } : undefined}>
           <div
             ref={rowInner}
             data-field-scale={fieldScale}
-            className="flex shrink-0 items-start gap-3 transition-transform duration-300"
-            style={fieldScale < 1 ? { transform: `scale(${fieldScale})` } : undefined}
+            className="absolute top-1/2 left-1/2 flex w-max items-start gap-3 transition-transform duration-300"
+            style={{ transform: `translate(-50%, -50%) scale(${fieldScale})` }}
           >
             {slots.map((slot) =>
               'id' in slot ? (

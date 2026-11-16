@@ -8,11 +8,41 @@ const BLANK = typeof Image !== 'undefined' ? new Image() : null;
 if (BLANK) BLANK.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 
 let startAt = { x: 0, y: 0 };
+/** เวลาของ dragover ล่าสุด: ใช้แยกว่ามีการลากค้างอยู่จริง หรือแค่ state ค้าง */
+let lastDragOver = 0;
 
 /** เรียกใน onDragStart ของการ์ดที่ลาก (มือ / Brave บนสนาม): ซ่อนภาพของเบราว์เซอร์ และจำจุดเริ่ม */
 export function beginCardDrag(e: React.DragEvent) {
   if (BLANK) e.dataTransfer.setDragImage(BLANK, 0, 0);
   startAt = { x: e.clientX, y: e.clientY };
+  lastDragOver = performance.now();
+}
+
+/** ล้างสถานะการลากทั้งหมด (การ์ดบนมือ / Brave / Burst / Core) */
+function clearDrags() {
+  const s = useGame.getState();
+  if (s.handDrag || s.braveDrag || s.burstDrag || s.dragging) useGame.setState({ handDrag: null, braveDrag: null, burstDrag: null, dragging: null });
+}
+
+/**
+ * กันภาพลากค้างจอ (เจอบน iPad): ปกติล้างด้วย onDragEnd ของการ์ดที่ลาก แต่ถ้าการ์ดหายจากมือก่อน (เช่น วางเป็น Burst)
+ * หรือปล่อยนอกช่องที่รับ เบราว์เซอร์อาจไม่ส่ง dragend มาที่การ์ดนั้น → state ค้าง ภาพการ์ดลอยค้าง และลอยตามเวลาลาก Core
+ *  - ทุก drop / dragend ในหน้า: ล้างหลังตัวรับ (onDrop) ทำงานเสร็จ
+ *  - แตะ/คลิกใหม่ขณะที่ไม่มีการลากจริง (ไม่มี dragover มาสักพัก): ล้างของที่ค้าง
+ */
+export function installDragCleanup() {
+  if (typeof document === 'undefined') return;
+  const later = () => setTimeout(clearDrags, 0);
+  document.addEventListener('drop', later, true);
+  document.addEventListener('dragend', later, true);
+  document.addEventListener('dragover', () => (lastDragOver = performance.now()), true);
+  document.addEventListener(
+    'pointerdown',
+    () => {
+      if (performance.now() - lastDragOver > 500) clearDrags();
+    },
+    true,
+  );
 }
 
 /** ตำแหน่งเมาส์ระหว่างลาก (เบราว์เซอร์ไม่ส่ง mousemove ระหว่างลาก: ใช้ dragover ที่ยิงต่อเนื่องแทน) */

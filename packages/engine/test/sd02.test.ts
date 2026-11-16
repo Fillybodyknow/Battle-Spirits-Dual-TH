@@ -355,7 +355,9 @@ describe('Brave: เท็ปโปนานะฟุชิ', () => {
     expect(s.cards[host]!.braves).toEqual([teppo]);
     expect(s.players.p1.field).not.toContain(teppo);
     expect(currentBp(s, db, host)).toBe(3000 + 2000);
-    // อัญเชิญไปร่วมร่างทันที: "เมื่อเบรฟนี้ถูกอัญเชิญ" ไม่ทำงาน
+    // อัญเชิญไปร่วมร่างทันที: "เมื่อเบรฟนี้ถูกอัญเชิญ" ทำงานเหมือนอัญเชิญเป็นสปิริต (กติกา 03 ข้อ 3, 04) → ไม่ใช้
+    expect(s.choice).toMatchObject({ kind: 'option', player: 'p1', sourceId: teppo });
+    s = choose(s, 1);
     expect(s.choice).toBeNull();
     s = passBoth(attack(toAttack(s), host));
     s = act(s, { type: 'noBlock', player: 'p2' });
@@ -377,6 +379,7 @@ describe('Brave: เท็ปโปนานะฟุชิ', () => {
     const host = put(s, 'p1', KABUTO, 1);
     const teppo = handId(s, 'p1', TEPPO);
     s = act(s, { type: 'summon', player: 'p1', cardId: teppo, payment: pay(s, 'p1', TEPPO), placement: [], braveOnto: host });
+    s = choose(s, 1); // เอฟเฟกต์เมื่ออัญเชิญ (กติกา 03 ข้อ 3): ไม่ใช้
     const big = put(s, 'p2', FONG, 1);
     s = passBoth(attack(toAttack(s), host));
     s = act(s, { type: 'declareBlock', player: 'p2', blockerId: big });

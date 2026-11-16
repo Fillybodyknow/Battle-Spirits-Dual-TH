@@ -255,8 +255,22 @@ function queueDestroyTriggers(
   });
 }
 
-/** ถือว่าถูกทำลายแล้ว แต่ยังอยู่บนสนามในสภาพ state (นับเป็นการ์ดที่ถูกทำลาย / trigger และ Burst "ถูกทำลาย" ทำงาน) */
-function stayDestroyed(ctx: Ctx, cardId: string, by: PlayerId, bySource: string | undefined, state: 'refresh' | 'exhausted'): void {
+/**
+ * ถือว่าถูกทำลายแล้ว แต่ยังอยู่บนสนามในสภาพ state
+ *  - Burst "ถูกทำลาย" ไม่ทำงาน: สปิริตรอด ไม่ได้ถูกส่งลงแทรช (กติกา 06 ข้อ 3.2)
+ *  - เอฟเฟกต์ "เมื่อถูกทำลาย" อื่น ๆ (withTriggers):
+ *    เอฟเฟกต์ "คงอยู่" กับเอฟเฟกต์ "เมื่อถูกทำลาย" อื่นเกิดพร้อมกัน เจ้าของเทิร์นเป็นผู้เรียง (กติกา 11)
+ *    เจ้าของการ์ดถือเทิร์น = เรียงให้ได้ทั้งสองอย่าง (ทำงานต่อ) · คู่แข่งถือเทิร์น = เรียง "คงอยู่" ก่อน อย่างอื่นไม่ทำงาน
+ *    (ตีความ: เจ้าของเทิร์นเลือกทางที่ได้เปรียบเสมอ จนกว่าจะมีระบบให้เจ้าของเทิร์นเรียงเอฟเฟกต์ของทั้งสองฝ่ายเอง)
+ */
+function stayDestroyed(
+  ctx: Ctx,
+  cardId: string,
+  by: PlayerId,
+  bySource: string | undefined,
+  state: 'refresh' | 'exhausted',
+  withTriggers = true,
+): void {
   const { s, db } = ctx;
   if (!onField(ctx, cardId)) return;
   const card = s.cards[cardId]!;
@@ -265,8 +279,7 @@ function stayDestroyed(ctx: Ctx, cardId: string, by: PlayerId, bySource: string 
   const negated = effectsNegated(s, db, cardId);
   card.state = state;
   emit(ctx, { type: 'destroyed', cardId, stays: true, ...(bySource ? { bySource } : {}) });
-  if (by !== card.owner) pendBurst(ctx, card.owner, 'afterAllyDestroyedByOpponent');
-  queueDestroyTriggers(ctx, cardId, by, level, hadSoul, negated, { ...(bySource ? { bySource } : {}), effect: true });
+  if (withTriggers) queueDestroyTriggers(ctx, cardId, by, level, hadSoul, negated, { ...(bySource ? { bySource } : {}), effect: true });
 }
 
 /**
@@ -357,11 +370,16 @@ export function queueSummonTriggers(
   ctx: Ctx,
   cardId: string,
   batch: number = newBatch(ctx),
-  opts: { paidWithSoul?: boolean; fromTrash?: boolean; from?: string } = {},
+  opts: { paidWithSoul?: boolean; fromTrash?: boolean; from?: string; /** เลเวลที่ใช้ตรวจ trigger (Brave ที่อัญเชิญมาร่วมร่างทันทีไม่มี Core) */ level?: number } = {},
 ): void {
   const owner = ctx.s.cards[cardId]!.owner;
-  if (cardLevel(ctx.s, ctx.db, cardId) > 0)
-    queueTriggers(ctx, cardId, 'summon', batch, { paidWithSoul: !!opts.paidWithSoul, ...(opts.from ? { summonFrom: opts.from } : {}) });
+  const level = opts.level ?? cardLevel(ctx.s, ctx.db, cardId);
+  if (level > 0)
+    queueTriggers(ctx, cardId, 'summon', batch, {
+      paidWithSoul: !!opts.paidWithSoul,
+      ...(opts.from ? { summonFrom: opts.from } : {}),
+      ...(opts.level !== undefined ? { level: opts.level } : {}),
+    });
   for (const id of [...ctx.s.players[owner].field])
     queueTriggers(ctx, id, 'allySummoned', batch, { subject: cardId, subjectPaidSoul: !!opts.paidWithSoul, subjectFromTrash: !!opts.fromTrash });
 }
@@ -403,6 +421,8 @@ function flushBursts(ctx: Ctx): boolean {
   s.pendingBursts = [];
   if (s.winner) return false;
   let queued = false;
+  // Burst ของทั้งสองฝ่ายที่เงื่อนไขเกิดพร้อมกัน = กลุ่มเดียวกัน: เจ้าของเทิร์นเรียงว่าใครเปิดก่อน (กติกา 11, ดู drainQueue)
+  const batch = newBatch(ctx);
   for (const player of [opponentOf(s.turnPlayer), s.turnPlayer]) {
     const events = pending.filter((p) => p.player === player).map((p) => p.on);
     const burstId = s.players[player].burst;
@@ -426,6 +446,7 @@ function flushBursts(ctx: Ctx): boolean {
       paidWithSoul: false,
       trashWhenDone: false,
       announce: false,
+      batch,
     });
     queued = true;
   }
@@ -465,22 +486,25 @@ function drainQueue(ctx: Ctx): void {
     }
     const item = s.queue[0]!;
     if (!item.started) {
-      // เอฟเฟกต์ที่รอทำงานของผู้ควบคุมเดียวกัน (ที่เพิ่งเกิด + ที่ค้างจากก่อนหน้า เช่น เอฟเฟกต์ของ Brave ตอนโจมตี):
-      // ให้ผู้ควบคุมเลือกว่าอันไหนทำงานก่อน
+      // เอฟเฟกต์ที่รอทำงาน (ที่เพิ่งเกิด + ที่ค้างจากก่อนหน้า เช่น เอฟเฟกต์ของ Brave ตอนโจมตี) ของทั้งสองฝ่าย:
+      // เจ้าของเทิร์นเป็นผู้เรียงว่าอันไหนทำงานก่อน รวมถึงเอฟเฟกต์ของคู่แข่ง (กติกา 11)
       const group: QueuedEffect[] = [];
       for (const q of s.queue) {
-        if (q.started || q.batch === undefined || item.batch === undefined || q.controller !== item.controller) break;
+        if (q.started || q.batch === undefined || item.batch === undefined) break;
         group.push(q);
       }
       // เอฟเฟกต์ที่เหมือนกันทุกอย่าง (การ์ด/บรรทัด/ต้นเหตุเดียวกัน) ลำดับไม่มีผล: ไม่ต้องถาม
       // เช่น เมียวโอทะเลคราม Lv2 ที่เกิดสองครั้งจากการทิ้งเด็คของตัวเอง + ของเรือมังกรคู่ที่ร่วมร่าง
       const distinct = new Set(group.map(effectKey));
       if (group.length >= 2 && distinct.size >= 2) {
+        const both = group.some((q) => q.controller !== s.turnPlayer);
         s.choice = {
           kind: 'order',
-          player: item.controller,
+          player: s.turnPlayer,
           sourceId: item.sourceId,
-          prompt: 'เอฟเฟกต์เกิดพร้อมกัน: เลือกอันที่จะทำงานก่อน',
+          prompt: both
+            ? 'เอฟเฟกต์ของทั้งสองฝ่ายเกิดพร้อมกัน: เจ้าของเทิร์นเลือกอันที่จะทำงานก่อน'
+            : 'เอฟเฟกต์เกิดพร้อมกัน: เลือกอันที่จะทำงานก่อน',
           effects: group.map((q) => ({ sourceId: q.sourceId, source: q.source ?? null, key: effectKey(q) })),
         };
         break;
@@ -1251,9 +1275,12 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       if (onField(ctx, step.cardId)) destroyCard(ctx, step.cardId, step.by, { ...(step.bySource ? { bySource: step.bySource } : {}), effect: true, noReplace: true });
       return;
 
-    case 'destroyedButStays':
-      stayDestroyed(ctx, step.cardId, step.by, step.bySource, step.state ?? 'exhausted');
+    case 'destroyedButStays': {
+      // เอฟเฟกต์ "สามารถ…เพื่อคงอยู่" แยกจากเอฟเฟกต์ "เมื่อถูกทำลาย" อื่น: เจ้าของเทิร์นเรียง (ดู stayDestroyed)
+      const owner = s.cards[step.cardId]!.owner;
+      stayDestroyed(ctx, step.cardId, step.by, step.bySource, step.state ?? 'exhausted', owner === s.turnPlayer);
       return;
+    }
 
     case 'exhaustCard':
       if (onField(ctx, step.cardId)) {
@@ -1336,6 +1363,12 @@ function putOnField(ctx: Ctx, item: QueuedEffect, step: Extract<Step, { do: 'pla
   card.state = step.state ?? 'refresh';
   if (step.noSummon) {
     emit(ctx, { type: 'braveSeparated', cardId: step.cardId, stays: true });
+    // สปิริตรวมร่างที่โจมตีหายไปในแฟลชหลังโจมตี แล้วเลือกให้เบรฟอยู่ต่อ: เบรฟโจมตีต่อในรูปแบบเสื่อมสภาพ (กติกา 04 ข้อ 3)
+    const battle = s.battle;
+    if (step.continuesAttackOf && battle && battle.attackerId === step.continuesAttackOf && battle.step === 'flashBeforeBlock' && battle.flash) {
+      battle.attackerId = step.cardId;
+      card.state = 'exhausted';
+    }
     return;
   }
   emit(ctx, { type: 'summoned', player: me, cardId: step.cardId, paid: 0, from: from === 'other' && item.sourceId === step.cardId ? 'burst' : from });

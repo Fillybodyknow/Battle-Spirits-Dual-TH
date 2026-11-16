@@ -26,6 +26,8 @@ export interface RoomInfo {
   setup: RoomSetup;
   /** ชื่อที่ผู้เล่นตั้งเอง */
   names?: Partial<Record<PlayerId, string>>;
+  /** เวอร์ชันแอปของแต่ละที่นั่ง (ข้อมูลเสริม: เขียนแยกหลังสร้าง/เข้าห้อง ห้องเก่าหรือเครื่องเวอร์ชันเก่าจะไม่มี) */
+  versions?: Partial<Record<PlayerId, string>>;
 }
 
 export interface Transport {
@@ -53,6 +55,8 @@ export interface Transport {
   setSetup(code: string, setup: RoomSetup): Promise<void>;
   /** ออกจากที่นั่ง */
   leave(code: string, seat: PlayerId): Promise<void>;
+  /** บันทึกเวอร์ชันแอปของที่นั่งนี้ (ใช้กันคนละเวอร์ชันที่ engine ไม่ตรงกันเล่นด้วยกัน) */
+  setVersion(code: string, seat: PlayerId, version: string): Promise<void>;
 }
 
 export const actionKey = (index: number) => String(index).padStart(6, '0');

@@ -35,12 +35,14 @@ function toInfo(v: unknown): RoomInfo | null {
   const r = v as {
     seats?: RoomInfo['seats'];
     names?: RoomInfo['names'];
+    versions?: RoomInfo['versions'];
     setup?: { round: number; seed: number; decks?: { p1?: string; p2?: string }; first?: 'p1' | 'p2' };
   };
   if (!r.setup || !r.setup.decks?.p1) return null;
   return {
     seats: r.seats ?? {},
     names: r.names ?? {},
+    ...(r.versions ? { versions: r.versions } : {}),
     setup: {
       round: r.setup.round,
       seed: r.setup.seed,
@@ -129,6 +131,10 @@ export const firebaseTransport: Transport = {
 
   async setSetup(code, setup) {
     await set(ref(database(), `rooms/${code}/setup`), setup);
+  },
+
+  async setVersion(code, seat, version) {
+    await set(ref(database(), `rooms/${code}/versions/${seat}`), version);
   },
 
   async leave(code, seat) {
