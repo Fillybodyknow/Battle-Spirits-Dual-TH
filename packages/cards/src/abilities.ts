@@ -61,6 +61,8 @@ export type Condition =
   | { noLifeDamageThisTurn: true }
   /** สปิริตนี้ต่อสู้อยู่ (โจมตีหรือป้องกัน) */
   | { selfInBattle: true }
+  /** การต่อสู้นี้ใช้ตีระบุแล้ว */
+  | { directAttack: true }
   /** ผู้โจมตีของการต่อสู้ตอนนี้เป็นสปิริตของเราเผ่านี้ */
   | { attackerFamily: string }
   /** คู่แข่งมีเบิร์สเซ็ทอยู่ */

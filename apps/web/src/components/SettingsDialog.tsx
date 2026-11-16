@@ -7,6 +7,7 @@ import { createPortal } from 'react-dom';
 import { resetGfx, setComfort, setEffect, setQuality, useGfx, type Quality } from '../gfx';
 import { setSfx, sfx, sfxSettings } from '../sfx';
 import { useGame, type CutInMode } from '../store';
+import { setPrefs, usePrefs, type HandLayout, type HandSort, type PlayMode } from '../prefs';
 import { BTN, Modal } from './Modal';
 
 type Tab = 'graphics' | 'sound' | 'play';
@@ -202,6 +203,7 @@ function PlayTab({ extra }: { extra?: React.ReactNode }) {
   const hideIdleHand = useGame((s) => s.hideIdleHand);
   const fixedView = useGame((s) => s.fixedView);
   const { toggleAutoPass, toggleHideIdleHand, toggleFixedView } = useGame.getState();
+  const p = usePrefs();
   const onOff = [
     { v: 'on', label: 'เปิด' },
     { v: 'off', label: 'ปิด' },
@@ -221,8 +223,49 @@ function PlayTab({ extra }: { extra?: React.ReactNode }) {
           </Row>
         </Section>
       )}
+      <Section title="การโจมตี">
+        <Row title="ยืนยันก่อนโจมตี" hint='กดสปิริตแล้วถามก่อน · กด "โจมตี" หรือคลิกสปิริตตัวเดิมอีกครั้งเพื่อยืนยัน'>
+          <Segmented value={p.confirmAttack ? 'on' : 'off'} options={[...onOff]} onChange={(v) => setPrefs({ confirmAttack: v === 'on' })} />
+        </Row>
+      </Section>
+      <Section title="การ์ดในมือ">
+        <Row title="เรียงการ์ด" hint="จัดเอง = ลากการ์ดไปวางบนใบอื่นในมือ (หรือปุ่มย้ายในเมนูการ์ด)">
+          <Segmented
+            value={p.handSort}
+            options={[
+              { v: 'draw' as HandSort, label: 'ตามที่ได้มา' },
+              { v: 'cost' as HandSort, label: 'คอสต์' },
+              { v: 'color' as HandSort, label: 'สี' },
+              { v: 'type' as HandSort, label: 'ประเภท' },
+              { v: 'manual' as HandSort, label: 'จัดเอง' },
+            ]}
+            onChange={(v) => setPrefs({ handSort: v })}
+          />
+        </Row>
+        <Row title="การจับการ์ด" hint="พัด = เอียงโค้ง · แถวตรง = เรียงซ้อนกัน · กาง = ไม่ซ้อน เห็นทั้งใบ (มือยาวเลื่อนซ้าย/ขวาได้)">
+          <Segmented
+            value={p.handLayout}
+            options={[
+              { v: 'fan' as HandLayout, label: 'พัด' },
+              { v: 'row' as HandLayout, label: 'แถวตรง' },
+              { v: 'spread' as HandLayout, label: 'กาง' },
+            ]}
+            onChange={(v) => setPrefs({ handLayout: v })}
+          />
+        </Row>
+        <Row title="หยิบการ์ดไปเล่น" hint="คลิกเดียว = เปิดแผงเล่นการ์ดทันทีถ้ามีทางเล่นทางเดียว · ลากไปที่สนามได้ทุกแบบ">
+          <Segmented
+            value={p.playMode}
+            options={[
+              { v: 'menu' as PlayMode, label: 'คลิกเปิดเมนู' },
+              { v: 'direct' as PlayMode, label: 'คลิกเดียว' },
+            ]}
+            onChange={(v) => setPrefs({ playMode: v })}
+          />
+        </Row>
+      </Section>
       {extra}
-      {online && !extra && <p className="text-sm text-slate-400">ตั้งค่าการเล่นออนไลน์อยู่ในห้อง</p>}
+      {online && !extra && <p className="text-sm text-slate-400">ตั้งค่าห้องออนไลน์อยู่ในห้อง</p>}
     </div>
   );
 }

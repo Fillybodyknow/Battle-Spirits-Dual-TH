@@ -128,6 +128,34 @@ describe('เมื่อสปิริตนี้โจมตี และ [T
     expect(s.battle!.blockers).toEqual([blocker]);
   });
 
+  it('[True-Rage] + ตีระบุ: ตัวที่ถูกระบุป้องกันทันที / ไม่ระบุ = True-Rage บังคับป้องกันตามปกติ', () => {
+    const ORIGAMI = no('โอริงามิ เบิร์ด');
+    const make = () => {
+      let s = setup();
+      const oni = put(s, 'p1', ONIMUSHA, 1);
+      const origami = `t-card-${++seq}`;
+      s.cards[origami] = { id: origami, cardNo: ORIGAMI, owner: 'p1', state: 'refresh', cores: [], turnBp: 0, usedThisTurn: [], braves: [] };
+      s.cards[oni]!.braves.push(origami);
+      const tired = put(s, 'p2', DARIU, 1);
+      s.cards[tired]!.state = 'exhausted';
+      const fresh = put(s, 'p2', DARIU, 1);
+      s = attack(toAttack(s), oni);
+      expect(s.choice).toMatchObject({ kind: 'card' });
+      return { s, tired, fresh };
+    };
+    // ระบุตัวที่เสื่อมสภาพ: ป้องกันทันที ไม่มี Flash หลังโจมตี
+    let { s, tired } = make();
+    s = act(s, { type: 'choose', player: 'p1', pick: tired });
+    while (s.battle?.step === 'flashBeforeBlock') s = act(s, { type: 'passFlash', player: s.battle.flash!.priority });
+    expect(s.battle).toMatchObject({ step: 'flashAfterBlock', blockers: [tired], mustBlock: true });
+    // ไม่ระบุ: True-Rage ยังบังคับให้ป้องกันด้วยตัวที่ฟื้นสภาพ
+    const r = make();
+    s = passBoth(act(r.s, { type: 'choose', player: 'p1', pick: null }));
+    expect(fails(s, { type: 'noBlock', player: 'p2' })).toBe('MUST_BLOCK');
+    s = act(s, { type: 'declareBlock', player: 'p2', blockerId: r.fresh });
+    expect(s.battle!.blockers).toEqual([r.fresh]);
+  });
+
   it('[True-Rage] ไม่บังคับถ้าคู่แข่งไม่มีสปิริตที่ฟื้นสภาพ', () => {
     let s = setup();
     const oni = put(s, 'p1', ONIMUSHA, 1);
@@ -577,6 +605,78 @@ describe('[Consecutive Blade]: มังกรเซ็นโงคุ โซล
     expect(s.players.p2.trashCards).toEqual([blockers[0]]);
     expect(s.players.p2.field).toContain(blockers[1]);
     expect(s.players.p2.life).toHaveLength(5); // เลเวลตอนโจมตีเป็น Lv1 เอฟเฟกต์ไลฟ์ไม่ทำงาน
+  });
+});
+
+describe('[Consecutive Blade] ตามกติกา 14', () => {
+  const KONGO = no('มหานักรบเครื่องกล คองโก'); // ไม่รับผลเอฟเฟกต์สปิริตคู่แข่งในเทิร์นคู่แข่ง (เหมือนมีชีลด์)
+  const ORIGAMI = no('โอริงามิ เบิร์ด'); // Brave: ตีระบุสปิริตที่เสื่อมสภาพ
+
+  function blade(defenders: string[]) {
+    let s = setup();
+    const dragon = put(s, 'p1', SOL_DRAGON, 4, true);
+    const ids = defenders.map((c) => put(s, 'p2', c, 1));
+    s = attack(toAttack(s), dragon);
+    s = passBoth(act(s, { type: 'choose', player: 'p1', pick: 0 }));
+    return { s, ids };
+  }
+
+  it('ยังมี Flash หลังโจมตีตามปกติ (ข้อควรรู้ 3)', () => {
+    let s = setup();
+    const dragon = put(s, 'p1', SOL_DRAGON, 4, true);
+    put(s, 'p2', DARIU, 1);
+    s = act(attack(toAttack(s), dragon), { type: 'choose', player: 'p1', pick: 0 });
+    expect(s.battle!.step).toBe('flashBeforeBlock');
+  });
+
+  it('ตัวที่มีชีลด์ 1 + ไม่มีชีลด์ 2: ตัวไม่มีชีลด์ทั้งสองต้องป้องกัน ตัวมีชีลด์มาแย่งช่องไม่ได้ (Q&A 5)', () => {
+    let { s, ids } = blade([KONGO, DARIU, DARIU]);
+    const [kongo, a, b] = ids as [string, string, string];
+    expect(fails(s, { type: 'declareBlock', player: 'p2', blockerId: kongo })).toBe('CANNOT_BLOCK');
+    s = act(s, { type: 'declareBlock', player: 'p2', blockerId: a });
+    expect(fails(s, { type: 'declareBlock', player: 'p2', blockerId: kongo })).toBe('CANNOT_BLOCK');
+    expect(fails(s, { type: 'noBlock', player: 'p2' })).toBe('MUST_BLOCK');
+    s = act(s, { type: 'declareBlock', player: 'p2', blockerId: b });
+    expect(s.battle).toMatchObject({ step: 'flashAfterBlock', blockers: [a, b] });
+  });
+
+  it('ตัวที่มีชีลด์ 1 + ไม่มีชีลด์ 1: ตัวไม่มีชีลด์ต้องป้องกัน ตัวมีชีลด์ป้องกันด้วยก็ได้ (Q&A 5)', () => {
+    let { s, ids } = blade([KONGO, DARIU]);
+    const [kongo, a] = ids as [string, string];
+    expect(fails(s, { type: 'noBlock', player: 'p2' })).toBe('MUST_BLOCK');
+    expect(fails(s, { type: 'declareBlock', player: 'p2', blockerId: kongo })).toBe('ok');
+    s = act(s, { type: 'declareBlock', player: 'p2', blockerId: a });
+    expect(fails(s, { type: 'declareBlock', player: 'p2', blockerId: kongo })).toBe('ok');
+    expect(fails(s, { type: 'noBlock', player: 'p2' })).toBe('ok');
+  });
+
+  it('มีแค่ตัวที่มีชีลด์: ไม่ต้องป้องกันก็ได้ (Q&A 4)', () => {
+    const { s } = blade([KONGO]);
+    expect(fails(s, { type: 'noBlock', player: 'p2' })).toBe('ok');
+  });
+
+  it('ใช้ร่วมกับตีระบุ: Consecutive Blade ไม่เกิดผล (ข้อควรรู้ 4)', () => {
+    let s = setup();
+    const dragon = put(s, 'p1', SOL_DRAGON, 4, true);
+    const origami = `t-card-${++seq}`;
+    s.cards[origami] = { id: origami, cardNo: ORIGAMI, owner: 'p1', state: 'refresh', cores: [], turnBp: 0, usedThisTurn: [], braves: [] };
+    s.cards[dragon]!.braves.push(origami);
+    const tired = put(s, 'p2', DARIU, 1);
+    s.cards[tired]!.state = 'exhausted';
+    put(s, 'p2', DARIU, 1);
+    s = actRaw(toAttack(s), { type: 'declareAttack', player: 'p1', attackerId: dragon });
+    // เลือกให้ Consecutive Blade ทำงานก่อน แล้วค่อยตีระบุ
+    if (s.choice?.kind === 'order') {
+      const i = s.choice.effects.findIndex((e) => e.sourceId === dragon);
+      s = actRaw(s, { type: 'choose', player: 'p1', pick: i });
+    }
+    while (s.choice?.kind === 'order') s = actRaw(s, { type: 'choose', player: 'p1', pick: 0 });
+    expect(s.choice).toMatchObject({ kind: 'option' });
+    s = act(s, { type: 'choose', player: 'p1', pick: 0 });
+    expect(s.battle!.consecutiveBlade).toBe(true);
+    expect(s.choice).toMatchObject({ kind: 'card' });
+    s = act(s, { type: 'choose', player: 'p1', pick: tired });
+    expect(s.battle).toMatchObject({ consecutiveBlade: false, maxBlockers: 1, mustBlock: false, direct: true });
   });
 });
 

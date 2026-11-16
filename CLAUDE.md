@@ -133,6 +133,9 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
   เลือกการ์ดนอกสนาม (เด็ค/แทรช) = พัดการ์ด `RevealFan` · จ่ายคอสต์/วาง Core = คลิก Core บนกระดาน + แถบ `PromptBar`
   · อัญเชิญด้วยเอฟเฟกต์ทุกแบบ (เบิร์ส/มือ/เด็ค/แทรช) ใช้แผง `SummonPanel` ที่มุมสนาม (การ์ด, ปุ่ม Lv, ผล Lv/BP, คำเตือนสูญสลาย)
   · อัญเชิญหลายใบ (choice `multiSummon`) = `store.multi`: เลือกจากพัด → วาง Core / คลิกผู้ร่วมร่างทีละใบ → ส่งทีเดียว
+  · เล่นการ์ดจากมือ/แทรชตามปกติ (`PlayDialog.tsx`) = แผงที่มุมสนามเหมือนกัน: Core ที่จะจ่าย/วางอยู่ใน `store.playCores` (Core บนกระดานแสดงวงสี คลิกเพื่อสลับ)
+- ตั้งค่าการเล่นของผู้เล่น (ยืนยันโจมตี, เรียง/จับการ์ดในมือ, คลิกเดียวเล่น) อยู่ใน `src/prefs.ts` (localStorage, ไม่กระทบ engine)
+- Chain นอกการต่อสู้: นับเอฟเฟกต์ตั้งแต่ action ล่าสุดของผู้เล่น (`chainFloor` ใน store, ไม่นับ choose/passFlash/moveCores)
 - ไอคอนใช้ SVG ใน `components/Icon.tsx` (อีโมจิ/สัญลักษณ์พิเศษเป็นกล่องว่างบน Windows 7)
 - สี Tailwind v4 เป็น `oklch()`: ถ้าอัปเดต Tailwind ให้รัน `npm run legacy-colors`
 - โหมดออนไลน์: `?online=local` ใช้ transport ในเครื่อง (ทดสอบสองแท็บได้โดยไม่ต้องมี Firebase)

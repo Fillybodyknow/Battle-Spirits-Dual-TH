@@ -115,6 +115,8 @@ export function PromptBar() {
   const truth = useGame((s) => s.truth);
   const bottom = useGame(viewPlayer);
   const multi = useGame((s) => s.multi);
+  const attackConfirm = useGame((s) => s.attackConfirm);
+  const { confirmAttack } = useGame.getState();
   const { dispatch, clearCores, choose, confirmEvolve, closeEvolve, confirmCores, cancelCores, multiNext, multiBack, multiAsSpirit } = useGame.getState();
   const actor = actingPlayer(state);
   const { battle, choice } = state;
@@ -150,6 +152,15 @@ export function PromptBar() {
     // ออนไลน์: ตาของคู่แข่ง
     title = `รอ${actor ? playerLabel(actor) : 'คู่แข่ง'}…`;
     detail = choice ? `กำลังเลือก: ${choice.prompt}` : battle?.flash ? 'Flash Timing ของคู่แข่ง' : battle?.step === 'declareBlock' ? 'คู่แข่งกำลังเลือกการป้องกัน' : 'ตาของคู่แข่ง';
+  } else if (attackConfirm && state.phase === 'attack' && !battle) {
+    // ยืนยันก่อนโจมตี (ปิดได้ในตั้งค่า > การเล่น)
+    highlight = true;
+    tag = 'attack';
+    source = attackConfirm;
+    title = `โจมตีด้วย ${cardName(state, attackConfirm)}?`;
+    detail = `BP ${currentBp(state, db, attackConfirm).toLocaleString()} · กด "โจมตี" หรือคลิกสปิริตตัวเดิมอีกครั้ง`;
+    add('cancel', 'ยกเลิก', () => confirmAttack(false), 'secondary');
+    add('attack', 'โจมตี', () => confirmAttack(true), 'primary');
   } else if (evolveCard) {
     // [Evolution]: เลือก Core บนสปิริตอื่นของเรา
     const after = simulateEvolve(state, evolveCard, selectedCores);

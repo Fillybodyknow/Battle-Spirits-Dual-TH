@@ -78,7 +78,8 @@ export const SD01_SCRIPTS: Record<string, CardScript> = {
       steps: [
         {
           do: 'chooseOne',
-          if: { soulOnSelf: true },
+          // ตีระบุไปแล้ว: Consecutive Blade ไม่เกิดผล ไม่ต้องถาม (กติกา 14)
+          if: { all: [{ soulOnSelf: true }, { not: { directAttack: true } }] },
           options: [
             { label: 'ส่ง Soul Core ลงแทรช: คู่แข่งต้องป้องกัน 2 ตัว', steps: [{ do: 'soulToTrash' }, { do: 'consecutiveBlade' }] },
             { label: 'ไม่ใช้', steps: [] },

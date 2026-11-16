@@ -578,6 +578,9 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     if (card.state !== 'refresh' && !canBlockExhausted(ctx.s, ctx.db, blockerId)) fail('EXHAUSTED', 'การ์ดเสื่อมสภาพอยู่');
     if (attackerUnblockable(ctx.s, battle.attackerId, ctx.db.get(card.cardNo).type)) fail('CANNOT_BLOCK', 'การโจมตีนี้ป้องกันไม่ได้');
     if (battle.blockFilter && !matchesFilter(ctx.s, ctx.db, blockerId, battle.blockFilter)) fail('CANNOT_BLOCK', 'การต่อสู้นี้ป้องกันด้วยการ์ดนี้ไม่ได้');
+    if (!canBlockWith(ctx, player).includes(blockerId)) {
+      fail('CANNOT_BLOCK', battle.consecutiveBlade ? 'ต้องป้องกันด้วยสปิริตที่ไม่มีชีลด์ให้ครบก่อน ([Consecutive Blade])' : 'ป้องกันด้วยการ์ดนี้ไม่ได้');
+    }
 
     card.state = 'exhausted';
     battle.blockers.push(blockerId);

@@ -1092,6 +1092,8 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       const who = step.subject ? item.subjectId : self;
       if (who && s.battle?.attackerId === who && holds(step.if)) {
         s.battle.mustBlock = true;
+        // True-Rage ไม่ได้ถูกยกเลิกไปด้วยเมื่อตีระบุทำให้ Consecutive Blade ไม่เกิดผล
+        s.battle.mustBlockBeforeBlade = true;
         emit(ctx, { type: 'mustBlock', cardId: who });
         blockKeywordActivated(ctx, me);
       }
@@ -1192,7 +1194,9 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
     }
 
     case 'consecutiveBlade':
-      if (s.battle?.attackerId === self) {
+      // ใช้ร่วมกับตีระบุ: ไม่เกิดผล (กติกา 14 Consecutive Blade ข้อควรรู้ 4)
+      if (s.battle?.attackerId === self && !s.battle.direct) {
+        s.battle.mustBlockBeforeBlade = s.battle.mustBlock;
         s.battle.consecutiveBlade = true;
         s.battle.maxBlockers = 2;
         s.battle.mustBlock = true;
@@ -1767,7 +1771,17 @@ export function resolveChoice(ctx: Ctx, player: PlayerId, pick: ChoicePick): voi
     switch (step.do) {
       case 'chooseBlockers':
         s.battle!.chosenBlockers.push(pick);
-        if (step.direct) s.battle!.skipFlash1 = true;
+        if (step.direct) {
+          const b = s.battle!;
+          b.skipFlash1 = true;
+          b.direct = true;
+          // ตีระบุหลัง [Consecutive Blade]: Consecutive Blade ไม่เกิดผล (ป้องกันตัวเดียวตามปกติ)
+          if (b.consecutiveBlade) {
+            b.consecutiveBlade = false;
+            b.maxBlockers = 1;
+            b.mustBlock = b.mustBlockBeforeBlade ?? false;
+          }
+        }
         emit(ctx, { type: 'blockerChosen', cardId: pick });
         cur.steps.unshift({ do: 'chooseBlockers', ...(step.filter ? { filter: step.filter } : {}) }); // เลือกตัวถัดไปถ้ายังเลือกได้
         break;

@@ -19,7 +19,7 @@ interface CoreProps {
 
 const SIZE = { sm: 'h-4 w-4', md: 'h-6 w-6', lg: 'h-8 w-8' };
 
-export function Core({ coreId, size = 'md', board, onClick, mark, noFlip }: CoreProps) {
+export function Core({ coreId, size = 'md', board, onClick, mark: markProp, noFlip }: CoreProps) {
   const imgRef = useRef<HTMLImageElement>(null);
   const flip = !noFlip && !onClick;
   // mount ใหม่ = Core ย้ายมาจากที่อื่น: บินจากตำแหน่งเดิม
@@ -39,6 +39,11 @@ export function Core({ coreId, size = 'md', board, onClick, mark, noFlip }: Core
   const selected = useGame((s) => s.selectedCores.includes(coreId));
   const dragging = useGame((s) => s.dragging?.includes(coreId) ?? false);
   const toggleCore = useGame((s) => s.toggleCore);
+  // เล่นการ์ดจากมือ (แผงเล่นการ์ดบนกระดาน): Core ที่จะจ่าย/วางมีวงสี · คลิกเพื่อปรับ
+  const playMark = useGame((s) => (board && s.playCores ? (s.playCores.marks[coreId] ?? null) : null));
+  const playPick = useGame((s) => !!board && !!s.playCores?.pool.includes(coreId));
+  const cyclePlayCore = useGame((s) => s.cyclePlayCore);
+  const mark = markProp ?? playMark;
   const startDrag = useGame((s) => s.startDrag);
   const endDrag = useGame((s) => s.endDrag);
   if (!core) return null;
@@ -52,7 +57,7 @@ export function Core({ coreId, size = 'md', board, onClick, mark, noFlip }: Core
           ? 'ring-2 ring-yellow-300 rounded-full bg-yellow-300/30 -translate-y-0.5'
           : assigned
             ? 'ring-2 ring-emerald-400 rounded-full bg-emerald-500/30 opacity-70'
-          : picking && selectable
+          : (picking && selectable) || playPick
             ? 'ring-2 ring-fuchsia-400/80 rounded-full'
             : '';
   const img = (
@@ -67,6 +72,23 @@ export function Core({ coreId, size = 'md', board, onClick, mark, noFlip }: Core
   );
   const title = core.isSoul ? 'Soul Core' : 'Core';
 
+  if (playPick) {
+    return (
+      <span
+        role="button"
+        tabIndex={0}
+        data-core={coreId}
+        title={`${title} · คลิกเพื่อสลับ: ว่าง → จ่าย → วางบนการ์ด → ว่าง`}
+        onClick={(e) => {
+          e.stopPropagation();
+          cyclePlayCore(coreId);
+        }}
+        className="cursor-pointer transition hover:scale-110"
+      >
+        {img}
+      </span>
+    );
+  }
   if (selectable) {
     return (
       <span

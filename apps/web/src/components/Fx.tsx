@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { opponentOf } from '@bs/engine';
 import { cardArt } from '../assets';
-import { actingPlayer, chainEntries, viewPlayer, db, fieldScaleOf, GHOST_MS, isFxBlocking, layoutRect, MILL_MS, millBreakAt, millDuration, PLAY_HIT, useGame, type Fx, type Rect, hiddenFrom } from '../store';
+import { CHARGE_KNOCK, actingPlayer, chainEntries, viewPlayer, db, fieldScaleOf, GHOST_MS, isFxBlocking, layoutRect, MILL_MS, millBreakAt, millDuration, PLAY_HIT, useGame, type Fx, type Rect, hiddenFrom } from '../store';
 import { CardBack, CardFace } from './CardFace';
 import { sfx } from '../sfx';
 import { effects, flashScale, shakeScale } from '../gfx';
@@ -656,7 +656,9 @@ function CardActivate({ fx, onDone }: { fx: Extract<Fx, { kind: 'cardActivate' }
   /** กล่องที่หมุนตามการ์ด (นอน/กลับหัว): วงไฮไลต์อยู่ที่นี่ ให้ขอบเรืองแสงตามรูปการ์ด */
   const ringRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
-    const el = fx.hand
+    const el = fx.trash
+      ? document.querySelector<HTMLElement>(`[data-trash-top="${fx.trash}"]`)
+      : fx.hand
       ? document.querySelector<HTMLElement>(`[data-hand-card="${fx.cardId}"]`)
       : fx.brave
         ? document.querySelector<HTMLElement>(`[data-brave-card="${fx.cardId}"]`)
@@ -664,7 +666,7 @@ function CardActivate({ fx, onDone }: { fx: Extract<Fx, { kind: 'cardActivate' }
     const owner = useGame.getState().state.cards[fx.cardId]?.owner;
     if (!el || !owner) return onDone();
     // การ์ดบนสนาม: ซ่อนแค่หน้าการ์ด (ป้าย BP / Brave ที่ร่วมร่างยังอยู่)
-    const face = !fx.hand && !fx.brave ? ((el.firstElementChild as HTMLElement | null) ?? el) : el;
+    const face = !fx.hand && !fx.brave && !fx.trash ? ((el.firstElementChild as HTMLElement | null) ?? el) : el;
     // ขนาดจริงของกล่อง (ไม่รวมการหมุนของพัดบนมือ) วางกลางกรอบที่เห็นบนจอ
     // (การ์ดบนสนามที่แถวถูกย่อ: ใช้ขนาดหลังย่อ)
     const bb = el.getBoundingClientRect();
@@ -674,12 +676,12 @@ function CardActivate({ fx, onDone }: { fx: Extract<Fx, { kind: 'cardActivate' }
     const rect = { x: bb.x + bb.width / 2 - w / 2, y: bb.y + bb.height / 2 - h / 2, w, h };
     const upside = upsideFor(owner);
     // "ยกขึ้น" เข้าหาเจ้าของการ์ด: ฝั่งตรงข้ามเลื่อนลงบนจอ
-    const lift = fx.hand ? (upside ? 110 : -130) : fx.brave ? (upside ? 40 : -40) : upside ? 26 : -26;
+    const lift = fx.trash ? (upside ? 90 : -90) : fx.hand ? (upside ? 110 : -130) : fx.brave ? (upside ? 40 : -40) : upside ? 26 : -26;
     setView({
       rect,
       lift,
-      k: fx.hand ? 1.3 : fx.brave ? 1.9 : 1.24,
-      lying: !fx.hand && !fx.brave && w > h,
+      k: fx.trash ? 2.4 : fx.hand ? 1.3 : fx.brave ? 1.9 : 1.24,
+      lying: !fx.hand && !fx.brave && !fx.trash && w > h,
       faceDown: !!fx.hand && hiddenFrom(useGame.getState(), owner),
       upside,
     });
@@ -1838,14 +1840,14 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
     const hy = (ty / len) * stop;
     const rot = fx.fromExhausted ? 'rotate(90deg)' : 'rotate(0deg)';
     const rotEnd = fx.toExhausted ? 'rotate(90deg)' : 'rotate(0deg)';
-    // แพ้: ถูกกระแทกกระเด็นกลับ เซ แล้วกลับถึงที่เดิม (ภาพถูกทำลายเล่นต่อที่ช่องของตัวเอง)
-    const back = fx.fromExhausted ? 'rotate(90deg)' : 'rotate(0deg)';
+    // แพ้: ถูกกระแทกกระเด็นกลับมาครึ่งทาง เซ แล้วหยุดตั้งตรงตรงนั้น (ภาพแตกเล่นต่อที่จุดนี้ ไม่วิ่งกลับไปนอนที่ช่องเดิม)
+    const K = CHARGE_KNOCK;
     const end: Keyframe[] = fx.dies
       ? [
-          { transform: `translate(${hx * 0.7}px,${hy * 0.7}px) rotate(-10deg) scale(1.05)`, filter: 'brightness(2.2) saturate(0.6)', offset: 0.55 },
-          { transform: `translate(${hx * 0.25}px,${hy * 0.25}px) rotate(8deg) scale(1)`, filter: 'brightness(1.3) saturate(0.5)', offset: 0.75 },
-          { transform: `translate(${-hx * 0.04}px,${-hy * 0.04}px) ${back} scale(1)`, filter: 'brightness(1.1) saturate(0.5)', offset: 0.9 },
-          { transform: `translate(0,0) ${back} scale(1)`, filter: 'brightness(1)' },
+          { transform: `translate(${hx * (K + 0.12)}px,${hy * (K + 0.12)}px) rotate(-14deg) scale(1.08)`, filter: 'brightness(2.4) saturate(0.6)', offset: 0.6 },
+          { transform: `translate(${hx * (K - 0.04)}px,${hy * (K - 0.04)}px) rotate(7deg) scale(1.02)`, filter: 'brightness(1.4) saturate(0.4)', offset: 0.76 },
+          { transform: `translate(${hx * K}px,${hy * K}px) rotate(-2deg) scale(1)`, filter: 'brightness(1.1) saturate(0.3)', offset: 0.88 },
+          { transform: `translate(${hx * K}px,${hy * K}px) rotate(0deg) scale(1)`, filter: 'brightness(1) saturate(0.3)' },
         ]
       : [
           { transform: `translate(${hx * 0.9}px,${hy * 0.9}px) rotate(0deg) scale(1.08)`, offset: 0.58 },
@@ -2114,8 +2116,10 @@ function MillFx({ fx, onDone }: { fx: Extract<Fx, { kind: 'mill' }>; onDone: () 
     const anims = refs.current.map((el, i) => {
       if (!el) return null;
       const s = slots[i]!;
-      const dx = deck ? deck.x + deck.w / 2 - (s.x + s.w / 2) : 0;
-      const dy = deck ? deck.y + deck.h / 2 - (s.y + s.h / 2) : 0;
+      // ทิ้งจากมือ: ออกจากตำแหน่งการ์ดใบนั้นในมือ
+      const src = fx.fromHand ? (fx.fromHand[fx.cardIds[i]!] ?? deck) : deck;
+      const dx = src ? src.x + src.w / 2 - (s.x + s.w / 2) : 0;
+      const dy = src ? src.y + src.h / 2 - (s.y + s.h / 2) : 0;
       return el.animate(
         [
           { transform: `translate(${dx}px, ${dy}px) scale(0.45) rotateY(180deg)`, opacity: 0 },
@@ -2133,8 +2137,17 @@ function MillFx({ fx, onDone }: { fx: Extract<Fx, { kind: 'mill' }>; onDone: () 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const cards = useGame((s) => s.state.cards);
+  const s0 = slots[0];
   return (
     <>
+      {fx.title && s0 && broken === 0 && (
+        <div
+          className="pointer-events-none fixed z-[42] -translate-x-1/2 rounded-full bg-slate-950/85 px-4 py-1 text-sm font-bold text-rose-200 ring-1 ring-rose-400/50"
+          style={{ left: s0.x + (slots.at(-1)!.x + s0.w - s0.x) / 2, top: s0.y - 38, animation: `fx-chain-pop 0.35s ${fx.delay}ms ease-out both` }}
+        >
+          {fx.title}
+        </div>
+      )}
       {fx.cardIds.map((id, i) => {
         const s = slots[i]!;
         const card = cards[id];

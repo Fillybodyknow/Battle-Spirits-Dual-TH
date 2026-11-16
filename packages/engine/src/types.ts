@@ -98,6 +98,10 @@ export interface Battle {
   refreshOnWin?: string[];
   /** ตีระบุ / ถูกบังคับให้โจมตีมาหา: ไม่มีแฟลชหลังโจมตี ผู้ป้องกันที่เลือกไว้ป้องกันทันที (กติกา 14 ตีระบุ) */
   skipFlash1?: boolean;
+  /** การต่อสู้นี้ใช้ตีระบุแล้ว ([Consecutive Blade] จะไม่เกิดผล: กติกา 14 Consecutive Blade ข้อควรรู้ 4) */
+  direct?: boolean;
+  /** mustBlock ก่อน [Consecutive Blade] ทำงาน (คืนค่าเมื่อถูกยกเลิกเพราะตีระบุ) */
+  mustBlockBeforeBlade?: boolean;
   /** ในการต่อสู้นี้ เจ็มของการ์ดนี้ (รวม Brave) ถือเป็นสี color จำนวน count เม็ด */
   symbolOverride?: { cardId: string; color: string; count: number };
   /** ผู้โจมตีไม่ถูกป้องกัน (spirits = ไม่ถูกป้องกันโดยสปิริต) */

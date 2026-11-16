@@ -162,6 +162,7 @@ export function conditionHolds(
   if ('selfExhausted' in cond) return card.state === 'exhausted';
   if ('oppTurn' in cond) return state.turnPlayer !== card.owner;
   if ('noLifeDamageThisTurn' in cond) return !(state.lifeDamagedThisTurn ?? []).includes(card.owner);
+  if ('directAttack' in cond) return !!state.battle?.direct;
   if ('selfInBattle' in cond) return !!state.battle && (state.battle.attackerId === sourceId || state.battle.blockers.includes(sourceId));
   if ('attackerFamily' in cond) {
     const b = state.battle;
@@ -747,13 +748,22 @@ export function blockersFor(state: GameState, db: CardDatabase, defender: Player
     });
     if (locked) sameCost = aDef.cost;
   }
-  return state.players[defender].field.filter((id) => {
+  const b = state.battle;
+  const list = state.players[defender].field.filter((id) => {
     const card = state.cards[id]!;
     const def = db.get(card.cardNo);
-    if (state.battle?.blockFilter && !matchesFilter(state, db, id, state.battle.blockFilter)) return false;
+    if (b?.blockers.includes(id)) return false; // ประกาศป้องกันไปแล้ว (ป้องกันได้แม้เสื่อมสภาพก็ไม่นับซ้ำ)
+    if (b?.blockFilter && !matchesFilter(state, db, id, b.blockFilter)) return false;
     if (attacker && attackerUnblockable(state, attacker.id, def.type)) return false;
     return (card.state === 'refresh' || canBlockExhausted(state, db, id)) && isSpiritLike(def) && (sameCost === null || def.cost === sameCost);
   });
+  // [Consecutive Blade]: ตัวที่ไม่มีชีลด์ (ไม่รับผลของผู้โจมตี) ต้องป้องกันให้ครบก่อน
+  // ตัวที่มีชีลด์จะมาแย่งช่องไม่ได้ ยกเว้นตัวไม่มีชีลด์ไม่พอ (กติกา 14 Consecutive Blade Q&A 4-5)
+  if (b?.consecutiveBlade && b.mustBlock) {
+    const plain = list.filter((id) => !effectBlocked(state, db, b.attackerId, id));
+    if (plain.length >= b.maxBlockers - b.blockers.length) return plain;
+  }
+  return list;
 }
 
 /** Magic "เอฟเฟกต์นี้ใช้ได้เทิร์นละ 1 ครั้ง" ที่ใช้ไปแล้วในเทิร์นนี้ */

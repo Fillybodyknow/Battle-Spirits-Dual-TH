@@ -4,6 +4,8 @@ import { playerLabel } from '../format';
 import { IMG } from '../assets';
 import type { Fx } from '../store';
 import { blockCandidates, controls, hiddenFrom, mine, braveHostOf, braveHosts, canDropBurst, canQuickSummon, handFieldAction, separatePlacement } from '../store';
+import { usePrefs, type HandLayout } from '../prefs';
+import { sortHand } from '../store';
 import { actingPlayer, canEvolve, db, isMultiHostCandidate, flashPlayer, inMain, isChoiceCandidate, isFxBlocking, magicTimings, responseOptions, simulateEvolve, simulateMove, useGame } from '../store';
 import { useFlashUsable } from './Controls';
 import { CardBack, CardFace } from './CardFace';
@@ -169,6 +171,7 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
   const own = mine(card.owner);
   const ready = own && spirit && !exhausted && !state.winner && !state.choice;
   const canAttack = ready && state.phase === 'attack' && !battle && card.owner === state.turnPlayer && canAttackWith(state, db, cardId);
+  const confirming = useGame((s) => s.attackConfirm === cardId);
   // ป้องกัน: ใช้รายชื่อจาก engine (รวมตัวที่ป้องกันได้แม้เสื่อมสภาพ / กฎป้องกันพิเศษ)
   const canBlock = own && !state.winner && !state.choice && battle?.step === 'declareBlock' && card.owner !== state.turnPlayer && blockCandidates(state).includes(cardId);
   const ownTurnMain = own && inMain(state) && card.owner === state.turnPlayer;
@@ -194,6 +197,7 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
         [candidate, 'ring-4 ring-fuchsia-400 cursor-pointer'],
         [flashReady, 'ring-4 ring-cyan-300'],
         [evolving || over, 'ring-4 ring-emerald-400'],
+        [canAttack && confirming, 'ring-4 ring-rose-500 cursor-pointer -translate-y-1'],
         [canAttack, 'ring-4 ring-amber-400 cursor-pointer'],
         [canBlock, 'ring-4 ring-sky-400 cursor-pointer'],
         [dropTarget, 'ring-2 ring-emerald-400/60 cursor-pointer'],
@@ -222,8 +226,13 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
         onClick={() => clickFieldCard(cardId)}
         {...dropHandlers(dropTarget, () => moveCoresTo(target), setOver)}
       >
-        <div className="relative h-24 w-[4.2rem] shrink-0 cursor-pointer">
-          <CardFace def={def} size="xs" level={level} />
+        {/* เสื่อมสภาพ: หมุน 90° เหมือนสปิริต (กรอบขยายตามให้ไม่ทับช่อง Core) */}
+        <div
+          className={`relative flex shrink-0 cursor-pointer items-center justify-center transition-[height,width] duration-300 ${exhausted ? 'h-[4.2rem] w-24' : 'h-24 w-[4.2rem]'}`}
+        >
+          <div className={`h-24 w-[4.2rem] shrink-0 transition-transform duration-300 ${exhausted ? 'rotate-90 brightness-75' : ''}`}>
+            <CardFace def={def} size="xs" level={level} />
+          </div>
         </div>
         {/* ช่อง Core แคบ ๆ ข้างการ์ด เรียงแนวตั้ง (หลายดวงซ้อนกันให้พอดีช่อง) · ชื่อ/รายละเอียดดูจากแผงรายละเอียดการ์ด */}
         <div className="flex h-24 w-8 flex-col items-center justify-center rounded bg-black/50 py-1 ring-1 ring-white/10">
@@ -377,7 +386,9 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
           <div className="absolute inset-x-1 bottom-1 rounded bg-fuchsia-500 py-0.5 text-center text-xs font-bold text-white shadow">คลิกเพื่อเลือก</div>
         )}
         {canAttack && (
-          <div className="absolute inset-x-1 bottom-1 rounded bg-amber-400 py-0.5 text-center text-xs font-bold text-slate-900">คลิกเพื่อโจมตี</div>
+          <div className={`absolute inset-x-1 bottom-1 rounded py-0.5 text-center text-xs font-bold ${confirming ? 'bg-rose-500 text-white' : 'bg-amber-400 text-slate-900'}`}>
+            {confirming ? 'คลิกอีกครั้งเพื่อยืนยัน' : 'คลิกเพื่อโจมตี'}
+          </div>
         )}
         {canBlock && (
           <div className="absolute inset-x-1 bottom-1 rounded bg-sky-400 py-0.5 text-center text-xs font-bold text-slate-900">คลิกเพื่อป้องกัน</div>
@@ -669,9 +680,9 @@ function TrashSlot({ player }: { player: PlayerId }) {
   const p = useGame((s) => s.state.players[player]);
   const state = useGame((s) => s.state);
   const openTrash = useGame((s) => s.openTrash);
-  // การ์ดที่ภาพ "ถูกทิ้งจากเด็ค" ยังเล่นอยู่: ยังไม่โชว์ใน Trash
+  // การ์ดที่ภาพ "ถูกทิ้ง" (จากเด็ค/มือ) หรือภาพแตกจากสนามยังเล่นอยู่: ยังไม่โชว์ใน Trash
   const fxList = useGame((s) => s.fx);
-  const milling = fxList.flatMap((f) => (f.kind === 'mill' && f.owner === player ? f.cardIds : []));
+  const milling = fxList.flatMap((f) => (f.kind === 'mill' && f.owner === player ? f.cardIds : f.kind === 'ghost' && f.owner === player ? [f.cardId] : []));
   const shown = milling.length > 0 ? p.trashCards.filter((id) => !milling.includes(id)) : p.trashCards;
   const top = shown.at(-1);
   const hover = useGame((s) => s.hover);
@@ -715,6 +726,7 @@ function TrashSlot({ player }: { player: PlayerId }) {
       <div className="flex items-center gap-2 border-b border-slate-500/40 pb-1.5">
         <div
           className="relative h-16 w-11 shrink-0"
+          data-trash-top={player}
           onMouseEnter={() => top && hover(top)}
           onMouseLeave={() => hover(null)}
         >
@@ -930,21 +942,25 @@ export function PlayerMat({ player, top }: { player: PlayerId; top?: boolean }) 
  * ตำแหน่งในพัด: off = ห่างจากกลางส่วนที่มองเห็นกี่ใบ (ติดลบ = ซ้าย) · spread = จำนวนใบที่เห็นพร้อมกัน
  * มือยาวเกินจอ (เลื่อนได้): ความโค้งคิดจากกลางหน้าต่าง ใบที่อยู่ในจอจึงไม่จมลึก
  */
-type FanPos = { index: number; off: number; spread: number; top?: boolean };
+type FanPos = { index: number; off: number; spread: number; top?: boolean; layout?: HandLayout };
 
 /** ท่าของการ์ดในพัด: เอียงตามตำแหน่ง ใบริมจมลึกกว่า ชี้/เลือกแล้วยกขึ้นตั้งตรง */
 function fanStyle(fan: FanPos, raised: boolean, lift = false): React.CSSProperties {
   // ใบที่เลยขอบหน้าต่างไปแล้ว (ถูกตัดไม่ให้เห็น): ไม่ต้องเอียง/จมเพิ่ม เวลาเลื่อนเข้ามาจะได้ไม่โผล่ขึ้นจากใต้จอ
   const edge = fan.spread / 2 + 0.5;
-  const off = Math.max(-edge, Math.min(edge, fan.off));
+  // แถวตรง / กางไม่ซ้อน: ไม่เอียง ไม่จมตามตำแหน่ง
+  const flat = fan.layout === 'row' || fan.layout === 'spread';
+  const off = flat ? 0 : Math.max(-edge, Math.min(edge, fan.off));
   const angle = off * Math.min(6, 36 / Math.max(fan.spread, 1));
+  const overlapTop = fan.layout === 'spread' ? '0.3rem' : '-1.6rem';
+  const overlap = fan.layout === 'spread' ? '0.35rem' : fan.layout === 'row' ? '-1.6rem' : '-2.25rem';
   if (fan.top) {
     // มือคู่แข่ง: พัดกลับหัวที่ขอบบน (เหมือนนั่งถือการ์ดอยู่ฝั่งตรงข้าม) จมเหนือขอบจอ
     return {
       transform: raised ? 'translateY(8%) rotate(0deg) scale(1.1)' : `translateY(calc(${lift ? -32 : -50}% - ${off * off * 2}px)) rotate(${-angle}deg)`,
       transformOrigin: '50% 0%',
       zIndex: raised ? 50 : lift ? 40 + fan.index : fan.index + 1,
-      marginLeft: fan.index === 0 ? 0 : '-1.6rem',
+      marginLeft: fan.index === 0 ? 0 : overlapTop,
       transition: 'transform 160ms ease-out',
     };
   }
@@ -952,12 +968,21 @@ function fanStyle(fan: FanPos, raised: boolean, lift = false): React.CSSProperti
     transform: raised ? 'translateY(-8%) rotate(0deg) scale(1.1)' : `translateY(calc(${lift ? 26 : 42}% + ${off * off * 2.5}px)) rotate(${angle}deg)`,
     transformOrigin: '50% 100%',
     zIndex: raised ? 50 : lift ? 40 + fan.index : fan.index + 1,
-    marginLeft: fan.index === 0 ? 0 : '-2.25rem',
+    marginLeft: fan.index === 0 ? 0 : overlap,
     transition: 'transform 160ms ease-out',
   };
 }
 
-function HandCard({ cardId, hidden, small, fan }: { cardId: string; hidden: boolean; small?: boolean; fan?: FanPos }) {
+/** ลำดับการ์ดในมือที่แสดง: เรียงตามที่ตั้งค่า (มือที่คว่ำอยู่ไม่เรียง ไม่ให้ตำแหน่งบอกว่าเป็นการ์ดอะไร) */
+function useShownHand(player: PlayerId, hidden: boolean): string[] {
+  const state = useGame((s) => s.state);
+  const manual = useGame((s) => s.handOrder[player]);
+  const sort = usePrefs((p) => p.handSort);
+  const hand = state.players[player].hand;
+  return useMemo(() => (hidden ? hand : sortHand(state, hand, sort, manual)), [state, hand, sort, manual, hidden]);
+}
+
+function HandCard({ cardId, hidden, small, fan, shown: order }: { cardId: string; hidden: boolean; small?: boolean; fan?: FanPos; shown?: string[] }) {
   const state = useGame((s) => s.state);
   const selected = useGame((s) => s.selectedHandCard === cardId);
   const { clickHandCard, openPlay, dispatch, hover } = useGame.getState();
@@ -974,7 +999,12 @@ function HandCard({ cardId, hidden, small, fan }: { cardId: string; hidden: bool
   /** วางแสดงนอกมือ (อันโกะ): หงายให้ทั้งสองฝ่ายเห็น */
   const shown = (state.shownCards ?? []).includes(cardId);
   const size = small ? 'h-16 w-11' : fan?.top ? 'h-32 w-[5.75rem]' : fan ? 'h-48 w-34' : 'h-36 w-26';
-  const draggable = !hidden && !fxBlocking && (!!handFieldAction(state, cardId) || canDropBurst(state, cardId));
+  const playMode = usePrefs((p) => p.playMode);
+  // ลากได้เสมอเมื่อเป็นมือของเรา: ลากไปสนาม = เล่น, ลากไปวางบนการ์ดใบอื่นในมือ = สลับตำแหน่ง
+  const draggable = !hidden && !fxBlocking && mine(card.owner);
+  /** การ์ดใบอื่นในมือเดียวกันกำลังถูกลากมาวาง (สลับตำแหน่ง) */
+  const reorderOver = useGame((s) => !!order && !!s.handDrag && s.handDrag !== cardId && order.includes(s.handDrag));
+  const [dropSide, setDropSide] = useState<'l' | 'r' | null>(null);
   const style = fan ? fanStyle(fan, hovering || selected, flashUsable && !hidden) : undefined;
 
   if (hidden && !shown) {
@@ -1026,8 +1056,38 @@ function HandCard({ cardId, hidden, small, fan }: { cardId: string; hidden: bool
         setHovering(false);
       }}
     >
+      {reorderOver && dropSide && (
+        <div className={`pointer-events-none absolute inset-y-2 z-30 w-1.5 rounded-full bg-yellow-300 shadow-[0_0_12px_rgba(253,224,71,0.9)] ${dropSide === 'l' ? '-left-1' : '-right-1'}`} />
+      )}
       <div
-        onClick={() => clickHandCard(cardId)}
+        onClick={() => {
+          // คลิกเดียวเล่นเลย (ตั้งค่า): มีทางเล่นทางเดียว = เปิดแผงเล่นการ์ดทันที
+          if (playMode === 'direct' && !candidate && !state.choice && options.length === 1) {
+            useGame.setState({ pinned: cardId });
+            options[0]!.run();
+            return;
+          }
+          clickHandCard(cardId);
+        }}
+        onDragOver={(e) => {
+          if (!reorderOver) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          const r = e.currentTarget.getBoundingClientRect();
+          setDropSide(e.clientX < r.left + r.width / 2 ? 'l' : 'r');
+        }}
+        onDragLeave={() => setDropSide(null)}
+        onDrop={(e) => {
+          const from = useGame.getState().handDrag;
+          setDropSide(null);
+          if (!reorderOver || !from || !order) return;
+          e.preventDefault();
+          e.stopPropagation();
+          const r = e.currentTarget.getBoundingClientRect();
+          const rest = order.filter((id) => id !== from);
+          const at = rest.indexOf(cardId) + (e.clientX < r.left + r.width / 2 ? 0 : 1);
+          useGame.getState().reorderHand(card.owner, order, from, at);
+        }}
         draggable={draggable}
         onDragStart={(e) => {
           // ลากไปทางซ้าย/ขวาบนมือที่ยาวเกินจอ = เลื่อนมือ ไม่ใช่หยิบการ์ดไปเล่น
@@ -1042,7 +1102,7 @@ function HandCard({ cardId, hidden, small, fan }: { cardId: string; hidden: bool
           setHovering(false);
         }}
         onDragEnd={endHandDrag}
-        title={draggable ? 'ลากไปที่สนามเพื่อเล่น หรือช่อง Burst เพื่อเซ็ท · คลิกเพื่อเปิดเมนู' : undefined}
+        title={draggable ? 'ลากไปที่สนามเพื่อเล่น / ช่อง Burst เพื่อเซ็ท / การ์ดใบอื่นในมือเพื่อสลับตำแหน่ง · คลิกเพื่อเปิดเมนู' : undefined}
         className={`h-full w-full rounded-lg shadow-[0_6px_18px_rgba(0,0,0,0.6)] transition ${dragged ? 'opacity-40' : ''} ${draggable ? 'active:cursor-grabbing' : ''} ${
           flashUsable
             ? `cursor-pointer ring-4 ring-cyan-300 ${fan ? '' : 'hover:-translate-y-2'}`
@@ -1096,6 +1156,29 @@ function HandCard({ cardId, hidden, small, fan }: { cardId: string; hidden: bool
               {o.label}
             </button>
           ))}
+          {order && order.length > 1 && (
+            <div className="flex gap-1">
+              {([-1, 1] as const).map((d) => {
+                const i = order.indexOf(cardId);
+                const ok = i + d >= 0 && i + d < order.length;
+                return (
+                  <button
+                    key={d}
+                    type="button"
+                    disabled={!ok}
+                    title={d < 0 ? 'ย้ายการ์ดไปทางซ้าย' : 'ย้ายการ์ดไปทางขวา'}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      useGame.getState().reorderHand(card.owner, order, cardId, i + d);
+                    }}
+                    className="flex-1 rounded bg-slate-700 py-0.5 text-xs font-bold text-slate-200 hover:bg-slate-600 disabled:opacity-30"
+                  >
+                    {d < 0 ? '◀ ย้าย' : 'ย้าย ▶'}
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <button type="button" onClick={() => clickHandCard(cardId)} className="rounded px-2 py-0.5 text-xs text-slate-400 hover:bg-white/10">
             ยกเลิก
           </button>
@@ -1122,9 +1205,9 @@ const DRAG_START = 6;
  * การ์ดขนาดเดิมเสมอ ถ้ามือยาวเกินหน้าต่าง: เลื่อนซ้าย/ขวาได้ด้วย เอาเมาส์ค้างที่ขอบ, กดลาก (เมาส์/นิ้ว), ลูกศรที่ขอบ, ลูกล้อเมาส์
  */
 export function HandFan({ player, top }: { player: PlayerId; top?: boolean }) {
-  const state = useGame((s) => s.state);
-  const hand = state.players[player].hand;
   const hidden = useGame((s) => hiddenFrom(s, player));
+  const hand = useShownHand(player, hidden);
+  const layout = usePrefs((p) => p.handLayout);
   const selected = useGame((s) => s.selectedHandCard);
   const outerRef = useRef<HTMLDivElement>(null);
   const rowRef = useRef<HTMLDivElement>(null);
@@ -1183,7 +1266,7 @@ export function HandFan({ player, top }: { player: PlayerId; top?: boolean }) {
     // มือที่คว่ำไว้ (ออนไลน์ = มือคู่แข่ง) ห้ามเลื่อนตาม ไม่งั้นตำแหน่งที่เลื่อนไปจะบอกว่าการ์ด Flash อยู่ใบไหน
     if (flashPlayer(s.state) !== player || isFxBlocking(s.fx) || hiddenFrom(s, player)) return '';
     const o = responseOptions(s.state, player);
-    return s.state.players[player].hand.filter((id) => o.magic.includes(id) || o.quick.includes(id)).join(',');
+    return sortHand(s.state, s.state.players[player].hand, usePrefs.getState().handSort, s.handOrder[player]).filter((id) => o.magic.includes(id) || o.quick.includes(id)).join(',');
   });
   useEffect(() => {
     if (!flashCards || !overflow) return;
@@ -1320,7 +1403,7 @@ export function HandFan({ player, top }: { player: PlayerId; top?: boolean }) {
         <HandScrollCtx.Provider value={scrollCtx}>
           <div ref={rowRef} className={`flex shrink-0 ${top ? 'items-start' : 'items-end'}`} style={overflow ? { transform: `translateX(${-offset}px)` } : undefined}>
             {hand.map((id, index) => (
-              <HandCard key={id} cardId={id} hidden={hidden} fan={{ index, off: index - center, spread, top }} />
+              <HandCard key={id} cardId={id} hidden={hidden} shown={hidden ? undefined : hand} fan={{ index, off: index - center, spread, top, layout }} />
             ))}
           </div>
         </HandScrollCtx.Provider>

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { cancelSfx, sfx } from './sfx';
 import { primeCoreMotion, snapCores } from './motion';
+import { prefs, setPrefs, type HandSort } from './prefs';
 import { firebaseConfigured, firebaseTransport } from './online/firebase';
 import { localTransport } from './online/local';
 import type { RoomInfo, RoomSetup, Transport } from './online/transport';
@@ -46,6 +47,8 @@ export type { DeckId };
 type DeckChoice = Record<PlayerId, DeckId>;
 
 export type PlayKind = 'summon' | 'deployNexus' | 'useMagic';
+/** Core ที่เลือกไว้ตอนเล่นการ์ด: pay = จ่ายคอสต์, place = วางบนการ์ด · manual = ผู้เล่นปรับเอง (ไม่งั้นจัดให้อัตโนมัติ) · pool = Core ที่คลิกได้ */
+export type PlayCores = { marks: Record<string, 'pay' | 'place'>; manual: boolean; allowPlace: boolean; pool: string[] };
 export type MagicTiming = 'main' | 'flash';
 
 // ---------------------------------------------------------------- selectors (pure)
@@ -358,7 +361,7 @@ export type Fx =
   | { id: number; kind: 'summon'; cardId: string; level: number; bp: number; delay: number; special?: boolean }
   | { id: number; kind: 'activate'; cardId: string; label: string; text: string; delay: number }
   /** การ์ดบนสนามที่เอฟเฟกต์ทำงาน: ยกขึ้น + เรืองแสง ก่อนผลของเอฟเฟกต์จะเกิด */
-  | { id: number; kind: 'cardActivate'; cardId: string; delay: number; duration: number; hand?: boolean; brave?: boolean }
+  | { id: number; kind: 'cardActivate'; cardId: string; delay: number; duration: number; hand?: boolean; brave?: boolean; /** เอฟเฟกต์ของการ์ดใน Trash (เช่น เมื่อถูกทำลาย): ยกขึ้นจากช่อง Trash */ trash?: PlayerId }
   /** เอฟเฟกต์หลายอันทำงานพร้อมกัน: แสดงการ์ดเรียงพร้อมเลขลำดับและโซ่ (CHAIN → RESOLVE) */
   | { id: number; kind: 'chain'; cardIds: string[]; delay: number; duration: number }
   /** การ์ดที่เอฟเฟกต์ทำงานเสร็จ บินเข้าไปต่อท้ายแถบ Chain (index = ลำดับใน Chain) */
@@ -366,7 +369,7 @@ export type Fx =
   /** การ์ดที่เปิดจากเด็คเรียงเป็นพัด (หลังเลือก: ใบที่เลือกยกขึ้นก่อนบินขึ้นมือ / ที่เหลือบินลง Trash) */
   | { id: number; kind: 'reveal'; owner: PlayerId; cardIds: string[]; chosen: string | null; delay: number; duration: number; title?: string }
   /** การ์ดถูกทิ้งจากเด็ค: บินออกมาเรียงหงายทีละใบ ค้างไว้ครู่หนึ่ง แล้วแตกทีละใบลง Trash (owner = เจ้าของเด็ค) */
-  | { id: number; kind: 'mill'; owner: PlayerId; cardIds: string[]; delay: number }
+  | { id: number; kind: 'mill'; owner: PlayerId; cardIds: string[]; delay: number; /** ทิ้งจากมือ: บินออกจากตำแหน่งในมือ (ไม่ใช่เด็ค) */ fromHand?: Record<string, Rect>; title?: string }
   /** เส้นเล็งจากการ์ดต้นเอฟเฟกต์ไปยังเป้าหมายที่เลือก */
   | { id: number; kind: 'target'; sourceId: string; targetId: string; delay: number; duration: number }
   /** ตัวเลขดาเมจใหญ่กลางฝั่งที่เสียไลฟ์ (big = โดนโจมตีตรง มีรัศมีแตกกระจาย) */
@@ -477,6 +480,22 @@ const who = (p: PlayerId) => (p === 'p1' ? 'ผู้เล่น 1' : 'ผู�
 const effectText = (cardNo: string, i: number) => (db.get(cardNo).effects as TextEffect[])[i]?.text ?? '';
 
 /** เวลาของแต่ละช่วงในไทม์ไลน์ (ms) */
+/** ผู้โจมตีที่แพ้: ถูกกระแทกกระเด็นกลับมาหยุดที่สัดส่วนนี้ของระยะวิ่ง แล้วแตกตรงนั้น (Charge ใน Fx ใช้ค่าเดียวกัน) */
+export const CHARGE_KNOCK = 0.5;
+
+/** ตำแหน่งที่ผู้โจมตีที่แพ้แตก: การ์ดตั้งตรง ณ จุดที่กระเด็นกลับมาหยุด */
+export function chargeKnockRect(from: Rect, fromExhausted: boolean, target: Rect): Rect {
+  const w = fromExhausted ? from.h : from.w;
+  const h = fromExhausted ? from.w : from.h;
+  const cx = from.x + from.w / 2;
+  const cy = from.y + from.h / 2;
+  const tx = target.x + target.w / 2 - cx;
+  const ty = target.y + target.h / 2 - cy;
+  const len = Math.hypot(tx, ty) || 1;
+  const k = (CHARGE_KNOCK * Math.max(0, len - h * 0.45)) / len;
+  return { x: cx + tx * k - w / 2, y: cy + ty * k - h / 2, w, h };
+}
+
 const T = {
   /** ป้ายสเต็ปเล็ก (Start/Core/Draw/Refresh/Main/End) */
   miniBanner: 900,
@@ -619,6 +638,8 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
     if (at >= 0) chainPos.set(ev, at);
   });
 
+  /** event ทิ้งจากมือที่รวมเข้าชุดก่อนหน้าแล้ว */
+  const grouped = new Set<GameEvent>();
   for (const e of events) {
     // การ์ดที่ออกจากสนามพร้อมกันแตกพร้อมกันได้ ส่วน event อื่นรอให้ภาพแตกเล่นจบก่อน
     if (e.type !== 'destroyed' && e.type !== 'depleted') t = Math.max(t, ghostsEnd);
@@ -723,8 +744,16 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         const inHand = !onAnyField(e.cardId) && PLAYERS.some((p) => s.players[p].hand.includes(e.cardId) || prev.players[p].hand.includes(e.cardId));
         // Brave ที่ร่วมร่างอยู่ (เอฟเฟกต์ที่ผู้ร่วมร่างได้รับ): การ์ด Brave ใบเล็กบนผู้ร่วมร่างยกขึ้น
         const onHost = !onAnyField(e.cardId) && !inHand && Object.values(s.cards).some((c) => c.braves.includes(e.cardId));
-        const field = onAnyField(e.cardId) || inHand || onHost;
-        if (field) out.push({ kind: 'cardActivate', cardId: e.cardId, delay: t, duration: T.activate, hand: inHand, brave: onHost });
+        // การ์ดที่ไปอยู่ใน Trash แล้ว (เอฟเฟกต์ "เมื่อถูกทำลาย" ฯลฯ): ยกขึ้นจากช่อง Trash หลังภาพแตกลง Trash เล่นจบ
+        // (Magic / Burst มีภาพของตัวเองแล้ว)
+        const viaSpell = events.some((x) => (x.type === 'magicUsed' || x.type === 'burstActivated') && x.cardId === e.cardId);
+        const trashOwner =
+          !viaSpell && !inHand && !PLAYERS.some((p) => s.players[p].field.includes(e.cardId)) && db.get(s.cards[e.cardId]!.cardNo).type !== 'magic'
+            ? PLAYERS.find((p) => s.players[p].trashCards.includes(e.cardId))
+            : undefined;
+        if (trashOwner) t = Math.max(t, ghostsEnd);
+        const field = onAnyField(e.cardId) || inHand || onHost || !!trashOwner;
+        if (field) out.push({ kind: 'cardActivate', cardId: e.cardId, delay: t, duration: T.activate, hand: inHand, brave: onHost && !trashOwner, ...(trashOwner ? { trash: trashOwner } : {}) });
         if (e.source !== null) {
           out.push({ kind: 'activate', cardId: e.cardId, label: 'เอฟเฟกต์ทำงาน', text: effectText(s.cards[e.cardId]!.cardNo, e.source), delay: t });
         }
@@ -785,7 +814,9 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
           const delay = recoil ? hitAt! - T.hit + T.chargeEnd : at(battle);
           const owner = s.cards[e.cardId]!.owner;
           const slot = prev.players[owner].field.filter((id) => db.get(prev.cards[id]!.cardNo).type !== 'nexus').indexOf(e.cardId);
-          out.push({ kind: 'ghost', cardId: e.cardId, owner, slot, cardNo: s.cards[e.cardId]!.cardNo, rect, mode: e.type === 'destroyed' ? 'destroy' : 'deplete', delay, hiddenUntilStart: recoil });
+          // ผู้โจมตีที่แพ้: แตกตรงจุดที่กระเด็นกลับมาหยุด (ไม่วิ่งกลับไปนอนที่ช่องเดิมก่อน)
+          const knock = recoil && charge?.kind === 'charge' && typeof charge.target !== 'string' ? chargeKnockRect(rect, charge.fromExhausted, charge.target) : null;
+          out.push({ kind: 'ghost', cardId: e.cardId, owner, slot, cardNo: s.cards[e.cardId]!.cardNo, rect: knock ?? rect, mode: e.type === 'destroyed' ? 'destroy' : 'deplete', delay, hiddenUntilStart: recoil });
           ghostsEnd = Math.max(ghostsEnd, delay + T.ghost);
         }
         break;
@@ -821,7 +852,8 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
       case 'voidCore':
         out.push({
           kind: 'float',
-          anchor: e.cardId ? `[data-field-card="${e.cardId}"]` : `[data-reserve="${e.player}"]`,
+          // คอร์วอยด์ลงแทรช (เอปวิป): ป้ายขึ้นที่แทรช ไม่ใช่รีเสิร์ฟ
+          anchor: e.cardId ? `[data-field-card="${e.cardId}"]` : e.trash ? `[data-trash="${e.player}"]` : `[data-reserve="${e.player}"]`,
           text: `+${e.count} Core`,
           tone: 'good',
           delay: t,
@@ -884,9 +916,27 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         out.push({ kind: 'banner', tone: 'step', title: 'ห้ามโจมตี', sub: `สปิริตของ${who(e.player)}โจมตีไม่ได้ในเทิร์นนี้`, delay: t });
         t += 900;
         break;
-      case 'discarded':
-        out.push({ kind: 'fly', cardId: e.cardId, from: rects[`hand:${e.cardId}`] ?? null, to: `[data-trash="${e.player}"]`, mode: 'move', shrink: true, delay: t, hideTarget: false });
+      case 'discarded': {
+        // ทิ้งจากมือ: รวมใบที่ทิ้งต่อเนื่องกันเป็นชุดเดียว หงายเรียงกลางจอให้ทั้งสองฝั่งเห็น แล้วแตกลง Trash
+        if (grouped.has(e)) break;
+        const i0 = events.indexOf(e);
+        const ids: string[] = [];
+        for (let i = i0; i < events.length; i++) {
+          const x = events[i]!;
+          if (x.type !== 'discarded' || x.player !== e.player) break;
+          grouped.add(x);
+          ids.push(x.cardId);
+        }
+        const fromHand: Record<string, Rect> = {};
+        for (const id of ids) {
+          const r = rects[`hand:${id}`];
+          if (r) fromHand[id] = r;
+        }
+        out.push({ kind: 'mill', owner: e.player, cardIds: ids, delay: t, fromHand, title: `${who(e.player)}ทิ้งการ์ดจากมือ` });
+        t += millDuration(ids.length) - 600;
+        draws = 0;
         break;
+      }
       case 'cardsRevealed':
         // ไม่มีใบที่เลือกได้ (ไม่มีการเลือกตามมา): แสดงพัดครู่หนึ่ง แล้วค่อยทิ้งลง Trash
         if (s.choice?.kind !== 'card' || !s.choice.revealed) {
@@ -1066,32 +1116,31 @@ export function chainEntries(s: GameState): Extract<GameEvent, { type: 'effectRe
 }
 
 /**
+ * จุดเริ่มของ action ล่าสุดของผู้เล่นใน log (ไม่นับการตอบตัวเลือก / Pass / จัด Core)
+ * นอกการต่อสู้ Chain เริ่มใหม่ทุกครั้งที่ผู้เล่นทำ action ใหม่ (อัญเชิญ, ใช้ Magic, จบสเต็ป ฯลฯ)
+ */
+let chainFloor = 0;
+const CHAIN_CONTINUES = new Set<Action['type']>(['choose', 'passFlash', 'moveCores', 'noBlock']);
+
+/**
  * ตำแหน่งใน log ของเอฟเฟกต์ที่อยู่ใน Chain ปัจจุบัน
- * แบ่ง 2 ช่วงตาม Flash Timing: ช่วงประกาศโจมตี (→ Flash ก่อนป้องกัน) และช่วงประกาศป้องกัน (→ Flash ก่อนตัดสิน)
+ * ในการต่อสู้ แบ่ง 2 ช่วงตาม Flash Timing: ช่วงประกาศโจมตี (→ Flash ก่อนป้องกัน) และช่วงประกาศป้องกัน (→ Flash ก่อนตัดสิน)
+ * นอกการต่อสู้ (Main / End Step, หลังจบการต่อสู้): เอฟเฟกต์ที่ทำงานต่อเนื่องจาก action เดียวกันของผู้เล่น
  */
 function chainLogIndices(s: GameState): number[] {
   let start = -1;
   for (let i = s.log.length - 1; i >= 0; i--) {
-    if (s.log[i]!.type === 'attackDeclared') {
+    const t = s.log[i]!.type;
+    if (t === 'attackDeclared' || t === 'blockDeclared' || t === 'battleEnded' || t === 'turnStarted' || t === 'phaseChanged') {
       start = i;
       break;
     }
   }
-  if (start < 0) return [];
-  // ประกาศป้องกันแล้ว = เริ่ม Chain ใหม่
-  for (let i = start + 1; i < s.log.length; i++) {
-    const e = s.log[i]!;
-    if (e.type === 'battleEnded' || e.type === 'turnStarted') break;
-    if (e.type === 'blockDeclared') {
-      start = i;
-      break;
-    }
-  }
+  const inBattle = start >= 0 && (s.log[start]!.type === 'attackDeclared' || s.log[start]!.type === 'blockDeclared');
+  if (!inBattle && chainFloor <= s.log.length) start = Math.max(start, chainFloor - 1);
   const out: number[] = [];
   for (let i = start + 1; i < s.log.length; i++) {
-    const e = s.log[i]!;
-    if (e.type === 'battleEnded' || e.type === 'turnStarted') break;
-    if (e.type === 'effectResolving') out.push(i);
+    if (s.log[i]!.type === 'effectResolving') out.push(i);
   }
   return out;
 }
@@ -1347,6 +1396,38 @@ export function handFieldAction(s: GameState, cardId: string): { kind: PlayKind;
   return { kind: 'summon', label: 'ปล่อยเพื่ออัญเชิญ' };
 }
 
+const TYPE_ORDER: Record<string, number> = { spirit: 0, ultimate: 1, brave: 2, nexus: 3, magic: 4 };
+const COLOR_ORDER = ['red', 'purple', 'green', 'white', 'yellow', 'blue'];
+
+/** ลำดับการ์ดในมือตามที่ตั้งค่าไว้ (การ์ดที่ได้มาใหม่ในโหมดจัดเอง ต่อท้าย) */
+export function sortHand(s: GameState, hand: string[], mode: HandSort, manual?: string[]): string[] {
+  if (mode === 'draw') return hand;
+  if (mode === 'manual') {
+    if (!manual) return hand;
+    const known = manual.filter((id) => hand.includes(id));
+    return [...known, ...hand.filter((id) => !known.includes(id))];
+  }
+  const key = (id: string): (number | string)[] => {
+    const def = db.get(s.cards[id]!.cardNo);
+    const cost = def.cost;
+    const color = Math.min(...def.colors.map((c) => (COLOR_ORDER.indexOf(c) + 7) % 7));
+    const type = TYPE_ORDER[def.type] ?? 9;
+    return mode === 'cost' ? [cost, color, def.name] : mode === 'color' ? [color, cost, def.name] : [type, cost, def.name];
+  };
+  const keys = new Map(hand.map((id) => [id, key(id)]));
+  return [...hand].sort((a, b) => {
+    const ka = keys.get(a)!;
+    const kb = keys.get(b)!;
+    for (let i = 0; i < ka.length; i++) {
+      const x = ka[i]!;
+      const y = kb[i]!;
+      if (x === y) continue;
+      return typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), 'th');
+    }
+    return hand.indexOf(a) - hand.indexOf(b);
+  });
+}
+
 /** ปล่อยการ์ดบนมือที่ช่อง Burst ได้หรือไม่ */
 export function canDropBurst(s: GameState, cardId: string): boolean {
   const card = s.cards[cardId];
@@ -1435,6 +1516,14 @@ interface Store {
   /** Core ที่กำลังลาก */
   dragging: string[] | null;
   play: { cardId: string; kind: PlayKind; timing?: MagicTiming; braveOnto?: string } | null;
+  /** การ์ดที่กำลังเล่น (แผงเล่นการ์ดบนกระดาน): Core ที่จะจ่าย/วาง แสดงบน Core ในกระดาน · คลิก Core บนกระดาน = ปรับเอง */
+  playCores: PlayCores | null;
+  setPlayCores(v: PlayCores | null): void;
+  /** คลิก Core บนกระดานระหว่างเล่นการ์ด: ว่าง → จ่าย → วางบนการ์ด → ว่าง */
+  cyclePlayCore(coreId: string): void;
+  /** สปิริตที่กดโจมตีแล้ว รอยืนยัน */
+  attackConfirm: string | null;
+  confirmAttack(ok: boolean): void;
   /** สปิริตที่กำลังเลือก Core สำหรับ [Evolution] */
   evolveCard: string | null;
   /** แผงรายละเอียด: การ์ดที่ชี้อยู่ และการ์ดที่คลิกปักไว้ */
@@ -1508,6 +1597,10 @@ interface Store {
   endDrag(): void;
   /** การ์ดบนมือที่กำลังลาก */
   handDrag: string | null;
+  /** ลำดับการ์ดในมือที่ผู้เล่นจัดเอง (ลากสลับ) · ใช้เมื่อเลือกเรียงแบบ "จัดเอง" */
+  handOrder: Partial<Record<PlayerId, string[]>>;
+  /** ย้ายการ์ดในมือไปไว้ตำแหน่ง index ของลำดับที่แสดงอยู่ (shown) */
+  reorderHand(player: PlayerId, shown: string[], cardId: string, index: number): void;
   startHandDrag(cardId: string): void;
   endHandDrag(): void;
   /** ปล่อยการ์ดที่ลากจากมือ: สนาม = อัญเชิญ/วาง Nexus/ใช้ Magic, burst = เซ็ท Burst */
@@ -1798,12 +1891,14 @@ function coinWinner(seed: number): PlayerId {
 const randomSeed = () => Math.floor(Math.random() * 2 ** 31);
 
 /** ล้างสิ่งที่ผู้เล่นเลือกค้างไว้ทุกครั้งที่ state เปลี่ยน */
-const resetUi: Pick<Store, 'selectedHandCard' | 'selectedCores' | 'dragging' | 'play' | 'evolveCard' | 'multi'> = {
+const resetUi: Pick<Store, 'selectedHandCard' | 'selectedCores' | 'dragging' | 'play' | 'playCores' | 'attackConfirm' | 'evolveCard' | 'multi'> = {
   selectedHandCard: null,
   selectedCores: [],
   multi: null,
   dragging: null,
   play: null,
+  playCores: null,
+  attackConfirm: null,
   evolveCard: null,
 };
 
@@ -1913,12 +2008,15 @@ export const useGame = create<Store>((set, get) => {
     multi: null,
     dragging: null,
     play: null,
+    playCores: null,
+    attackConfirm: null,
     evolveCard: null,
     hovered: null,
     pinned: null,
     trashView: null,
     truth: null,
     handDrag: null,
+    handOrder: {},
     braveDrag: null,
     burstDrag: null,
 
@@ -1947,6 +2045,12 @@ export const useGame = create<Store>((set, get) => {
       set({ handDrag: cardId, selectedHandCard: null, selectedCores: [] });
     },
     endHandDrag: () => set({ handDrag: null }),
+    reorderHand(player, shown, cardId, index) {
+      const rest = shown.filter((id) => id !== cardId);
+      rest.splice(Math.max(0, Math.min(rest.length, index)), 0, cardId);
+      setPrefs({ handSort: 'manual' });
+      set({ handOrder: { ...get().handOrder, [player]: rest }, handDrag: null });
+    },
     dropHand(on) {
       const { handDrag, state, openPlay, dispatch, fx } = get();
       set({ handDrag: null });
@@ -2046,6 +2150,7 @@ export const useGame = create<Store>((set, get) => {
         return false;
       }
       const events = [...pre, ...result.events];
+      if (!CHAIN_CONTINUES.has(action.type)) chainFloor = base.log.length;
       // ออนไลน์: Auto Pass เปิดเสมอ (ทั้งสองเครื่องต้องเดิน state เหมือนกัน)
       const next = get().autoPass || get().online ? autoAdvance(result.state, events) : result.state;
       const newFx = eventsToFx(events, next, state, rects, action.type === 'choose' ? action.pick : undefined);
@@ -2144,15 +2249,37 @@ export const useGame = create<Store>((set, get) => {
       const canPlay = inMain(state)
         ? owner === state.turnPlayer
         : flashPlayer(state) === owner && (magicTimings(state.cards[cardId]!.cardNo).includes('flash') || canQuickSummon(state, cardId));
-      if (!canPlay) return;
-      set({ selectedHandCard: selectedHandCard === cardId ? null : cardId, selectedCores: [] });
+      // เล่นตอนนี้ไม่ได้ก็ยังเปิดเมนูได้ (ปุ่มย้ายตำแหน่งการ์ดในมือ สำหรับจอสัมผัสที่ลากไม่ได้)
+      set({ selectedHandCard: selectedHandCard === cardId ? null : cardId, selectedCores: canPlay ? [] : get().selectedCores });
     },
 
     openPlay: (cardId, kind, timing, braveOnto) => {
       sfx('click');
       set({ play: { cardId, kind, timing, ...(braveOnto ? { braveOnto } : {}) }, selectedHandCard: null });
     },
-    closePlay: () => set({ play: null }),
+    closePlay: () => set({ play: null, playCores: null }),
+    setPlayCores: (v) => set({ playCores: v }),
+    cyclePlayCore(coreId) {
+      const pc = get().playCores;
+      if (!pc || !pc.pool.includes(coreId)) return;
+      const marks = { ...pc.marks };
+      const cur = marks[coreId];
+      if (!cur) marks[coreId] = 'pay';
+      else if (cur === 'pay' && pc.allowPlace) marks[coreId] = 'place';
+      else delete marks[coreId];
+      sfx('core');
+      set({ playCores: { ...pc, marks, manual: true } });
+    },
+    confirmAttack(ok) {
+      const id = get().attackConfirm;
+      set({ attackConfirm: null });
+      if (!ok || !id) return;
+      const { state, dispatch } = get();
+      const card = state.cards[id];
+      if (card && state.phase === 'attack' && !state.battle && card.owner === state.turnPlayer && card.state === 'refresh') {
+        dispatch({ type: 'declareAttack', player: card.owner, attackerId: id });
+      }
+    },
     openEvolve: (cardId) => set({ evolveCard: cardId, selectedHandCard: null, selectedCores: [] }),
     closeEvolve: () => set({ evolveCard: null, selectedCores: [] }),
     confirmEvolve() {
@@ -2310,6 +2437,13 @@ export const useGame = create<Store>((set, get) => {
       }
       if (card.state !== 'refresh') return;
       if (state.phase === 'attack' && !state.battle && card.owner === state.turnPlayer) {
+        // ยืนยันก่อนโจมตี (ตั้งค่าได้) · คลิกสปิริตเดิมซ้ำ = ยืนยัน
+        if (prefs().confirmAttack && get().attackConfirm !== cardId) {
+          sfx('click');
+          set({ attackConfirm: cardId });
+          return;
+        }
+        set({ attackConfirm: null });
         dispatch({ type: 'declareAttack', player: card.owner, attackerId: cardId });
       } else if (state.battle?.step === 'declareBlock' && card.owner !== state.turnPlayer) {
         dispatch({ type: 'declareBlock', player: card.owner, blockerId: cardId });
@@ -2320,4 +2454,4 @@ export const useGame = create<Store>((set, get) => {
 
 // เครื่องมือทดสอบระหว่างพัฒนา (เฉพาะ dev server)
 // dev / build ทดสอบความลื่น (VITE_PERF_HOOKS=1 ตั้งเฉพาะตอนวัดในเครื่อง ไม่มีใน build ที่ขึ้นเว็บ): ให้สคริปต์ทดสอบเข้าถึง store
-if (import.meta.env.DEV || import.meta.env.VITE_PERF_HOOKS) Object.assign(globalThis, { __game: useGame, __db: db });
+if (import.meta.env.DEV || import.meta.env.VITE_PERF_HOOKS) Object.assign(globalThis, { __game: useGame, __db: db, __setPrefs: setPrefs });

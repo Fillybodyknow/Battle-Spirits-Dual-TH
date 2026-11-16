@@ -107,13 +107,35 @@ function Versus() {
   );
 }
 
+const LOBBY_DECK_KEY = 'bs-lobby-deck';
+
 /** เลือกเด็ค + สร้างห้อง / เข้าห้องด้วยรหัส */
 function RoomSetup() {
   const decks = useGame((s) => s.decks);
   const name = useGame((s) => s.playerName);
   const setName = useGame((s) => s.setPlayerName);
   const { onlineHost, onlineJoin } = useGame.getState();
-  const [deck, setDeck] = useState<DeckId>(decks.p1);
+  // เด็คเริ่มต้น: เด็คที่ผู้เล่นเลือกเองครั้งล่าสุดในเครื่องนี้
+  // (ห้าม decks.p1 ตรง ๆ: หลังเล่นออนไลน์ decks.p1 = เด็คของเจ้าของห้อง ผู้เล่น 2 จะได้เด็คของอีกฝ่ายไปเล่นรอบใหม่)
+  const [deck, setDeckState] = useState<DeckId>(() => {
+    const ids = playableDecks();
+    let saved: string | null = null;
+    try {
+      saved = localStorage.getItem(LOBBY_DECK_KEY);
+    } catch {
+      /* อ่านไม่ได้ก็ใช้ค่าอื่น */
+    }
+    if (saved && ids.includes(saved)) return saved;
+    return ids.includes(decks.p1) ? decks.p1 : (ids[0] ?? 'sd01');
+  });
+  const setDeck = (id: DeckId) => {
+    setDeckState(id);
+    try {
+      localStorage.setItem(LOBBY_DECK_KEY, id);
+    } catch {
+      /* เก็บไม่ได้ก็ไม่เป็นไร */
+    }
+  };
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const run = async (fn: () => Promise<void>) => {
