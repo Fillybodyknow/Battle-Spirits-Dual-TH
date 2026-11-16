@@ -1,12 +1,27 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { cardLevel, currentBp, opponentOf, trashSummonRule, type PlayerId } from '@bs/engine';
+import { bpOf, cardLevel, currentBp, isSpiritLike, levelOf, minCores, opponentOf, PLAYERS, trashSummonRule, type GameState, type PlayerId } from '@bs/engine';
 import { cardName, formatEvent, playerLabel } from '../format';
-import { actingPlayer, blockCandidates, controls, db, draftDepleting, flashPlayer, isFxBlocking, isInlineChoice, responseOptions, simulateEvolve, useGame, viewPlayer } from '../store';
+import {
+  actingPlayer,
+  blockCandidates,
+  controls,
+  db,
+  draftDepleting,
+  EMPTY_MULTI,
+  layoutRect,
+  flashPlayer,
+  isFxBlocking,
+  isInlineChoice,
+  multiNeedsHost,
+  responseOptions,
+  simulateEvolve,
+  useGame,
+  viewPlayer,
+} from '../store';
 import { CardFace } from './CardFace';
 import { ChainTracker, RevealFan } from './Fx';
 import { BTN, Modal } from './Modal';
 import { TurnBadge } from './StepSelect';
-import { MultiSummonDialog } from './MultiSummonDialog';
 
 /** ประเภทของสิ่งที่ผู้เล่นต้องทำ: สีเดียวกับกรอบของการ์ดที่ต้องคลิก ใช้เหมือนกันทั้งเกม */
 type PromptTag = 'flash' | 'target' | 'block' | 'attack' | 'core' | 'option';
@@ -99,7 +114,8 @@ export function PromptBar() {
   const blocking = useGame((s) => isFxBlocking(s.fx));
   const truth = useGame((s) => s.truth);
   const bottom = useGame(viewPlayer);
-  const { dispatch, clearCores, choose, confirmEvolve, closeEvolve, confirmCores, cancelCores } = useGame.getState();
+  const multi = useGame((s) => s.multi);
+  const { dispatch, clearCores, choose, confirmEvolve, closeEvolve, confirmCores, cancelCores, multiNext, multiBack, multiAsSpirit } = useGame.getState();
   const actor = actingPlayer(state);
   const { battle, choice } = state;
 
@@ -160,15 +176,48 @@ export function PromptBar() {
       choice.options.forEach((label, i) => add(`opt${i}`, label, () => choose(i)));
     } else if (choice.kind === 'payCost') {
       tag = 'core';
-      detail = `${src} · คลิก Core ใน Reserve หรือบนการ์ดเพื่อเลือก (เลือกแล้ว ${selectedCores.length}/${choice.cost})`;
+      // อัญเชิญด้วยเอฟเฟกต์ (จ่ายคอสต์): ขั้นที่ 1 จ่าย → ขั้นที่ 2 วาง Core กำหนด Lv
+      const summonId = choice.step.do === 'payForSummon' ? choice.step.cardId : null;
+      if (summonId) {
+        source = summonId;
+        title = `อัญเชิญ: จ่ายคอสต์ ${choice.cost}`;
+      }
+      detail = `${src} · คลิก Core ใน Reserve หรือบนการ์ดเพื่อจ่าย (เลือกแล้ว ${selectedCores.length}/${choice.cost})${summonId ? ' · ถัดไป: วาง Core กำหนด Lv' : ''}`;
       add('skip', 'ไม่จ่าย', () => choose(null), 'secondary');
       add('pay', `จ่าย ${choice.cost}`, () => choose({ pay: selectedCores }), 'primary', selectedCores.length !== choice.cost);
     } else if (choice.kind === 'multiSummon') {
-      tag = 'option';
-      detail = `${src} · เลือกในหน้าต่าง`;
+      // อัญเชิญหลายใบจากที่แสดง: เลือกการ์ดจากพัด → วาง Core ทีละใบบนกระดาน → ลงสนามพร้อมกัน
+      const m = multi ?? EMPTY_MULTI;
+      if (m.phase === 'pick') {
+        tag = 'target';
+        title = `เลือกการ์ดที่จะอัญเชิญไม่จ่ายคอสต์ (${m.picks.length}${choice.max !== null ? `/${choice.max}` : ''} ใบ)`;
+        detail = `${src} · คลิกการ์ดที่แสดงเพื่อเลือก/ยกเลิก · ลงสนามพร้อมกัน`;
+        add('skip', 'ไม่อัญเชิญ', () => choose({ summons: [] }), 'secondary');
+        add('next', 'ถัดไป: วาง Core', multiNext, 'primary', m.picks.length === 0);
+      } else {
+        const cur = m.picks[m.index]!;
+        source = cur;
+        const last = m.index + 1 >= m.picks.length;
+        const step = `ใบที่ ${m.index + 1}/${m.picks.length}`;
+        add('back', 'ย้อนกลับ', multiBack, 'secondary');
+        if (multiNeedsHost(state, m)) {
+          tag = 'target';
+          title = `${cardName(state, cur)}: คลิกสปิริตที่จะร่วมร่าง (${step})`;
+          detail = `${src} · หรือกด "ลงเป็นสปิริต" เพื่อวาง Core เอง`;
+          add('spirit', 'ลงเป็นสปิริต', multiAsSpirit, 'primary');
+        } else {
+          const min = minCores(db.get(state.cards[cur]!.cardNo));
+          tag = 'core';
+          title = `อัญเชิญ: วาง Core (${step})`;
+          detail = `${src} · เลือก ${selectedCores.length} ดวง (ขั้นต่ำ ${min}) · ปรับ Lv ได้ที่แผงมุมสนาม`;
+          add('next', last ? `ลงสนาม ${m.picks.length} ใบ` : 'ถัดไป', multiNext, 'primary', selectedCores.length < min);
+        }
+      }
     } else if (choice.kind === 'placeCores') {
       tag = 'core';
-      detail = `${src} · คลิก Core ใน Reserve หรือบนการ์ดในสนามเพื่อเลือก (เลือกแล้ว ${selectedCores.length}, ขั้นต่ำ ${choice.min})`;
+      source = choice.cardId;
+      title = 'อัญเชิญ: วาง Core กำหนด Lv';
+      detail = `${src} · เลือก ${selectedCores.length} ดวง (ขั้นต่ำ ${choice.min}) · ปรับ Lv ได้ที่แผงมุมสนาม`;
       add('place', `วาง ${selectedCores.length} ดวง`, () => choose({ pay: selectedCores }), 'primary', selectedCores.length < choice.min);
     } else if (isInlineChoice(state)) {
       tag = 'target';
@@ -567,7 +616,7 @@ export function ChoiceDialog() {
   const mine = useGame((s) => controls(s, s.state.choice?.player));
   if (!mine) return null;
   if (!blocking && choice?.kind === 'order') return <OrderPanel />;
-  if (!blocking && choice?.kind === 'multiSummon') return <MultiSummonDialog key={choice.revealed.join()} />;
+  if (!blocking && choice?.kind === 'multiSummon') return <MultiPickFan />;
   if (blocking || !choice || choice.kind !== 'card' || isInlineChoice(state)) return null;
   // การ์ดที่เปิดจากเด็ค: เรียงเป็นพัดบนกระดาน (ทั้งสองฝ่ายเห็น)
   if (choice.revealed) {
@@ -578,6 +627,21 @@ export function ChoiceDialog() {
         candidates={choice.candidates}
         onPick={(id) => choose(id)}
         title={`${playerLabel(choice.player)} แสดงการ์ดจากเด็ค · ${choice.step.do === 'revealPickRestTrash' ? 'เลือก 1 ใบขึ้นมือ ที่เหลือลง Trash' : choice.prompt}`}
+        onSkip={choice.optional ? () => choose(null) : undefined}
+      />
+    );
+  }
+
+  // การ์ดในแทรช: เรียงเป็นพัดบนกระดานเหมือนการ์ดที่เปิดจากเด็ค (ไม่บังกระดานด้วยหน้าต่าง)
+  const trashOwner = PLAYERS.find((p) => choice.candidates.length > 0 && choice.candidates.every((id) => state.players[p].trashCards.includes(id)));
+  if (trashOwner) {
+    return (
+      <RevealFan
+        owner={choice.player}
+        cardIds={choice.candidates}
+        candidates={choice.candidates}
+        onPick={(id) => choose(id)}
+        title={`${choice.prompt} · จากแทรช${trashOwner === choice.player ? '' : `ของ${playerLabel(trashOwner)}`}`}
         onSkip={choice.optional ? () => choose(null) : undefined}
       />
     );
@@ -607,6 +671,133 @@ export function ChoiceDialog() {
         )}
       </div>
     </Modal>
+  );
+}
+
+/** อัญเชิญหลายใบจากที่แสดง ขั้นเลือกการ์ด: พัดการ์ดบนกระดาน (คลิกเพื่อเลือก/ยกเลิก) */
+function MultiPickFan() {
+  const state = useGame((s) => s.state);
+  const multi = useGame((s) => s.multi);
+  const multiToggle = useGame((s) => s.multiToggle);
+  const choice = state.choice;
+  if (choice?.kind !== 'multiSummon') return null;
+  const m = multi ?? EMPTY_MULTI;
+  if (m.phase !== 'pick') return null;
+  return (
+    <RevealFan
+      owner={choice.player}
+      cardIds={choice.revealed}
+      candidates={choice.candidates}
+      chosenIds={m.picks}
+      chosenLabel="เลือก ✓ อัญเชิญ"
+      onPick={multiToggle}
+      title={`${playerLabel(choice.player)} แสดงการ์ดจากเด็ค · ${choice.max === null ? 'เลือกอัญเชิญได้กี่ใบก็ได้' : `เลือกอัญเชิญได้สูงสุด ${choice.max} ใบ`} · ที่เหลือไว้ใต้สุดเด็ค`}
+    />
+  );
+}
+
+/**
+ * แผงอัญเชิญที่มุมสนามของผู้เลือก (มาตรฐานเดียวกันทุกการอัญเชิญด้วยเอฟเฟกต์: เบิร์ส / มือ / เด็ค / แทรช)
+ * ไม่บังกระดาน: เลือก Core บนกระดานโดยตรง แผงนี้แสดงการ์ดที่จะลงสนาม · ปุ่มเลือก Lv · ผลที่จะได้ · คำเตือนสูญสลาย
+ */
+export function SummonPanel() {
+  const state = useGame((s) => s.state);
+  const multi = useGame((s) => s.multi);
+  const selected = useGame((s) => s.selectedCores);
+  const blocking = useGame((s) => isFxBlocking(s.fx));
+  const mine = useGame((s) => controls(s, s.state.choice?.player));
+  const c = state.choice;
+  if (!c || blocking || !mine) return null;
+  let cardId: string | null = null;
+  let min = 0;
+  let pay: number | null = null;
+  if (c.kind === 'placeCores') {
+    cardId = c.cardId;
+    min = c.min;
+  } else if (c.kind === 'payCost' && c.step.do === 'payForSummon') {
+    cardId = c.step.cardId;
+    pay = c.cost;
+  } else if (c.kind === 'multiSummon' && multi?.phase === 'place' && !multiNeedsHost(state, multi)) {
+    cardId = multi.picks[multi.index] ?? null;
+    if (cardId) min = minCores(db.get(state.cards[cardId]!.cardNo));
+  }
+  if (!cardId) return null;
+  // มุมซ้ายบนของสนามผู้เลือก (สนามฝั่งบน = มุมซ้ายล่าง ไม่บังแถบกลาง)
+  const mat = layoutRect(document.querySelector(`[data-mat="${c.player}"]`));
+  if (!mat) return null;
+  const lower = mat.y + mat.h / 2 > innerHeight / 2;
+  // เลยคอลัมน์ Burst/Life ทางซ้ายไปอยู่ในพื้นที่สนาม
+  const left = mat.x + 150;
+  const style = lower ? { left, top: mat.y + 12 } : { left, top: mat.y + mat.h - 12, transform: 'translateY(-100%)' };
+  return (
+    <div className="pointer-events-none fixed inset-y-0 left-0 right-[var(--sidebar)] z-[38]">
+      <div className="hud-panel pointer-events-auto absolute flex w-72 gap-2.5 rounded-xl p-2.5" style={style}>
+        <SummonCoreDetail state={state} cardId={cardId} selected={selected} min={min} pay={pay} />
+      </div>
+    </div>
+  );
+}
+
+function SummonCoreDetail({ state, cardId, selected, min, pay }: { state: GameState; cardId: string; selected: string[]; min: number; pay: number | null }) {
+  const autoSelectCores = useGame((s) => s.autoSelectCores);
+  const hover = useGame((s) => s.hover);
+  const def = db.get(state.cards[cardId]!.cardNo);
+  const owner = state.cards[cardId]!.owner;
+  const lv = levelOf(def, selected.length);
+  const bp = bpOf(def, selected.length);
+  // Core ที่ดึงจากการ์ดบนสนาม: การ์ดที่ Core เหลือไม่ถึง Lv1 จะสูญสลาย
+  const depleting = state.players[owner].field.filter((id) => {
+    const c = state.cards[id]!;
+    const d = db.get(c.cardNo);
+    if (!isSpiritLike(d) || !c.cores.some((x) => selected.includes(x))) return false;
+    return levelOf(d, c.cores.filter((x) => !selected.includes(x)).length) === 0;
+  });
+  return (
+    <>
+      <div className="h-28 w-20 shrink-0" onMouseEnter={() => hover(cardId)} onMouseLeave={() => hover(null)}>
+        <CardFace def={def} level={pay === null && lv > 0 ? lv : undefined} />
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5 text-xs text-slate-200">
+        <div className="text-[11px] font-bold text-emerald-300">อัญเชิญ</div>
+        <div className="truncate text-sm font-black text-white">{def.name}</div>
+        {pay !== null ? (
+          <div>
+            จ่ายคอสต์ <b className="text-amber-300">{pay}</b> · เลือกแล้ว {selected.length}/{pay}
+            <div className="text-slate-400">คลิก Core ใน Reserve หรือบนการ์ดในสนาม · ถัดไป: วาง Core กำหนด Lv</div>
+          </div>
+        ) : (
+          <>
+            <div className="flex flex-wrap gap-1">
+              {def.levels.map((l) => (
+                <button
+                  key={l.level}
+                  type="button"
+                  onClick={() => autoSelectCores(l.cores)}
+                  className={`rounded px-1.5 py-0.5 text-[11px] font-black ${lv === l.level ? 'bg-emerald-400 text-slate-950' : 'bg-slate-700 text-slate-200 hover:bg-slate-600'}`}
+                  title={`วาง Core ${l.cores} ดวงจาก Reserve`}
+                >
+                  Lv{l.level} · {l.cores}
+                </button>
+              ))}
+            </div>
+            <div>
+              เลือก <b>{selected.length}</b> ดวง (ขั้นต่ำ {min})
+              {lv > 0 ? (
+                <b className="text-emerald-300">
+                  {' '}
+                  → Lv{lv}
+                  {bp ? ` · BP ${bp.toLocaleString()}` : ''}
+                </b>
+              ) : (
+                <b className="text-rose-300"> · ยังไม่ถึง Lv1</b>
+              )}
+            </div>
+            {depleting.length > 0 && <div className="font-bold text-rose-300">{depleting.map((id) => cardName(state, id)).join(', ')} จะสูญสลาย</div>}
+            <div className="text-slate-400">คลิก Core ใน Reserve หรือบนการ์ดในสนามเพื่อปรับ</div>
+          </>
+        )}
+      </div>
+    </>
   );
 }
 

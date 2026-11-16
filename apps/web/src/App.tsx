@@ -4,7 +4,7 @@ import { playerLabel } from './format';
 import { onlineAvailable, onlineVia, playableDecks, useGame, viewPlayer, type DeckId } from './store';
 import { deckInfo } from './decks';
 import { HandFan, PlayerMat } from './components/Board';
-import { ChoiceDialog, ErrorToast, FlashCue, PromptBar, TrashDialog } from './components/Controls';
+import { ChoiceDialog, ErrorToast, FlashCue, PromptBar, SummonPanel, TrashDialog } from './components/Controls';
 import { UpdateNotice, WhatsNew } from './components/Updates';
 import { CornerButtons, FinalBlowWarning, FloatingInspector, PlayerPlate, TurnAura } from './components/Hud';
 import { PlayDialog } from './components/PlayDialog';
@@ -337,6 +337,7 @@ function GameScreen() {
       <DrawPrompt />
       <PlayDialog />
       <ChoiceDialog />
+      <SummonPanel />
       <TrashDialog />
       <ErrorToast />
     </div>

@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { IMG } from '../assets';
 import { flyCoreIn } from '../motion';
-import { canMoveCore, canSelectCore, useGame } from '../store';
+import { canMoveCore, canSelectCore, useGame, multiAssigned, multiCurrent } from '../store';
 import { beginCardDrag } from './DragGhost';
 
 interface CoreProps {
@@ -30,8 +30,12 @@ export function Core({ coreId, size = 'md', board, onClick, mark, noFlip }: Core
   const core = useGame((s) => s.state.cores[coreId]);
   const movable = useGame((s) => !!board && !s.evolveCard && canMoveCore(s.state, coreId));
   /** โหมดเลือก Core พิเศษ (Evolution / จ่ายคอสต์) ให้ Core ที่เลือกได้เรืองแสง */
-  const picking = useGame((s) => !!board && (!!s.evolveCard || s.state.choice?.kind === 'payCost' || s.state.choice?.kind === 'placeCores'));
-  const selectable = useGame((s) => !!board && canSelectCore(s.state, s.evolveCard, coreId));
+  const picking = useGame(
+    (s) => !!board && (!!s.evolveCard || s.state.choice?.kind === 'payCost' || s.state.choice?.kind === 'placeCores' || !!multiCurrent(s.state, s.multi)),
+  );
+  const selectable = useGame((s) => !!board && canSelectCore(s.state, s.evolveCard, coreId, s.multi));
+  /** อัญเชิญหลายใบ: Core ที่จัดให้ใบอื่นไปแล้ว */
+  const assigned = useGame((s) => !!board && multiAssigned(s.state, s.multi).includes(coreId));
   const selected = useGame((s) => s.selectedCores.includes(coreId));
   const dragging = useGame((s) => s.dragging?.includes(coreId) ?? false);
   const toggleCore = useGame((s) => s.toggleCore);
@@ -46,6 +50,8 @@ export function Core({ coreId, size = 'md', board, onClick, mark, noFlip }: Core
         ? 'ring-2 ring-emerald-400 rounded-full bg-emerald-500/30'
         : selected
           ? 'ring-2 ring-yellow-300 rounded-full bg-yellow-300/30 -translate-y-0.5'
+          : assigned
+            ? 'ring-2 ring-emerald-400 rounded-full bg-emerald-500/30 opacity-70'
           : picking && selectable
             ? 'ring-2 ring-fuchsia-400/80 rounded-full'
             : '';

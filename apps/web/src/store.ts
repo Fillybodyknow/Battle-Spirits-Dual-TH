@@ -212,10 +212,76 @@ export function isChoiceCandidate(s: GameState, cardId: string): boolean {
  *  - จ่ายคอสต์ระหว่างเอฟเฟกต์: Core ใน Reserve หรือบนการ์ดของผู้จ่าย
  *  - ปกติ: Core ที่ย้ายได้ใน Main Step
  */
-export function canSelectCore(s: GameState, evolveCard: string | null, coreId: string): boolean {
+/**
+ * อัญเชิญหลายใบจากที่แสดง (choice multiSummon) บนกระดาน: เลือกการ์ดจากพัด → วาง Core / เลือกผู้ร่วมร่างทีละใบ → ลงพร้อมกัน
+ *  - pick: กำลังเลือกการ์ด · place: กำลังจัดใบที่ index
+ *  - plans: ใบที่จัดเสร็จแล้ว (cores = วางเป็นสปิริต, host = Brave ร่วมร่าง) · asSpirit: Brave ที่เลือกลงเป็นสปิริต
+ */
+export interface MultiPlan {
+  phase: 'pick' | 'place';
+  picks: string[];
+  index: number;
+  plans: Record<string, { cores: string[] } | { host: string }>;
+  asSpirit: string[];
+}
+export const EMPTY_MULTI: MultiPlan = { phase: 'pick', picks: [], index: 0, plans: {}, asSpirit: [] };
+
+/** ใบที่กำลังจัดในขั้น place (null = ไม่ได้จัดอยู่) */
+export function multiCurrent(s: GameState, m: MultiPlan | null): string | null {
+  if (s.choice?.kind !== 'multiSummon' || !m || m.phase !== 'place') return null;
+  return m.picks[m.index] ?? null;
+}
+
+/** Core ที่วางให้ใบอื่นที่จัดไปแล้ว */
+export function multiAssigned(s: GameState, m: MultiPlan | null): string[] {
+  if (s.choice?.kind !== 'multiSummon' || !m) return [];
+  const cur = multiCurrent(s, m);
+  return Object.entries(m.plans).flatMap(([id, p]) => (id !== cur && 'cores' in p ? p.cores : []));
+}
+
+/** สปิริตที่ Brave ใบนี้ร่วมร่างได้ (ไม่ซ้ำกับใบอื่นที่จัดไว้) */
+export function multiHosts(s: GameState, m: MultiPlan | null, braveId: string): string[] {
+  const c = s.choice;
+  if (c?.kind !== 'multiSummon' || !m) return [];
+  const def = db.get(s.cards[braveId]!.cardNo);
+  if (def.type !== 'brave') return [];
+  const min = def.braveCondition?.minCost ?? 0;
+  const taken = new Set(Object.entries(m.plans).flatMap(([id, p]) => (id !== braveId && 'host' in p ? [p.host] : [])));
+  return s.players[c.player].field.filter((id) => {
+    const card = s.cards[id]!;
+    const d = db.get(card.cardNo);
+    return d.type === 'spirit' && d.cost >= min && card.braves.length === 0 && !taken.has(id);
+  });
+}
+
+/** ใบที่กำลังจัดเป็น Brave ที่รอเลือกผู้ร่วมร่าง (ยังไม่ได้เลือกลงเป็นสปิริต) */
+export function multiNeedsHost(s: GameState, m: MultiPlan | null): boolean {
+  const cur = multiCurrent(s, m);
+  return !!cur && !m!.asSpirit.includes(cur) && multiHosts(s, m, cur).length > 0;
+}
+
+/** สปิริตบนสนามนี้เป็นผู้ร่วมร่างที่คลิกได้ของ Brave ที่กำลังจัด */
+export function isMultiHostCandidate(st: { state: GameState; multi: MultiPlan | null }, cardId: string): boolean {
+  const cur = multiCurrent(st.state, st.multi);
+  return !!cur && mine(st.state.choice?.player) && multiNeedsHost(st.state, st.multi) && multiHosts(st.state, st.multi, cur).includes(cardId);
+}
+
+/** Core ในรีเสิร์ฟสำหรับวางอัตโนมัติ n ดวง: Core ธรรมดาก่อน Soul Core (ไม่เอาที่ใช้ไปแล้ว) */
+export function autoCores(s: GameState, player: PlayerId, n: number, exclude: string[] = []): string[] {
+  return [...s.players[player].reserve]
+    .filter((id) => !exclude.includes(id))
+    .sort((a, b) => Number(s.cores[a]!.isSoul) - Number(s.cores[b]!.isSoul))
+    .slice(0, n);
+}
+
+export function canSelectCore(s: GameState, evolveCard: string | null, coreId: string, multi: MultiPlan | null = null): boolean {
   const core = s.cores[coreId];
   const loc = core ? locateCore(s, coreId) : null;
   if (!core || !loc || !mine(core.owner)) return false;
+  if (s.choice?.kind === 'multiSummon') {
+    if (!multiCurrent(s, multi) || multiNeedsHost(s, multi) || multiAssigned(s, multi).includes(coreId)) return false;
+    return core.owner === s.choice.player && loc.player === s.choice.player && (loc.area === 'reserve' || loc.area === 'card');
+  }
   if (evolveCard) {
     const owner = s.cards[evolveCard]!.owner;
     return loc.area === 'card' && loc.player === owner && loc.cardId !== evolveCard && isSpiritLike(db.get(s.cards[loc.cardId]!.cardNo));
@@ -1050,6 +1116,9 @@ function settleView(s: { state: GameState; viewTurn: PlayerId }, fx: Fx[]): { fx
 }
 
 /** แอนิเมชันที่ต้องเล่นให้จบก่อนผู้เล่นตัดสินใจต่อ (ลงการ์ด, เอฟเฟกต์ทำงาน, Magic/Burst, วิ่งชน, cut-in) */
+/** เวลา (ms) ของจังหวะในฉากต่อ Chain สำหรับเสียง: ต้องตรงกับ CL_DRAW_AT / CL_LOCK_AT ใน Fx.tsx */
+const CHAIN_SFX = { draw: 420, lock: 800 };
+
 export function isFxBlocking(fx: Fx[]): boolean {
   return fx.some(
     (f) =>
@@ -1189,9 +1258,16 @@ function playFxSounds(list: Fx[]) {
       case 'cardActivate':
         sfx('activate', f.delay);
         break;
-      case 'chainAdd':
-        sfx('chain', f.delay + 300);
+      case 'chainAdd': {
+        // ตรงกับไทม์ไลน์ของ ChainAddFx (Fx.tsx): พุ่งเข้า 0 · โซ่ลาก CL_DRAW_AT · ล็อก CL_LOCK_AT · เลขพลิกหลังล็อก
+        const heavy = f.index + 1 >= 3;
+        sfx('chainIn', f.delay);
+        sfx('chainRattle', f.delay + CHAIN_SFX.draw);
+        sfx(heavy ? 'chainLockHeavy' : 'chainLock', f.delay + CHAIN_SFX.lock);
+        sfx('chainDrone', f.delay + CHAIN_SFX.lock);
+        sfx('chainNumber', f.delay + CHAIN_SFX.lock + 110);
         break;
+      }
       case 'chain':
         f.cardIds.forEach((_, i) => sfx('chain', f.delay + i * 350));
         sfx('resolve', f.delay + f.duration - 650);
@@ -1334,6 +1410,18 @@ interface Store {
   selectedHandCard: string | null;
   /** Core ที่เลือกไว้ (คลิกเลือกหลายดวงแล้วลาก/คลิกปลายทาง) */
   selectedCores: string[];
+  /** อัญเชิญหลายใบจากที่แสดงบนกระดาน (ดู MultiPlan) */
+  multi: MultiPlan | null;
+  /** ขั้นเลือกการ์ด: เลือก/ยกเลิกการ์ดที่แสดง */
+  multiToggle(cardId: string): void;
+  /** ถัดไป: เลือกการ์ดเสร็จ → จัดใบแรก / จัดใบนี้เสร็จ → ใบถัดไป หรือส่งการเลือกทั้งหมด */
+  multiNext(): void;
+  /** ย้อนกลับไปใบก่อนหน้า / กลับไปเลือกการ์ด */
+  multiBack(): void;
+  /** Brave ที่กำลังจัด: ลงสนามเป็นสปิริต (วาง Core เอง) */
+  multiAsSpirit(): void;
+  /** เลือก Core อัตโนมัติ n ดวงจากรีเสิร์ฟ (ปุ่มเลือก Lv) */
+  autoSelectCores(n: number): void;
   /** Core ที่กำลังลาก */
   dragging: string[] | null;
   play: { cardId: string; kind: PlayKind; timing?: MagicTiming; braveOnto?: string } | null;
@@ -1700,9 +1788,10 @@ function coinWinner(seed: number): PlayerId {
 const randomSeed = () => Math.floor(Math.random() * 2 ** 31);
 
 /** ล้างสิ่งที่ผู้เล่นเลือกค้างไว้ทุกครั้งที่ state เปลี่ยน */
-const resetUi: Pick<Store, 'selectedHandCard' | 'selectedCores' | 'dragging' | 'play' | 'evolveCard'> = {
+const resetUi: Pick<Store, 'selectedHandCard' | 'selectedCores' | 'dragging' | 'play' | 'evolveCard' | 'multi'> = {
   selectedHandCard: null,
   selectedCores: [],
+  multi: null,
   dragging: null,
   play: null,
   evolveCard: null,
@@ -1811,6 +1900,7 @@ export const useGame = create<Store>((set, get) => {
     fx: [{ id: ++fxSeq, kind: 'banner', tone: 'turn', title: 'เทิร์นที่ 1', sub: 'เริ่มเกม' }],
     selectedHandCard: null,
     selectedCores: [],
+    multi: null,
     dragging: null,
     play: null,
     evolveCard: null,
@@ -2065,9 +2155,92 @@ export const useGame = create<Store>((set, get) => {
       if (state.choice) dispatch({ type: 'choose', player: state.choice.player, pick });
     },
 
+    multiToggle(cardId) {
+      const { state } = get();
+      const c = state.choice;
+      if (c?.kind !== 'multiSummon' || !c.candidates.includes(cardId)) return;
+      const m = get().multi ?? EMPTY_MULTI;
+      if (m.phase !== 'pick') return;
+      if (m.picks.includes(cardId)) {
+        set({ multi: { ...m, picks: m.picks.filter((id) => id !== cardId) } });
+        return;
+      }
+      if (c.max !== null && m.picks.length >= c.max) return;
+      sfx('click');
+      set({ multi: { ...m, picks: [...m.picks, cardId] } });
+    },
+    multiNext() {
+      const { state, selectedCores, choose } = get();
+      const c = state.choice;
+      if (c?.kind !== 'multiSummon') return;
+      const m = get().multi ?? EMPTY_MULTI;
+      // เตรียมใบที่ i: Core ที่วางไว้เดิม หรือเลือกอัตโนมัติตามจำนวนขั้นต่ำ
+      const enter = (mm: MultiPlan, i: number) => {
+        const id = mm.picks[i]!;
+        const prev = mm.plans[id];
+        const used = Object.entries(mm.plans).flatMap(([k, p]) => (k !== id && 'cores' in p ? p.cores : []));
+        const at = { ...mm, phase: 'place' as const, index: i };
+        const cores = multiNeedsHost(state, at)
+          ? []
+          : prev && 'cores' in prev
+            ? prev.cores
+            : autoCores(state, c.player, minCores(db.get(state.cards[id]!.cardNo)), used);
+        set({ multi: at, selectedCores: cores });
+      };
+      if (m.phase === 'pick') {
+        if (m.picks.length === 0) return;
+        enter(m, 0);
+        return;
+      }
+      const cur = m.picks[m.index]!;
+      const plans = { ...m.plans };
+      if (!multiNeedsHost(state, m)) plans[cur] = { cores: [...selectedCores] };
+      const next = { ...m, plans };
+      if (m.index + 1 < m.picks.length) {
+        enter(next, m.index + 1);
+        return;
+      }
+      const summons = m.picks.map((id) => {
+        const p = plans[id]!;
+        return 'host' in p ? { cardId: id, braveOnto: p.host } : { cardId: id, cores: p.cores };
+      });
+      choose({ summons });
+    },
+    multiBack() {
+      const { state } = get();
+      const m = get().multi;
+      if (state.choice?.kind !== 'multiSummon' || !m || m.phase !== 'place') return;
+      if (m.index === 0) {
+        set({ multi: { ...m, phase: 'pick' }, selectedCores: [] });
+        return;
+      }
+      const prev = m.picks[m.index - 1]!;
+      const p = m.plans[prev];
+      set({ multi: { ...m, index: m.index - 1 }, selectedCores: p && 'cores' in p ? p.cores : [] });
+    },
+    multiAsSpirit() {
+      const { state } = get();
+      const m = get().multi;
+      const cur = multiCurrent(state, m);
+      if (!cur || !m) return;
+      const used = multiAssigned(state, m);
+      const plans = { ...m.plans };
+      delete plans[cur];
+      set({
+        multi: { ...m, plans, asSpirit: [...m.asSpirit, cur] },
+        selectedCores: autoCores(state, state.choice!.player, minCores(db.get(state.cards[cur]!.cardNo)), used),
+      });
+    },
+    autoSelectCores(n) {
+      const { state, multi } = get();
+      const c = state.choice;
+      if (!c) return;
+      set({ selectedCores: autoCores(state, c.player, n, multiAssigned(state, multi)) });
+    },
+
     toggleCore(coreId) {
       const { state, selectedCores, evolveCard } = get();
-      if (!canSelectCore(state, evolveCard, coreId)) return;
+      if (!canSelectCore(state, evolveCard, coreId, get().multi)) return;
       set({
         selectedCores: selectedCores.includes(coreId) ? selectedCores.filter((id) => id !== coreId) : [...selectedCores, coreId],
         selectedHandCard: null,
@@ -2103,6 +2276,16 @@ export const useGame = create<Store>((set, get) => {
       set({ pinned: cardId });
 
       if (isChoiceCandidate(state, cardId)) return choose(cardId);
+      // อัญเชิญหลายใบ: Brave ที่กำลังจัด → คลิกสปิริตที่จะร่วมร่าง
+      {
+        const m = get().multi;
+        const cur = multiCurrent(state, m);
+        if (cur && multiNeedsHost(state, m) && multiHosts(state, m, cur).includes(cardId)) {
+          set({ multi: { ...m!, plans: { ...m!.plans, [cur]: { host: cardId } } } });
+          get().multiNext();
+          return;
+        }
+      }
       if (evolveCard || state.choice || !mine(card.owner)) return;
 
       if (selectedCores.length > 0 && card.owner === state.turnPlayer) {

@@ -1537,6 +1537,8 @@ export function RevealFan({
   onPick,
   onSkip,
   title,
+  chosenIds,
+  chosenLabel,
 }: {
   owner: string;
   cardIds: string[];
@@ -1546,6 +1548,10 @@ export function RevealFan({
   /** ไม่เลือก (ตัวเลือกที่ไม่บังคับ) */
   onSkip?: () => void;
   title: string;
+  /** เลือกหลายใบ: ใบที่เลือกแล้ว (ยกขึ้น) แต่ยังคลิกเพื่อยกเลิกได้ */
+  chosenIds?: string[];
+  /** ป้ายใต้ใบที่เลือก */
+  chosenLabel?: string;
 }) {
   const cards = useGame((s) => s.state.cards);
   const hover = useGame((s) => s.hover);
@@ -1568,7 +1574,7 @@ export function RevealFan({
         const p = pos[i]!;
         if (!card) return null;
         const can = !!onPick && !!candidates?.includes(id);
-        const isChosen = chosen === id;
+        const isChosen = chosen === id || !!chosenIds?.includes(id);
         const dim = (onPick && !can) || (chosen !== undefined && chosen !== null && !isChosen);
         return (
           <div
@@ -1590,15 +1596,15 @@ export function RevealFan({
           >
             <div className="h-full w-full" style={{ animation: `fx-chain-in 0.4s ${i * 90}ms cubic-bezier(.2,.9,.3,1.2) both` }}>
             <div
-              className={`relative h-full w-full rounded-lg shadow-[0_10px_25px_rgba(0,0,0,0.7)] ${can ? 'ring-4 ring-fuchsia-400' : ''} ${isChosen ? 'ring-4 ring-yellow-300' : ''}`}
-              style={can ? { animation: 'fx-choice-glow 1.4s ease-in-out infinite' } : isChosen ? { boxShadow: '0 0 30px 8px rgba(250,204,21,0.7)' } : undefined}
+              className={`relative h-full w-full rounded-lg shadow-[0_10px_25px_rgba(0,0,0,0.7)] ${can && !isChosen ? 'ring-4 ring-fuchsia-400' : ''} ${isChosen ? 'ring-4 ring-yellow-300' : ''}`}
+              style={isChosen ? { boxShadow: '0 0 30px 8px rgba(250,204,21,0.7)' } : can ? { animation: 'fx-choice-glow 1.4s ease-in-out infinite' } : undefined}
             >
               <CardFace def={db.get(card.cardNo)} />
               {dim && <div className="absolute inset-0 rounded-lg bg-slate-950/65" />}
             </div>
             </div>
-            {can && <div className="absolute inset-x-2 -bottom-3 rounded bg-fuchsia-500 py-0.5 text-center text-xs font-bold text-white shadow">คลิกเพื่อเลือก</div>}
-            {isChosen && <div className="absolute inset-x-2 -bottom-3 rounded bg-yellow-300 py-0.5 text-center text-xs font-black text-slate-900 shadow">เลือก ✓ ขึ้นมือ</div>}
+            {can && !isChosen && <div className="absolute inset-x-2 -bottom-3 rounded bg-fuchsia-500 py-0.5 text-center text-xs font-bold text-white shadow">คลิกเพื่อเลือก</div>}
+            {isChosen && <div className="absolute inset-x-2 -bottom-3 rounded bg-yellow-300 py-0.5 text-center text-xs font-black text-slate-900 shadow">{chosenLabel ?? 'เลือก ✓ ขึ้นมือ'}</div>}
           </div>
         );
       })}

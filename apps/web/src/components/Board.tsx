@@ -4,7 +4,7 @@ import { playerLabel } from '../format';
 import { IMG } from '../assets';
 import type { Fx } from '../store';
 import { blockCandidates, controls, hiddenFrom, mine, braveHostOf, braveHosts, canDropBurst, canQuickSummon, handFieldAction, separatePlacement } from '../store';
-import { actingPlayer, canEvolve, db, flashPlayer, inMain, isChoiceCandidate, isFxBlocking, magicTimings, responseOptions, simulateEvolve, simulateMove, useGame } from '../store';
+import { actingPlayer, canEvolve, db, isMultiHostCandidate, flashPlayer, inMain, isChoiceCandidate, isFxBlocking, magicTimings, responseOptions, simulateEvolve, simulateMove, useGame } from '../store';
 import { useFlashUsable } from './Controls';
 import { CardBack, CardFace } from './CardFace';
 import { Core, CoreRow, CoreTray } from './Core';
@@ -128,8 +128,8 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
   const dragging = useGame((s) => s.dragging);
   const hasSelection = useGame((s) => s.selectedCores.length > 0);
   const pinned = useGame((s) => s.pinned === cardId);
-  /** เป็นตัวเลือกของเอฟเฟกต์ที่รออยู่ (คลิกเพื่อเลือก) */
-  const candidate = useGame((s) => isChoiceCandidate(s.state, cardId) && !isFxBlocking(s.fx));
+  /** เป็นตัวเลือกของเอฟเฟกต์ที่รออยู่ (คลิกเพื่อเลือก) · อัญเชิญหลายใบ: ผู้ร่วมร่างของ Brave ที่กำลังจัด */
+  const candidate = useGame((s) => (isChoiceCandidate(s.state, cardId) || isMultiHostCandidate(s, cardId)) && !isFxBlocking(s.fx));
   /** กำลังเลือก Core สำหรับ [Evolution] ของการ์ดนี้ */
   const evolving = useGame((s) => s.evolveCard === cardId);
   const evolveMode = useGame((s) => !!s.evolveCard);

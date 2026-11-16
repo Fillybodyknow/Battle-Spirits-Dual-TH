@@ -18,6 +18,18 @@ export type SfxName =
   | 'step'
   | 'tick'
   | 'chain'
+  /** ฉากต่อ Chain: การ์ดพุ่งเข้ากอง */
+  | 'chainIn'
+  /** ฉากต่อ Chain: โซ่ลากมาต่อ */
+  | 'chainRattle'
+  /** ฉากต่อ Chain: ล็อก (Chain 2) */
+  | 'chainLock'
+  /** ฉากต่อ Chain: ล็อกแบบหนัก (Chain 3 ขึ้นไป) */
+  | 'chainLockHeavy'
+  /** ฉากต่อ Chain: เลข Chain พลิก */
+  | 'chainNumber'
+  /** ฉากต่อ Chain: เสียงฮึมช่วงค้าง */
+  | 'chainDrone'
   | 'resolve'
   | 'swish'
   | 'whoosh'
@@ -178,6 +190,47 @@ const SYNTH: Record<SfxName, (t: number) => void> = {
     // เสียงโซ่โลหะ: ความถี่สูงหลายเสียงไม่เป็นฮาร์โมนิก
     [2400, 3150, 4100].forEach((f, i) => tone(t + i * 0.015, f, 0.22, { type: 'square', gain: 0.04 }));
     noise(t, 0.12, { type: 'highpass', freq: 4000, gain: 0.12 });
+  },
+  // ---------------- ฉากต่อ Chain (เรียงตามไทม์ไลน์ของ ChainAddFx: พุ่งเข้า → โซ่ลาก → ล็อก → เลขพลิก)
+  chainIn: (t) => {
+    // ลมพุ่ง + ประกายเวทไล่ขึ้น
+    noise(t, 0.45, { type: 'bandpass', freq: 300, to: 3500, q: 1, gain: 0.16, attack: 0.2 });
+    tone(t, 110, 0.5, { type: 'triangle', gain: 0.1, to: 220, attack: 0.15 });
+    [1568, 2093, 2637].forEach((f, i) => tone(t + 0.08 + i * 0.05, f, 0.55, { type: 'sine', gain: 0.045 }));
+  },
+  chainRattle: (t) => {
+    // โซ่โลหะกระทบกันทีละข้อ (ความถี่ไม่เป็นฮาร์โมนิก = เสียงโลหะ)
+    for (let i = 0; i < 6; i++) {
+      const at = t + i * 0.06;
+      const k = 1 + (i % 3) * 0.07;
+      [2600 * k, 3420 * k, 4310 * k].forEach((f) => tone(at, f, 0.08, { type: 'square', gain: 0.028 }));
+      noise(at, 0.05, { type: 'highpass', freq: 5000, gain: 0.09 });
+    }
+  },
+  chainLock: (t) => {
+    // กระแทกทุ้ม + โลหะก้อง
+    tone(t, 72, 0.9, { type: 'sine', gain: 0.36, to: 38 });
+    noise(t, 0.55, { type: 'lowpass', freq: 2600, to: 150, gain: 0.26 });
+    noise(t, 0.12, { type: 'highpass', freq: 6000, gain: 0.12 });
+    [523, 1059, 1571, 2361].forEach((f, i) => tone(t + 0.005 * i, f, 1.1, { type: 'triangle', gain: 0.055 }));
+  },
+  chainLockHeavy: (t) => {
+    // Chain ยาว: ล็อกหนักขึ้น มีแรงกระแทกซ้ำและเสียงโลหะต่ำกว่า
+    tone(t, 64, 1.2, { type: 'sine', gain: 0.4, to: 30 });
+    tone(t, 128, 0.9, { type: 'sawtooth', gain: 0.09, to: 48 });
+    noise(t, 0.7, { type: 'lowpass', freq: 3200, to: 120, gain: 0.3 });
+    noise(t, 0.14, { type: 'highpass', freq: 5500, gain: 0.14 });
+    noise(t + 0.13, 0.4, { type: 'lowpass', freq: 1400, to: 120, gain: 0.18 });
+    [392, 788, 1183, 1771, 2493].forEach((f, i) => tone(t + 0.005 * i, f, 1.4, { type: 'triangle', gain: 0.05 }));
+  },
+  chainNumber: (t) => {
+    tone(t, 1760, 0.3, { type: 'triangle', gain: 0.13 });
+    tone(t + 0.04, 2637, 0.4, { type: 'sine', gain: 0.08 });
+  },
+  chainDrone: (t) => {
+    // ฮึมต่ำช่วงการ์ดค้างในกอง (ค่อย ๆ หายก่อนฉากจาง)
+    tone(t, 55, 1.3, { type: 'sine', gain: 0.12, attack: 0.3 });
+    tone(t, 82.5, 1.3, { type: 'triangle', gain: 0.045, attack: 0.3 });
   },
   resolve: (t) => {
     noise(t, 0.4, { type: 'bandpass', freq: 600, to: 2500, q: 2, gain: 0.18 });
