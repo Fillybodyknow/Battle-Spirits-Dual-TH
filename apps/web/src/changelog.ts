@@ -16,6 +16,11 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.3.0',
+    date: '2026-11-16',
+    items: ['หน้าหลัก: แบนเนอร์ข่าวสารมุมซ้ายล่าง บอกอัปเดตล่าสุด ชุดการ์ด 3 ชุดล่าสุด และ Starter Deck'],
+  },
+  {
     version: '1.2.0',
     date: '2026-11-16',
     items: [

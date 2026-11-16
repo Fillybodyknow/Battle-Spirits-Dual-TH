@@ -1,6 +1,7 @@
 import { isXRare } from '@bs/cards';
 import { browserKind, useInstall } from '../pwa';
 import { VersionBadge } from '../components/Updates';
+import { CHANGELOG } from '../changelog';
 import { SettingsDialog } from '../components/SettingsDialog';
 import { Icon } from '../components/Icon';
 import { useEffect, useMemo, useState } from 'react';
@@ -134,52 +135,102 @@ function MenuItem({ title, sub, onClick, big, disabled, badge }: { title: string
   );
 }
 
-/** แบนเนอร์ Starter Deck มุมซ้ายล่าง (หมุนเอง / กดลูกศร) */
-function DeckBanner({ onOpen }: { onOpen: (id: DeckId) => void }) {
-  const ids = (Object.keys(DECKS) as DeckId[]).filter((id) => id.startsWith('sd'));
+/** สไลด์ของแบนเนอร์ข่าวสาร: แสดงอย่างเดียว ไม่มีปุ่มพาไปไหน */
+type NewsSlide = { key: string; tag: string; tagClass: string; title: string; sub: string; glow: string; cards: string[]; big?: string };
+
+/** ชุด Booster ล่าสุด n ชุดในฐานข้อมูลการ์ด (ใหม่สุดก่อน): เลขชุด + จำนวนการ์ด + การ์ดเด่น (X-Rare ก่อน) */
+function useLatestBoosters(n: number): { set: string; count: number; highlights: string[] }[] {
+  return useMemo(() => {
+    const bySet = new Map<string, string[]>();
+    for (const c of db.all()) {
+      const m = /^BS(\d+)-/.exec(c.cardNo);
+      if (m) bySet.set(m[1]!, [...(bySet.get(m[1]!) ?? []), c.cardNo]);
+    }
+    return [...bySet.keys()]
+      .sort((a, b) => Number(b) - Number(a))
+      .slice(0, n)
+      .map((set) => {
+        const cards = bySet.get(set)!;
+        const withArt = cards.filter((no) => cardArt(no));
+        const xr = withArt.filter((no) => isXRare(db.get(no)));
+        return { set, count: cards.length, highlights: [...xr, ...withArt.filter((no) => !xr.includes(no))].slice(0, 3) };
+      });
+  }, [n]);
+}
+
+/** แบนเนอร์ข่าวสารมุมซ้ายล่าง: อัปเดตล่าสุด / ชุดการ์ด 3 ชุดล่าสุด (สไลด์ละชุด) / Starter Deck (หมุนเอง หยุดเมื่อชี้ หรือกดลูกศร/จุด) */
+function NewsBanner() {
+  const boosters = useLatestBoosters(3);
+  const starters = (Object.keys(DECKS) as DeckId[]).filter((id) => id.startsWith('sd'));
+  const latest = CHANGELOG[0]!;
+  const slides: NewsSlide[] = [
+    {
+      key: 'update',
+      tag: 'อัปเดต',
+      tagClass: 'from-sky-300 to-sky-500',
+      title: `เวอร์ชัน ${latest.version}`,
+      sub: latest.items[0] ?? '',
+      glow: '#38bdf8',
+      cards: [],
+      big: `v${latest.version}`,
+    },
+    ...boosters.map((b, k) => ({
+      key: `booster-${b.set}`,
+      tag: k === 0 ? 'ชุดการ์ดใหม่' : 'ชุดการ์ด',
+      tagClass: 'from-fuchsia-400 to-rose-500',
+      title: `Booster Set ${b.set}`,
+      sub: `การ์ด ${b.count} ใบ${b.highlights[0] ? ` · การ์ดเด่น ${db.get(b.highlights[0]).name}` : ''}`,
+      glow: GLOW[db.get(b.highlights[0] ?? db.all()[0]!.cardNo).colors[0] ?? 'blue'] ?? GLOW.blue!,
+      cards: b.highlights,
+    })),
+    {
+      key: 'starter',
+      tag: 'STARTER DECK',
+      tagClass: 'from-amber-400 to-orange-500',
+      title: `Starter Deck ${starters.length} เด็ค`,
+      sub: `${starters.map((id) => deckInfo(id).label.replace('Starter Deck ', 'SD')).join(' · ')} · เด็คละ ${deckSize(starters[0]!)} ใบ เล่นได้ทันที`,
+      glow: deckColor(starters[0]!),
+      cards: starters.slice(0, 3).map((id) => deckCover(id)),
+    },
+  ];
   const [i, setI] = useState(0);
+  const [hover, setHover] = useState(false);
   useEffect(() => {
-    const t = setInterval(() => setI((x) => (x + 1) % ids.length), 5000);
+    if (hover) return;
+    const t = setInterval(() => setI((x) => (x + 1) % slides.length), 7000);
     return () => clearInterval(t);
-  }, [ids.length]);
-  const id = ids[i]!;
-  const glow = deckColor(id);
+  }, [slides.length, hover]);
+  const s = slides[i % slides.length]!;
   return (
-    <div className="w-[420px]">
+    <div className="w-[420px]" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
       <div className="relative h-36 overflow-hidden rounded-xl border border-white/15 shadow-[0_10px_30px_rgba(0,0,0,0.6)]">
-        <button type="button" onClick={() => onOpen(id)} className="absolute inset-0 text-left" style={{ background: `linear-gradient(110deg, ${glow}44, #0b1020 55%)` }}>
-          <div className="absolute top-0 left-0 rounded-br-lg bg-gradient-to-r from-amber-400 to-orange-500 px-3 py-0.5 text-xs font-black text-slate-950">STARTER DECK</div>
-          <div className="absolute top-8 left-8 z-10 max-w-[54%]">
-            <div className="text-2xl font-black text-white drop-shadow">{deckInfo(id).label}</div>
-            <div className="mt-1 text-xs text-slate-300">
-              {deckSize(id)} ใบ · การ์ดเด่น {db.get(deckCover(id)).name}
+        <div key={s.key} className="absolute inset-0" style={{ background: `linear-gradient(110deg, ${s.glow}44, #0b1020 55%)`, animation: 'fx-chain-pop 0.35s ease-out both' }}>
+          <div className={`absolute top-0 left-0 rounded-br-lg bg-gradient-to-r px-3 py-0.5 text-xs font-black text-slate-950 ${s.tagClass}`}>{s.tag}</div>
+          <div className={`absolute top-8 left-8 z-10 ${s.cards.length > 0 || s.big ? 'max-w-[56%]' : 'right-8'}`}>
+            <div className="text-2xl font-black text-white drop-shadow">{s.title}</div>
+            <div className="mt-1 line-clamp-3 text-xs leading-relaxed text-slate-300">{s.sub}</div>
+          </div>
+          {s.big && <div className="absolute top-1/2 right-6 -translate-y-1/2 text-5xl font-black tracking-tight text-sky-200/25 italic select-none">{s.big}</div>}
+          {s.cards.length > 0 && (
+            <div className="absolute top-3 right-3 flex [&>*]:origin-bottom">
+              {s.cards.map((no, k) => <CardArt key={no} cardNo={no} className={`-ml-12 w-[4.6rem] shadow-xl ${['rotate-[-8deg]', 'rotate-[2deg]', 'rotate-[10deg]'][k]}`} />).reverse()}
             </div>
-            <div className="mt-2 text-xs font-bold text-yellow-300">ดูการ์ดในเด็ค ▶</div>
-          </div>
-          <div className="absolute top-3 right-3 flex [&>*]:origin-bottom">
-            {deckInfo(id).entries
-              .filter((e) => cardArt(e.cardNo))
-              .slice(0, 3)
-              .map((e, k) => (
-                <CardArt key={e.cardNo} cardNo={e.cardNo} className={`-ml-12 w-[4.6rem] shadow-xl ${["rotate-[-8deg]", "rotate-[2deg]", "rotate-[10deg]"][k]}`} />
-              ))
-              .reverse()}
-          </div>
-        </button>
-        {ids.length > 1 && (
+          )}
+        </div>
+        {slides.length > 1 && (
           <>
-            <button type="button" onClick={() => setI((i - 1 + ids.length) % ids.length)} className="absolute top-1/2 left-1 -translate-y-1/2 rounded-full bg-black/50 px-2 py-1 text-white hover:bg-black/80">
+            <button type="button" aria-label="ข่าวก่อนหน้า" onClick={() => setI((i - 1 + slides.length) % slides.length)} className="absolute top-1/2 left-1 z-20 -translate-y-1/2 rounded-full bg-black/50 px-2 py-1 text-white hover:bg-black/80">
               ‹
             </button>
-            <button type="button" onClick={() => setI((i + 1) % ids.length)} className="absolute top-1/2 right-1 -translate-y-1/2 rounded-full bg-black/50 px-2 py-1 text-white hover:bg-black/80">
+            <button type="button" aria-label="ข่าวถัดไป" onClick={() => setI((i + 1) % slides.length)} className="absolute top-1/2 right-1 z-20 -translate-y-1/2 rounded-full bg-black/50 px-2 py-1 text-white hover:bg-black/80">
               ›
             </button>
           </>
         )}
       </div>
       <div className="mt-2 flex justify-center gap-1.5">
-        {ids.map((d, k) => (
-          <button key={d} type="button" onClick={() => setI(k)} className={`h-1.5 rounded-full transition-all ${k === i ? 'w-6 bg-yellow-300' : 'w-1.5 bg-white/40'}`} />
+        {slides.map((d, k) => (
+          <button key={d.key} type="button" aria-label={d.title} onClick={() => setI(k)} className={`h-1.5 rounded-full transition-all ${k === i ? 'w-6 bg-yellow-300' : 'w-1.5 bg-white/40'}`} />
         ))}
       </div>
     </div>
@@ -309,7 +360,7 @@ export function Home() {
         </nav>
 
         <div className="pl-6">
-          <DeckBanner onOpen={(id) => (useGame.setState({ deckView: id }), setScreen('decks'))} />
+          <NewsBanner />
         </div>
       </div>
 
