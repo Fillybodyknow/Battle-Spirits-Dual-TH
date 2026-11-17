@@ -97,6 +97,8 @@ export function queueTriggers(
     subjectPaidSoul?: boolean;
     /** allySummoned: subject ถูกอัญเชิญจากแทรช */
     subjectFromTrash?: boolean;
+    /** allyMagicUsed: ใช้จากในมือ (ไม่ใช่นอกมือ) */
+    subjectFromHand?: boolean;
     /** oppDestroyed: ทำลายด้วยเอฟเฟกต์ */
     subjectByEffect?: boolean;
     /** blocked / allyBlocked: ผู้ป้องกัน */
@@ -183,7 +185,7 @@ function subjectMatches(
   holderId: string,
   srcFromAttack: boolean,
   soulSnapshot?: boolean,
-  extra: { subjectPaidSoul?: boolean; subjectByEffect?: boolean; subjectFromTrash?: boolean; subjectByOpponent?: boolean } = {},
+  extra: { subjectPaidSoul?: boolean; subjectByEffect?: boolean; subjectFromTrash?: boolean; subjectByOpponent?: boolean; subjectFromHand?: boolean } = {},
 ): boolean {
   const card = ctx.s.cards[cardId]!;
   const def = ctx.db.get(card.cardNo);
@@ -192,6 +194,7 @@ function subjectMatches(
   if (f.paidWithSoul && !extra.subjectPaidSoul) return false;
   if (f.byEffect && !extra.subjectByEffect) return false;
   if (f.fromTrash && !extra.subjectFromTrash) return false;
+  if (f.fromHand && !extra.subjectFromHand) return false;
   if (f.byOpponent && !extra.subjectByOpponent) return false;
   if (f.firstOfTurn) {
     const fs = ctx.s.firstSummon;
@@ -472,9 +475,9 @@ export function queueLifeLostTriggers(ctx: Ctx, player: PlayerId, amount = 1): v
 }
 
 /** ผู้เล่นใช้การ์ดเมจิค: trigger "เมื่อเราใช้งานการ์ดเมจิค" (เข้าคิวหลังเอฟเฟกต์ของเมจิค = ทำงานหลังจากนั้น) */
-export function queueMagicUsedTriggers(ctx: Ctx, player: PlayerId, magicId?: string): void {
+export function queueMagicUsedTriggers(ctx: Ctx, player: PlayerId, magicId?: string, fromHand = true): void {
   const batch = newBatch(ctx);
-  for (const id of [...ctx.s.players[player].field]) queueTriggers(ctx, id, 'allyMagicUsed', batch, magicId ? { subject: magicId } : {});
+  for (const id of [...ctx.s.players[player].field]) queueTriggers(ctx, id, 'allyMagicUsed', batch, magicId ? { subject: magicId, subjectFromHand: fromHand } : {});
 }
 
 /** id ของกลุ่มเอฟเฟกต์ที่เกิดพร้อมกัน (ตำแหน่งใน log ตอนนี้: deterministic) */
@@ -2137,7 +2140,8 @@ export function resolveChoice(ctx: Ctx, player: PlayerId, pick: ChoicePick): voi
           // "กลายเป็น BP0 เป็นใบแรกสุดของเทิร์น" (แองเจลิคฟีเธอร์)
           if (s.bpZeroTurn !== s.turn) cur.firstZeroBp = true;
           s.bpZeroTurn = s.turn;
-          destroyCard(ctx, pick, player, { bySource: cur.sourceId, effect: true });
+          // BP0 ไม่ถูกทำลายเอง: ทำลายเฉพาะเอฟเฟกต์ที่เขียนว่า "ทำลาย…ที่กลายเป็น BP0 โดยเอฟเฟกต์นี้"
+          if (step.destroyAtZero) destroyCard(ctx, pick, player, { bySource: cur.sourceId, effect: true });
         }
         break;
       }
@@ -2192,12 +2196,13 @@ export function resolveChoice(ctx: Ctx, player: PlayerId, pick: ChoicePick): voi
         break;
       case 'useMagicFromHandFree': {
         const def = ctx.db.get(s.cards[pick]!.cardNo);
+        const fromShown = (s.shownCards ?? []).includes(pick);
         removeFrom(p.hand, pick);
         emit(ctx, { type: 'magicUsed', player, cardId: pick, paid: 0, timing: 'flash' });
         const steps = def.abilities.flatMap((a) => (a.kind === 'magic' && a.timing === 'flash' ? a.steps : []));
         // ทำงานต่อจากเอฟเฟกต์นี้ทันที แล้วเมจิคลงแทรช
         s.queue.splice(1, 0, { controller: player, sourceId: pick, steps: [...steps], paidWithSoul: false, trashWhenDone: true });
-        queueMagicUsedTriggers(ctx, player, pick);
+        queueMagicUsedTriggers(ctx, player, pick, !fromShown);
         break;
       }
       case 'showFromHand':

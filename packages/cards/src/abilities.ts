@@ -278,6 +278,8 @@ export type Step =
       do: 'debuffChosenOpponent';
       amount: number;
       filter: CardFilter;
+      /** "ทำลายสปิริตที่กลายเป็น BP0 โดยเอฟเฟกต์นี้" (ไม่ระบุ = BP0 แล้วยังอยู่บนสนาม) */
+      destroyAtZero?: true;
       count?: number;
       countPerAllyFamily?: string;
       if?: Condition;
@@ -586,6 +588,8 @@ export interface SubjectFilter {
   firstOfTurn?: true;
   /** allySummoned: อัญเชิญจากแทรช */
   fromTrash?: true;
+  /** allyMagicUsed: ใช้จากในมือ (ไม่ใช่การ์ดที่วางแสดงนอกมือ) */
+  fromHand?: true;
   /** คอสต์ที่พิมพ์บนการ์ดต้นเหตุตั้งแต่ค่านี้ */
   minCost?: number;
   /** อยู่ในเผ่าใดเผ่าหนึ่งเหล่านี้ */

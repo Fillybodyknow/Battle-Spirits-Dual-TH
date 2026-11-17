@@ -155,6 +155,8 @@ export const BS05_SCRIPTS: Record<string, CardScript> = {
     {
       kind: 'trigger',
       on: 'allyMagicUsed',
+      // "เมื่อเราใช้งานการ์ดเมจิคจากในมือ": ใช้จากนอกมือไม่นับ
+      subject: { fromHand: true },
       levels: [1, 2, 3],
       attackStepOnly: true,
       steps: [may('นำการ์ดเมจิคนั้นไปวางแสดงนอกมือ (ใช้งานได้เหมือนอยู่ในมือจนจบเกม)', [{ do: 'showSubjectFromTrash' }])],
@@ -171,7 +173,7 @@ export const BS05_SCRIPTS: Record<string, CardScript> = {
     { kind: 'trigger', on: 'attackHitLife', levels: [1, 2, 3], steps: [{ do: 'gainLifeFromVoid', count: 1 }] },
     { kind: 'trigger', on: 'allyAttack', subject: { holyLife: true }, levels: [2, 3], ownTurnOnly: true, steps: [{ do: 'battleUnblockable', by: 'ultimates' }] },
   ],
-  'นักดาบบิวะ โบคุโบคุ': [{ kind: 'alsoMagic' }, { kind: 'magic', timing: 'flash', steps: [{ do: 'debuffChosenOpponent', amount: 4000, filter: { types: SPIRIT } }] }],
+  'นักดาบบิวะ โบคุโบคุ': [{ kind: 'alsoMagic' }, { kind: 'magic', timing: 'flash', steps: [{ do: 'debuffChosenOpponent', amount: 4000, filter: { types: SPIRIT }, destroyAtZero: true }] }],
   'เซ็นโงคุฮิเมะ คุสุโนะฮะ': [catalyze([1, 2, 3]), { kind: 'trigger', on: 'attack', levels: [2, 3], steps: [{ do: 'setBurstFromShown' }] }],
   'สมิงโยวไค นุเอะ': [
     // ผู้เป็นนาย/ข้ารับใช้ของเราได้รับ Holy Life
@@ -340,7 +342,7 @@ export const BS05_SCRIPTS: Record<string, CardScript> = {
     { kind: 'magic', timing: 'flash', steps: [{ do: 'removeOpponentCores', count: 1 }, { do: 'ifDepleted', steps: [draw1] }] },
   ],
   'โยไร สปาร์ค': [
-    { kind: 'burst', soul: true, on: 'afterLifeLost', steps: [{ do: 'debuffChosenOpponent', amount: 5000, filter: { types: SPIRIT }, count: 2 }, { do: 'payToUseFlash' }] },
+    { kind: 'burst', soul: true, on: 'afterLifeLost', steps: [{ do: 'debuffChosenOpponent', amount: 5000, filter: { types: SPIRIT }, count: 2, destroyAtZero: true }, { do: 'payToUseFlash' }] },
     { kind: 'magic', timing: 'flash', steps: [draw1, { do: 'buffChosen', amount: 2000 }] },
   ],
   ลำแสงวิญญาณสวรรค์ศักดิ์สิทธิ์: [

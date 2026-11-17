@@ -98,9 +98,9 @@ export const SD04_SCRIPTS: Record<string, CardScript> = {
       kind: 'magic',
       timing: 'flash',
       steps: [
-        { do: 'debuffChosenOpponent', amount: 6000, filter: { types: SPIRITISH }, count: 1, if: notPaidSoul },
+        { do: 'debuffChosenOpponent', amount: 6000, filter: { types: SPIRITISH }, count: 1, if: notPaidSoul, destroyAtZero: true },
         // ใช้ Soul Core: เลือกเป้าหมายได้เท่าจำนวนสปิริตเราเผ่า [โยวไค]
-        { do: 'debuffChosenOpponent', amount: 6000, filter: { types: SPIRITISH }, countPerAllyFamily: YOKAI, if: paidSoul },
+        { do: 'debuffChosenOpponent', amount: 6000, filter: { types: SPIRITISH }, countPerAllyFamily: YOKAI, if: paidSoul, destroyAtZero: true },
       ],
     },
   ],

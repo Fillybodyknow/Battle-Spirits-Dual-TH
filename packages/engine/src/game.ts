@@ -459,6 +459,8 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     const { paid } = payCost(ctx, player, def, payment, [], { noPlacement: true });
     const once = def.abilities.find((a) => a.kind === 'magic' && a.timing === use && a.oncePerTurn);
     if (once) s.usedOncePerTurn = [...(s.usedOncePerTurn ?? []), `${player}:${def.cardNo}:${once.source}`];
+    // ใช้จากการ์ดที่วางแสดงนอกมือ (ไม่ใช่ "จากในมือ")
+    const fromShown = (s.shownCards ?? []).includes(cardId);
     removeFrom(s.players[player].hand, cardId);
     emit(ctx, { type: 'magicUsed', player, cardId, paid, timing: use });
     checkDepletion(ctx);
@@ -491,7 +493,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
       paidWithSoul,
       trashWhenDone: true,
     });
-    queueMagicUsedTriggers(ctx, player, cardId);
+    queueMagicUsedTriggers(ctx, player, cardId, !fromShown);
     runQueue(ctx);
   },
 

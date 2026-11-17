@@ -244,8 +244,9 @@ describe('Booster Set 05', () => {
     const small = put(s, 'p2', DARIU, 1); // BP 3000
     s = attack(s, host);
     expect(s.choice).toMatchObject({ kind: 'card' });
-    s = choose(s, small); // 3000 + 1000 → BP0
-    expect(s.players.p2.trashCards).toContain(small);
+    s = choose(s, small); // 3000 + 1000 → BP0 (ไม่ได้สั่งทำลาย: ยังอยู่บนสนาม)
+    expect(currentBp(s, db, small)).toBe(0);
+    expect(s.players.p2.field).toContain(small);
     expect(s.cards[host]!.state).toBe('refresh');
     expect(currentBp(s, db, target)).toBe(6000);
   });
@@ -379,5 +380,45 @@ describe('Booster Set 05', () => {
     const mura = put(t, 'p1', no('ดาบภูต มุราซาเมะ'), 1);
     t = act(t, { type: 'brave', player: 'p1', braveId: mura, hostId: sz });
     expect(t.cards[sz]!.braves).toHaveLength(2);
+  });
+
+  it('ชาร์ล: ใช้เมจิคจากในมือ → ถามวางแสดงนอกมือ · ใช้เมจิคจากนอกมือ → ไม่ทำงาน', () => {
+    let s = setup();
+    put(s, 'p1', no('เซ็นโงคุฮิเมะ ชาร์ล'), 1);
+    const atk = put(s, 'p1', DARIU, 1);
+    const magic = inHand(s, 'p1', no('ไทม์รีวินด์'));
+    s.shownCards = [magic];
+    s = attack(s, atk);
+    s = act(s, { type: 'passFlash', player: 'p2' });
+    const cost = payableCost(s, db, 'p1', db.get(no('ไทม์รีวินด์')));
+    s = act(s, { type: 'useMagic', player: 'p1', cardId: magic, payment: normalCores(s).slice(0, cost), timing: 'flash' });
+    expect(s.choice).toBeFalsy();
+    expect(s.players.p1.trashCards).toContain(magic);
+    // จากในมือ: ถาม
+    let t = setup();
+    put(t, 'p1', no('เซ็นโงคุฮิเมะ ชาร์ล'), 1);
+    const atk2 = put(t, 'p1', DARIU, 1);
+    const m2 = inHand(t, 'p1', no('ไทม์รีวินด์'));
+    t = attack(t, atk2);
+    t = act(t, { type: 'passFlash', player: 'p2' });
+    t = act(t, { type: 'useMagic', player: 'p1', cardId: m2, payment: normalCores(t).slice(0, cost), timing: 'flash' });
+    expect(t.choice).toMatchObject({ kind: 'option' });
+  });
+
+  it('คุอง Lv2: ใช้เมจิคในแอทแท็คสเต็ป → สปิริตคู่แข่ง 1 ตัว BP-10000 ในเทิร์นนี้', () => {
+    let s = setup();
+    put(s, 'p1', no('เซ็นโงคุฮิเมะ คุอง'), 2);
+    const atk = put(s, 'p1', DARIU, 1);
+    const target = put(s, 'p2', DARIU, 1);
+    const magic = inHand(s, 'p1', no('ไทม์รีวินด์'));
+    s = attack(s, atk);
+    s = act(s, { type: 'passFlash', player: 'p2' });
+    const cost = payableCost(s, db, 'p1', db.get(no('ไทม์รีวินด์')));
+    s = act(s, { type: 'useMagic', player: 'p1', cardId: magic, payment: normalCores(s).slice(0, cost), timing: 'flash' });
+    expect(s.choice).toMatchObject({ kind: 'card', candidates: [target] });
+    s = choose(s, target);
+    // BP เหลือ 0 แต่คุองไม่ได้สั่งทำลาย: ยังอยู่บนสนาม
+    expect(currentBp(s, db, target)).toBe(0);
+    expect(s.players.p2.field).toContain(target);
   });
 });
