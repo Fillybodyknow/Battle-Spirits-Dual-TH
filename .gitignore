@@ -4,3 +4,6 @@ coverage/
 *.log
 .env.local
 *.local
+
+# ไฟล์เสียงต้นฉบับ (เกมใช้ไฟล์ที่แปลงแล้วใน assets/sounds) และเพลงที่ใช้ฟังทดสอบในเครื่อง
+assets/sounds/sound_effect/

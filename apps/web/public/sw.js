@@ -26,6 +26,8 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return;
   // เลขเวอร์ชันบนเว็บ: ต้องถามเน็ตทุกครั้ง (ห้ามใช้ที่เก็บไว้ ไม่งั้นไม่รู้ว่ามีเวอร์ชันใหม่)
   if (url.pathname.endsWith('/version.json')) return;
+  // เพลง/เสียงที่ <audio> ขอทีละช่วง (Range → 206): Cache API เก็บไม่ได้ ปล่อยให้เบราว์เซอร์โหลดเอง
+  if (req.headers.has('range')) return;
 
   if (req.mode === 'navigate') {
     event.respondWith(

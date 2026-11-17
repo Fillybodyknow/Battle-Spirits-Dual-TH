@@ -3,6 +3,8 @@
 ค่าเริ่มต้นเกมสังเคราะห์เสียงเองด้วย Web Audio API ไม่ต้องมีไฟล์
 ถ้าอยากใช้เสียงของตัวเอง วางไฟล์ `.mp3` / `.wav` / `.ogg` ในโฟลเดอร์นี้ ตั้งชื่อตามตาราง
 ไฟล์ที่มีจะถูกใช้แทนเสียงสังเคราะห์ (ใส่เฉพาะบางเสียงก็ได้)
+หลายแบบต่อเสียง: ตั้งชื่อ `<ชื่อ>-1.wav`, `<ชื่อ>-2.wav` … เกมจะสุ่มเล่น (ไม่ซ้ำกับครั้งก่อน)
+ต้นไฟล์ห้ามมีช่วงเงียบ (เสียงตั้งเวลาให้ตรงแอนิเมชัน)
 
 | ชื่อไฟล์ | เล่นเมื่อ |
 |---|---|
@@ -12,15 +14,23 @@
 | draw | จั่วการ์ด |
 | place | การ์ดลงสนาม |
 | activate | เอฟเฟกต์การ์ดบนสนามทำงาน |
-| magic / flash | ใช้ Magic [Main] / [Flash] |
-| burst | Burst ทำงาน |
+| magic / flash | ใช้ Magic [Main] / [Flash] (ไม่มีไฟล์ = ใช้ไฟล์ activate) |
+| burstCard | การ์ด Burst ทำงาน (ไม่มีไฟล์ = ใช้ไฟล์ activate) |
+| burst | ป้ายใหญ่ (CATALYZE ฯลฯ) / Final Blow |
+| burstSet | เซ็ทการ์ด Burst |
+| brave | Brave ร่วมร่าง |
+| chainIn / chainRattle / chainLock / chainLockHeavy / chainNumber / chainDrone | ฉากต่อ Chain |
 | turn / step | ป้ายเทิร์นใหม่ / ATTACK STEP |
 | chain / resolve | แสดง CHAIN / RESOLVE |
 | swish | ประกาศโจมตี |
-| whoosh / impact | ผู้โจมตีวิ่ง / ชนเป้าหมาย |
+| whoosh | ผู้โจมตีวิ่ง / การ์ดลงแทรช |
+| attackHit | ผู้โจมตีชนเป้าหมาย (ไม่มีไฟล์ = ใช้ impact) |
+| impact | กระแทกทั่วไป (Cut-in, การ์ดถูกทำลาย, Final Blow) |
+| duelStart | ฉากเปิดเกม: ขึ้น "DUEL!" |
 | shatter / fade | การ์ดถูกทำลาย / สูญสลาย |
 | damage / bigdamage | เสียไลฟ์ / โดนโจมตีตรง |
 | buff | BP+ / ได้ไลฟ์ |
-| xrare | cut-in การ์ด X-Rare |
+| xrare | cut-in การ์ด X-Rare (จุดกระแทกควรอยู่ ~0.34 วิ จากต้นไฟล์) |
+| coin | โยนเหรียญเริ่มเกม (จุดเหรียญตกควรอยู่ ~0.78 วิ จากต้นไฟล์) |
 | win | ชนะ |
 | error | ทำ action ไม่ได้ |

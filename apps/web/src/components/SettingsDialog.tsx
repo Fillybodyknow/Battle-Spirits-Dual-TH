@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { resetGfx, setComfort, setEffect, setQuality, useGfx, type Quality } from '../gfx';
 import { setSfx, sfx, sfxSettings } from '../sfx';
+import { bgmSettings, hasBgm, setBgmSettings } from '../bgm';
 import { useGame, type CutInMode } from '../store';
 import { setPrefs, usePrefs, type HandLayout, type HandSort, type PlayMode } from '../prefs';
 import { BTN, Modal } from './Modal';
@@ -174,6 +175,11 @@ function SoundTab() {
     setSfx(next);
     setSound(sfxSettings());
   };
+  const [music, setMusic] = useState(bgmSettings());
+  const updateMusic = (next: Partial<typeof music>) => {
+    setBgmSettings(next);
+    setMusic(bgmSettings());
+  };
   return (
     <Section title="เสียง">
       <Row title="เสียงประกอบ (SFX)">
@@ -191,6 +197,22 @@ function SoundTab() {
           onPointerUp={() => sfx('activate')}
           className="w-44 accent-sky-400 disabled:opacity-40"
           aria-label="ความดังเสียง"
+        />
+      </Row>
+      <Row title="เพลงประกอบ (BGM)" hint={hasBgm() ? 'ระหว่างดวล · เปลี่ยนเพลงเมื่อการ์ด X-Rare ลงสนาม / Life คู่แข่งเหลือไม่เกิน 2' : 'ยังไม่มีไฟล์เพลง'}>
+        <Segmented value={music.on ? 'on' : 'off'} options={[{ v: 'on', label: 'เปิด' }, { v: 'off', label: 'ปิด' }]} onChange={(v) => updateMusic({ on: v === 'on' })} />
+      </Row>
+      <Row title="ความดังเพลง" hint={`${Math.round(music.volume * 100)}%`}>
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.05}
+          value={music.volume}
+          disabled={!music.on}
+          onChange={(e) => updateMusic({ volume: Number(e.target.value) })}
+          className="w-44 accent-sky-400 disabled:opacity-40"
+          aria-label="ความดังเพลง"
         />
       </Row>
     </Section>

@@ -13,7 +13,14 @@ export type SfxName =
   | 'activate'
   | 'magic'
   | 'flash'
+  /** ป้ายใหญ่ (โทน burst/good/bad) และ Final Blow */
   | 'burst'
+  /** การ์ด Burst ทำงาน (ไม่มีไฟล์ = ใช้ไฟล์ activate) */
+  | 'burstCard'
+  /** เซ็ทการ์ด Burst คว่ำลงช่อง */
+  | 'burstSet'
+  /** Brave ร่วมร่าง */
+  | 'brave'
   | 'turn'
   | 'step'
   | 'tick'
@@ -33,6 +40,8 @@ export type SfxName =
   | 'resolve'
   | 'swish'
   | 'whoosh'
+  /** ผู้โจมตีชนเป้าหมาย (ไม่มีไฟล์ = ใช้เสียง impact) */
+  | 'attackHit'
   | 'impact'
   | 'shatter'
   | 'fade'
@@ -40,12 +49,33 @@ export type SfxName =
   | 'bigdamage'
   | 'buff'
   | 'xrare'
+  /** ฉากเปิดเกม: ขึ้น "DUEL!" */
+  | 'duelStart'
+  /** โยนเหรียญตัดสินใครเริ่มก่อน (จุดเหรียญตกอยู่ที่ ~780ms) */
+  | 'coin'
   | 'win'
   | 'error';
 
 const files = import.meta.glob('../../../assets/sounds/*.{mp3,wav,ogg}', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
-const FILE: Partial<Record<SfxName, string>> = {};
-for (const [path, url] of Object.entries(files)) FILE[path.split('/').pop()!.replace(/\.[^.]+$/, '') as SfxName] = url;
+/** ไฟล์ของแต่ละเสียง: `<ชื่อ>.wav` หรือหลายแบบ `<ชื่อ>-1.wav`, `<ชื่อ>-2.wav` … (สุ่มเล่นทีละแบบ ไม่ให้ซ้ำซาก) */
+const FILE: Partial<Record<SfxName, string[]>> = {};
+for (const [path, url] of Object.entries(files)) {
+  const name = path.split('/').pop()!.replace(/\.[^.]+$/, '').replace(/-\d+$/, '') as SfxName;
+  (FILE[name] ??= []).push(url);
+}
+/** ไม่มีไฟล์ของเสียงนี้ = ใช้ไฟล์ของอีกเสียงแทน (ถ้ามี) ก่อนตกไปใช้เสียงสังเคราะห์ */
+const ALIAS: Partial<Record<SfxName, SfxName>> = { magic: 'activate', flash: 'activate', burstCard: 'activate', attackHit: 'impact' };
+const lastPick = new Map<SfxName, number>();
+function fileFor(name: SfxName): string | undefined {
+  const list = FILE[name] ?? (ALIAS[name] ? FILE[ALIAS[name]!] : undefined);
+  if (!list?.length) return undefined;
+  if (list.length === 1) return list[0];
+  // สุ่มแบบไม่ซ้ำกับครั้งก่อน
+  let i = Math.floor(Math.random() * (list.length - 1));
+  if (i >= (lastPick.get(name) ?? -1)) i++;
+  lastPick.set(name, i);
+  return list[i];
+}
 
 // ---------------------------------------------------------------- settings
 
@@ -96,6 +126,9 @@ function audio(): AudioContext | null {
   if (ctx.state === 'suspended') void ctx.resume();
   return ctx;
 }
+
+/** AudioContext กลาง (BGM ใช้ร่วม) */
+export const audioContext = audio;
 
 // เบราว์เซอร์ให้เริ่มเสียงได้หลังผู้ใช้กด/คลิกครั้งแรก
 if (typeof window !== 'undefined') {
@@ -172,6 +205,19 @@ const SYNTH: Record<SfxName, (t: number) => void> = {
     tone(t, 90, 0.8, { type: 'sawtooth', gain: 0.15, to: 40 });
     noise(t, 0.9, { type: 'lowpass', freq: 2000, to: 200, gain: 0.22 });
     [392, 523, 784].forEach((f) => tone(t + 0.1, f, 0.9, { type: 'square', gain: 0.035 }));
+  },
+  burstCard: (t) => SYNTH.burst(t),
+  burstSet: (t) => {
+    // การ์ดคว่ำลงช่อง: ตุบเบา ๆ + ประกายต่ำ
+    tone(t, 180, 0.2, { type: 'sine', gain: 0.18, to: 70 });
+    noise(t, 0.1, { type: 'lowpass', freq: 1200, gain: 0.12 });
+    tone(t + 0.04, 523, 0.35, { type: 'triangle', gain: 0.05 });
+  },
+  brave: (t) => {
+    // ร่วมร่าง: ล็อกโลหะ + คอร์ดขึ้น
+    noise(t, 0.12, { type: 'highpass', freq: 4000, gain: 0.1 });
+    tone(t, 140, 0.3, { type: 'sine', gain: 0.22, to: 60 });
+    [523, 784, 1047].forEach((f, i) => tone(t + 0.05 + i * 0.05, f, 0.4, { type: 'triangle', gain: 0.08 }));
   },
   turn: (t) => {
     tone(t, 196, 1.2, { type: 'sine', gain: 0.16 });
@@ -263,6 +309,13 @@ const SYNTH: Record<SfxName, (t: number) => void> = {
     [262, 330, 392, 523].forEach((f) => tone(t + 0.45, f, 1.4, { type: 'sawtooth', gain: 0.035 }));
     tone(t + 0.45, 65, 1.2, { type: 'sine', gain: 0.26 });
   },
+  attackHit: (t) => SYNTH.impact(t),
+  duelStart: (t) => SYNTH.xrare(t),
+  coin: (t) => {
+    // เหรียญหมุนกลางอากาศ แล้วตกกระทบ (ที่ ~0.78s)
+    for (let i = 0; i < 6; i++) tone(t + i * 0.11, 3200 + (i % 2) * 400, 0.05, { type: 'sine', gain: 0.025 });
+    [2900, 4150, 5600].forEach((f) => tone(t + 0.78, f, 0.35, { type: 'triangle', gain: 0.06 }));
+  },
   win: (t) => [523, 659, 784, 1047, 784, 1047].forEach((f, i) => tone(t + i * 0.14, f, 0.5, { type: 'triangle', gain: 0.15 })),
   error: (t) => {
     tone(t, 220, 0.12, { type: 'square', gain: 0.08 });
@@ -298,7 +351,7 @@ export function sfx(name: SfxName, delayMs = 0) {
   const run = () => {
     const c = audio();
     if (!c || c.state !== 'running') return;
-    const file = FILE[name];
+    const file = fileFor(name);
     if (file) void playFile(name, file);
     else SYNTH[name](c.currentTime + 0.005);
   };

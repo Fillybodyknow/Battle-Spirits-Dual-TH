@@ -10,6 +10,7 @@ import { CastRestCard } from './Fx';
 import { actingPlayer, canEvolve, db, isMultiHostCandidate, flashPlayer, inMain, isChoiceCandidate, isFxBlocking, magicTimings, responseOptions, simulateEvolve, simulateMove, useGame } from '../store';
 import { useFlashUsable } from './Controls';
 import { CardBack, CardFace } from './CardFace';
+import { FieldCracks } from './Cracks';
 import { Core, CoreRow, CoreTray } from './Core';
 import { beginCardDrag } from './DragGhost';
 
@@ -850,6 +851,8 @@ export function PlayerMat({ player, top }: { player: PlayerId; top?: boolean }) 
           </div>
         )}
       </div>
+      {/* รอยร้าวตาม Life ที่เสีย */}
+      <FieldCracks player={player} top={top} />
 
       <div className={`flex w-32 shrink-0 gap-2 ${col}`}>
         <BurstSlot player={player} />

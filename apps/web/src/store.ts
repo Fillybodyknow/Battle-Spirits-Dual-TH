@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { cancelSfx, sfx } from './sfx';
+import { cancelSfx, sfx, type SfxName } from './sfx';
 import { primeCoreMotion, snapCores } from './motion';
 import { prefs, setPrefs, type HandSort } from './prefs';
 import { firebaseConfigured, firebaseTransport } from './online/firebase';
@@ -410,7 +410,7 @@ export type Fx =
   | { id: number; kind: 'target'; sourceId: string; targetId: string; delay: number; duration: number }
   /** ตัวเลขดาเมจใหญ่กลางฝั่งที่เสียไลฟ์ (big = โดนโจมตีตรง มีรัศมีแตกกระจาย) */
   | { id: number; kind: 'damage'; player: PlayerId; amount: number; big: boolean; delay: number }
-  | { id: number; kind: 'float'; anchor: string; text: string; tone: 'bad' | 'good'; delay?: number }
+  | { id: number; kind: 'float'; anchor: string; text: string; tone: 'bad' | 'good'; delay?: number; /** เสียงแทนเสียงประจำ tone */ sound?: SfxName }
   /**
    * การ์ดบินจากจุดหนึ่งไปอีกจุด: from = ตำแหน่งที่จับไว้ก่อน action (หรือ selector), to = selector ปลายทาง หรือ 'center'
    * ระหว่างบิน การ์ดจริงที่ปลายทางถูกซ่อน (hideTarget)
@@ -431,6 +431,8 @@ export type Fx =
       /** R: แสงสีฟ้าแวบตอนกระแทกพื้น */
       rare?: boolean;
       timing?: 'main' | 'flash';
+      /** เสียงตอนการ์ดถึงปลายทาง (แทนเสียงประจำ mode) */
+      landSound?: SfxName;
       delay: number;
       hideTarget: boolean;
     }
@@ -1058,7 +1060,7 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
           out.push({ kind: 'fly', cardId: e.cardId, from: rect, to: `[data-brave-card="${e.cardId}"]`, mode: 'move', delay: t, hideTarget: true });
           t += 450;
         }
-        out.push({ kind: 'float', anchor: `[data-field-card="${e.hostId}"]`, text: 'BRAVE!', tone: 'good', delay: t });
+        out.push({ kind: 'float', anchor: `[data-field-card="${e.hostId}"]`, text: 'BRAVE!', tone: 'good', delay: t, sound: 'brave' });
         break;
       }
       case 'catalyze':
@@ -1152,7 +1154,7 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
           out.push({ kind: 'fly', cardId: e.replacedCardId, from: rects[`burst:${e.player}`] ?? null, to: `[data-trash="${e.player}"]`, mode: 'move', shrink: true, delay: t, hideTarget: false });
         }
         const set = s.players[e.player].burst;
-        if (set) out.push({ kind: 'fly', cardId: set, from: rects[`hand:${set}`] ?? null, to: `[data-burst-card="${e.player}"]`, mode: 'move', delay: t, hideTarget: false, faceDown: true });
+        if (set) out.push({ kind: 'fly', cardId: set, from: rects[`hand:${set}`] ?? null, to: `[data-burst-card="${e.player}"]`, mode: 'move', delay: t, hideTarget: false, faceDown: true, landSound: 'burstSet' });
         break;
       }
       case 'gameOver': {
@@ -1553,7 +1555,8 @@ function playFxSounds(list: Fx[]) {
         // ชาร์จ → ทุบ (เสียงกระแทกหนัก ตรงจังหวะแสงวาบ)
         const slam = f.delay + Math.round((f.special ? CUTIN_MS.special : CUTIN_MS.normal) * CUTIN_SLAM);
         sfx('whoosh', f.delay);
-        sfx('xrare', slam - 60);
+        // จุดกระแทกของเสียง xrare อยู่ที่ ~340ms จากต้นไฟล์ → เริ่มก่อนจังหวะทุบเท่านั้น
+        sfx('xrare', Math.max(f.delay, slam - 340));
         sfx('impact', slam);
         sfx('bigdamage', slam + 20);
         break;
@@ -1563,17 +1566,19 @@ function playFxSounds(list: Fx[]) {
         else if (f.mode === 'play' && f.heavy) {
           sfx('swish', f.delay);
           sfx('whoosh', f.delay + PLAY_HIT.heavy - 160);
-          sfx('impact', f.delay + PLAY_HIT.heavy);
           sfx('bigdamage', f.delay + PLAY_HIT.heavy + 20);
           sfx('place', f.delay + PLAY_HIT.heavy + 40);
         } else if (f.mode === 'play') {
           sfx('swish', f.delay);
           sfx('whoosh', f.delay + PLAY_HIT.normal - 130);
           sfx('place', f.delay + PLAY_HIT.normal);
-          sfx('impact', f.delay + PLAY_HIT.normal + 10);
         }
         else if (f.mode === 'magic') sfx(f.timing === 'flash' ? 'flash' : 'magic', f.delay);
-        else if (f.mode === 'move') sfx('draw', f.delay);
+        else if (f.landSound) {
+          // เซ็ท Burst ฯลฯ: ปัดออกจากมือ แล้วเสียงประจำตอนถึงช่อง
+          sfx('draw', f.delay);
+          sfx(f.landSound, f.delay + 400);
+        } else if (f.mode === 'move') sfx('draw', f.delay);
         break;
       case 'cardActivate':
         sfx('activate', f.delay);
@@ -1581,7 +1586,7 @@ function playFxSounds(list: Fx[]) {
       case 'spell':
         // ยก/พลิกขึ้นเวที → เสียงประจำประเภทตอนเรืองแสงครั้งแรก · เรืองแสงซ้ำ = เสียงเอฟเฟกต์ทำงาน · ลง Trash = ปัด
         if (f.from !== 'stage') sfx('swish', f.delay);
-        f.pulses.forEach((p, i) => sfx(i === 0 && f.from !== 'stage' ? (f.tone === 'burst' ? 'burst' : f.tone === 'flash' ? 'flash' : 'magic') : 'activate', p));
+        f.pulses.forEach((p, i) => sfx(i === 0 && f.from !== 'stage' ? (f.tone === 'burst' ? 'burstCard' : f.tone === 'flash' ? 'flash' : 'magic') : 'activate', p));
         if (f.exit === 'trash') sfx('whoosh', f.end);
         break;
       case 'chainAdd': {
@@ -1611,7 +1616,7 @@ function playFxSounds(list: Fx[]) {
         break;
       case 'charge':
         sfx('whoosh', f.delay + 150);
-        sfx('impact', f.delay + 450);
+        sfx('attackHit', f.delay + 450);
         break;
       case 'mill':
         f.cardIds.forEach((_, i) => {
@@ -1634,7 +1639,8 @@ function playFxSounds(list: Fx[]) {
         sfx(f.big ? 'bigdamage' : 'damage', f.delay);
         break;
       case 'float':
-        if (f.tone === 'good') sfx('buff', f.delay ?? 0);
+        if (f.sound) sfx(f.sound, f.delay ?? 0);
+        else if (f.tone === 'good') sfx('buff', f.delay ?? 0);
         break;
     }
   }

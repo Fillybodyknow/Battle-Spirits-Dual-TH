@@ -49,6 +49,8 @@ function setBoardSetup(v: 'pre' | 'run' | null) {
   else delete el.dataset.boardSetup;
 }
 const COIN_FLIGHT = 1700;
+/** จุดดังที่สุดของเสียง coin (ms นับจากต้นไฟล์) ให้ตรงกับจังหวะเหรียญตก */
+const COIN_SFX_HIT = 780;
 
 /** ป้ายผู้เล่นมุมล่าง + การ์ดปกเด็คลอย (ฝั่งซ้ายสีฟ้า / ฝั่งขวาสีแดง) */
 function Plate({ side, name, deck }: { side: 'left' | 'right'; name: string; deck: string }) {
@@ -155,6 +157,8 @@ export function MatchIntro({ fx, onDone }: { fx: Extract<Fx, { kind: 'intro' }>;
       setTimeout(() => (setPhase('vs'), sfx('whoosh')), AT.vs),
       setTimeout(() => sfx('impact'), AT.vs + 250),
       setTimeout(() => (setPhase('coin'), sfx('swish')), AT.coin),
+      // เสียงเหรียญ: จุดเหรียญตกพื้นในไฟล์อยู่ที่ ~COIN_SFX_HIT → เริ่มก่อนเหรียญตกเท่านั้น
+      setTimeout(() => sfx('coin'), AT.coin + COIN_FLIGHT - COIN_SFX_HIT),
       setTimeout(() => (setLanded(true), sfx('impact'), sfx(fx.heads ? 'buff' : 'fade', 120)), AT.coin + COIN_FLIGHT),
       setTimeout(() => setPhase('result'), AT.result),
       setTimeout(() => (setPhase('choose'), setReached(true)), AT.choose),
@@ -176,7 +180,7 @@ export function MatchIntro({ fx, onDone }: { fx: Extract<Fx, { kind: 'intro' }>;
       setTimeout(() => (setPhase('setup'), sfx('place')), AFTER.setup),
       setTimeout(() => sfx('swish'), AFTER.setup + 950),
       setTimeout(() => sfx('draw'), AFTER.setup + 1200),
-      setTimeout(() => (setPhase('duel'), sfx('xrare')), AFTER.duel),
+      setTimeout(() => (setPhase('duel'), sfx('duelStart')), AFTER.duel),
       setTimeout(onDone, AFTER.end),
     ];
     return () => timers.forEach(clearTimeout);
