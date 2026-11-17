@@ -783,7 +783,7 @@ export function SummonPanel() {
   }
   if (!cardId) return null;
   // มุมขวาของสนามผู้เลือก (ตำแหน่งเดียวกับแผงลงการ์ดจากมือ): ไม่บังแถบกลาง และไม่โดนหน้าต่างรายละเอียดการ์ดมุมซ้ายบัง
-  const style = panelStyle(c.player, 288);
+  const style = panelStyle(c.player, 288, 150);
   return (
     <div className="pointer-events-none fixed inset-y-0 left-0 right-[var(--sidebar)] z-[38]">
       <div className="hud-panel pointer-events-auto absolute flex w-72 gap-2.5 rounded-xl p-2.5" style={style}>

@@ -3,7 +3,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { loadAllCards } from '@bs/cards';
-import { applyAction, createGame, type Action, type GameState, type PlayerId } from '../src';
+import { applyAction, createGame, payableCost, type Action, type GameState, type PlayerId } from '../src';
 
 const db = loadAllCards();
 const byName = (name: string) => db.all().find((c) => c.name === name)!.cardNo;
@@ -276,5 +276,34 @@ describe('กติกา 04: สลับเบรฟบนสปิริต�
     s.cards[big]!.braves.push(teppo);
     // เท็ปโป (ต้องคอสต์ 4+) จะไปอยู่บนดาริว (คอสต์ 1) ไม่ได้
     expect(fails(s, { type: 'brave', player: 'p1', braveId: jet, hostId: big })).toBe('INVALID_HOST');
+  });
+});
+
+describe('กติกา 02 Q&A 3: ผู้โจมตีออกจากสนามระหว่าง Flash', () => {
+  it('ผู้โจมตีสูญสลายเพราะจ่ายคอร์ร่ายเมจิค แล้วถูกอัญเชิญกลับจากแทรช (ชิคิงามิออฟเดอะเดด) = การ์ดใหม่ การต่อสู้จบ ไม่มีการโจมตี', () => {
+    const fam = db.all().find((c) => c.type === 'spirit' && c.family.includes('มารต้องสาป') && c.cost <= 3)!;
+    let s = setup();
+    const atk = put(s, 'p1', fam.cardNo, 1);
+    put(s, 'p2', DARIU, 1);
+    const magic = inHand(s, 'p1', byName('ชิคิงามิออฟเดอะเดด'));
+    s = toAttack(s);
+    s = act(s, { type: 'declareAttack', player: 'p1', attackerId: atk });
+    while (s.choice) s = act(s, { type: 'choose', player: s.choice.player, pick: 0 } as Action);
+    s = act(s, { type: 'passFlash', player: 'p2' });
+    const cost = payableCost(s, db, 'p1', db.get(byName('ชิคิงามิออฟเดอะเดด')));
+    s = act(s, { type: 'useMagic', player: 'p1', cardId: magic, payment: [s.cards[atk]!.cores[0]!, ...normalReserve(s, 'p1').slice(0, cost - 1)], timing: 'flash' });
+    // เลือกอัญเชิญตัวที่เพิ่งสูญสลายกลับมา
+    expect(s.choice).toMatchObject({ kind: 'card' });
+    s = act(s, { type: 'choose', player: 'p1', pick: atk });
+    while (s.choice) {
+      const c = s.choice as { kind: string; player: PlayerId; cost?: number };
+      if (c.kind === 'payCost') s = act(s, { type: 'choose', player: 'p1', pick: { pay: normalReserve(s, 'p1').slice(0, c.cost) } } as Action);
+      else if (c.kind === 'placeCores') s = act(s, { type: 'choose', player: 'p1', pick: { pay: normalReserve(s, 'p1').slice(0, 1) } } as Action);
+      else s = act(s, { type: 'choose', player: c.player, pick: 0 } as Action);
+    }
+    expect(s.players.p1.field).toContain(atk);
+    while (s.battle?.flash) s = act(s, { type: 'passFlash', player: s.battle.flash.priority });
+    expect(s.battle).toBeNull();
+    expect(s.players.p2.life).toHaveLength(5);
   });
 });

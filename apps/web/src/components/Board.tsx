@@ -6,7 +6,7 @@ import type { Fx } from '../store';
 import { blockCandidates, controls, hiddenFrom, mine, braveHostOf, braveHosts, canDropBurst, canQuickSummon, handFieldAction, separatePlacement } from '../store';
 import { usePrefs, type HandLayout } from '../prefs';
 import { castHandSlots, sortHand } from '../store';
-import { CastRestCard } from './Fx';
+import { CastRestCard, pickingCores } from './Fx';
 import { actingPlayer, canEvolve, db, isMultiHostCandidate, flashPlayer, inMain, isChoiceCandidate, isFxBlocking, handMagicTimings, responseOptions, simulateEvolve, simulateMove, useGame } from '../store';
 import { useFlashUsable } from './Controls';
 import { CardBack, CardFace } from './CardFace';
@@ -1205,6 +1205,8 @@ function HandCard({ cardId, hidden, small, fan, shown: order }: { cardId: string
 function CastSlot({ cardId, top, fan }: { cardId: string; top?: boolean; fan: FanPos }) {
   const [hovering, setHovering] = useState(false);
   const hover = useGame((s) => s.hover);
+  // กำลังเลือก Core บนกระดาน: ไม่ยกขึ้นจากแนวมือ (ไม่บัง Core ของสปิริตแถวล่าง) และโปร่งลง
+  const picking = useGame(pickingCores);
   return (
     <div
       data-cast-slot={cardId}
@@ -1219,7 +1221,7 @@ function CastSlot({ cardId, top, fan }: { cardId: string; top?: boolean; fan: Fa
         setHovering(false);
       }}
     >
-      <div className="h-full w-full" style={{ transform: `translateY(${top ? 22 : -22}%)` }}>
+      <div className={`h-full w-full transition-[transform,opacity] ${picking ? 'opacity-50' : ''}`} style={{ transform: `translateY(${picking ? 0 : top ? 22 : -22}%)` }}>
         <CastRestCard cardId={cardId} />
       </div>
     </div>

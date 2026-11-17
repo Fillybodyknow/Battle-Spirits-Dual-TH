@@ -1471,6 +1471,12 @@ export function CastRestCard({ cardId }: { cardId: string }) {
   );
 }
 
+/** กำลังเลือก Core บนกระดาน (จ่าย/วาง): การ์ดที่พักรอเลือกต้องไม่บัง/ไม่ขวาง Core บนสนาม */
+export function pickingCores(s: ReturnType<typeof useGame.getState>): boolean {
+  const k = s.state.choice?.kind;
+  return k === 'payCost' || k === 'placeCores' || k === 'multiSummon' || !!s.play || !!s.evolveCard;
+}
+
 /** การ์ดที่ยังร่ายไม่จบ (รอเลือกเป้าหมาย / จ่ายใช้ Flash / วาง Core ลงสนาม): พักไว้ที่มือ (เมจิก) หรือช่อง Burst แบบหงาย (เบิร์ส) */
 export function SpellStage() {
   const state = useGame((s) => s.state);
@@ -1482,6 +1488,9 @@ export function SpellStage() {
   const ids = castCards(state).filter(
     (id) => id !== panelCard && !inHandSlot.includes(`${id}:`) && !fx.some((f) => (f.kind === 'spell' || f.kind === 'fly' || f.kind === 'chainAdd') && f.cardId === id),
   );
+  const picking = useGame(pickingCores);
+  const hover = useGame((s) => s.hover);
+  const pin = useGame((s) => s.pin);
   if (ids.length === 0) return null;
   return (
     <>
@@ -1490,8 +1499,18 @@ export function SpellStage() {
         if (!card) return null;
         const tone: keyof typeof SPELL_TONE = castTone(state, id);
         const r = restRect(card.owner, tone, id);
+        // ชี้/คลิก/กดค้างดูความสามารถได้ (เช่น เบิร์สที่รอจ่าย Flash) · ตอนเลือก Core เมจิกที่พักไม่ขวาง Core บนสนาม (โปร่งและคลิกทะลุ)
+        const blocking = picking && tone !== 'burst';
         return (
-          <div key={id} data-spell-card={id} className="pointer-events-none fixed z-[42]" style={{ left: r.x, top: r.y, width: r.w, height: r.h, animation: 'fx-spell-idle 2.4s ease-in-out infinite' }}>
+          <div
+            key={id}
+            data-spell-card={id}
+            className={`fixed z-[42] transition-opacity ${blocking ? 'pointer-events-none opacity-35' : 'pointer-events-auto cursor-pointer'}`}
+            style={{ left: r.x, top: r.y, width: r.w, height: r.h, animation: 'fx-spell-idle 2.4s ease-in-out infinite' }}
+            onMouseEnter={() => hover(id)}
+            onMouseLeave={() => hover(null)}
+            onClick={() => pin(id)}
+          >
             <SpellCardBody cardId={id} tone={tone} pulse={0} />
           </div>
         );

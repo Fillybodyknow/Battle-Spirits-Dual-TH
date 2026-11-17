@@ -949,6 +949,15 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         draws = 0;
         break;
       }
+      case 'spellResolved': {
+        // ผลของการ์ดนี้จบแล้ว: ลง Trash ตอนนี้ (ไม่รอแอนิเมชันอื่นที่ตามมาใน action เดียวกัน เช่น จบการต่อสู้/เปลี่ยนสเต็ป)
+        const c = casting.get(e.cardId);
+        if (c && !c.exitSet) {
+          const soFar = Math.max(t, ghostsEnd, ...out.filter((f) => f.kind !== 'banner' && f.kind !== 'result' && f.kind !== 'finalBlow' && f !== c).map(fxEnd));
+          Object.assign(c, { end: c.from === 'stage' ? soFar : Math.max(soFar, c.delay + T.cast), exit: 'trash', exitSet: true });
+        }
+        break;
+      }
       case 'burstActivated':
         out.push({ kind: 'banner', tone: 'burst', title: 'BURST!', sub: db.get(s.cards[e.cardId]!.cardNo).name });
         // พลิกหงายที่ช่อง Burst → เวที (ขยายให้อ่านง่าย) → เรืองแสง · ค้างจนผลจบ / รอเลือก แล้วค่อยลง Trash หรือลงสนาม
@@ -1167,9 +1176,18 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
           hideTarget: true,
         });
         break;
-      case 'burstDiscarded':
-        out.push({ kind: 'fly', cardId: e.cardId, from: rects[`burst:${e.player}`] ?? `[data-burst-card="${e.player}"]`, to: `[data-trash="${e.player}"]`, mode: 'move', shrink: true, delay: t, hideTarget: false });
+      case 'burstDiscarded': {
+        const slot = rects[`burst:${e.player}`];
+        // ถูกเอฟเฟกต์ทำลาย: หงายการ์ดที่ช่อง Burst ให้เห็น → ร้าวแล้วแตก → ดวงวิญญาณลอยลง Trash (แบบเดียวกับสปิริตถูกทำลาย)
+        if (e.byEffect && slot) {
+          out.push({ kind: 'float', anchor: `[data-burst-card="${e.player}"]`, text: 'BURST ถูกทำลาย!', tone: 'bad', delay: t });
+          out.push({ kind: 'ghost', cardId: e.cardId, owner: e.player, slot: -1, cardNo: s.cards[e.cardId]!.cardNo, rect: slot, mode: 'destroy', delay: t + 150 });
+          t += 150 + T.ghost;
+          break;
+        }
+        out.push({ kind: 'fly', cardId: e.cardId, from: slot ?? `[data-burst-card="${e.player}"]`, to: `[data-trash="${e.player}"]`, mode: 'move', shrink: true, delay: t, hideTarget: false });
         break;
+      }
       case 'burstSet': {
         if (e.replacedCardId) {
           out.push({ kind: 'fly', cardId: e.replacedCardId, from: rects[`burst:${e.player}`] ?? null, to: `[data-trash="${e.player}"]`, mode: 'move', shrink: true, delay: t, hideTarget: false });

@@ -610,7 +610,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
 
     battle.flash = null;
     // ผู้โจมตีออกจากสนามไประหว่าง Flash1: จบ Flash1 แล้วจบการต่อสู้ทันที ไม่มีการป้องกัน (กติกา 02 Q&A 3)
-    if (battle.step === 'flashBeforeBlock' && !ctx.s.players[ctx.s.cards[battle.attackerId]!.owner].field.includes(battle.attackerId)) {
+    if (battle.step === 'flashBeforeBlock' && !inBattle(ctx.s, battle.attackerId)) {
       endBattle(ctx);
       return;
     }
@@ -856,7 +856,7 @@ function applyChosenBlockers(ctx: Ctx): void {
   const { s } = ctx;
   const battle = s.battle!;
   const defender = opponentOf(s.turnPlayer);
-  const chosen = battle.chosenBlockers.filter((id) => s.players[defender].field.includes(id));
+  const chosen = battle.chosenBlockers.filter((id) => inBattle(s, id));
   if (chosen.length === 0) return;
   payBlockTax(ctx, defender);
   for (const id of chosen) {
@@ -889,7 +889,7 @@ function requireBlockStep(ctx: Ctx, player: PlayerId) {
 /** ผู้โจมตีถูกป้องกัน: "เมื่อสปิริตนี้ถูกป้องกัน" + "เมื่อสปิริตเราถูกป้องกัน" */
 function queueBlockedTriggers(ctx: Ctx, attackerId: string, blockerId: string, batch: number): void {
   const attacker = ctx.s.cards[attackerId];
-  if (!attacker || !ctx.s.players[attacker.owner].field.includes(attackerId)) return;
+  if (!attacker || !inBattle(ctx.s, attackerId)) return;
   queueTriggers(ctx, attackerId, 'blocked', batch, { blockerId });
   for (const id of [...ctx.s.players[attacker.owner].field]) queueTriggers(ctx, id, 'allyBlocked', batch, { subject: attackerId, blockerId });
 }
@@ -903,7 +903,7 @@ function resolveBattle(ctx: Ctx): void {
   const defender = opponentOf(attacker.owner);
 
   let lostLife = false;
-  const blockers = battle.blockers.filter((id) => s.players[defender].field.includes(id));
+  const blockers = battle.blockers.filter((id) => inBattle(s, id));
   if (blockers.length === 0) {
     const extra = Object.values(extraSymbols(s, db, attacker.id)).reduce<number>((n, v) => n + (v ?? 0), 0);
     const override = battle.symbolOverride?.cardId === attacker.id ? battle.symbolOverride.count : null;
@@ -925,7 +925,7 @@ function resolveBattle(ctx: Ctx): void {
     if (s.winner) return;
     if (attackerLoses) destroyCard(ctx, attacker.id, defender, { bySource: results.find((r) => bpA <= r.bp)!.id });
     // "ชนะและทำลายสปิริตคู่แข่งจากการเทียบ BP → ฟื้นสภาพ" (คาราคุริโอโอคามิ)
-    if (!attackerLoses && destroyedBlockers.length > 0 && battle.refreshOnWin?.includes(attacker.id) && s.players[attacker.owner].field.includes(attacker.id)) {
+    if (!attackerLoses && destroyedBlockers.length > 0 && battle.refreshOnWin?.includes(attacker.id) && inBattle(s, attacker.id)) {
       refreshByEffect(ctx, attacker.id, attacker.id);
     }
 
@@ -938,7 +938,7 @@ function resolveBattle(ctx: Ctx): void {
   }
 
   // เอฟเฟกต์ "เมื่อการโจมตีทำให้คู่แข่งเสียไลฟ์" (ผู้โจมตียังอยู่บนสนาม)
-  if (lostLife && s.players[attacker.owner].field.includes(attacker.id)) {
+  if (lostLife && inBattle(s, attacker.id)) {
     const batch = newBatch(ctx);
     queueTriggers(ctx, attacker.id, 'attackHitLife', batch);
     for (const id of [...s.players[attacker.owner].field]) queueTriggers(ctx, id, 'allyAttackHitLife', batch, { subject: attacker.id });
@@ -990,12 +990,17 @@ function payBlockTax(ctx: Ctx, defender: PlayerId): void {
   emit(ctx, { type: 'coresPaidToBlock', player: defender, count: pay.length });
 }
 
+/** การ์ดนี้ยังอยู่ในการต่อสู้: อยู่บนสนาม และไม่เคยออกจากสนามระหว่างการต่อสู้นี้ */
+function inBattle(s: GameState, id: string): boolean {
+  return s.players[s.cards[id]!.owner].field.includes(id) && !(s.battle?.left ?? []).includes(id);
+}
+
 /** ผู้โจมตีหรือผู้ป้องกันออกจากสนามระหว่างการต่อสู้ (สูญสลาย/ถูกทำลายโดยเอฟเฟกต์) → การต่อสู้จบทันที */
 function checkBattleParticipants(ctx: Ctx): void {
   const { s } = ctx;
   const battle = s.battle;
   if (!battle || s.choice || s.winner) return;
-  const onField = (id: string) => s.players[s.cards[id]!.owner].field.includes(id);
+  const onField = (id: string) => inBattle(s, id);
   const blockersGone = battle.blockers.length > 0 && !battle.blockers.some(onField);
   // ผู้โจมตีหายก่อน/ระหว่าง Flash1: ยังมี Flash1 ต่อจนจบ แล้วค่อยจบการต่อสู้ (กติกา 02 Q&A 3 · ดู passFlash)
   if (!onField(battle.attackerId) && battle.step === 'flashBeforeBlock' && battle.flash) return;

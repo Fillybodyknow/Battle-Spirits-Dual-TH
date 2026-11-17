@@ -83,6 +83,11 @@ export function leaveField(ctx: Ctx, cardId: string, to: 'trash' | 'hand'): void
   const p = ctx.s.players[card.owner];
   const hostState = card.state;
   removeFrom(p.field, cardId);
+  // ออกจากสนามระหว่างการต่อสู้: ถ้าถูกอัญเชิญกลับมา (เช่น ชิคิงามิออฟเดอะเดด) ถือเป็นการ์ดใหม่ ไม่ได้โจมตี/ป้องกันอยู่
+  const battle = ctx.s.battle;
+  if (battle && (battle.attackerId === cardId || battle.blockers.includes(cardId) || battle.chosenBlockers.includes(cardId))) {
+    battle.left = [...(battle.left ?? []), cardId];
+  }
   p.reserve.push(...card.cores);
   card.cores = [];
   card.state = 'refresh';

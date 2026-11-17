@@ -16,12 +16,42 @@ const PANEL_W = 400;
  * ตำแหน่งแผงลงการ์ด/อัญเชิญ: มุมขวาของสนามผู้เล่น (ก่อนคอลัมน์ Deck/Trash) ชิดขอบที่ติดแถบกลาง
  * อยู่ขวา เพราะหน้าต่างรายละเอียดการ์ดลอยอยู่มุมซ้าย (จอเล็กจะบังแผงถ้าอยู่ซ้าย)
  */
-export function panelStyle(player: string, width: number): React.CSSProperties {
+export function panelStyle(player: string, width: number, height = 200): React.CSSProperties {
   const mat = layoutRect(document.querySelector(`[data-mat="${player}"]`));
   if (!mat) return { right: 16, bottom: 16 };
   const lower = mat.y + mat.h / 2 > innerHeight / 2;
-  const left = Math.max(mat.x + 150, mat.x + mat.w - 150 - width);
-  return lower ? { left, top: mat.y + 12 } : { left, top: mat.y + mat.h - 12, transform: 'translateY(-100%)' };
+  // ตำแหน่งที่ลองตามลำดับ: มุมขวา → มุมซ้ายของสนามเรา → สนามคู่แข่ง (ชิดแถบกลาง)
+  // เลือกที่แรกที่ไม่บังการ์ด/Core บนสนามเรา (ต้องคลิก Core ได้) ถ้าบังทุกที่ = ที่บังน้อยที่สุด
+  type Spot = { left: number; edge: number; down: boolean };
+  const spots: Spot[] = [
+    { left: Math.max(mat.x + 150, mat.x + mat.w - 150 - width), edge: lower ? mat.y + 12 : mat.y + mat.h - 12, down: lower },
+    { left: mat.x + 150, edge: lower ? mat.y + 12 : mat.y + mat.h - 12, down: lower },
+  ];
+  const opp = layoutRect(document.querySelector(`[data-mat="${player === 'p1' ? 'p2' : 'p1'}"]`));
+  if (opp) spots.push({ left: Math.max(opp.x + 150, opp.x + opp.w - 150 - width), edge: lower ? opp.y + opp.h - 12 : opp.y + 12, down: !lower });
+  const obstacles = [...document.querySelectorAll(`[data-mat="${player}"] [data-field-card], [data-mat="${player}"] [data-core]`)]
+    .map((el) => el.getBoundingClientRect())
+    .filter((r) => r.width > 0);
+  const overlap = (sp: Spot) => {
+    const x1 = sp.left;
+    const y1 = sp.down ? sp.edge : sp.edge - height;
+    return obstacles.reduce((n, r) => {
+      const w = Math.min(x1 + width, r.right) - Math.max(x1, r.left);
+      const h = Math.min(y1 + height, r.bottom) - Math.max(y1, r.top);
+      return n + (w > 0 && h > 0 ? w * h : 0);
+    }, 0);
+  };
+  let best = spots[0]!;
+  let bestArea = Infinity;
+  for (const sp of spots) {
+    const a = overlap(sp);
+    if (a < bestArea) {
+      best = sp;
+      bestArea = a;
+    }
+    if (a === 0) break;
+  }
+  return best.down ? { left: best.left, top: best.edge } : { left: best.left, top: best.edge, transform: 'translateY(-100%)' };
 }
 
 export function PlayDialog() {
@@ -129,7 +159,7 @@ function PlayDialogInner({ cardId, kind, timing, braveOnto }: { cardId: string; 
   ];
 
   // มุมขวาของสนามผู้เล่น (เหมือนแผงอัญเชิญด้วยเอฟเฟกต์): ไม่บังกระดาน และไม่โดนหน้าต่างรายละเอียดการ์ด (มุมซ้าย) บังบนจอเล็ก
-  const style = panelStyle(player, PANEL_W);
+  const style = panelStyle(player, PANEL_W, 210);
   const after =
     allowPlace && level !== undefined && level > 0 ? (def.type === 'nexus' ? `Lv${level}` : `Lv${level} · BP ${bpOf(def, placement.length).toLocaleString()}`) : null;
 

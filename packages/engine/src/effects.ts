@@ -595,7 +595,10 @@ function drainQueue(ctx: Ctx): void {
     const step = item.steps.shift();
     if (!step) {
       s.queue.shift();
-      if (item.trashWhenDone) s.players[item.controller].trashCards.push(item.sourceId);
+      if (item.trashWhenDone) {
+        s.players[item.controller].trashCards.push(item.sourceId);
+        emit(ctx, { type: 'spellResolved', player: item.controller, cardId: item.sourceId });
+      }
       continue;
     }
     execStep(ctx, item, step);
@@ -1450,7 +1453,7 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       if (!id) return;
       s.players[opp].burst = null;
       s.players[opp].trashCards.push(id);
-      emit(ctx, { type: 'burstDiscarded', player: opp, cardId: id });
+      emit(ctx, { type: 'burstDiscarded', player: opp, cardId: id, byEffect: true });
       item.burstDiscarded = true;
       return;
     }

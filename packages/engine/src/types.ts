@@ -114,6 +114,8 @@ export interface Battle {
   blockTax?: { reserveToTrash: number; paid?: boolean };
   /** ผู้โจมตีถือว่าไร้สีในการต่อสู้นี้ (ไลท์นิ่ง-ชิออน) */
   colorless?: boolean;
+  /** การ์ดที่ออกจากสนามไปแล้วระหว่างการต่อสู้นี้ (กลับมาบนสนามอีก = การ์ดใหม่ ไม่ใช่ผู้โจมตี/ผู้ป้องกันเดิม) */
+  left?: string[];
   /** ผู้เล่นที่ใช้การ์ดในมือในช่วง Flash ไม่ได้ในการต่อสู้นี้ */
   noHandFlash?: PlayerId;
   /** ผู้เล่นที่สปิริตถูกทำลายโดยคู่แข่งแล้วยังอยู่บนสนาม (เสื่อมสภาพ) ในการต่อสู้นี้ */
@@ -354,7 +356,7 @@ export type GameEvent =
   | { type: 'magicUsed'; player: PlayerId; cardId: string; paid: number; timing: 'main' | 'flash' }
   | { type: 'coresMoved'; player: PlayerId; count: number }
   | { type: 'burstSet'; player: PlayerId; replacedCardId: string | null }
-  | { type: 'burstDiscarded'; player: PlayerId; cardId: string }
+  | { type: 'burstDiscarded'; player: PlayerId; cardId: string; /** ถูกเอฟเฟกต์ของคู่แข่งทำลาย (ไม่ใช่เจ้าของทิ้งเอง) */ byEffect?: true }
   | { type: 'depleted'; cardId: string }
   | { type: 'attackDeclared'; attackerId: string }
   | { type: 'blockDeclared'; blockerId: string }
@@ -393,6 +395,8 @@ export type GameEvent =
   /** ฝ่ายป้องกันส่งคอร์รีเสิร์ฟลงแทรชเพื่อป้องกัน */
   | { type: 'coresPaidToBlock'; player: PlayerId; count: number }
   | { type: 'burstActivated'; player: PlayerId; cardId: string }
+  /** เมจิก/เบิร์สทำเอฟเฟกต์จบแล้ว ลง Trash (ตอนนี้) */
+  | { type: 'spellResolved'; player: PlayerId; cardId: string }
   | { type: 'lifeGained'; player: PlayerId; amount: number }
   | { type: 'costPaid'; player: PlayerId; cardId: string; paid: number }
   | { type: 'soulToTrash'; cardId: string }

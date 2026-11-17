@@ -9,7 +9,7 @@ import { hiddenFrom, useGame } from './store';
 
 const LONG_PRESS_MS = 450;
 const MOVE_TOLERANCE = 10;
-const CARD_SELECTOR = '[data-field-card],[data-hand-card],[data-brave-card]';
+const CARD_SELECTOR = '[data-field-card],[data-hand-card],[data-brave-card],[data-spell-card],[data-cast-slot]';
 
 let lastWasTouch = false;
 const listeners = new Set<(touch: boolean) => void>();
@@ -62,7 +62,8 @@ export function usePortraitPhone(): boolean {
 
 /** การ์ดที่กดค้างเปิดดูได้ (การ์ดบนมือคู่แข่งที่คว่ำอยู่ = ไม่ได้) */
 function inspectable(el: Element): string | null {
-  const id = el.getAttribute('data-field-card') ?? el.getAttribute('data-hand-card') ?? el.getAttribute('data-brave-card');
+  const id =
+    el.getAttribute('data-field-card') ?? el.getAttribute('data-hand-card') ?? el.getAttribute('data-brave-card') ?? el.getAttribute('data-spell-card') ?? el.getAttribute('data-cast-slot');
   if (!id) return null;
   const s = useGame.getState();
   const card = s.state.cards[id];

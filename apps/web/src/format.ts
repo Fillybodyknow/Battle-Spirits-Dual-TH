@@ -132,6 +132,8 @@ export function formatEvent(e: GameEvent, s: GameState): string | null {
       return `${playerLabel(e.player)} ส่งคอร์รีเสิร์ฟ ${e.count} เม็ดลงแทรชเพื่อป้องกัน`;
     case 'burstActivated':
       return `💥 ${playerLabel(e.player)} เปิด Burst: ${name(e.cardId)}`;
+    case 'spellResolved':
+      return null;
     case 'lifeGained':
       return `${playerLabel(e.player)} ได้ไลฟ์ +${e.amount}`;
     case 'costPaid':
