@@ -448,6 +448,8 @@ export type Fx =
       timing?: 'main' | 'flash';
       /** เสียงตอนการ์ดถึงปลายทาง (แทนเสียงประจำ mode) */
       landSound?: SfxName;
+      /** ออกจากสนามแบบหงาย แล้วค่อยพลิกคว่ำกลางทาง (กลับขึ้นมือที่อีกฝ่ายมองไม่เห็น) */
+      revealFirst?: boolean;
       delay: number;
       hideTarget: boolean;
     }
@@ -1028,9 +1030,10 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         break;
       case 'bounced': {
         const rect = rects[`field:${e.cardId}`];
-        if (rect) out.push({ kind: 'fly', cardId: e.cardId, from: rect, to: `[data-hand-card="${e.cardId}"]`, mode: 'move', delay: t, hideTarget: true });
+        // ค้างที่ช่องบนสนามจนถึงคิวของตัวเอง (FlyCard fill both) แล้วบินขึ้นมือ · กลับหลายตัวในเอฟเฟกต์เดียว = ไล่ตามกันถี่ ๆ
+        if (rect) out.push({ kind: 'fly', cardId: e.cardId, from: rect, to: `[data-hand-card="${e.cardId}"]`, mode: 'move', delay: t, hideTarget: true, revealFirst: true });
         out.push({ kind: 'float', anchor: `[data-hand-card="${e.cardId}"]`, text: 'กลับขึ้นมือ', tone: 'bad', delay: t });
-        t += 500;
+        t += 260;
         break;
       }
       case 'returnedToDeck': {

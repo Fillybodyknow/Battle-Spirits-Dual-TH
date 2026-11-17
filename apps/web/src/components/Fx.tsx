@@ -696,6 +696,8 @@ function FlyCard({ fx, onDone }: { fx: Extract<Fx, { kind: 'fly' }>; onDone: () 
     },
   );
   const [flipped, setFlipped] = useState(fx.mode !== 'burst');
+  // ออกจากสนามแบบหงาย: พลิกคว่ำกลางทาง
+  const [revealed, setRevealed] = useState(!!fx.revealFirst);
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -755,8 +757,10 @@ function FlyCard({ fx, onDone }: { fx: Extract<Fx, { kind: 'fly' }>; onDone: () 
           : fx.mode === 'move'
             ? [frame(from, { opacity: 1 }), frame(mid, { offset: 0.5, opacity: 1, transform: 'rotate(-6deg)' }), frame(to, { opacity: fx.shrink ? 0.2 : 1 })]
           : [frame(from, { opacity: 1 }), frame(mid, { offset: 0.55, opacity: 1, transform: 'scale(1.12)' }), frame(to, { opacity: 1 })],
-        { duration: fx.mode === 'draw' ? 420 : fx.mode === 'move' ? 480 : 520, delay: fx.delay, easing: 'cubic-bezier(.3,.7,.3,1)', fill: 'forwards' },
+        // ย้ายโซน: ค้างที่จุดเริ่มระหว่างรอคิว (การ์ดออกจากโซนเดิมใน state ไปแล้ว ไม่ให้หายวับ)
+        { duration: fx.mode === 'draw' ? 420 : fx.mode === 'move' ? 480 : 520, delay: fx.delay, easing: 'cubic-bezier(.3,.7,.3,1)', fill: fx.mode === 'move' ? 'both' : 'forwards' },
       );
+      if (fx.revealFirst) setTimeout(() => setRevealed(false), fx.delay + 240);
     }
     anim.onfinish = () => {
       if (fx.mode === 'play') {
@@ -796,7 +800,7 @@ function FlyCard({ fx, onDone }: { fx: Extract<Fx, { kind: 'fly' }>; onDone: () 
         />
       )}
       <Upside on={fx.mode !== 'magic' && fx.mode !== 'burst' && upsideFor(card?.owner)}>
-        {faceDown || !flipped ? <CardBack /> : <CardFace def={def} />}
+        {(faceDown && !revealed) || !flipped ? <CardBack /> : <CardFace def={def} />}
       </Upside>
     </div>
   );
