@@ -5,7 +5,8 @@ import { IMG } from '../assets';
 import type { Fx } from '../store';
 import { blockCandidates, controls, hiddenFrom, mine, braveHostOf, braveHosts, canDropBurst, canQuickSummon, handFieldAction, separatePlacement } from '../store';
 import { usePrefs, type HandLayout } from '../prefs';
-import { sortHand } from '../store';
+import { castHandSlots, sortHand } from '../store';
+import { CastRestCard } from './Fx';
 import { actingPlayer, canEvolve, db, isMultiHostCandidate, flashPlayer, inMain, isChoiceCandidate, isFxBlocking, magicTimings, responseOptions, simulateEvolve, simulateMove, useGame } from '../store';
 import { useFlashUsable } from './Controls';
 import { CardBack, CardFace } from './CardFace';
@@ -682,7 +683,10 @@ function TrashSlot({ player }: { player: PlayerId }) {
   const openTrash = useGame((s) => s.openTrash);
   // การ์ดที่ภาพ "ถูกทิ้ง" (จากเด็ค/มือ) หรือภาพแตกจากสนามยังเล่นอยู่: ยังไม่โชว์ใน Trash
   const fxList = useGame((s) => s.fx);
-  const milling = fxList.flatMap((f) => (f.kind === 'mill' && f.owner === player ? f.cardIds : f.kind === 'ghost' && f.owner === player ? [f.cardId] : []));
+  // เมจิก/เบิร์สที่ยังค้างบนเวที (Spell Stage) ก็ยังไม่โชว์ใน Trash จนกว่าจะลงจากเวที
+  const milling = fxList.flatMap((f) =>
+    f.kind === 'mill' && f.owner === player ? f.cardIds : (f.kind === 'ghost' || f.kind === 'spell') && f.owner === player ? [f.cardId] : [],
+  );
   const shown = milling.length > 0 ? p.trashCards.filter((id) => !milling.includes(id)) : p.trashCards;
   const top = shown.at(-1);
   const hover = useGame((s) => s.hover);
@@ -1188,6 +1192,34 @@ function HandCard({ cardId, hidden, small, fan, shown: order }: { cardId: string
   );
 }
 
+/**
+ * ช่องในพัดมือของเมจิกที่ยังร่ายไม่จบ (รอเลือก): การ์ดพักยกขึ้นจากแนวมือเล็กน้อย (ตำแหน่งเดียวกับ restRect ใน Fx)
+ * อยู่ในพัด จึงซ้อนกับใบข้าง ๆ ตามลำดับ · ชี้แล้วยกขึ้นและเปิดรายละเอียดได้เหมือนการ์ดในมือ (คลิกเล่นไม่ได้)
+ */
+function CastSlot({ cardId, top, fan }: { cardId: string; top?: boolean; fan: FanPos }) {
+  const [hovering, setHovering] = useState(false);
+  const hover = useGame((s) => s.hover);
+  return (
+    <div
+      data-cast-slot={cardId}
+      className={`${top ? 'h-32 w-[5.75rem]' : 'h-48 w-34'} pointer-events-auto shrink-0`}
+      style={fanStyle(fan, hovering, false)}
+      onMouseEnter={() => {
+        hover(cardId);
+        setHovering(true);
+      }}
+      onMouseLeave={() => {
+        hover(null);
+        setHovering(false);
+      }}
+    >
+      <div className="h-full w-full" style={{ transform: `translateY(${top ? 22 : -22}%)` }}>
+        <CastRestCard cardId={cardId} />
+      </div>
+    </div>
+  );
+}
+
 /** การ์ดบนมือขอใช้การลากนี้เป็นการเลื่อนมือ (คืน true = ห้ามเริ่มลากการ์ดไปเล่น) */
 const HandScrollCtx = createContext<{ claimDrag: () => boolean } | null>(null);
 
@@ -1207,6 +1239,19 @@ const DRAG_START = 6;
 export function HandFan({ player, top }: { player: PlayerId; top?: boolean }) {
   const hidden = useGame((s) => hiddenFrom(s, player));
   const hand = useShownHand(player, hidden);
+  // เมจิกที่ยังร่ายไม่จบ: เว้นช่องเดิมในพัดไว้ (การ์ดพักลอยเหนือช่องระหว่างรอเลือก)
+  const slotKey = useGame((s) => castHandSlots(s.state, player));
+  const items = useMemo(() => {
+    const out: { id: string; slot?: true }[] = hand.map((id) => ({ id }));
+    const slots = slotKey
+      ? slotKey.split(',').map((x) => {
+          const [id, i] = x.split(':');
+          return { id: id!, index: Number(i) };
+        })
+      : [];
+    for (const sl of slots.sort((a, b) => a.index - b.index)) out.splice(Math.min(sl.index, out.length), 0, { id: sl.id, slot: true });
+    return out;
+  }, [hand, slotKey]);
   const layout = usePrefs((p) => p.handLayout);
   const selected = useGame((s) => s.selectedHandCard);
   const outerRef = useRef<HTMLDivElement>(null);
@@ -1248,7 +1293,7 @@ export function HandFan({ player, top }: { player: PlayerId; top?: boolean }) {
     window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hand.length]);
+  }, [items.length]);
 
   // เลือกการ์ดที่อยู่ชิดขอบ: เลื่อนให้เห็นทั้งใบ (เมนูเล่นการ์ดจะได้ไม่ถูกตัด)
   const showCard = (i: number) => {
@@ -1348,8 +1393,8 @@ export function HandFan({ player, top }: { player: PlayerId; top?: boolean }) {
   );
 
   // ตำแหน่งกลางของส่วนที่มองเห็น (หน่วย: ใบ) ใช้คิดความโค้งของพัด
-  const center = overflow ? (offset + geo.win / 2 - geo.card / 2) / geo.step : (hand.length - 1) / 2;
-  const spread = overflow ? geo.win / geo.step : hand.length;
+  const center = overflow ? (offset + geo.win / 2 - geo.card / 2) / geo.step : (items.length - 1) / 2;
+  const spread = overflow ? geo.win / geo.step : items.length;
   const arrow = (dir: -1 | 1) => (
     <button
       type="button"
@@ -1402,9 +1447,14 @@ export function HandFan({ player, top }: { player: PlayerId; top?: boolean }) {
       >
         <HandScrollCtx.Provider value={scrollCtx}>
           <div ref={rowRef} className={`flex shrink-0 ${top ? 'items-start' : 'items-end'}`} style={overflow ? { transform: `translateX(${-offset}px)` } : undefined}>
-            {hand.map((id, index) => (
-              <HandCard key={id} cardId={id} hidden={hidden} shown={hidden ? undefined : hand} fan={{ index, off: index - center, spread, top, layout }} />
-            ))}
+            {items.map((it, index) =>
+              it.slot ? (
+                // ช่องของเมจิกที่ยังร่ายไม่จบ: การ์ดพักในช่องเดิม ยกขึ้นเล็กน้อย ซ้อนกับใบข้าง ๆ ตามลำดับเหมือนการ์ดในมือ
+                <CastSlot key={`slot-${it.id}`} cardId={it.id} top={top} fan={{ index, off: index - center, spread, top, layout }} />
+              ) : (
+                <HandCard key={it.id} cardId={it.id} hidden={hidden} shown={hidden ? undefined : hand} fan={{ index, off: index - center, spread, top, layout }} />
+              ),
+            )}
           </div>
         </HandScrollCtx.Provider>
         {overflow && offset > 0.5 && arrow(-1)}

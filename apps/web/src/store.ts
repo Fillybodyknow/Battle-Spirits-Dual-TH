@@ -361,11 +361,47 @@ export type Fx =
   | { id: number; kind: 'summon'; cardId: string; level: number; bp: number; delay: number; special?: boolean }
   | { id: number; kind: 'activate'; cardId: string; label: string; text: string; delay: number }
   /** การ์ดบนสนามที่เอฟเฟกต์ทำงาน: ยกขึ้น + เรืองแสง ก่อนผลของเอฟเฟกต์จะเกิด */
-  | { id: number; kind: 'cardActivate'; cardId: string; delay: number; duration: number; hand?: boolean; brave?: boolean; /** เอฟเฟกต์ของการ์ดใน Trash (เช่น เมื่อถูกทำลาย): ยกขึ้นจากช่อง Trash */ trash?: PlayerId }
+  | {
+      id: number;
+      kind: 'cardActivate';
+      cardId: string;
+      delay: number;
+      duration: number;
+      hand?: boolean;
+      brave?: boolean;
+      /** เอฟเฟกต์ของการ์ดใน Trash (เช่น เมื่อถูกทำลาย): ยกขึ้นจากช่อง Trash */
+      trash?: PlayerId;
+      /**
+       * ตำแหน่งบนสนามก่อน action นี้: การ์ดที่ยังอยู่บนสนามตอนเอฟเฟกต์ทำงาน แต่ออกจากสนามทีหลังในชุดเดียวกัน
+       * (เช่น ผู้ป้องกันที่ "เมื่อป้องกัน" ทำงานแล้วแพ้การต่อสู้) ใน DOM ไม่มีการ์ดใบนี้แล้ว จึงยกขึ้นจากตำแหน่งนี้แทน
+       */
+      rect?: Rect;
+      /** การ์ดบนสนามนอนอยู่ (เสื่อมสภาพ) ณ จังหวะที่เอฟเฟกต์ทำงาน */
+      lying?: boolean;
+    }
+  /**
+   * เมจิก / เบิร์ส (Spell Stage): ยกขึ้นจากมือเหนือการ์ดใบอื่น (มือที่คว่ำ = พลิกหงายก่อน) หรือพลิกหงายที่ช่อง Burst
+   * → ไปค้างที่เวทีข้างกระดาน (ตำแหน่งเดียวกับใบล่าสุดของกอง Chain) เรืองแสงทุกครั้งที่เอฟเฟกต์ทำงาน (pulses)
+   * → ค้างจนผลของการ์ดเล่นจบ (end) แล้วค่อยลง Trash / ลงสนาม (field: การ์ดบินจากเวทีลงสนามแทน) / ค้างรอผู้เล่นเลือก (stay: SpellStage แสดงต่อ)
+   * เวลาทั้งหมดนับจากต้นไทม์ไลน์ของ action นี้
+   */
+  | {
+      id: number;
+      kind: 'spell';
+      cardId: string;
+      owner: PlayerId;
+      tone: 'main' | 'flash' | 'burst';
+      from: 'hand' | 'burst' | 'stage';
+      fromRect?: Rect;
+      delay: number;
+      pulses: number[];
+      end: number;
+      exit: 'trash' | 'field' | 'stay';
+    }
   /** เอฟเฟกต์หลายอันทำงานพร้อมกัน: แสดงการ์ดเรียงพร้อมเลขลำดับและโซ่ (CHAIN → RESOLVE) */
   | { id: number; kind: 'chain'; cardIds: string[]; delay: number; duration: number }
   /** การ์ดที่เอฟเฟกต์ทำงานเสร็จ บินเข้าไปต่อท้ายแถบ Chain (index = ลำดับใน Chain) */
-  | { id: number; kind: 'chainAdd'; cardId: string; index: number; delay: number }
+  | { id: number; kind: 'chainAdd'; cardId: string; index: number; delay: number; /** กอง Chain ณ จังหวะนั้น (Chain 1 ถึงใบนี้) */ stack: { cardId: string; player: PlayerId }[] }
   /** การ์ดที่เปิดจากเด็คเรียงเป็นพัด (หลังเลือก: ใบที่เลือกยกขึ้นก่อนบินขึ้นมือ / ที่เหลือบินลง Trash) */
   | { id: number; kind: 'reveal'; owner: PlayerId; cardIds: string[]; chosen: string | null; delay: number; duration: number; title?: string }
   /** การ์ดถูกทิ้งจากเด็ค: บินออกมาเรียงหงายทีละใบ ค้างไว้ครู่หนึ่ง แล้วแตกทีละใบลง Trash (owner = เจ้าของเด็ค) */
@@ -480,8 +516,11 @@ const who = (p: PlayerId) => (p === 'p1' ? 'ผู้เล่น 1' : 'ผู�
 const effectText = (cardNo: string, i: number) => (db.get(cardNo).effects as TextEffect[])[i]?.text ?? '';
 
 /** เวลาของแต่ละช่วงในไทม์ไลน์ (ms) */
-/** ผู้โจมตีที่แพ้: ถูกกระแทกกระเด็นกลับมาหยุดที่สัดส่วนนี้ของระยะวิ่ง แล้วแตกตรงนั้น (Charge ใน Fx ใช้ค่าเดียวกัน) */
-export const CHARGE_KNOCK = 0.5;
+/**
+ * ผู้โจมตีที่แพ้: ถูกกระแทกกระเด็นกลับมาหยุดที่สัดส่วนนี้ของระยะวิ่ง แล้วแตกตรงนั้น (Charge ใน Fx ใช้ค่าเดียวกัน)
+ * 0 = เด้งกลับถึงช่องเดิมบนสนาม (เดิม 0.5 หยุดค้างกลางทางทับแถบกลางจอ)
+ */
+export const CHARGE_KNOCK = 0;
 
 /** ตำแหน่งที่ผู้โจมตีที่แพ้แตก: การ์ดตั้งตรง ณ จุดที่กระเด็นกลับมาหยุด */
 export function chargeKnockRect(from: Rect, fromExhausted: boolean, target: Rect): Rect {
@@ -496,6 +535,13 @@ export function chargeKnockRect(from: Rect, fromExhausted: boolean, target: Rect
   return { x: cx + tx * k - w / 2, y: cy + ty * k - h / 2, w, h };
 }
 
+/** Spell Stage (ms): intro = ยก/พลิก→เวที→เรืองแสง, glow = จังหวะเรืองแสงครั้งแรก, pulse = เรืองแสงซ้ำ, exit = ลงจากเวทีเข้า Trash */
+/** Spell (ms): ยก/พลิกตรงที่เดิม → เรืองแสงตรงนั้น (ไม่วิ่งไปกลางจอ) */
+export const CAST_MS = { intro: 1150, lift: 420, arrive: 420, glow: 450, pulse: 1100, exit: 520, rise: 300, rest: 450 } as const;
+
+/** ความยาว cut-in อัญเชิญ (X / XX·XV) ใช้ทั้งไทม์ไลน์และตัวแอนิเมชันใน Fx */
+export const CUTIN_MS = { normal: 2500, special: 3300 } as const;
+
 const T = {
   /** ป้ายสเต็ปเล็ก (Start/Core/Draw/Refresh/Main/End) */
   miniBanner: 900,
@@ -507,8 +553,16 @@ const T = {
   landHeavy: 1350,
   /** การ์ดบนสนามยกขึ้นเรืองแสงก่อนเอฟเฟกต์ทำงาน */
   activate: 1500,
-  /** Magic / Burst ค้างกลางจอก่อนผลเกิด */
+  /** Magic / Burst ค้างกลางจอก่อนผลเกิด (แบบเดิม) */
   spell: 1250,
+  /** Spell Stage: ยก/พลิก → ไปที่เวที → เรืองแสง ก่อนผลของการ์ดเริ่ม */
+  cast: CAST_MS.intro,
+  /** จังหวะเรืองแสงครั้งแรก (นับจากเริ่ม) */
+  castGlow: CAST_MS.glow,
+  /** เรืองแสงซ้ำที่เวที (เช่น จ่ายคอสต์ใช้ Flash ของเบิร์ส) ก่อนผลเกิด */
+  castPulse: CAST_MS.pulse,
+  /** ลงจากเวทีเข้า Trash */
+  castExit: CAST_MS.exit,
   /** ผู้โจมตีวิ่งถึงเป้าหมาย */
   hit: 450,
   /** ผู้โจมตีวิ่งชนแล้ววิ่งกลับถึงที่เดิม */
@@ -525,9 +579,9 @@ const T = {
   /** FINAL BLOW ก่อนประกาศผู้ชนะ */
   finalBlow: 2600,
   /** X-Rare cut-in ก่อนการ์ดบินลงสนาม (การ์ดเริ่มบินตอน cut-in กำลังจาง) */
-  cutIn: 1750,
+  cutIn: CUTIN_MS.normal - 250,
   /** cut-in ระดับพิเศษ (XX/XV) ยาวกว่า X */
-  cutInSpecial: 2450,
+  cutInSpecial: CUTIN_MS.special - 250,
 } as const;
 
 /**
@@ -584,6 +638,14 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
   let draws = 0;
   const onAnyField = (id: string) => PLAYERS.some((p) => s.players[p].field.includes(id) || prev.players[p].field.includes(id));
 
+  // Spell Stage: เมจิก/เบิร์สที่กำลังร่ายใน action นี้ + ที่ค้างอยู่บนเวทีจาก action ก่อน (รอเลือกจ่าย Flash / วาง Core ฯลฯ)
+  type SpellIn = Extract<FxInput, { kind: 'spell' }>;
+  const casting = new Map<string, SpellIn & { fresh: boolean; exitSet: boolean }>();
+  for (const id of castCards(prev)) {
+    if (!s.cards[id]) continue;
+    casting.set(id, { kind: 'spell', cardId: id, owner: s.cards[id]!.owner, tone: castTone(prev, id), from: 'stage', delay: 0, pulses: [], end: 0, exit: 'stay', fresh: false, exitSet: false });
+  }
+
   // การต่อสู้ที่ตัดสินใน action นี้ (ผู้โจมตี/ผู้ป้องกันอาจถูกประกาศใน action เดียวกัน เพราะ Auto Pass)
   const pb = prev.battle;
   const destroyedIds = new Set(events.flatMap((e) => (e.type === 'destroyed' ? [e.cardId] : [])));
@@ -631,12 +693,36 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
 
   // ลำดับใน Chain ของการโจมตีนี้ (เอฟเฟกต์ที่ทำงานตั้งแต่ประกาศโจมตีจนจบการต่อสู้)
   // เทียบด้วยตำแหน่งใน log: events คือท้าย log พอดี (Auto Pass คัดลอก state ใหม่ จึงเทียบ object ตรง ๆ ไม่ได้)
-  const chainLog = chainLogIndices(s);
+  // นับ Chain ณ จังหวะของ event นั้น (ตัด log ถึงตรงนั้น): ถ้าใช้สภาพสุดท้าย เอฟเฟกต์ที่ตามด้วยการเปลี่ยนสเต็ป/จบการต่อสู้
+  // ในชุดเดียวกัน (เช่น จ่ายคอสต์ใช้ Flash ของเบิร์ส แล้ว Attack Step จบ) จะหลุดจาก Chain และฉากต่อ Chain ไม่ขึ้น
   const chainPos = new Map<GameEvent, number>();
+  /** กอง Chain ณ จังหวะนั้น (ฉากต่อ Chain ใช้ ไม่ใช้กองจากสภาพสุดท้ายที่อาจว่างไปแล้ว) */
+  const chainStackAt = new Map<GameEvent, { cardId: string; player: PlayerId }[]>();
   events.forEach((ev, i) => {
-    const at = chainLog.indexOf(s.log.length - events.length + i);
-    if (at >= 0) chainPos.set(ev, at);
+    if (ev.type !== 'effectResolving') return;
+    const at = s.log.length - events.length + i;
+    const idxs = chainLogIndices({ ...s, log: s.log.slice(0, at + 1) });
+    const pos = idxs.indexOf(at);
+    if (pos < 0) return;
+    chainPos.set(ev, pos);
+    chainStackAt.set(
+      ev,
+      idxs.slice(0, pos + 1).map((li) => {
+        const x = s.log[li] as Extract<GameEvent, { type: 'effectResolving' }>;
+        return { cardId: x.cardId, player: x.player };
+      }),
+    );
   });
+  /** การ์ดเสื่อมสภาพอยู่ไหม ณ จังหวะของ event ลำดับ idx (ประกาศโจมตี/ป้องกัน = เสื่อมสภาพทันที) */
+  const exhaustedAt = (id: string, idx: number) => {
+    let ex = prev.cards[id]?.state === 'exhausted';
+    for (let i = 0; i < idx; i++) {
+      const x = events[i]!;
+      if ((x.type === 'exhausted' && x.cardId === id) || (x.type === 'blockDeclared' && x.blockerId === id) || (x.type === 'attackDeclared' && x.attackerId === id)) ex = true;
+      else if (x.type === 'cardRefreshed' && x.cardId === id) ex = false;
+    }
+    return ex;
+  };
 
   /** event ทิ้งจากมือที่รวมเข้าชุดก่อนหน้าแล้ว */
   const grouped = new Set<GameEvent>();
@@ -700,6 +786,9 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         const card = s.cards[e.cardId]!;
         const to = `[data-field-card="${e.cardId}"] > div:first-child`;
         draws = 0;
+        // การ์ดบนเวที (เบิร์ส/เมจิกที่ลงสนาม): ออกจากเวทีตอนนี้ (ภาพบินลงสนามรับช่วงต่อ)
+        const staged = casting.get(e.cardId);
+        if (staged) Object.assign(staged, { end: t, exit: 'field', exitSet: true });
         // ระดับความหายาก: C/U ปกติ · R แสงฟ้าแวบ · M ลงหนัก · X cut-in · XX/XV cut-in พิเศษ
         const rank = rarityOf(db.get(card.cardNo).rarity)?.rank ?? 0;
         const host0 = Object.values(s.cards).find((c) => c.braves.includes(e.cardId));
@@ -721,8 +810,11 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         } else {
           const heavy = rank >= 4 && !host0;
           const origin = e.type === 'summoned' ? e.from : undefined;
-          const from =
-            origin === 'deck'
+          // อยู่บนเวที (เช่น เบิร์สที่อัญเชิญตัวเอง): บินจากเวทีลงสนาม
+          const fromStage = casting.has(e.cardId);
+          const from = fromStage
+            ? `stage:${card.owner}`
+            : origin === 'deck'
               ? fromReveal(e.cardId, `[data-deck="${e.player}"]`)
               : origin === 'burst'
                 ? (rects[`burst:${e.player}`] ?? 'center')
@@ -739,6 +831,28 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
       }
       case 'effectResolving': {
         if (hitAt !== null) effectAfterHit = true;
+        // การ์ดบนเวที (เมจิก/เบิร์ส): ครั้งแรกเรืองแสงไปแล้วตอนขึ้นเวที · ครั้งต่อ ๆ ไป (เช่น จ่ายใช้ Flash) เรืองแสงซ้ำที่เวที
+        const cast = casting.get(e.cardId);
+        if (cast) {
+          if (cast.fresh) cast.fresh = false;
+          else {
+            // เบิร์สที่พักอยู่ในช่อง Burst: ยกขึ้น (ขยาย) ก่อนแล้วค่อยเรืองแสง
+            const rise = cast.from === 'stage' && cast.tone === 'burst' && cast.pulses.length === 0 ? CAST_MS.rise : 0;
+            cast.pulses.push(t + rise);
+            t += rise + T.castPulse;
+          }
+          if (e.source !== null) {
+            out.push({ kind: 'activate', cardId: e.cardId, label: 'เอฟเฟกต์ทำงาน', text: effectText(s.cards[e.cardId]!.cardNo, e.source), delay: t });
+          }
+          // ต่อ Chain (ตั้งแต่ Chain 2): ผลของการ์ดรอจนฉาก Chain จบ
+          const ci = chainPos.get(e) ?? -1;
+          if (ci >= 1) {
+            out.push({ kind: 'chainAdd', cardId: e.cardId, index: ci, delay: t, stack: chainStackAt.get(e) ?? [] });
+            t += T.chainLink;
+          }
+          draws = 0;
+          break;
+        }
         // การ์ดบนสนามยกขึ้นเรืองแสง → ผลของเอฟเฟกต์เกิดทันที → การ์ดบินไปต่อท้าย Chain
         // การ์ดบนสนาม หรือบนมือ (เอฟเฟกต์ที่ทำงานจากมือ): ยกขึ้นเรืองแสง + จอสลัว
         const inHand = !onAnyField(e.cardId) && PLAYERS.some((p) => s.players[p].hand.includes(e.cardId) || prev.players[p].hand.includes(e.cardId));
@@ -747,20 +861,42 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         // การ์ดที่ไปอยู่ใน Trash แล้ว (เอฟเฟกต์ "เมื่อถูกทำลาย" ฯลฯ): ยกขึ้นจากช่อง Trash หลังภาพแตกลง Trash เล่นจบ
         // (Magic / Burst มีภาพของตัวเองแล้ว)
         const viaSpell = events.some((x) => (x.type === 'magicUsed' || x.type === 'burstActivated') && x.cardId === e.cardId);
+        // ดูตามไทม์ไลน์ ไม่ใช่สภาพสุดท้าย: การ์ดที่ยังอยู่บนสนาม ณ จังหวะนี้ แล้วค่อยออกจากสนามทีหลังในชุดเดียวกัน
+        // (ผู้ป้องกันที่ "เมื่อป้องกัน" ทำงานแล้วแพ้การต่อสู้) ต้องยกขึ้นจากสนาม ไม่ใช่จาก Trash
+        const idx = events.indexOf(e);
+        const leftEarlier = events
+          .slice(0, idx)
+          .some((x) => ((x.type === 'destroyed' && !x.stays) || x.type === 'depleted') && x.cardId === e.cardId);
+        const stillOnField = PLAYERS.some((p) => prev.players[p].field.includes(e.cardId)) && !leftEarlier;
         const trashOwner =
-          !viaSpell && !inHand && !PLAYERS.some((p) => s.players[p].field.includes(e.cardId)) && db.get(s.cards[e.cardId]!.cardNo).type !== 'magic'
+          !viaSpell && !inHand && !stillOnField && !PLAYERS.some((p) => s.players[p].field.includes(e.cardId)) && db.get(s.cards[e.cardId]!.cardNo).type !== 'magic'
             ? PLAYERS.find((p) => s.players[p].trashCards.includes(e.cardId))
             : undefined;
         if (trashOwner) t = Math.max(t, ghostsEnd);
         const field = onAnyField(e.cardId) || inHand || onHost || !!trashOwner;
-        if (field) out.push({ kind: 'cardActivate', cardId: e.cardId, delay: t, duration: T.activate, hand: inHand, brave: onHost && !trashOwner, ...(trashOwner ? { trash: trashOwner } : {}) });
+        // ยังอยู่บนสนามตอนนี้ แต่ไม่อยู่แล้วในสภาพสุดท้าย: ใช้ตำแหน่งก่อน action
+        const goneLater = stillOnField && !PLAYERS.some((p) => s.players[p].field.includes(e.cardId));
+        const fieldRect = goneLater ? rects[`field:${e.cardId}`] : undefined;
+        if (field)
+          out.push({
+            kind: 'cardActivate',
+            cardId: e.cardId,
+            delay: t,
+            duration: T.activate,
+            hand: inHand,
+            brave: onHost && !trashOwner,
+            ...(trashOwner ? { trash: trashOwner } : {}),
+            ...(fieldRect ? { rect: fieldRect } : {}),
+            // ท่าของการ์ดบนสนาม ณ จังหวะนี้ (เช่น ป้องกันแล้ว = นอน) ไม่ใช่จากกล่องบนจอที่อาจกำลังหมุนอยู่
+            ...(!inHand && !onHost && !trashOwner ? { lying: exhaustedAt(e.cardId, events.indexOf(e)) } : {}),
+          });
         if (e.source !== null) {
           out.push({ kind: 'activate', cardId: e.cardId, label: 'เอฟเฟกต์ทำงาน', text: effectText(s.cards[e.cardId]!.cardNo, e.source), delay: t });
         }
         const index = chainPos.get(e) ?? -1;
         // ต่อ Chain: แสดงกอง "CHAIN n" เฉพาะเมื่อมีตั้งแต่ 2 Chain ขึ้นไป (Chain 1 เดี่ยว ๆ ไม่ต้องโชว์)
         const chained = index >= 1;
-        if (chained) out.push({ kind: 'chainAdd', cardId: e.cardId, index, delay: t + (field ? T.activate : 0) });
+        if (chained) out.push({ kind: 'chainAdd', cardId: e.cardId, index, delay: t + (field ? T.activate : 0), stack: chainStackAt.get(e) ?? [] });
         t += (field ? T.activate : 250) + (chained ? T.chainLink : 0);
         draws = 0;
         break;
@@ -768,24 +904,52 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
       case 'magicUsed': {
         const cardNo = s.cards[e.cardId]!.cardNo;
         const text = (db.get(cardNo).effects as TextEffect[]).filter((x) => x.timing === e.timing).map((x) => x.text).join(' ');
-        out.push({ kind: 'activate', cardId: e.cardId, label: `Magic [${e.timing === 'main' ? 'Main' : 'Flash'}]`, text, delay: t });
-        out.push({ kind: 'fly', cardId: e.cardId, from: rects[`hand:${e.cardId}`] ?? null, to: `[data-trash="${e.player}"]`, mode: 'magic', timing: e.timing, delay: t, hideTarget: false });
-        t += T.spell;
+        // ตำแหน่งเดิมในพัดมือ (ซ้าย→ขวาบนจอ): พัดมือเว้นช่องไว้ให้การ์ดกลับมาพักระหว่างรอเลือก
+        {
+          const mine = rects[`hand:${e.cardId}`];
+          if (mine) {
+            const others = prev.players[e.player].hand.filter((id) => id !== e.cardId && rects[`hand:${id}`]);
+            castSlots.set(e.cardId, others.filter((id) => rects[`hand:${id}`]!.x < mine.x).length);
+          }
+        }
+        // ยกขึ้นจากมือ → เวที → เรืองแสง (ป้ายข้อความขึ้นตอนเรืองแสง) · ค้างที่เวทีจนผลจบแล้วค่อยลง Trash
+        out.push({ kind: 'activate', cardId: e.cardId, label: `Magic [${e.timing === 'main' ? 'Main' : 'Flash'}]`, text, delay: t + T.castGlow });
+        casting.set(e.cardId, {
+          kind: 'spell',
+          cardId: e.cardId,
+          owner: e.player,
+          tone: e.timing,
+          from: 'hand',
+          ...(rects[`hand:${e.cardId}`] ? { fromRect: rects[`hand:${e.cardId}`] } : {}),
+          delay: t,
+          pulses: [t + T.castGlow],
+          end: 0,
+          exit: 'stay',
+          fresh: true,
+          exitSet: false,
+        });
+        t += T.cast;
         draws = 0;
         break;
       }
       case 'burstActivated':
         out.push({ kind: 'banner', tone: 'burst', title: 'BURST!', sub: db.get(s.cards[e.cardId]!.cardNo).name });
-        out.push({
-          kind: 'fly',
+        // พลิกหงายที่ช่อง Burst → เวที (ขยายให้อ่านง่าย) → เรืองแสง · ค้างจนผลจบ / รอเลือก แล้วค่อยลง Trash หรือลงสนาม
+        casting.set(e.cardId, {
+          kind: 'spell',
           cardId: e.cardId,
-          from: rects[`burst:${e.player}`] ?? `[data-burst-card="${e.player}"]`,
-          to: 'center',
-          mode: 'burst',
+          owner: e.player,
+          tone: 'burst',
+          from: 'burst',
+          ...(rects[`burst:${e.player}`] ? { fromRect: rects[`burst:${e.player}`] } : {}),
           delay: t,
-          hideTarget: false,
+          pulses: [t + T.castGlow],
+          end: 0,
+          exit: 'stay',
+          fresh: true,
+          exitSet: false,
         });
-        t += T.spell;
+        t += T.cast;
         draws = 0;
         break;
       case 'evolved':
@@ -814,7 +978,7 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
           const delay = recoil ? hitAt! - T.hit + T.chargeEnd : at(battle);
           const owner = s.cards[e.cardId]!.owner;
           const slot = prev.players[owner].field.filter((id) => db.get(prev.cards[id]!.cardNo).type !== 'nexus').indexOf(e.cardId);
-          // ผู้โจมตีที่แพ้: แตกตรงจุดที่กระเด็นกลับมาหยุด (ไม่วิ่งกลับไปนอนที่ช่องเดิมก่อน)
+          // ผู้โจมตีที่แพ้: แตกตรงจุดที่กระเด็นกลับมาหยุด (CHARGE_KNOCK = 0: ช่องเดิมบนสนาม แบบตั้งตรง)
           const knock = recoil && charge?.kind === 'charge' && typeof charge.target !== 'string' ? chargeKnockRect(rect, charge.fromExhausted, charge.target) : null;
           out.push({ kind: 'ghost', cardId: e.cardId, owner, slot, cardNo: s.cards[e.cardId]!.cardNo, rect: knock ?? rect, mode: e.type === 'destroyed' ? 'destroy' : 'deplete', delay, hiddenUntilStart: recoil });
           ghostsEnd = Math.max(ghostsEnd, delay + T.ghost);
@@ -1005,6 +1169,20 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
       }
     }
   }
+  // Spell Stage: การ์ดบนเวทีออกเมื่อผลทั้งหมดเล่นจบ: ลง Trash / ค้างไว้ (ยังร่ายไม่จบ รอผู้เล่นเลือก) · ที่ลงสนามตั้งไว้แล้วตอนอัญเชิญ
+  if (casting.size > 0) {
+    const endAll = Math.max(t, ghostsEnd, ...out.filter((f) => f.kind !== 'banner' && f.kind !== 'result' && f.kind !== 'finalBlow').map(fxEnd));
+    const pending = new Set(castCards(s));
+    for (const c of casting.values()) {
+      const { fresh: _fresh, exitSet, ...spell } = c;
+      castToneMemo.set(c.cardId, c.tone);
+      if (!exitSet) {
+        spell.end = spell.from === 'stage' ? endAll : Math.max(endAll, spell.delay + T.cast);
+        spell.exit = PLAYERS.some((p) => s.players[p].trashCards.includes(c.cardId)) && !pending.has(c.cardId) ? 'trash' : 'stay';
+      }
+      out.push(spell);
+    }
+  }
   // ป้ายแสดงทีละอัน และนับ delay ตอนขึ้นมาเป็นอันแรกในคิว: อันที่ตามหลังป้ายอื่นในชุดเดียวกันจึงไม่ต้องรอซ้ำ
   let bannerSeen = false;
   for (const f of out) {
@@ -1033,7 +1211,9 @@ function fxEnd(f: FxInput): number {
     case 'fly':
       return d + (f.mode === 'play' && f.heavy ? 1100 : { draw: 420, move: 480, play: 640, magic: 2000, burst: 1900 }[f.mode]);
     case 'summon':
-      return d + (f.special ? 2600 : 1900);
+      return d + (f.special ? CUTIN_MS.special : CUTIN_MS.normal);
+    case 'spell':
+      return f.end + (f.exit === 'trash' ? T.castExit : 0);
     case 'cardActivate':
     case 'chain':
     case 'reveal':
@@ -1193,8 +1373,44 @@ export function isFxBlocking(fx: Fx[]): boolean {
       (f.kind === 'result' && f.delay > 0) ||
       f.kind === 'charge' ||
       f.kind === 'summon' ||
+      f.kind === 'spell' ||
       (f.kind === 'fly' && f.mode !== 'draw'),
   );
+}
+
+/**
+ * การ์ดที่ "กำลังร่ายอยู่" (ไม่อยู่ในโซนไหนเลย): เมจิก/เบิร์สที่เอฟเฟกต์ยังทำงานไม่จบ (engine ใส่ Trash ตอนเอฟเฟกต์จบ)
+ * เช่น รอเลือกเป้าหมาย / รอเลือกจ่ายคอสต์ใช้ Flash / รอวาง Core ลงสนามจากช่อง Burst · แสดงค้างที่เวที (SpellStage)
+ */
+export function castCards(s: GameState): string[] {
+  const placed = (id: string) =>
+    PLAYERS.some((p) => {
+      const pl = s.players[p];
+      return pl.hand.includes(id) || pl.field.includes(id) || pl.trashCards.includes(id) || pl.deck.includes(id) || pl.burst === id || pl.field.some((f) => s.cards[f]!.braves.includes(id));
+    });
+  const ids = new Set<string>();
+  for (const q of s.queue) if (s.cards[q.sourceId] && !placed(q.sourceId)) ids.add(q.sourceId);
+  if (s.choice?.kind === 'placeCores' && !placed(s.choice.cardId)) ids.add(s.choice.cardId);
+  return [...ids];
+}
+
+/** ประเภทตอนขึ้นเวที (Magic [Main] / [Flash] / Burst) จำไว้ให้ตอนค้างรอเลือกแสดงป้ายเดิม */
+const castToneMemo = new Map<string, 'main' | 'flash' | 'burst'>();
+/** เมจิกที่ใช้จากมือ: เคยอยู่ใบที่เท่าไรในพัดมือ (นับจากซ้ายบนจอ) · พัดมือเว้นช่องนี้ไว้ให้การ์ดพักระหว่างรอเลือก */
+const castSlots = new Map<string, number>();
+/** ช่องในพัดมือที่เว้นให้เมจิกของผู้เล่นนี้ที่ยังร่ายไม่จบ ("id:index,…" เป็นข้อความ ให้ selector ของ zustand เทียบค่าได้) */
+export function castHandSlots(s: GameState, player: PlayerId): string {
+  return castCards(s)
+    .filter((id) => s.cards[id]?.owner === player && castSlots.has(id) && castTone(s, id) !== 'burst')
+    .map((id) => `${id}:${castSlots.get(id)}`)
+    .join(',');
+}
+
+/** สีของการ์ดที่ค้างบนเวที: ตามตอนขึ้นเวที · ไม่รู้ = เปิดจากช่อง Burst → burst, เมจิก → flash */
+export function castTone(s: GameState, cardId: string): 'main' | 'flash' | 'burst' {
+  const memo = castToneMemo.get(cardId);
+  if (memo) return memo;
+  return s.queue.some((q) => q.sourceId === cardId && q.isBurst) ? 'burst' : db.get(s.cards[cardId]!.cardNo).type === 'magic' ? 'flash' : 'burst';
 }
 
 function currentBpSafe(s: GameState, cardId: string): number {
@@ -1205,6 +1421,9 @@ function currentBpSafe(s: GameState, cardId: string): number {
 }
 
 // ---------------------------------------------------------------- Core motion
+
+/** ลำดับที่ Core ถูกสร้าง (engine ตั้งชื่อ core-N เรียงตามลำดับ) */
+const coreSeq = (id: string) => Number(id.slice(id.lastIndexOf('-') + 1)) || 0;
 
 /** หน่วงเวลาให้ Core บินตรงกับไทม์ไลน์: Core จากการ์ดที่ออกจากสนามตามภาพแตก, Core ไลฟ์ตามตัวเลขดาเมจ */
 function coreDelays(prev: GameState, next: GameState, fx: Fx[], events: GameEvent[] = []): Map<string, number> {
@@ -1219,26 +1438,57 @@ function coreDelays(prev: GameState, next: GameState, fx: Fx[], events: GameEven
     if (f.kind === 'damage' && !damageAt.has(f.player)) damageAt.set(f.player, f.delay);
   }
   const out = new Map<string, number>();
+  /** Core ที่ออกจากการ์ดด้วยเอฟเฟกต์ แยกตามการ์ด (ไว้จับคู่กับ event ทีละเอฟเฟกต์) */
+  const leaving = new Map<string, string[]>();
   for (const id of Object.keys(next.cores)) {
     const loc = locateCore(prev, id);
     if (!loc) continue;
     if (loc.area === 'card' && ghostAt.has(loc.cardId)) out.set(id, ghostAt.get(loc.cardId)!);
     else if (loc.area === 'life' && damageAt.has(loc.player)) out.set(id, damageAt.get(loc.player)!);
     else if (loc.area === 'card') {
-      // Core ที่ออกจากการ์ดด้วยเอฟเฟกต์ (ลง Trash / Soul Core → Reserve)
-      const at = timeOf((e) => (e.type === 'coresToTrash' || e.type === 'soulToReserve') && e.cardId === loc.cardId);
-      if (at) out.set(id, at);
+      const now = locateCore(next, id);
+      if (now?.area === 'card' && now.cardId === loc.cardId) continue;
+      leaving.set(loc.cardId, [...(leaving.get(loc.cardId) ?? []), id]);
     }
   }
-  // Core ที่เกิดใหม่ (Core Step / Void Core): โผล่ตามจังหวะในไทม์ไลน์
-  for (const id of Object.keys(next.cores)) {
-    if (prev.cores[id]) continue;
-    const loc = locateCore(next, id);
-    const at =
-      // Core จาก Core Step: โผล่ตอนป้าย CORE STEP แสดงจบ
-      timeOf((e) => e.type === 'coreGained' && e.coreId === id) ??
-      timeOf((e) => e.type === 'voidCore' && (loc?.area === 'card' ? e.cardId === loc.cardId : e.cardId === null)) ??
-      timeOf((e) => e.type === 'voidCore');
+  // Core ที่ออกจากการ์ดด้วยเอฟเฟกต์ (ลง Trash / ส่งออกโดยคู่แข่ง / Soul Core → Reserve): ออกตามจังหวะของแต่ละเอฟเฟกต์
+  for (const [cardId, ids] of leaving) {
+    const pool = [...ids];
+    for (const e of events) {
+      const at = lastEventAt.get(e);
+      if (e.type === 'soulToReserve' && e.cardId === cardId) {
+        const soul = pool.find((c) => next.cores[c]!.isSoul);
+        if (soul) {
+          pool.splice(pool.indexOf(soul), 1);
+          if (at) out.set(soul, at);
+        }
+      } else if ((e.type === 'coresToTrash' || e.type === 'coresRemoved') && e.cardId === cardId) {
+        for (const c of pool.splice(0, e.count)) if (at) out.set(c, at);
+      }
+    }
+  }
+  // Core ที่เกิดใหม่ (Core Step / Void Core / ไลฟ์จากวอยด์): โผล่ตามจังหวะในไทม์ไลน์
+  // จับคู่ทีละเม็ดตามลำดับที่เกิด: เอฟเฟกต์หลายอันที่ให้คอร์ (เช่น นอร์ธซีโรด 2 ใบ) โผล่คนละจังหวะ
+  // (เดิมจับกับ event อันแรกที่ตรง → คอร์ของทุกเอฟเฟกต์โผล่พร้อมกันตอนอันแรก)
+  const born = Object.keys(next.cores)
+    .filter((id) => !prev.cores[id])
+    .sort((a, b) => coreSeq(a) - coreSeq(b));
+  const makers = events.filter((e) => e.type === 'voidCore' || e.type === 'lifeGained');
+  const sizeOf = (e: GameEvent | undefined) => (e?.type === 'voidCore' ? e.count : e?.type === 'lifeGained' ? e.amount : 0);
+  let mi = 0;
+  let left = sizeOf(makers[0]);
+  for (const id of born) {
+    // Core จาก Core Step: โผล่ตอนป้าย CORE STEP แสดงจบ
+    const gained = timeOf((e) => e.type === 'coreGained' && e.coreId === id);
+    if (gained !== undefined) {
+      out.set(id, gained);
+      continue;
+    }
+    while (mi < makers.length && left <= 0) left = sizeOf(makers[++mi]);
+    const maker = makers[mi];
+    if (!maker) continue;
+    left--;
+    const at = lastEventAt.get(maker);
     if (at !== undefined) out.set(id, at);
   }
   return out;
@@ -1316,6 +1566,12 @@ function playFxSounds(list: Fx[]) {
         break;
       case 'cardActivate':
         sfx('activate', f.delay);
+        break;
+      case 'spell':
+        // ยก/พลิกขึ้นเวที → เสียงประจำประเภทตอนเรืองแสงครั้งแรก · เรืองแสงซ้ำ = เสียงเอฟเฟกต์ทำงาน · ลง Trash = ปัด
+        if (f.from !== 'stage') sfx('swish', f.delay);
+        f.pulses.forEach((p, i) => sfx(i === 0 && f.from !== 'stage' ? (f.tone === 'burst' ? 'burst' : f.tone === 'flash' ? 'flash' : 'magic') : 'activate', p));
+        if (f.exit === 'trash') sfx('whoosh', f.end);
         break;
       case 'chainAdd': {
         // ตรงกับไทม์ไลน์ของ ChainAddFx (Fx.tsx): พุ่งเข้า 0 · โซ่ลาก CL_DRAW_AT · ล็อก CL_LOCK_AT · เลขพลิกหลังล็อก

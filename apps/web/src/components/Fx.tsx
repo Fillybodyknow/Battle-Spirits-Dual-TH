@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
-import { opponentOf } from '@bs/engine';
+import { opponentOf, type PlayerId } from '@bs/engine';
 import { cardArt } from '../assets';
-import { CHARGE_KNOCK, actingPlayer, chainEntries, viewPlayer, db, fieldScaleOf, GHOST_MS, isFxBlocking, layoutRect, MILL_MS, millBreakAt, millDuration, PLAY_HIT, useGame, type Fx, type Rect, hiddenFrom } from '../store';
+import { CAST_MS, CUTIN_MS, castCards, castHandSlots, castTone, controls, CHARGE_KNOCK, actingPlayer, chainEntries, viewPlayer, db, fieldScaleOf, GHOST_MS, isFxBlocking, layoutRect, MILL_MS, millBreakAt, millDuration, PLAY_HIT, useGame, type Fx, type Rect, hiddenFrom } from '../store';
 import { CardBack, CardFace } from './CardFace';
 import { sfx } from '../sfx';
 import { effects, flashScale, shakeScale } from '../gfx';
@@ -91,8 +91,15 @@ function Banner({ fx, onDone }: { fx: Extract<Fx, { kind: 'banner' }>; onDone: (
 
 // ---------------------------------------------------------------- summon cut-in
 
+/**
+ * Cut-in อัญเชิญ X-Rare (special = XX/XV ยาวและอลังกว่า)
+ *  แสงวาบ → แถบเฉียงสีของการ์ด 2 แถบปาดสวนกัน (เส้นความเร็ว) + แถบดำบน/ล่าง
+ *  → การ์ดพุ่งเข้าจากด้านข้างแบบ 3 มิติ ทุบกลางจอ (จอสั่น + คลื่นกระแทก + สะเก็ดไฟ + แสงปาดหน้าการ์ด)
+ *  → ชื่อการ์ดตัวยักษ์วิ่งอยู่ด้านหลัง · ตรา "X RARE" ประทับ · ป้ายชื่อ/เลเวล/BP เลื่อนเข้า
+ *  → การ์ดยุบลงกลางจอ (ภาพการ์ดบินลงสนามรับช่วงต่อจากกลางจอ)
+ */
 function SummonCutIn({ fx, onDone }: { fx: Extract<Fx, { kind: 'summon' }>; onDone: () => void }) {
-  const dur = fx.special ? 2600 : 1900;
+  const dur = fx.special ? CUTIN_MS.special : CUTIN_MS.normal;
   useAutoDismiss(onDone, fx.delay + dur);
   const [shown, setShown] = useState(fx.delay === 0);
   useEffect(() => {
@@ -101,74 +108,197 @@ function SummonCutIn({ fx, onDone }: { fx: Extract<Fx, { kind: 'summon' }>; onDo
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // จังหวะการ์ดทุบกลางจอ: จอสั่น
+  const SLAM = 0.26;
+  useEffect(() => {
+    if (!shown) return;
+    const t = setTimeout(() => shakeMain(fx.special ? [[-12, 6], [10, -7], [-7, 4], [4, -2]] : [[-8, 4], [7, -4], [-4, 2]], fx.special ? 520 : 400), dur * SLAM);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shown]);
   const card = useGame((s) => s.state.cards[fx.cardId]);
   if (!card || !shown) return null;
   const def = db.get(card.cardNo);
   const art = cardArt(def.cardNo);
   const main = def.colors[0] ?? 'red';
-  const ray = { red: '#ef4444', purple: '#a855f7', green: '#22c55e', white: '#e2e8f0', yellow: '#facc15', blue: '#38bdf8' }[main];
-
+  const ray = COLOR_HEX[main] ?? '#ef4444';
+  const rich = effects().matMotion;
+  const ms = (k: number) => `${Math.round(dur * k)}ms`;
+  const sparks = rich ? (fx.special ? 28 : 18) : 0;
+  const rarity = (def.rarity ?? 'X').toUpperCase();
+  // แถบความเร็ว: สีการ์ด + เส้นขาวบาง ๆ วิ่ง
+  const band = (dir: 1 | -1, top: string, delay: number) => (
+    <div
+      className="pointer-events-none absolute left-[-20%] h-[22vh] w-[140%]"
+      style={{
+        top,
+        ['--dir' as string]: String(dir),
+        background: `repeating-linear-gradient(90deg, rgba(255,255,255,0.55) 0 2px, transparent 2px 46px), linear-gradient(90deg, transparent, ${ray}cc 18%, ${ray} 50%, ${ray}cc 82%, transparent)`,
+        backgroundSize: '48px 100%, 100% 100%',
+        boxShadow: `0 0 40px ${ray}`,
+        transform: 'skewY(-8deg)',
+        animation: `fx-ci-band ${ms(0.42)} ${ms(delay)} cubic-bezier(.2,.9,.2,1) both, fx-ci-lines 0.35s linear infinite, fx-ci-band-out ${ms(0.18)} ${ms(0.8)} ease-in both`,
+        mixBlendMode: 'screen',
+      }}
+    />
+  );
   return (
     <div
-      className={`${BOARD} z-50 flex cursor-pointer flex-col items-center justify-center overflow-hidden ${fx.special ? 'bg-black/85' : 'bg-black/75'}`}
-      style={{ animation: `fx-fade-in-out ${dur}ms ease both` }}
+      className={`${BOARD} z-50 flex cursor-pointer flex-col items-center justify-center overflow-hidden ${fx.special ? 'bg-black/90' : 'bg-black/80'}`}
+      style={{ animation: `fx-fade-in-out ${dur}ms ease both`, perspective: 1200 }}
       onClick={onDone}
       title="คลิกเพื่อข้าม"
     >
-      {/* แสงรัศมีหมุน */}
+      {/* แสงวาบเปิดฉาก */}
+      <div className="pointer-events-none absolute inset-0 bg-white" style={{ opacity: 0, animation: `fx-ci-flash ${ms(0.12)} ease-out both` }} />
+      {/* รัศมีหมุนสีการ์ด */}
       <div
-        className="pointer-events-none absolute top-1/2 left-1/2 h-[160vmax] w-[160vmax] -translate-x-1/2 -translate-y-1/2 opacity-40"
+        className="pointer-events-none absolute top-1/2 left-1/2 h-[170vmax] w-[170vmax] -translate-x-1/2 -translate-y-1/2 opacity-45"
         style={{
-          background: `repeating-conic-gradient(from 0deg, ${ray} 0deg 4deg, transparent 4deg 18deg)`,
+          background: `repeating-conic-gradient(from 0deg, ${ray} 0deg 3deg, transparent 3deg 14deg)`,
           maskImage: 'radial-gradient(circle, black 0%, transparent 55%)',
-          animation: 'fx-rays 12s linear infinite',
+          WebkitMaskImage: 'radial-gradient(circle, black 0%, transparent 55%)',
+          animation: 'fx-rays 10s linear infinite',
         }}
       />
-      {/* ระดับพิเศษ (XX/XV): รัศมีสีรุ้งหมุนสวนทาง + แสงทองเต้น */}
       {fx.special && (
         <>
           <div
-            className="pointer-events-none absolute top-1/2 left-1/2 h-[160vmax] w-[160vmax] -translate-x-1/2 -translate-y-1/2 opacity-55 mix-blend-screen"
+            className="pointer-events-none absolute top-1/2 left-1/2 h-[170vmax] w-[170vmax] -translate-x-1/2 -translate-y-1/2 opacity-55 mix-blend-screen"
             style={{
               background:
                 'repeating-conic-gradient(from 0deg, #f43f5e 0deg 3deg, transparent 3deg 9deg, #facc15 9deg 12deg, transparent 12deg 18deg, #22c55e 18deg 21deg, transparent 21deg 27deg, #38bdf8 27deg 30deg, transparent 30deg 36deg, #a855f7 36deg 39deg, transparent 39deg 45deg)',
               maskImage: 'radial-gradient(circle, black 0%, transparent 60%)',
-              animation: 'fx-rays 9s linear infinite reverse',
+              WebkitMaskImage: 'radial-gradient(circle, black 0%, transparent 60%)',
+              animation: 'fx-rays 7s linear infinite reverse',
             }}
           />
           <div
-            className="pointer-events-none absolute top-1/2 left-1/2 h-[70vh] w-[70vh] -translate-x-1/2 -translate-y-1/2 rounded-full"
-            style={{ background: 'radial-gradient(circle, rgba(253,224,71,0.55), rgba(251,146,60,0.2) 45%, transparent 70%)', animation: 'aura-pulse 1.2s ease-in-out infinite' }}
+            className="pointer-events-none absolute top-1/2 left-1/2 h-[80vh] w-[80vh] -translate-x-1/2 -translate-y-1/2 rounded-full"
+            style={{ background: 'radial-gradient(circle, rgba(253,224,71,0.55), rgba(251,146,60,0.2) 45%, transparent 70%)', animation: 'aura-pulse 1.1s ease-in-out infinite' }}
           />
         </>
       )}
-      <div className="relative" style={{ animation: `fx-summon-card ${dur}ms cubic-bezier(.2,.9,.2,1) both` }}>
-        {art ? (
-          <img src={art} alt={def.name} className="h-[52vh] max-h-[460px] rounded-xl shadow-[0_0_60px_rgba(255,255,255,0.35)]" draggable={false} />
-        ) : (
-          <div className="h-80 w-56">
-            <CardFace def={def} level={fx.level} />
-          </div>
-        )}
-      </div>
-      <div className="relative mt-5 flex w-full flex-col items-center gap-1 bg-gradient-to-r from-transparent via-black/80 to-transparent py-3" style={{ animation: 'fx-slide-up 0.5s 0.3s ease-out both' }}>
-        {def.levels.length > 0 && fx.level > 0 && (
-          <div className="flex gap-1 text-xl text-yellow-300 drop-shadow">
-            {Array.from({ length: fx.level }, (_, i) => (
-              <span key={i}>★</span>
-            ))}
-          </div>
-        )}
-        {fx.special && (
-          <span className="bg-gradient-to-r from-rose-400 via-yellow-200 to-sky-400 bg-clip-text text-sm font-black tracking-[0.5em] text-transparent">
-            {(def.rarity ?? '').toUpperCase()} RARE
+      {/* แถบเฉียงปาดสวนกัน */}
+      {band(1, '14%', 0.03)}
+      {band(-1, '62%', 0.08)}
+      {/* ชื่อการ์ดตัวยักษ์วิ่งอยู่ด้านหลัง */}
+      <div className="pointer-events-none absolute top-1/2 left-0 flex -translate-y-1/2 whitespace-nowrap" style={{ animation: `fx-ci-marquee ${dur * 1.6}ms linear both` }}>
+        {[0, 1].map((i) => (
+          <span
+            key={i}
+            className="pr-24 text-[22vh] leading-none font-black tracking-tight italic"
+            style={{ color: 'transparent', WebkitTextStroke: `2px ${ray}`, opacity: 0.35, textShadow: `0 0 30px ${ray}66` }}
+          >
+            {def.name}
           </span>
-        )}
-        <span className="text-3xl font-black tracking-wide text-white italic">{def.name}</span>
-        <span className="text-sm text-slate-300">
-          {def.type === 'nexus' ? 'วาง Nexus' : 'อัญเชิญ'} · Lv{fx.level}
-          {fx.bp > 0 && <span className="ml-2 font-bold text-yellow-300">BP {fx.bp.toLocaleString()}</span>}
-        </span>
+        ))}
+      </div>
+      {/* แถบดำบน/ล่าง (ภาพยนตร์) */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 bg-black" style={{ animation: `fx-ci-bar ${ms(0.18)} ease-out both`, boxShadow: `0 2px 0 ${ray}` }} />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-black" style={{ animation: `fx-ci-bar ${ms(0.18)} ease-out both`, boxShadow: `0 -2px 0 ${ray}` }} />
+      {/* คลื่นกระแทกตอนทุบ */}
+      <div className="pointer-events-none absolute top-1/2 left-1/2" style={{ width: 0, height: 0 }}>
+        {[0, 1, 2].slice(0, fx.special ? 3 : 2).map((i) => (
+          <div
+            key={i}
+            className="absolute rounded-full"
+            style={{
+              left: -110,
+              top: -110,
+              width: 220,
+              height: 220,
+              border: `${6 - i * 2}px solid ${i === 0 ? '#fff' : ray}`,
+              boxShadow: `0 0 30px ${ray}`,
+              animation: `fx-cl-shock 0.8s ${Math.round(dur * SLAM) + i * 90}ms cubic-bezier(.1,.7,.3,1) both`,
+            }}
+          />
+        ))}
+        {/* สะเก็ดไฟพุ่งออก */}
+        {Array.from({ length: sparks }, (_, i) => {
+          const ang = (i / sparks) * Math.PI * 2 + prand(i + 3) * 0.4;
+          const dist = 220 + prand(i * 7 + 1) * 260;
+          const size = 3 + prand(i * 5 + 2) * 5;
+          return (
+            <span
+              key={i}
+              className="absolute rounded-full"
+              style={{
+                left: -size / 2,
+                top: -size / 2,
+                width: size,
+                height: size,
+                background: i % 3 === 0 ? '#fff' : ray,
+                boxShadow: `0 0 ${size * 3}px ${ray}`,
+                ['--tx' as string]: `${Math.cos(ang) * dist}px`,
+                ['--ty' as string]: `${Math.sin(ang) * dist}px`,
+                animation: `fx-ci-spark 0.9s ${Math.round(dur * SLAM)}ms cubic-bezier(.1,.8,.3,1) both`,
+              }}
+            />
+          );
+        })}
+      </div>
+      {/* การ์ด: พุ่งเข้าแบบ 3 มิติ → ทุบ → ลอย → ยุบลง */}
+      <div className="relative" style={{ animation: `fx-ci-card ${dur}ms linear both`, transformStyle: 'preserve-3d' }}>
+        <div className="relative overflow-hidden rounded-xl" style={{ boxShadow: `0 0 0 3px ${ray}, 0 0 60px ${ray}, 0 0 120px ${ray}88` }}>
+          {art ? (
+            <img src={art} alt={def.name} className="block h-[54vh] max-h-[480px] rounded-xl" draggable={false} />
+          ) : (
+            <div className="h-80 w-56">
+              <CardFace def={def} level={fx.level} />
+            </div>
+          )}
+          <div className="pointer-events-none absolute -inset-y-[20%] left-0 w-1/3" style={{ background: 'linear-gradient(100deg, transparent, rgba(255,255,255,0.9), transparent)', animation: `fx-cl-sheen 0.6s ${ms(SLAM + 0.02)} ease-in-out both` }} />
+          {fx.special && (
+            <div
+              className="pointer-events-none absolute -inset-y-[20%] left-0 w-1/3"
+              style={{ background: 'linear-gradient(100deg, transparent, rgba(253,224,71,0.85), transparent)', animation: `fx-cl-sheen 0.7s ${ms(0.55)} ease-in-out both` }}
+            />
+          )}
+        </div>
+        {/* ตราความหายาก ประทับมุมการ์ด */}
+        <div
+          className="pointer-events-none absolute -top-6 -right-10 rounded-md border-4 px-3 py-1 text-2xl font-black tracking-widest italic"
+          style={{
+            borderColor: fx.special ? '#fde047' : '#fff',
+            color: fx.special ? '#fde047' : '#fff',
+            background: 'rgba(2,6,23,0.85)',
+            textShadow: `0 0 12px ${ray}`,
+            boxShadow: `0 0 20px ${ray}`,
+            animation: `fx-ci-stamp 0.45s ${ms(SLAM + 0.08)} cubic-bezier(.2,.9,.3,1.4) both`,
+          }}
+        >
+          {rarity} RARE
+        </div>
+      </div>
+      {/* ป้ายชื่อ */}
+      <div
+        className="relative mt-6 flex w-[min(820px,90%)] -skew-x-12 flex-col items-center gap-1 border-y-2 bg-gradient-to-r from-transparent via-black/90 to-transparent py-3"
+        style={{ borderColor: ray, animation: `fx-ci-plate ${ms(0.25)} ${ms(SLAM + 0.12)} cubic-bezier(.2,.9,.3,1.2) both` }}
+      >
+        <div className="flex skew-x-12 flex-col items-center gap-1">
+          {def.levels.length > 0 && fx.level > 0 && (
+            <div className="flex gap-1 text-xl text-yellow-300 drop-shadow">
+              {Array.from({ length: fx.level }, (_, i) => (
+                <span key={i} style={{ animation: `fx-cl-num 0.3s ${Math.round(dur * (SLAM + 0.18)) + i * 70}ms cubic-bezier(.2,.9,.3,1.4) both` }}>
+                  ★
+                </span>
+              ))}
+            </div>
+          )}
+          {fx.special && (
+            <span className="bg-gradient-to-r from-rose-400 via-yellow-200 to-sky-400 bg-clip-text text-sm font-black tracking-[0.5em] text-transparent">
+              {rarity} RARE · SPECIAL SUMMON
+            </span>
+          )}
+          <span className="bg-gradient-to-b from-white via-white to-slate-300 bg-clip-text text-4xl font-black tracking-wide text-transparent italic" style={{ filter: `drop-shadow(0 3px 0 #0f172a) drop-shadow(0 0 14px ${ray})` }}>
+            {def.name}
+          </span>
+          <span className="text-sm text-slate-200">
+            {def.type === 'nexus' ? 'วาง Nexus' : 'อัญเชิญ'} · Lv{fx.level}
+            {fx.bp > 0 && <span className="ml-2 font-bold text-yellow-300">BP {fx.bp.toLocaleString()}</span>}
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -263,6 +393,8 @@ export function FxLayer() {
           <Charge key={f.id} fx={f} onDone={() => dismiss(f.id)} />
         ) : f.kind === 'cardActivate' ? (
           <CardActivate key={f.id} fx={f} onDone={() => dismiss(f.id)} />
+        ) : f.kind === 'spell' ? (
+          <SpellFx key={f.id} fx={f} onDone={() => dismiss(f.id)} />
         ) : f.kind === 'chainAdd' ? (
           <ChainAddFx key={f.id} fx={f} onDone={() => dismiss(f.id)} />
         ) : f.kind === 'reveal' ? (
@@ -277,6 +409,7 @@ export function FxLayer() {
           <Damage key={f.id} fx={f} onDone={() => dismiss(f.id)} />
         ) : null,
       )}
+      <SpellStage />
       <SkipOverlay />
     </>
   );
@@ -505,7 +638,16 @@ function FlyCard({ fx, onDone }: { fx: Extract<Fx, { kind: 'fly' }>; onDone: () 
   useLayoutEffect(() => {
     const el = ref.current;
     // 'center' = ต่อจาก cut-in X-Rare: เริ่มจากการ์ดใหญ่กลางจอ
-    const from = fx.from === 'center' ? boardCenter(300, 420) : typeof fx.from === 'string' ? rectOf(document.querySelector(fx.from)) : fx.from;
+    // 'stage:<owner>' = ออกจากเวทีของการ์ดที่ร่าย (เช่น เบิร์สที่อัญเชิญตัวเองลงสนาม)
+    const from =
+      fx.from === 'center'
+        ? boardCenter(300, 420)
+        : typeof fx.from === 'string' && fx.from.startsWith('stage:')
+          ? // ออกจากที่การ์ดค้างอยู่ (เบิร์สที่รอวาง Core = ช่อง Burst แบบหงาย)
+            (rectOf(document.querySelector(`[data-spell-card="${fx.cardId}"]`)) ?? restRect(fx.from.slice(6) as PlayerId, castTone(useGame.getState().state, fx.cardId)))
+          : typeof fx.from === 'string'
+            ? rectOf(document.querySelector(fx.from))
+            : fx.from;
     if (!el || !from) return onDone();
     let anim: Animation;
     if (fx.mode === 'magic' || fx.mode === 'burst') {
@@ -656,24 +798,46 @@ function CardActivate({ fx, onDone }: { fx: Extract<Fx, { kind: 'cardActivate' }
   /** กล่องที่หมุนตามการ์ด (นอน/กลับหัว): วงไฮไลต์อยู่ที่นี่ ให้ขอบเรืองแสงตามรูปการ์ด */
   const ringRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
-    const el = fx.trash
-      ? document.querySelector<HTMLElement>(`[data-trash-top="${fx.trash}"]`)
-      : fx.hand
-      ? document.querySelector<HTMLElement>(`[data-hand-card="${fx.cardId}"]`)
-      : fx.brave
-        ? document.querySelector<HTMLElement>(`[data-brave-card="${fx.cardId}"]`)
-        : document.querySelector<HTMLElement>(`[data-field-card="${fx.cardId}"] > div:first-child`);
+    // fx.rect: การ์ดที่ยังอยู่บนสนามตอนเอฟเฟกต์ทำงาน แต่ออกจากสนามทีหลังในชุดเดียวกัน (ไม่มีใน DOM แล้ว)
+    // ภาพที่ยืนแทนที่ช่องเดิมคือภาพแตก (Ghost) ของการ์ดใบนี้: ซ่อนภาพนั้นระหว่างยกขึ้น
+    const el = fx.rect
+      ? null
+      : fx.trash
+        ? document.querySelector<HTMLElement>(`[data-trash-top="${fx.trash}"]`)
+        : fx.hand
+          ? document.querySelector<HTMLElement>(`[data-hand-card="${fx.cardId}"]`)
+          : fx.brave
+            ? document.querySelector<HTMLElement>(`[data-brave-card="${fx.cardId}"]`)
+            : document.querySelector<HTMLElement>(`[data-field-card="${fx.cardId}"] > div:first-child`);
     const owner = useGame.getState().state.cards[fx.cardId]?.owner;
-    if (!el || !owner) return onDone();
+    if ((!el && !fx.rect) || !owner) return onDone();
     // การ์ดบนสนาม: ซ่อนแค่หน้าการ์ด (ป้าย BP / Brave ที่ร่วมร่างยังอยู่)
-    const face = !fx.hand && !fx.brave && !fx.trash ? ((el.firstElementChild as HTMLElement | null) ?? el) : el;
+    const faceOf = () =>
+      el ? (!fx.hand && !fx.brave && !fx.trash ? ((el.firstElementChild as HTMLElement | null) ?? el) : el) : document.querySelector<HTMLElement>(`[data-ghost-card="${fx.cardId}"]`);
+    let face: HTMLElement | null = null;
     // ขนาดจริงของกล่อง (ไม่รวมการหมุนของพัดบนมือ) วางกลางกรอบที่เห็นบนจอ
     // (การ์ดบนสนามที่แถวถูกย่อ: ใช้ขนาดหลังย่อ)
-    const bb = el.getBoundingClientRect();
-    const k = fieldScaleOf(el);
-    const w = el.offsetWidth * k;
-    const h = el.offsetHeight * k;
-    const rect = { x: bb.x + bb.width / 2 - w / 2, y: bb.y + bb.height / 2 - h / 2, w, h };
+    let rect: Rect;
+    let w: number;
+    let h: number;
+    if (el) {
+      const bb = el.getBoundingClientRect();
+      const k = fieldScaleOf(el);
+      w = el.offsetWidth * k;
+      h = el.offsetHeight * k;
+      rect = { x: bb.x + bb.width / 2 - w / 2, y: bb.y + bb.height / 2 - h / 2, w, h };
+    } else {
+      rect = fx.rect!;
+      w = rect.w;
+      h = rect.h;
+    }
+    // ท่าตามสภาพ ณ จังหวะที่เอฟเฟกต์ทำงาน (เช่น เพิ่งประกาศป้องกัน = นอน) กล่องบนจออาจยังหมุนไม่เสร็จ: สลับกว้าง/สูงรอบจุดกลาง
+    if (fx.lying !== undefined && fx.lying !== w > h) {
+      const cx = rect.x + rect.w / 2;
+      const cy = rect.y + rect.h / 2;
+      [w, h] = [h, w];
+      rect = { x: cx - w / 2, y: cy - h / 2, w, h };
+    }
     const upside = upsideFor(owner);
     // "ยกขึ้น" เข้าหาเจ้าของการ์ด: ฝั่งตรงข้ามเลื่อนลงบนจอ
     const lift = fx.trash ? (upside ? 90 : -90) : fx.hand ? (upside ? 110 : -130) : fx.brave ? (upside ? 40 : -40) : upside ? 26 : -26;
@@ -685,15 +849,18 @@ function CardActivate({ fx, onDone }: { fx: Extract<Fx, { kind: 'cardActivate' }
       faceDown: !!fx.hand && hiddenFrom(useGame.getState(), owner),
       upside,
     });
-    const hide = setTimeout(() => (face.style.visibility = 'hidden'), fx.delay);
+    const hide = setTimeout(() => {
+      face = faceOf();
+      if (face) face.style.visibility = 'hidden';
+    }, fx.delay);
     const showBurst = setTimeout(() => setBurst(true), fx.delay + fx.duration * 0.2);
     const end = setTimeout(() => {
-      face.style.visibility = '';
+      if (face) face.style.visibility = '';
       onDone();
     }, fx.delay + fx.duration);
     return () => {
       [hide, showBurst, end].forEach(clearTimeout);
-      face.style.visibility = '';
+      if (face) face.style.visibility = '';
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -973,6 +1140,302 @@ function stackLayout(sides: ('self' | 'opp')[]): Rect[] {
     const z = k === last ? STACK_NEW : 1;
     return { x: x - (STACK_W * z) / 2, y: y - (STACK_H * z) / 2, w: STACK_W * z, h: STACK_H * z };
   });
+}
+
+
+// ---------------------------------------------------------------- Spell Stage (เมจิก / เบิร์ส)
+
+/**
+ * เวทีของการ์ดที่กำลังร่าย: ตำแหน่งเดียวกับใบล่าสุดของกอง Chain (ของเราซ้าย คู่แข่งขวา)
+ * ฉาก Chain ที่แทรกขึ้นมาจึงต่อจากการ์ดใบนี้ได้พอดี
+ */
+export function stageRect(owner: string): Rect {
+  const side = viewPlayer(useGame.getState()) === owner ? 'self' : 'opp';
+  return stackLayout([side])[0]!;
+}
+
+/** กลับไปพัก (รอเลือก) / ขึ้นเวทีจากที่พัก ก่อนเรืองแสงซ้ำ (ms) */
+const REST_MS = CAST_MS.rest;
+
+/** ยกการ์ดขึ้นจากช่อง Burst: ขยายรอบกลางช่อง แล้วเยื้องเข้าหากลางกระดาน (ช่องอยู่คอลัมน์ริมจอ ไม่ให้ล้นขอบ) */
+function liftFromSlot(slot: Rect): Rect {
+  const k = 1.7;
+  const w = slot.w * k;
+  const h = slot.h * k;
+  const boardCx = (innerWidth - sidebarWidth()) / 2;
+  const cx = slot.x + slot.w / 2 + Math.sign(boardCx - (slot.x + slot.w / 2)) * slot.w * 0.55;
+  const cy = slot.y + slot.h / 2 + Math.sign(innerHeight / 2 - (slot.y + slot.h / 2)) * slot.h * 0.2;
+  const x = Math.max(8, Math.min(innerWidth - sidebarWidth() - w - 8, cx - w / 2));
+  const y = Math.max(8, Math.min(innerHeight - h - 8, cy - h / 2));
+  return { x, y, w, h };
+}
+
+/**
+ * ที่พักของการ์ดที่ร่ายค้างรอผู้เล่นเลือก
+ *  เบิร์ส: ช่อง Burst ของเจ้าของ (หงายหน้า)
+ *  เมจิก: ท้ายพัดมือของเจ้าของ ยกขึ้นจากมือเล็กน้อย (ไม่บังการ์ดบนมือที่อาจต้องคลิกเลือก)
+ */
+export function restRect(owner: PlayerId, tone: 'main' | 'flash' | 'burst', cardId?: string): Rect {
+  if (tone === 'burst') {
+    const r = rectOf(document.querySelector(`[data-burst-card="${owner}"]`));
+    if (r) return r;
+  }
+  const g = useGame.getState();
+  const upside = viewPlayer(g) !== owner;
+  // ช่องเดิมในพัดมือที่เว้นไว้ (ตำแหน่งที่สั่งใช้): ลอยขึ้นจากช่องเล็กน้อย
+  if (cardId) {
+    const slot = rectOf(document.querySelector(`[data-cast-slot="${cardId}"]`));
+    if (slot) return { ...slot, y: slot.y + (upside ? 1 : -1) * slot.h * 0.22 };
+  }
+  const W = 116;
+  const H = 162;
+  const cards = g.state.players[owner].hand.map((id) => rectOf(document.querySelector(`[data-hand-card="${id}"]`))).filter((r): r is Rect => !!r);
+  if (cards.length === 0) {
+    const cx = (innerWidth - sidebarWidth()) / 2;
+    return { x: cx - W / 2, y: upside ? 12 : innerHeight - H - 12, w: W, h: H };
+  }
+  const right = Math.max(...cards.map((r) => r.x + r.w));
+  const x = Math.min(right + 10, innerWidth - sidebarWidth() - W - 12);
+  // ยกออกจากแนวมือเล็กน้อย (มือเราอยู่ล่าง = ขึ้น, มือคู่แข่งอยู่บน = ลง)
+  const edge = upside ? Math.max(...cards.map((r) => r.y + r.h)) : Math.min(...cards.map((r) => r.y));
+  return { x, y: upside ? edge - H * 0.55 : edge - H * 0.45, w: W, h: H };
+}
+
+const SPELL_TONE = {
+  main: { color: '#facc15', glow: 'rgba(250,204,21,0.85)', label: 'MAGIC [MAIN]' },
+  flash: { color: '#818cf8', glow: 'rgba(129,140,248,0.9)', label: 'MAGIC [FLASH]' },
+  burst: { color: '#fb923c', glow: 'rgba(251,146,60,0.9)', label: 'BURST' },
+} as const;
+
+/** หน้าตาการ์ดบนเวที (ใช้ทั้งตอนร่ายและตอนค้างรอเลือก): หน้า/หลังสำหรับพลิก + ป้ายประเภท + แสงเรือง */
+function SpellCardBody({ cardId, tone, flipRef, pulse }: { cardId: string; tone: keyof typeof SPELL_TONE; flipRef?: React.Ref<HTMLDivElement>; pulse: number }) {
+  const card = useGame((s) => s.state.cards[cardId]);
+  // การ์ดของฝั่งคู่แข่ง: คงทิศกลับหัวตามฝั่งของเขา (ไม่หมุนให้ตั้งตรง)
+  const upside = useGame((s) => !!card && viewPlayer(s) !== card.owner);
+  if (!card) return null;
+  const t = SPELL_TONE[tone];
+  return (
+    <>
+      {/* รัศมีหมุน + คลื่น ตอนเอฟเฟกต์ทำงาน */}
+      {pulse > 0 && (
+        <>
+          <div
+            key={`rays-${pulse}`}
+            className="pointer-events-none absolute top-1/2 left-1/2 -z-10 aspect-square w-[300%] rounded-full"
+            style={{
+              translate: '-50% -50%',
+              background: `repeating-conic-gradient(from 0deg, ${t.color} 0deg 4deg, transparent 4deg 16deg)`,
+              maskImage: 'radial-gradient(circle, #000 18%, transparent 62%)',
+              WebkitMaskImage: 'radial-gradient(circle, #000 18%, transparent 62%)',
+              animation: 'fx-spell-rays 1.2s ease-out both',
+            }}
+          />
+          <div
+            key={`ring-${pulse}`}
+            className="pointer-events-none absolute top-1/2 left-1/2 -z-10 aspect-square w-[140%] rounded-full"
+            // fx-shockwave เลื่อนกึ่งกลางเอง (translate -50%) ไม่ต้องใส่ translate ซ้ำ
+            style={{ border: `5px solid ${t.color}`, boxShadow: `0 0 24px ${t.glow}, inset 0 0 24px ${t.glow}`, animation: 'fx-shockwave 0.9s ease-out both' }}
+          />
+        </>
+      )}
+      <div className="relative h-full w-full" style={{ transform: upside ? 'rotate(180deg)' : undefined, transformStyle: 'preserve-3d' }}>
+      <div ref={flipRef} className="relative h-full w-full" style={{ transformStyle: 'preserve-3d' }}>
+        <div
+          key={`face-${pulse}`}
+          className="absolute inset-0 rounded-lg"
+          style={{
+            backfaceVisibility: 'hidden',
+            boxShadow: `0 0 0 3px ${t.color}, 0 0 30px 8px ${t.glow}`,
+            animation: pulse > 0 ? 'fx-spell-glow 1.1s ease-out both' : undefined,
+          }}
+        >
+          <CardFace def={db.get(card.cardNo)} />
+          {/* แสงปาดหน้าการ์ดตอนทำงาน */}
+          {pulse > 0 && (
+            <div className="absolute inset-0 overflow-hidden rounded-lg">
+              <div className="absolute -inset-y-[20%] left-0 w-2/5" style={{ background: 'linear-gradient(100deg, transparent, rgba(255,255,255,0.85), transparent)', animation: 'fx-cl-sheen 0.7s 0.1s ease-in-out both' }} />
+            </div>
+          )}
+        </div>
+        <div className="absolute inset-0" style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}>
+          <CardBack />
+        </div>
+      </div>
+      </div>
+      {/* ป้ายประเภท: ด้านที่หันเข้ากลางกระดาน (ของเรา = บน, ของคู่แข่ง = ล่าง) อ่านได้ตรงเสมอ */}
+      <div
+        className={`pointer-events-none absolute ${upside ? '-bottom-7' : '-top-7'} left-1/2 -translate-x-1/2 rounded-full px-3 py-0.5 text-xs font-black tracking-[0.2em] whitespace-nowrap text-slate-950 italic`}
+        style={{ background: t.color, boxShadow: `0 0 14px ${t.glow}` }}
+      >
+        {t.label}
+      </div>
+    </>
+  );
+}
+
+/**
+ * เมจิก / เบิร์สที่กำลังร่าย (ดู Fx 'spell' ใน store)
+ *  มือ: ยกขึ้นเหนือการ์ดใบอื่น (มือที่คว่ำ = พลิกหงายระหว่างยก) → ขยายไปที่เวที → เรืองแสง
+ *  เบิร์ส: พลิกหงายที่ช่อง Burst → ขยายไปที่เวที → เรืองแสง
+ *  ค้างที่เวทีจนผลของการ์ดจบ แล้วลง Trash (ย่อเข้าช่อง) / ลงสนาม (ภาพบินลงสนามรับช่วงต่อ) / ค้างรอเลือก (SpellStage รับช่วงต่อ)
+ */
+function SpellFx({ fx, onDone }: { fx: Extract<Fx, { kind: 'spell' }>; onDone: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const flipRef = useRef<HTMLDivElement>(null);
+  const [pulse, setPulse] = useState(0);
+  const [dim, setDim] = useState(0);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    const flip = flipRef.current;
+    if (!el) return onDone();
+    const st = useGame.getState();
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const anims: Animation[] = [];
+    const D = fx.delay;
+    // ทุกอย่างเกิดตรงที่เดิม: ช่องเดิมในมือ (ยกขึ้นเล็กน้อย) / ช่อง Burst · ไม่วิ่งไปกลางจอ
+    const rest = restRect(fx.owner, fx.tone, fx.cardId);
+    // เบิร์ส: ตอนทำงานยกขึ้นจากช่อง (ขยาย ~1.7 เท่า เยื้องเข้าหากลางกระดานไม่ให้ล้นขอบจอ) · กลับลงช่องตอนรอเลือก
+    const stage = fx.tone === 'burst' ? liftFromSlot(rest) : rest;
+    /** ตำแหน่งปัจจุบันของการ์ด (ไว้เริ่มท่าถัดไป) */
+    let cur = stage;
+    const moveTo = (to: Rect, ms: number, at = 0) => {
+      const from = cur;
+      cur = to;
+      const a = el.animate([frame(from, { opacity: 1, transform: 'rotate(0deg)' }), frame(to, { opacity: 1, transform: 'rotate(0deg)' })], {
+        duration: ms,
+        delay: at,
+        easing: 'cubic-bezier(.3,.8,.3,1)',
+        fill: 'forwards',
+      });
+      anims.push(a);
+      return a;
+    };
+    if (fx.from === 'stage') {
+      // ค้างรอเลือกอยู่ที่มือ / ช่อง Burst (หงาย): เอฟเฟกต์ทำงานอีกครั้ง = เรืองแสงตรงนั้น (เบิร์สยกขึ้นจากช่องก่อน)
+      cur = rest;
+      anims.push(el.animate([frame(rest, { opacity: 1 }), frame(rest, { opacity: 1 })], { duration: 1, fill: 'forwards' }));
+      if (flip) anims.push(flip.animate([{ transform: 'rotateY(0deg)' }, { transform: 'rotateY(0deg)' }], { duration: 1, fill: 'forwards' }));
+      if (fx.pulses.length > 0 && stage !== rest) {
+        timers.push(setTimeout(() => moveTo(stage, CAST_MS.rise), Math.max(0, fx.pulses[0]! - CAST_MS.rise)));
+      }
+    } else {
+      // มือ: ยกขึ้นจากช่องเดิมเล็กน้อย · เบิร์ส: พลิกหงายพร้อมยกขึ้น (ขยาย) จากช่อง Burst
+      const start = fx.from === 'burst' ? rest : (fx.fromRect ?? rest);
+      const L = CAST_MS.lift / CAST_MS.intro;
+      anims.push(
+        el.animate(
+          [
+            frame(start, { opacity: 1, filter: 'brightness(1)', boxShadow: '0 0 0 rgba(0,0,0,0)', easing: 'cubic-bezier(.2,.9,.3,1)' }),
+            frame(stage, { offset: L, opacity: 1, filter: 'brightness(1.25)', boxShadow: '0 40px 40px rgba(0,0,0,0.55)' }),
+            frame(stage, { opacity: 1, filter: 'brightness(1)', boxShadow: '0 40px 40px rgba(0,0,0,0.55)' }),
+          ],
+          { duration: CAST_MS.intro, delay: D, fill: 'both' },
+        ),
+      );
+      // พลิกหงาย: ช่อง Burst เสมอ / มือที่คว่ำ (มือคู่แข่ง)
+      const faceDown = fx.from === 'burst' || hiddenFrom(st, fx.owner);
+      if (flip) {
+        anims.push(
+          faceDown
+            ? flip.animate(
+                [
+                  { transform: 'rotateY(180deg) scale(1)' },
+                  { transform: 'rotateY(180deg) scale(1)', offset: 0.04 },
+                  { transform: 'rotateY(90deg) scale(1.08)', offset: L * 0.65 },
+                  { transform: 'rotateY(0deg) scale(1)', offset: L },
+                  { transform: 'rotateY(0deg) scale(1)' },
+                ],
+                { duration: CAST_MS.intro, delay: D, fill: 'both', easing: 'ease-in-out' },
+              )
+            : flip.animate([{ transform: 'rotateY(0deg)' }, { transform: 'rotateY(0deg)' }], { duration: 1, fill: 'forwards' }),
+        );
+      }
+    }
+    // เรืองแสงทุกครั้งที่เอฟเฟกต์ทำงาน (+ จอสลัวสั้น ๆ ให้การ์ดเด่น)
+    fx.pulses.forEach((p, i) => {
+      timers.push(
+        setTimeout(() => {
+          setPulse(i + 1);
+          setDim((d) => d + 1);
+        }, p),
+      );
+    });
+    // ออกจากเวที: ลง Trash / ลงสนาม (ภาพบินลงสนามรับช่วงต่อ) / รอเลือก = กลับไปพักที่มือ (ยกขึ้นเล็กน้อย) หรือช่อง Burst (หงาย)
+    timers.push(
+      setTimeout(() => {
+        if (fx.exit === 'trash') {
+          const trash = rectOf(document.querySelector(`[data-trash="${fx.owner}"]`));
+          if (!trash) return onDone();
+          const small = { x: trash.x + trash.w / 2 - 22, y: trash.y + trash.h / 2 - 31, w: 44, h: 62 };
+          const a = el.animate([frame(cur, { opacity: 1, transform: 'rotate(0deg)' }), frame(small, { opacity: 0.3, transform: 'rotate(-8deg)' })], {
+            duration: CAST_MS.exit,
+            easing: 'cubic-bezier(.5,0,.6,1)',
+            fill: 'forwards',
+          });
+          anims.push(a);
+          a.onfinish = onDone;
+        } else if (fx.exit === 'stay' && cur !== rest) {
+          // วัดที่พักใหม่ตอนนี้: พัดมืออาจเปลี่ยนระหว่างที่ผลเล่นอยู่ (เช่น จั่วการ์ดเพิ่ม)
+          moveTo(restRect(fx.owner, fx.tone, fx.cardId), REST_MS).onfinish = onDone;
+        } else onDone();
+      }, fx.end),
+    );
+    return () => {
+      timers.forEach(clearTimeout);
+      anims.forEach((a) => a.cancel());
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <>
+      {dim > 0 && <div key={dim} className={`${BOARD} pointer-events-none z-[41] bg-slate-950/55`} style={{ animation: 'fx-spell-dim 1.1s ease-out both' }} />}
+      <div ref={ref} data-spell-card={fx.cardId} className="pointer-events-none fixed z-[42]" style={{ opacity: 0, perspective: 900 }}>
+        <SpellCardBody cardId={fx.cardId} tone={fx.tone} flipRef={flipRef} pulse={pulse} />
+      </div>
+    </>
+  );
+}
+
+/** เมจิกที่พักอยู่ในช่องเดิมของพัดมือ (Board วาดในพัด ให้ซ้อนกับใบข้าง ๆ ตามลำดับเหมือนการ์ดในมือ) */
+export function CastRestCard({ cardId }: { cardId: string }) {
+  const tone = useGame((s) => castTone(s.state, cardId));
+  // กำลังมีภาพของการ์ดใบนี้เล่นอยู่ (ขึ้นเวที / กลับมาพัก / ลง Trash): ซ่อนไว้ก่อน
+  const busy = useGame((s) => s.fx.some((f) => (f.kind === 'spell' || f.kind === 'fly' || f.kind === 'chainAdd') && f.cardId === cardId));
+  if (busy) return null;
+  return (
+    <div className="relative h-full w-full">
+      <SpellCardBody cardId={cardId} tone={tone} pulse={0} />
+    </div>
+  );
+}
+
+/** การ์ดที่ยังร่ายไม่จบ (รอเลือกเป้าหมาย / จ่ายใช้ Flash / วาง Core ลงสนาม): พักไว้ที่มือ (เมจิก) หรือช่อง Burst แบบหงาย (เบิร์ส) */
+export function SpellStage() {
+  const state = useGame((s) => s.state);
+  const fx = useGame((s) => s.fx);
+  // ผู้เลือกวาง Core ลงสนาม (การ์ดใบนี้) เห็นการ์ดในแผงอัญเชิญอยู่แล้ว: ไม่ซ้อนบนเวทีทับแผง (อีกฝ่ายยังเห็นบนเวที)
+  const panelCard = useGame((s) => (s.state.choice?.kind === 'placeCores' && controls(s, s.state.choice.player) ? s.state.choice.cardId : null));
+  // เมจิกที่มีช่องในพัดมือ: พัดมือวาดเอง (CastRestCard) ซ้อนกับใบข้าง ๆ ตามลำดับ
+  const inHandSlot = useGame((s) => `${castHandSlots(s.state, 'p1')},${castHandSlots(s.state, 'p2')}`);
+  const ids = castCards(state).filter(
+    (id) => id !== panelCard && !inHandSlot.includes(`${id}:`) && !fx.some((f) => (f.kind === 'spell' || f.kind === 'fly' || f.kind === 'chainAdd') && f.cardId === id),
+  );
+  if (ids.length === 0) return null;
+  return (
+    <>
+      {ids.map((id) => {
+        const card = state.cards[id];
+        if (!card) return null;
+        const tone: keyof typeof SPELL_TONE = castTone(state, id);
+        const r = restRect(card.owner, tone, id);
+        return (
+          <div key={id} data-spell-card={id} className="pointer-events-none fixed z-[42]" style={{ left: r.x, top: r.y, width: r.w, height: r.h, animation: 'fx-spell-idle 2.4s ease-in-out infinite' }}>
+            <SpellCardBody cardId={id} tone={tone} pulse={0} />
+          </div>
+        );
+      })}
+    </>
+  );
 }
 
 const inRect = (r: Rect, p: { x: number; y: number }) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
@@ -1263,14 +1726,21 @@ function ChainAddFx({ fx, onDone }: { fx: Extract<Fx, { kind: 'chainAdd' }>; onD
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   // กองตั้งแต่ Chain 1 ถึงใบนี้
-  const stack = chainEntries(state).slice(0, fx.index + 1);
+  // กอง ณ จังหวะที่ต่อ Chain (store ส่งมา) · กองจากสภาพปัจจุบันอาจว่างไปแล้ว (เช่น Attack Step จบในชุดเดียวกัน)
+  const stack = fx.stack.length > 0 ? fx.stack : chainEntries(state).slice(0, fx.index + 1);
   const sides = stack.map((e) => (e.player === me ? 'self' : 'opp') as 'self' | 'opp');
   const n = fx.index + 1;
   const heat = n >= 4 ? 2 : n >= 3 ? 1 : 0;
   useLayoutEffect(() => {
     if (!on) return;
     const el = ref.current;
-    const from = layoutRect(document.querySelector(`[data-field-card="${fx.cardId}"] > div:first-child`) ?? document.querySelector(`[data-brave-card="${fx.cardId}"]`)) ?? boardCenter(150, 210);
+    // เมจิก/เบิร์สบนเวที: ออกจากเวที (ตำแหน่งเดียวกับใบล่าสุดของกอง Chain)
+    const from =
+      layoutRect(
+        document.querySelector(`[data-field-card="${fx.cardId}"] > div:first-child`) ??
+          document.querySelector(`[data-brave-card="${fx.cardId}"]`) ??
+          document.querySelector(`[data-spell-card="${fx.cardId}"]`),
+      ) ?? boardCenter(150, 210);
     const spot = stackLayout(sides)[fx.index];
     if (!el || !spot) return onDone();
     const big = { x: spot.x - spot.w * 0.06, y: spot.y - spot.h * 0.06, w: spot.w * 1.12, h: spot.h * 1.12 };
@@ -1311,7 +1781,8 @@ function ChainAddFx({ fx, onDone }: { fx: Extract<Fx, { kind: 'chainAdd' }>; onD
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [on]);
   const card = state.cards[fx.cardId];
-  if (!on || !card) return null;
+  // กองไม่ครบถึงใบนี้ (ไม่ควรเกิด): ไม่วาด ดีกว่าทำให้ทั้งหน้าพัง
+  if (!on || !card || sides.length <= fx.index) return null;
   const rich = effects().matMotion;
   const layout = stackLayout(sides);
   const spot = layout[fx.index]!;
@@ -1560,9 +2031,18 @@ export function RevealFan({
   const pos = fanLayout(owner, cardIds.length);
   const top = Math.min(...pos.map((p) => p.y)) - 44;
   const cx = pos.length ? (pos[0]!.x + pos[pos.length - 1]!.x + pos[0]!.W) / 2 : 0;
+  // จอสลัวเว้นแถบกลางไว้: ปุ่มบนแถบ (ไม่อัญเชิญ / ถัดไป) สว่างเท่ากับการ์ดที่แสดง ไม่จมอยู่ใต้ความมืด
+  const bar = layoutRect(document.querySelector('[data-setup="bar"]'));
   return (
     <div className={`${BOARD} z-[39] pointer-events-none`}>
-      <div className="absolute inset-0 bg-black/40" />
+      {bar ? (
+        <>
+          <div className="absolute inset-x-0 top-0 bg-black/40" style={{ height: Math.max(0, bar.y) }} />
+          <div className="absolute inset-x-0 bottom-0 bg-black/40" style={{ top: bar.y + bar.h }} />
+        </>
+      ) : (
+        <div className="absolute inset-0 bg-black/40" />
+      )}
       <div className="absolute -translate-x-1/2 rounded-full bg-black/75 px-4 py-1 text-sm font-bold text-sky-100 shadow" style={{ left: cx, top }}>
         {title}
         {onSkip && (
@@ -1840,7 +2320,7 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
     const hy = (ty / len) * stop;
     const rot = fx.fromExhausted ? 'rotate(90deg)' : 'rotate(0deg)';
     const rotEnd = fx.toExhausted ? 'rotate(90deg)' : 'rotate(0deg)';
-    // แพ้: ถูกกระแทกกระเด็นกลับมาครึ่งทาง เซ แล้วหยุดตั้งตรงตรงนั้น (ภาพแตกเล่นต่อที่จุดนี้ ไม่วิ่งกลับไปนอนที่ช่องเดิม)
+    // แพ้: ถูกกระแทกกระเด็นกลับ (ตามสัดส่วน CHARGE_KNOCK: 0 = ถึงช่องเดิม) เซ แล้วหยุดตั้งตรงตรงนั้น ภาพร้าว/แตกเล่นต่อที่จุดนี้
     const K = CHARGE_KNOCK;
     const end: Keyframe[] = fx.dies
       ? [
@@ -1981,11 +2461,14 @@ function Ghost({ fx, onDone }: { fx: Extract<Fx, { kind: 'ghost' }>; onDone: () 
   const soulAt = destroy ? GHOST_MS.destroyBreak : GHOST_MS.depleteGather;
   const vars = { '--dx': `${to.dx}px`, '--dy': `${to.dy}px` } as React.CSSProperties;
   const [cx, cy] = SHARD_CENTER;
-  /** เวลาเริ่มของแอนิเมชันนี้ (ก่อนถึงเวลา การ์ดค้างอยู่ที่เดิม) */
-  const D = fx.delay;
+  /**
+   * เวลาเริ่มของแอนิเมชันนี้ (ก่อนถึงเวลา การ์ดค้างอยู่ที่เดิม)
+   * hiddenUntilStart: แสดงตอนถึงเวลาแล้ว = เริ่มทันที (เดิมนับ delay ซ้ำสองรอบ ผู้โจมตีที่แพ้เลยหายไปก่อนจะร้าว/แตก)
+   */
+  const D = fx.hiddenUntilStart ? 0 : fx.delay;
   if (!shown) return null;
   return (
-    <div className="pointer-events-none fixed z-[41]" style={{ left: fx.rect.x, top: fx.rect.y, width: fx.rect.w, height: fx.rect.h, ...vars }}>
+    <div data-ghost-card={fx.cardId} className="pointer-events-none fixed z-[41]" style={{ left: fx.rect.x, top: fx.rect.y, width: fx.rect.w, height: fx.rect.h, ...vars }}>
       <div className="absolute inset-0 flex items-center justify-center">
         <div className="relative shrink-0" style={{ width: cardW, height: cardH, transform: `${lying ? 'rotate(90deg)' : ''} ${!fx.upright && upsideFor(fx.owner) ? 'rotate(180deg)' : ''}`.trim() || undefined }}>
           {destroy ? (

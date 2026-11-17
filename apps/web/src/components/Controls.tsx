@@ -21,6 +21,7 @@ import {
 import { CardFace } from './CardFace';
 import { ChainTracker, RevealFan } from './Fx';
 import { BTN, Modal } from './Modal';
+import { panelStyle } from './PlayDialog';
 import { TurnBadge } from './StepSelect';
 
 /** ประเภทของสิ่งที่ผู้เล่นต้องทำ: สีเดียวกับกรอบของการ์ดที่ต้องคลิก ใช้เหมือนกันทั้งเกม */
@@ -98,7 +99,17 @@ function TagChip({ tag }: { tag: PromptTag }) {
   );
 }
 
-type PromptAction = { key: string; label: string; onClick: () => void; kind: keyof typeof BTN; disabled: boolean };
+/** เส้นคั่นแนวตั้งระหว่างปุ่มบนแถบกับป้ายเทิร์นกลางแถบ: เส้นแสงจางหัวท้าย + จุดกลาง */
+function BarDivider() {
+  return (
+    <span aria-hidden className="relative flex h-7 w-px shrink-0 items-center justify-center bg-gradient-to-b from-transparent via-sky-300/70 to-transparent">
+      <span className="absolute h-1.5 w-1.5 rotate-45 bg-sky-300 shadow-[0_0_6px_rgba(125,211,252,0.9)]" />
+    </span>
+  );
+}
+
+/** hint = ยังกดไม่ได้เพราะรอให้ทำอะไรก่อน: แสดงเป็นคำแนะนำแทนปุ่มทึบ (ปุ่มทึบดูเหมือนเสีย/กดไม่ได้ตลอด) */
+type PromptAction = { key: string; label: string; onClick: () => void; kind: keyof typeof BTN; disabled: boolean; hint?: string };
 
 /**
  * แถบกลางกระดาน: ที่เดียวของทุกการตัดสินใจ
@@ -131,8 +142,8 @@ export function PromptBar() {
   const actions: PromptAction[] = [];
   /** ปุ่มหลักของ Phase (จบ Main / จบ Attack / Pass Flash): ปุ่มกลมใหญ่ที่ปลายขวาของเส้นกลางกระดาน */
   let phaseBtn: { label: string; sub: string; onClick: () => void } | null = null;
-  const add = (key: string, label: string, onClick: () => void, kind: keyof typeof BTN = 'primary', disabled = false) =>
-    actions.push({ key, label, onClick, kind, disabled });
+  const add = (key: string, label: string, onClick: () => void, kind: keyof typeof BTN = 'primary', disabled = false, hint?: string) =>
+    actions.push({ key, label, onClick, kind, disabled, ...(hint ? { hint } : {}) });
 
   const online = useGame((s) => s.online);
   const mine = controls({ online }, actor);
@@ -195,7 +206,14 @@ export function PromptBar() {
       }
       detail = `${src} · คลิก Core ใน Reserve หรือบนการ์ดเพื่อจ่าย (เลือกแล้ว ${selectedCores.length}/${choice.cost})${summonId ? ' · ถัดไป: วาง Core กำหนด Lv' : ''}`;
       add('skip', 'ไม่จ่าย', () => choose(null), 'secondary');
-      add('pay', `จ่าย ${choice.cost}`, () => choose({ pay: selectedCores }), 'primary', selectedCores.length !== choice.cost);
+      add(
+        'pay',
+        `จ่าย ${choice.cost}`,
+        () => choose({ pay: selectedCores }),
+        'primary',
+        selectedCores.length !== choice.cost,
+        selectedCores.length < choice.cost ? `เลือก Core อีก ${choice.cost - selectedCores.length} ดวง` : `เลือกเกิน ${selectedCores.length - choice.cost} ดวง`,
+      );
     } else if (choice.kind === 'multiSummon') {
       // อัญเชิญหลายใบจากที่แสดง: เลือกการ์ดจากพัด → วาง Core ทีละใบบนกระดาน → ลงสนามพร้อมกัน
       const m = multi ?? EMPTY_MULTI;
@@ -204,7 +222,7 @@ export function PromptBar() {
         title = `เลือกการ์ดที่จะอัญเชิญไม่จ่ายคอสต์ (${m.picks.length}${choice.max !== null ? `/${choice.max}` : ''} ใบ)`;
         detail = `${src} · คลิกการ์ดที่แสดงเพื่อเลือก/ยกเลิก · ลงสนามพร้อมกัน`;
         add('skip', 'ไม่อัญเชิญ', () => choose({ summons: [] }), 'secondary');
-        add('next', 'ถัดไป: วาง Core', multiNext, 'primary', m.picks.length === 0);
+        add('next', 'ถัดไป: วาง Core', multiNext, 'primary', m.picks.length === 0, 'คลิกการ์ดที่จะอัญเชิญ');
       } else {
         const cur = m.picks[m.index]!;
         source = cur;
@@ -221,7 +239,7 @@ export function PromptBar() {
           tag = 'core';
           title = `อัญเชิญ: วาง Core (${step})`;
           detail = `${src} · เลือก ${selectedCores.length} ดวง (ขั้นต่ำ ${min}) · ปรับ Lv ได้ที่แผงมุมสนาม`;
-          add('next', last ? `ลงสนาม ${m.picks.length} ใบ` : 'ถัดไป', multiNext, 'primary', selectedCores.length < min);
+          add('next', last ? `ลงสนาม ${m.picks.length} ใบ` : 'ถัดไป', multiNext, 'primary', selectedCores.length < min, `เลือก Core อีก ${min - selectedCores.length} ดวง`);
         }
       }
     } else if (choice.kind === 'placeCores') {
@@ -229,7 +247,7 @@ export function PromptBar() {
       source = choice.cardId;
       title = 'อัญเชิญ: วาง Core กำหนด Lv';
       detail = `${src} · เลือก ${selectedCores.length} ดวง (ขั้นต่ำ ${choice.min}) · ปรับ Lv ได้ที่แผงมุมสนาม`;
-      add('place', `วาง ${selectedCores.length} ดวง`, () => choose({ pay: selectedCores }), 'primary', selectedCores.length < choice.min);
+      add('place', `วาง ${selectedCores.length} ดวง`, () => choose({ pay: selectedCores }), 'primary', selectedCores.length < choice.min, `เลือก Core อีก ${choice.min - selectedCores.length} ดวง`);
     } else if (isInlineChoice(state)) {
       tag = 'target';
       detail = `${src} · คลิกการ์ดที่เรืองแสงสีชมพู`;
@@ -338,18 +356,32 @@ export function PromptBar() {
   const dropDown = towardActor ? actorBelow : !actorBelow;
   const t = tag ? TAGS[tag] : null;
 
-  const renderBtn = (a: PromptAction, wide = false) => (
-    <button
-      key={a.key}
-      type="button"
-      title={a.label}
-      className={`${BTN[a.kind]} ${wide ? 'w-full text-left whitespace-normal' : 'max-w-full min-w-0 truncate'}`}
-      onClick={a.onClick}
-      disabled={a.disabled}
-    >
-      {a.label}
-    </button>
-  );
+  /** แถบ: ปุ่มรอง (เทา) อยู่ซ้ายป้ายเทิร์น · ปุ่มหลัก/คำแนะนำอยู่ขวาป้ายเทิร์น */
+  const sideActions = actions.filter((a) => a.kind !== 'primary');
+  const mainActions = actions.filter((a) => a.kind === 'primary');
+  const renderBtn = (a: PromptAction, wide = false) =>
+    a.disabled && a.hint ? (
+      // รอให้ทำอะไรก่อน: บอกสิ่งที่ต้องทำ (กรอบประ สว่าง) แทนปุ่มทึบ
+      <span
+        key={a.key}
+        title={`${a.label} · ${a.hint}`}
+        className={`inline-flex items-center rounded-lg border-2 border-dashed border-yellow-300/80 bg-yellow-300/10 px-3 py-1.5 text-sm font-bold text-yellow-200 ${wide ? 'w-full' : 'max-w-full min-w-0 truncate'}`}
+        style={{ animation: 'fx-hint-pulse 1.6s ease-in-out infinite' }}
+      >
+        {a.hint}
+      </span>
+    ) : (
+      <button
+        key={a.key}
+        type="button"
+        title={a.label}
+        className={`${BTN[a.kind]} ${wide ? 'w-full text-left whitespace-normal' : 'max-w-full min-w-0 truncate'}`}
+        onClick={a.onClick}
+        disabled={a.disabled}
+      >
+        {a.label}
+      </button>
+    );
 
   const fighter = (id: string) => (
     <span key={id} title={cardName(state, id)} className="flex min-w-0 items-baseline gap-1 rounded bg-black/40 px-2 py-0.5">
@@ -390,36 +422,53 @@ export function PromptBar() {
             {actor && <span className="player-tag-active shrink-0 rounded-md px-2 py-0.5 text-xs font-black">ตาของ {playerLabel(actor)}</span>}
             <ChainTracker side="self" />
             {tag && mine && <TagChip tag={tag} />}
+            {/* คำถาม: ข้อความยาวจนถูกตัด = ทั้งกล่องเป็นปุ่มกาง/ซ่อน (กรอบครอบทั้งข้อความ + ลูกศรท้ายกล่อง) */}
             <div
-              className={`flex min-w-0 flex-1 items-baseline gap-2 ${canExpand ? 'cursor-pointer' : ''}`}
-              title={[typeof title === 'string' ? title : '', typeof detail === 'string' ? detail : ''].filter(Boolean).join(' · ') || undefined}
+              role={canExpand ? 'button' : undefined}
+              tabIndex={canExpand ? 0 : undefined}
+              className={`flex min-w-0 flex-1 items-center gap-2 ${
+                canExpand ? `-my-0.5 cursor-pointer rounded-md py-0.5 pr-1 pl-2 ring-1 ring-white/25 transition hover:bg-white/10 ${panelOpen ? 'bg-white/5' : ''}` : ''
+              }`}
+              title={
+                canExpand
+                  ? panelOpen
+                    ? 'กดเพื่อซ่อน (ดูกระดาน)'
+                    : 'กดเพื่ออ่านทั้งหมด'
+                  : [typeof title === 'string' ? title : '', typeof detail === 'string' ? detail : ''].filter(Boolean).join(' · ') || undefined
+              }
               onClick={togglePanel}
+              onKeyDown={canExpand ? (e) => (e.key === 'Enter' || e.key === ' ') && togglePanel() : undefined}
             >
-              <span ref={titleRef} className="min-w-0 truncate text-sm font-black tracking-wide text-white [text-shadow:0_1px_0_#000,0_0_12px_rgba(56,189,248,0.35)]">
-                {title}
+              <span className="flex min-w-0 flex-1 items-baseline gap-2">
+                <span ref={titleRef} className="min-w-0 truncate text-sm font-black tracking-wide text-white [text-shadow:0_1px_0_#000,0_0_12px_rgba(56,189,248,0.35)]">
+                  {title}
+                </span>
+                {detail && (
+                  <span ref={detailRef} className={`min-w-0 flex-1 truncate text-xs ${highlight ? 'font-semibold text-slate-200' : 'text-slate-400'}`}>
+                    {detail}
+                  </span>
+                )}
               </span>
-              {detail && (
-                <span ref={detailRef} className={`min-w-0 flex-1 truncate text-xs ${highlight ? 'font-semibold text-slate-200' : 'text-slate-400'}`}>
-                  {detail}
+              {canExpand && (
+                <span className={`shrink-0 rounded px-1.5 text-xs font-bold ${panelOpen ? 'text-slate-300' : 'text-white'}`}>
+                  {panelOpen ? 'ซ่อน ' : actionsInPanel ? `ตัวเลือก ${actions.length} ` : ''}
+                  {panelOpen === dropDown ? '▴' : '▾'}
                 </span>
               )}
             </div>
-            {canExpand && (
-              <button
-                type="button"
-                onClick={togglePanel}
-                title={panelOpen ? 'ซ่อนเพื่อดูกระดาน' : 'อ่านทั้งหมด'}
-                className={`shrink-0 rounded-md px-2 py-0.5 text-xs font-bold ring-1 ring-white/25 hover:bg-white/10 ${panelOpen ? 'text-slate-300' : 'text-white'}`}
-              >
-                {/* ข้อความถูกตัด: ปุ่มเป็นแค่ลูกศร (ไม่กินที่ของคำถาม) */}
-                {panelOpen ? 'ซ่อน ' : actionsInPanel ? `ตัวเลือก ${actions.length} ` : ''}
-                {panelOpen === dropDown ? '▴' : '▾'}
-              </button>
-            )}
+            {/* ปุ่มรอง (ไม่ใช้ / ยกเลิก / ย้อนกลับ) ชิดป้ายเทิร์นด้านซ้าย */}
+            {!actionsInPanel && sideActions.length > 0 && <div className="btn-row flex shrink-0 gap-1.5">{sideActions.map((a) => renderBtn(a))}</div>}
           </div>
-          <div className="w-[76px] shrink-0" />
-          <div className="flex min-w-0 flex-1 items-center justify-end gap-2.5">
-            {!actionsInPanel && actions.length > 0 && <div className="btn-row flex min-w-0 justify-end gap-1.5">{actions.map((a) => renderBtn(a))}</div>}
+          {/* ช่องของป้ายเทิร์น (ป้ายวางทับกึ่งกลาง): เส้นคั่นที่ขอบซ้าย/ขวาของช่อง ระยะเท่ากันทั้งสองข้าง */}
+          {/* กว้าง 106 + px 6: ปุ่ม→เส้น = เส้น→ป้าย = 16px (ป้ายตาเรา 60px) */}
+          <div className="flex w-[106px] shrink-0 items-center justify-between px-1.5">
+            {!actionsInPanel && sideActions.length > 0 ? <BarDivider /> : <span />}
+            {!actionsInPanel && mainActions.length > 0 ? <BarDivider /> : <span />}
+          </div>
+          {/* ปุ่มหลักชิดป้ายเทิร์นด้านขวา (สายตาอยู่กลางจอ) · Chain ของคู่แข่ง / ปุ่มจบสเต็ปอยู่ขวาสุด */}
+          <div className="flex min-w-0 flex-1 items-center gap-2.5">
+            {!actionsInPanel && mainActions.length > 0 && <div className="btn-row flex min-w-0 gap-1.5">{mainActions.map((a) => renderBtn(a))}</div>}
+            <span className="flex-1" />
             <ChainTracker side="opp" />
             <PhaseButton btn={phaseBtn} />
           </div>
@@ -733,13 +782,8 @@ export function SummonPanel() {
     if (cardId) min = minCores(db.get(state.cards[cardId]!.cardNo));
   }
   if (!cardId) return null;
-  // มุมซ้ายบนของสนามผู้เลือก (สนามฝั่งบน = มุมซ้ายล่าง ไม่บังแถบกลาง)
-  const mat = layoutRect(document.querySelector(`[data-mat="${c.player}"]`));
-  if (!mat) return null;
-  const lower = mat.y + mat.h / 2 > innerHeight / 2;
-  // เลยคอลัมน์ Burst/Life ทางซ้ายไปอยู่ในพื้นที่สนาม
-  const left = mat.x + 150;
-  const style = lower ? { left, top: mat.y + 12 } : { left, top: mat.y + mat.h - 12, transform: 'translateY(-100%)' };
+  // มุมขวาของสนามผู้เลือก (ตำแหน่งเดียวกับแผงลงการ์ดจากมือ): ไม่บังแถบกลาง และไม่โดนหน้าต่างรายละเอียดการ์ดมุมซ้ายบัง
+  const style = panelStyle(c.player, 288);
   return (
     <div className="pointer-events-none fixed inset-y-0 left-0 right-[var(--sidebar)] z-[38]">
       <div className="hud-panel pointer-events-auto absolute flex w-72 gap-2.5 rounded-xl p-2.5" style={style}>

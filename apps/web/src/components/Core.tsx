@@ -42,34 +42,51 @@ export function Core({ coreId, size = 'md', board, onClick, mark: markProp, noFl
   // เล่นการ์ดจากมือ (แผงเล่นการ์ดบนกระดาน): Core ที่จะจ่าย/วางมีวงสี · คลิกเพื่อปรับ
   const playMark = useGame((s) => (board && s.playCores ? (s.playCores.marks[coreId] ?? null) : null));
   const playPick = useGame((s) => !!board && !!s.playCores?.pool.includes(coreId));
+  const playOn = useGame((s) => !!board && !!s.playCores);
   const cyclePlayCore = useGame((s) => s.cyclePlayCore);
-  const mark = markProp ?? playMark;
+  // Core ที่เลือกในคำถามของเอฟเฟกต์: จ่ายคอสต์ = จ่าย (แดง) · วาง Core อัญเชิญ = วาง (เขียว)
+  const selectedAs = useGame((s) =>
+    s.state.choice?.kind === 'payCost' ? 'pay' : s.state.choice?.kind === 'placeCores' || s.state.choice?.kind === 'multiSummon' ? 'place' : null,
+  );
+  const mark = markProp ?? playMark ?? (board && selected && selectedAs ? selectedAs : null);
   const startDrag = useGame((s) => s.startDrag);
   const endDrag = useGame((s) => s.endDrag);
   if (!core) return null;
 
+  // เฉพาะ Core ที่จะจ่าย/วางเท่านั้นที่มีวงสี (ยกขึ้น + ป้าย - / +) ส่วน Core ที่แค่คลิกได้ไม่มีวง
+  // (เดิมทุกดวงที่คลิกได้มีวงชมพู คอร์บนสนามมีวงสีหมดจนแยกไม่ออกว่าดวงไหนจ่าย ดวงไหนวาง)
   const ring =
     mark === 'pay'
-      ? 'ring-2 ring-rose-400 rounded-full bg-rose-500/30'
+      ? 'ring-[3px] ring-rose-500 rounded-full bg-rose-500/45 -translate-y-1 shadow-[0_0_10px_rgba(244,63,94,0.9)]'
       : mark === 'place'
-        ? 'ring-2 ring-emerald-400 rounded-full bg-emerald-500/30'
+        ? 'ring-[3px] ring-emerald-400 rounded-full bg-emerald-500/45 -translate-y-1 shadow-[0_0_10px_rgba(52,211,153,0.9)]'
         : selected
           ? 'ring-2 ring-yellow-300 rounded-full bg-yellow-300/30 -translate-y-0.5'
           : assigned
             ? 'ring-2 ring-emerald-400 rounded-full bg-emerald-500/30 opacity-70'
-          : (picking && selectable) || playPick
-            ? 'ring-2 ring-fuchsia-400/80 rounded-full'
             : '';
-  const img = (
+  // โหมดเลือก Core: ดวงที่คลิกได้แต่ยังไม่เลือก = ปกติ, ดวงที่คลิกไม่ได้ = จาง
+  const dimmed = (picking && !selectable && !mark) || (playOn && !playPick && !mark);
+  const pic = (
     <img
       ref={imgRef}
       data-core-img={flip ? coreId : undefined}
       src={core.isSoul ? IMG.soulCore : IMG.core}
       alt={core.isSoul ? 'Soul Core' : 'Core'}
       draggable={false}
-      className={`${SIZE[size]} shrink-0 drop-shadow transition ${core.isSoul && !mark ? 'soul-glow' : ''} ${ring} ${dragging ? 'opacity-40' : ''}`}
+      className={`${SIZE[size]} shrink-0 drop-shadow transition ${core.isSoul && !mark ? 'soul-glow' : ''} ${ring} ${dragging || dimmed ? 'opacity-40' : ''}`}
     />
   );
+  // ป้ายบอกหน้าที่: - = จ่าย, + = วางบนการ์ด (บนกระดานเท่านั้น ในแผงมีคำอธิบายอยู่แล้ว)
+  const img =
+    board && (mark === 'pay' || mark === 'place') ? (
+      <span className="core-mark">
+        {pic}
+        <span className={`core-badge ${mark === 'pay' ? 'bg-rose-400' : 'bg-emerald-300'}`}>{mark === 'pay' ? '-' : '+'}</span>
+      </span>
+    ) : (
+      pic
+    );
   const title = core.isSoul ? 'Soul Core' : 'Core';
 
   if (playPick) {

@@ -10,6 +10,20 @@ type SoulUse = 'keep' | 'pay' | 'place';
 
 const TITLE: Record<PlayKind, string> = { summon: 'อัญเชิญ', deployNexus: 'วาง Nexus', useMagic: 'ใช้ Magic' };
 
+const PANEL_W = 400;
+
+/**
+ * ตำแหน่งแผงลงการ์ด/อัญเชิญ: มุมขวาของสนามผู้เล่น (ก่อนคอลัมน์ Deck/Trash) ชิดขอบที่ติดแถบกลาง
+ * อยู่ขวา เพราะหน้าต่างรายละเอียดการ์ดลอยอยู่มุมซ้าย (จอเล็กจะบังแผงถ้าอยู่ซ้าย)
+ */
+export function panelStyle(player: string, width: number): React.CSSProperties {
+  const mat = layoutRect(document.querySelector(`[data-mat="${player}"]`));
+  if (!mat) return { right: 16, bottom: 16 };
+  const lower = mat.y + mat.h / 2 > innerHeight / 2;
+  const left = Math.max(mat.x + 150, mat.x + mat.w - 150 - width);
+  return lower ? { left, top: mat.y + 12 } : { left, top: mat.y + mat.h - 12, transform: 'translateY(-100%)' };
+}
+
 export function PlayDialog() {
   const play = useGame((s) => s.play);
   if (!play) return null;
@@ -114,17 +128,14 @@ function PlayDialogInner({ cardId, kind, timing, braveOnto }: { cardId: string; 
     { id: 'place', label: 'วางบนการ์ดนี้', show: !mustSoul && allowPlace && chosen.need > 0 },
   ];
 
-  // มุมสนามของผู้เล่น (เหมือนแผงอัญเชิญด้วยเอฟเฟกต์): ไม่บังกระดาน
-  const mat = layoutRect(document.querySelector(`[data-mat="${player}"]`));
-  const lower = !mat || mat.y + mat.h / 2 > innerHeight / 2;
-  const left = mat ? mat.x + 150 : 16;
-  const style = !mat ? { left, bottom: 16 } : lower ? { left, top: mat.y + 12 } : { left, top: mat.y + mat.h - 12, transform: 'translateY(-100%)' };
+  // มุมขวาของสนามผู้เล่น (เหมือนแผงอัญเชิญด้วยเอฟเฟกต์): ไม่บังกระดาน และไม่โดนหน้าต่างรายละเอียดการ์ด (มุมซ้าย) บังบนจอเล็ก
+  const style = panelStyle(player, PANEL_W);
   const after =
     allowPlace && level !== undefined && level > 0 ? (def.type === 'nexus' ? `Lv${level}` : `Lv${level} · BP ${bpOf(def, placement.length).toLocaleString()}`) : null;
 
   return (
     <div className="pointer-events-none fixed inset-y-0 left-0 right-[var(--sidebar)] z-[38]">
-      <div className="hud-panel pointer-events-auto absolute flex w-[25rem] gap-3 rounded-xl p-3" style={style}>
+      <div className="hud-panel pointer-events-auto absolute flex gap-3 rounded-xl p-3" style={{ ...style, width: PANEL_W }}>
         <div className="flex w-24 shrink-0 flex-col gap-1">
           <div className="h-34 w-24" onMouseEnter={() => hover(cardId)} onMouseLeave={() => hover(null)}>
             <CardFace def={def} level={level} />
