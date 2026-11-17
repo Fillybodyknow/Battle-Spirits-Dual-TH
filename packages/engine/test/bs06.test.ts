@@ -139,6 +139,24 @@ describe('Booster Set 06', () => {
     expect(s.cards[plain]!.state).toBe('refresh');
   });
 
+  it('Kagemusha: โดนตีระบุ (เลือกผู้ป้องกัน) → อัญเชิญ S23 แล้ว S23 เป็นผู้ป้องกันแทน', () => {
+    let s = setup();
+    const shuwkai = put(s, 'p1', no('ชิคิงามิ ชูวไค'), 1); // เมื่อโจมตี: ตีระบุสปิริตคอร์ไม่เกิน 2
+    const target = put(s, 'p2', DARIU, 1, true);
+    const s23 = inHand(s, 'p2', no('นักรบเครื่องกล S23'));
+    s = attack(s, shuwkai);
+    expect(s.choice).toMatchObject({ kind: 'card', player: 'p1' });
+    s = choose(s, target);
+    expect(s.choice).toMatchObject({ kind: 'option', player: 'p2' });
+    s = choose(s, optionIndex(s, 'อัญเชิญ'));
+    s = choose(s, { pay: normalCores(s, 'p2').slice(0, (s.choice as { cost: number }).cost) });
+    s = choose(s, { pay: normalCores(s, 'p2').slice(0, 1) });
+    expect(s.choice).toMatchObject({ kind: 'card', player: 'p1', candidates: [s23] });
+    s = choose(s, s23);
+    expect(s.battle?.blockers ?? s.battle?.chosenBlockers).toContain(s23);
+    expect(s.battle?.blockers).not.toContain(target);
+  });
+
   it('ไทคูน: สปิริตเผ่าข้ารับใช้ไม่มี Soul Core ก็ใช้ Kagemusha ได้ · อู่พิทักษ์สวรรค์: เสื่อมสภาพเน็กซัสเพื่ออัญเชิญไม่จ่ายคอสต์', () => {
     let s = setup();
     put(s, 'p2', no('จอมทัพใหญ่จักรกล ไทคูน'), 1);

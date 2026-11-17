@@ -16,6 +16,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '12.0.0',
+    date: '2026-11-18',
+    items: [
+      'แก้ Kagemusha ไม่ทำงานเมื่อสปิริตที่มี Soul Core โดนตีระบุ (เลือกผู้ป้องกัน): ตอนนี้อัญเชิญการ์ด Kagemusha ได้ และการ์ดนั้นเป็นผู้ป้องกันแทน',
+      'ต้องอัปเดตทั้งสองฝั่งก่อนเล่นออนไลน์ด้วยกัน',
+    ],
+  },
+  {
     version: '11.0.0',
     date: '2026-11-18',
     items: [

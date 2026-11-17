@@ -654,6 +654,8 @@ function ask(ctx: Ctx, item: QueuedEffect, choice: DistributiveOmit<PendingChoic
 
 /** step ที่เล็งการ์ดของคู่แข่ง (เปิดให้ Kagemusha ทำงาน) */
 const KAGE_STEPS = new Set<Step['do']>([
+  // ตีระบุ / เลือกผู้ป้องกัน
+  'chooseBlockers',
   'destroyChosenOpponent',
   'debuffChosenOpponent',
   'exhaustOpponent',
