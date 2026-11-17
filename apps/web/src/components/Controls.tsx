@@ -19,6 +19,7 @@ import {
   viewPlayer,
 } from '../store';
 import { CardFace } from './CardFace';
+import { useHeld } from './useHeld';
 import { ChainTracker, RevealFan } from './Fx';
 import { BTN, Modal } from './Modal';
 import { panelStyle } from './PlayDialog';
@@ -383,12 +384,7 @@ export function PromptBar() {
       </button>
     );
 
-  const fighter = (id: string) => (
-    <span key={id} title={cardName(state, id)} className="flex min-w-0 items-baseline gap-1 rounded bg-black/40 px-2 py-0.5">
-      <span className="min-w-0 truncate">{cardName(state, id)}</span>
-      <b className="shrink-0 text-yellow-300">{currentBp(state, db, id).toLocaleString()}</b>
-    </span>
-  );
+  const fighter = (id: string) => <Fighter key={id} id={id} />;
   const lifePerBlocker = battle ? battle.lifeOnBlockerDestroyed + (battle.consecutiveBlade ? battle.lifeOnBlockerDestroyedByBlade : 0) : 0;
   const sourceDef = source && state.cards[source] ? db.get(state.cards[source]!.cardNo) : null;
 
@@ -547,6 +543,9 @@ export function FlashCue() {
     return () => clearTimeout(t);
   }, [cue]);
   if (!shown) return null;
+  // ช่วงนั้นจบแล้ว (ผ่าน/ประกาศป้องกัน/มีแอนิเมชันเล่นต่อ): เก็บป้ายทันที ไม่ให้ค้างทับแอนิเมชันถัดไป
+  const key = (c: string) => c.slice(0, c.lastIndexOf('|'));
+  if (!cue || key(cue) !== key(shown)) return null;
   const [, , step, , fp, n] = shown.split('|');
   return (
     <div
@@ -954,5 +953,18 @@ export function TrashDialog() {
         </div>
       )}
     </Modal>
+  );
+}
+
+/** ผู้ต่อสู้ในแถบ BATTLE: BP ตามจังหวะแอนิเมชัน (ค่าที่หน่วงไว้แบบเดียวกับป้าย BP บนการ์ด) */
+function Fighter({ id }: { id: string }) {
+  const state = useGame((s) => s.state);
+  const held = useHeld(id);
+  const bp = held?.bp ?? currentBp(state, db, id);
+  return (
+    <span title={cardName(state, id)} className="flex min-w-0 items-baseline gap-1 rounded bg-black/40 px-2 py-0.5">
+      <span className="min-w-0 truncate">{cardName(state, id)}</span>
+      <b className="shrink-0 text-yellow-300">{bp.toLocaleString()}</b>
+    </span>
   );
 }

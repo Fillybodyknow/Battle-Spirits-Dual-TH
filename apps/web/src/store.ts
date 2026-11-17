@@ -437,7 +437,12 @@ export type Fx =
       from: Rect | string | null;
       to: string;
       /** move = ย้ายโซน (ลง Trash / ขึ้นมือ / เซ็ท Burst), shrink = ย่อลงกลางปลายทาง (ช่อง Trash) */
-      mode: 'draw' | 'play' | 'magic' | 'burst' | 'move';
+      /** brave = ลอยขึ้นเหนือผู้ร่วมร่าง (via) แล้วหมุนเข้าช่องเบรฟ */
+      mode: 'draw' | 'play' | 'magic' | 'burst' | 'move' | 'brave';
+      /** (brave) ผู้ร่วมร่าง */
+      via?: string;
+      /** มุมหมุนตอนเริ่ม (การ์ดที่นอนอยู่บนสนาม = 90) แล้วค่อยตั้งตรงระหว่างบิน */
+      fromRotate?: number;
       shrink?: boolean;
       /** บินแบบคว่ำ (เซ็ท Burst) */
       faceDown?: boolean;
@@ -450,6 +455,8 @@ export type Fx =
       landSound?: SfxName;
       /** ออกจากสนามแบบหงาย แล้วค่อยพลิกคว่ำกลางทาง (กลับขึ้นมือที่อีกฝ่ายมองไม่เห็น) */
       revealFirst?: boolean;
+      /** faceDown: เริ่มหงาย (เฉพาะคนที่เห็นการ์ดใบนี้ในมือ) แล้วพลิกคว่ำกลางทาง (เซ็ท Burst) */
+      flipMid?: boolean;
       delay: number;
       hideTarget: boolean;
     }
@@ -526,6 +533,7 @@ function snapRects(): Record<string, Rect> {
   grab('[data-hand-card]', (el) => `hand:${el.dataset.handCard}`);
   grab('[data-field-card] > div:first-child', (el) => `field:${el.parentElement!.dataset.fieldCard}`);
   grab('[data-burst-card]', (el) => `burst:${el.dataset.burstCard}`);
+  grab('[data-brave-card]', (el) => `brave:${el.dataset.braveCard}`);
   grab('[data-trash]', (el) => `trash:${el.dataset.trash}`);
   return out;
 }
@@ -574,6 +582,10 @@ const T = {
   landHeavy: 1350,
   /** การ์ดบนสนามยกขึ้นเรืองแสงก่อนเอฟเฟกต์ทำงาน */
   activate: 1500,
+  /** พุ่ง (ประกาศโจมตี/ป้องกัน) */
+  lunge: 520,
+  /** เบรฟลอยไปร่วมร่าง */
+  braveJoin: 900,
   /** Magic / Burst ค้างกลางจอก่อนผลเกิด (แบบเดิม) */
   spell: 1250,
   /** Spell Stage: ยก/พลิก → ไปที่เวที → เรืองแสง ก่อนผลของการ์ดเริ่ม */
@@ -658,6 +670,8 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
   const fromReveal = (id: string, fallback: string) => (revealed.has(id) ? `[data-reveal-card="${id}"]` : fallback);
   let draws = 0;
   const onAnyField = (id: string) => PLAYERS.some((p) => s.players[p].field.includes(id) || prev.players[p].field.includes(id));
+  /** การ์ดที่นอนอยู่บนสนามก่อน action นี้ (เสื่อมสภาพ): ภาพบินเริ่มจากท่านอน */
+  const lyingRot = (id: string) => (prev.players[prev.cards[id]?.owner ?? 'p1'].field.includes(id) && prev.cards[id]?.state === 'exhausted' ? 90 : 0);
 
   // Spell Stage: เมจิก/เบิร์สที่กำลังร่ายใน action นี้ + ที่ค้างอยู่บนเวทีจาก action ก่อน (รอเลือกจ่าย Flash / วาง Core ฯลฯ)
   type SpellIn = Extract<FxInput, { kind: 'spell' }>;
@@ -844,9 +858,14 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
                   : (rects[`hand:${e.cardId}`] ?? null);
           // Brave ที่ร่วมร่าง: บินไปที่ผู้ร่วมร่าง
           const host = Object.values(s.cards).find((c) => c.braves.includes(e.cardId));
-          const dest = host ? `[data-brave-card="${e.cardId}"]` : to;
-          out.push({ kind: 'fly', cardId: e.cardId, from, to: dest, mode: 'play', heavy, rare: rank === 3, delay: t, hideTarget: true });
-          t += heavy ? T.landHeavy : T.land;
+          if (host) {
+            // ลอยขึ้นเหนือผู้ร่วมร่าง แล้วหมุนเข้าช่องเบรฟ (ป้าย BRAVE! ตามมาจากเหตุการณ์ braved)
+            out.push({ kind: 'fly', cardId: e.cardId, from, to: `[data-brave-card="${e.cardId}"]`, via: `[data-field-card="${host.id}"] > div:first-child`, mode: 'brave', delay: t, hideTarget: true });
+            t += T.braveJoin;
+          } else {
+            out.push({ kind: 'fly', cardId: e.cardId, from, to, mode: 'play', heavy, rare: rank === 3, delay: t, hideTarget: true });
+            t += heavy ? T.landHeavy : T.land;
+          }
         }
         break;
       }
@@ -991,6 +1010,16 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         if (charge) break; // ตัดสินใน action เดียวกัน: แสดงแค่การวิ่งชน
         const target = opponentOf(s.cards[e.attackerId]!.owner);
         out.push({ kind: 'lunge', cardId: e.attackerId, target: `[data-player-target="${target}"]`, delay: t, max: 36 });
+        // เอฟเฟกต์ "เมื่อสปิริตนี้โจมตี" เริ่มหลังพุ่งเสร็จ (การ์ดนอนลงแล้ว)
+        t += T.lunge;
+        break;
+      }
+      case 'blockDeclared': {
+        if (charge) break;
+        // ผู้ป้องกันนอนลงแล้วขยับเข้าหาผู้โจมตี ก่อนเอฟเฟกต์ "เมื่อสปิริตนี้ป้องกัน"
+        const atk = s.battle?.attackerId ?? pb?.attackerId;
+        if (atk) out.push({ kind: 'lunge', cardId: e.blockerId, target: `[data-field-card="${atk}"]`, delay: t, max: 24 });
+        t += T.lunge;
         break;
       }
       case 'destroyed':
@@ -1031,7 +1060,7 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
       case 'bounced': {
         const rect = rects[`field:${e.cardId}`];
         // ค้างที่ช่องบนสนามจนถึงคิวของตัวเอง (FlyCard fill both) แล้วบินขึ้นมือ · กลับหลายตัวในเอฟเฟกต์เดียว = ไล่ตามกันถี่ ๆ
-        if (rect) out.push({ kind: 'fly', cardId: e.cardId, from: rect, to: `[data-hand-card="${e.cardId}"]`, mode: 'move', delay: t, hideTarget: true, revealFirst: true });
+        if (rect) out.push({ kind: 'fly', cardId: e.cardId, from: rect, to: `[data-hand-card="${e.cardId}"]`, mode: 'move', delay: t, hideTarget: true, revealFirst: true, fromRotate: lyingRot(e.cardId) });
         out.push({ kind: 'float', anchor: `[data-hand-card="${e.cardId}"]`, text: 'กลับขึ้นมือ', tone: 'bad', delay: t });
         t += 260;
         break;
@@ -1039,7 +1068,7 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
       case 'returnedToDeck': {
         // การ์ดบนสนามบินกลับเด็ค (คว่ำ)
         const rect = rects[`field:${e.cardId}`];
-        if (rect) out.push({ kind: 'fly', cardId: e.cardId, from: rect, to: `[data-deck="${e.player}"]`, mode: 'move', shrink: true, faceDown: true, delay: t, hideTarget: false });
+        if (rect) out.push({ kind: 'fly', cardId: e.cardId, from: rect, to: `[data-deck="${e.player}"]`, mode: 'move', shrink: true, faceDown: true, delay: t, hideTarget: false, fromRotate: lyingRot(e.cardId) });
         out.push({ kind: 'float', anchor: `[data-deck="${e.player}"]`, text: e.where === 'top' ? 'บนสุดเด็ค' : 'ใต้สุดเด็ค', tone: 'bad', delay: t });
         t += 500;
         break;
@@ -1082,10 +1111,13 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         t += 300;
         break;
       case 'braved': {
-        const rect = rects[`field:${e.cardId}`];
+        // อัญเชิญมาร่วมร่างใน action นี้: ภาพบินเล่นไปแล้วตอน summoned
+        const summonedNow = events.some((x) => x.type === 'summoned' && x.cardId === e.cardId);
+        // ร่วมร่างจากสนาม (เบรฟเดี่ยว) หรือย้ายจากผู้ร่วมร่างเดิม (ตำแหน่งช่องเบรฟเดิม)
+        const rect = summonedNow ? undefined : (rects[`field:${e.cardId}`] ?? rects[`brave:${e.cardId}`]);
         if (rect) {
-          out.push({ kind: 'fly', cardId: e.cardId, from: rect, to: `[data-brave-card="${e.cardId}"]`, mode: 'move', delay: t, hideTarget: true });
-          t += 450;
+          out.push({ kind: 'fly', cardId: e.cardId, from: rect, to: `[data-brave-card="${e.cardId}"]`, via: `[data-field-card="${e.hostId}"] > div:first-child`, mode: 'brave', delay: t, hideTarget: true, ...(rects[`field:${e.cardId}`] ? { fromRotate: lyingRot(e.cardId) } : {}) });
+          t += T.braveJoin;
         }
         out.push({ kind: 'float', anchor: `[data-field-card="${e.hostId}"]`, text: 'BRAVE!', tone: 'good', delay: t, sound: 'brave' });
         break;
@@ -1198,7 +1230,23 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
           out.push({ kind: 'fly', cardId: e.replacedCardId, from: rects[`burst:${e.player}`] ?? null, to: `[data-trash="${e.player}"]`, mode: 'move', shrink: true, delay: t, hideTarget: false });
         }
         const set = s.players[e.player].burst;
-        if (set) out.push({ kind: 'fly', cardId: set, from: rects[`hand:${set}`] ?? null, to: `[data-burst-card="${e.player}"]`, mode: 'move', delay: t, hideTarget: false, faceDown: true, landSound: 'burstSet' });
+        // ใบใหม่: ออกจากมือแบบหงาย (เฉพาะคนที่เห็นมือนั้น) แล้วพลิกคว่ำกลางทาง · ใบเดิมออกจากช่องก่อนเล็กน้อย
+        // ช่อง Burst ซ่อนใบใหม่ไว้จนบินถึง (hideTarget)
+        if (set) {
+          out.push({
+            kind: 'fly',
+            cardId: set,
+            from: rects[`hand:${set}`] ?? rects[`field:${set}`] ?? null,
+            to: `[data-burst-card="${e.player}"]`,
+            mode: 'move',
+            delay: t + (e.replacedCardId ? 250 : 0),
+            hideTarget: true,
+            faceDown: true,
+            flipMid: true,
+            landSound: 'burstSet',
+          });
+          t += e.replacedCardId ? 250 : 0;
+        }
         break;
       }
       case 'gameOver': {
@@ -1257,7 +1305,7 @@ function fxEnd(f: FxInput): number {
   const d = 'delay' in f ? (f.delay ?? 0) : 0;
   switch (f.kind) {
     case 'fly':
-      return d + (f.mode === 'play' && f.heavy ? 1100 : { draw: 420, move: 480, play: 640, magic: 2000, burst: 1900 }[f.mode]);
+      return d + (f.mode === 'play' && f.heavy ? 1100 : { draw: 420, move: 480, play: 640, magic: 2000, burst: 1900, brave: 900 }[f.mode]);
     case 'summon':
       return d + (f.special ? CUTIN_MS.special : CUTIN_MS.normal);
     case 'spell':
@@ -1623,6 +1671,10 @@ function playFxSounds(list: Fx[]) {
           sfx('draw', f.delay);
           sfx(f.landSound, f.delay + 400);
         } else if (f.mode === 'move') sfx('draw', f.delay);
+        else if (f.mode === 'brave') {
+          sfx('swish', f.delay);
+          sfx('whoosh', f.delay + 560);
+        }
         break;
       case 'cardActivate':
         sfx('activate', f.delay);

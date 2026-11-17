@@ -697,13 +697,17 @@ function FlyCard({ fx, onDone }: { fx: Extract<Fx, { kind: 'fly' }>; onDone: () 
   );
   const [flipped, setFlipped] = useState(fx.mode !== 'burst');
   // ออกจากสนามแบบหงาย: พลิกคว่ำกลางทาง
-  const [revealed, setRevealed] = useState(!!fx.revealFirst);
+  const ownerVisible = useGame((s) => {
+    const owner = s.state.cards[fx.cardId]?.owner;
+    return !!owner && !hiddenFrom(s, owner);
+  });
+  const [revealed, setRevealed] = useState(!!fx.revealFirst || (!!fx.flipMid && ownerVisible));
 
   useLayoutEffect(() => {
     const el = ref.current;
     // 'center' = ต่อจาก cut-in X-Rare: เริ่มจากการ์ดใหญ่กลางจอ
     // 'stage:<owner>' = ออกจากเวทีของการ์ดที่ร่าย (เช่น เบิร์สที่อัญเชิญตัวเองลงสนาม)
-    const from =
+    const from0 =
       fx.from === 'center'
         ? boardCenter(300, 420)
         : typeof fx.from === 'string' && fx.from.startsWith('stage:')
@@ -712,6 +716,11 @@ function FlyCard({ fx, onDone }: { fx: Extract<Fx, { kind: 'fly' }>; onDone: () 
           : typeof fx.from === 'string'
             ? rectOf(document.querySelector(fx.from))
             : fx.from;
+    // การ์ดที่นอนอยู่ (กรอบแนวนอน): วาดการ์ดตั้งตรงขนาดเดิมแล้วหมุน fromRotate ให้ทับตำแหน่งเดิมพอดี
+    const from =
+      from0 && fx.fromRotate && from0.w > from0.h
+        ? { x: from0.x + from0.w / 2 - from0.h / 2, y: from0.y + from0.h / 2 - from0.w / 2, w: from0.h, h: from0.w }
+        : from0;
     if (!el || !from) return onDone();
     let anim: Animation;
     if (fx.mode === 'magic' || fx.mode === 'burst') {
@@ -725,6 +734,24 @@ function FlyCard({ fx, onDone }: { fx: Extract<Fx, { kind: 'fly' }>; onDone: () 
         { duration: fx.mode === 'magic' ? 2000 : 1900, delay: fx.delay, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' },
       );
       if (fx.mode === 'burst') setTimeout(() => setFlipped(true), fx.delay + 280);
+    } else if (fx.mode === 'brave') {
+      // ร่วมร่าง: ลอยขึ้นเหนือผู้ร่วมร่าง (ขนาดใกล้เคียงการ์ดบนสนาม) → หมุนลงช่องเบรฟที่มุมการ์ด
+      const slotEl = document.querySelector<HTMLElement>(fx.to);
+      const slot = rectOf(slotEl);
+      if (!slotEl || !slot) return onDone();
+      const host = fx.via ? rectOf(document.querySelector(fx.via)) : null;
+      const rot = slotEl.className.includes('-rotate-12') ? -12 : 12;
+      const over = host ? { x: host.x + host.w * 0.15, y: host.y - host.h * 0.45, w: host.w * 0.7, h: host.h * 0.7 } : slot;
+      const glow = '0 0 26px 8px rgba(52,211,153,0.85)';
+      anim = el.animate(
+        [
+          frame(from, { opacity: 1, transform: `rotate(${fx.fromRotate ?? 0}deg)` }),
+          frame(over, { offset: 0.45, opacity: 1, transform: 'rotate(-4deg)', boxShadow: glow, filter: 'brightness(1.2)', easing: 'ease-in-out' }),
+          frame({ ...over, y: over.y - 8 }, { offset: 0.65, opacity: 1, transform: 'rotate(0deg)', boxShadow: glow, filter: 'brightness(1.5)', easing: 'cubic-bezier(.7,0,.9,.6)' }),
+          frame(slot, { opacity: 1, transform: `rotate(${rot}deg)`, boxShadow: glow, filter: 'brightness(2)' }),
+        ],
+        { duration: 900, delay: fx.delay, fill: 'both' },
+      );
     } else {
       const slot = rectOf(document.querySelector(fx.to));
       if (!slot) return onDone();
@@ -755,14 +782,22 @@ function FlyCard({ fx, onDone }: { fx: Extract<Fx, { kind: 'fly' }>; onDone: () 
         fx.mode === 'draw'
           ? [frame(from, { opacity: 0.6 }), frame(to, { opacity: 1 })]
           : fx.mode === 'move'
-            ? [frame(from, { opacity: 1 }), frame(mid, { offset: 0.5, opacity: 1, transform: 'rotate(-6deg)' }), frame(to, { opacity: fx.shrink ? 0.2 : 1 })]
+            ? [
+                frame(from, { opacity: 1, transform: `rotate(${fx.fromRotate ?? 0}deg)`, filter: fx.fromRotate ? 'brightness(0.75)' : 'none' }),
+                frame(mid, { offset: 0.5, opacity: 1, transform: 'rotate(-6deg)', filter: 'none' }),
+                frame(to, { opacity: fx.shrink ? 0.2 : 1, transform: 'rotate(0deg)', filter: 'none' }),
+              ]
           : [frame(from, { opacity: 1 }), frame(mid, { offset: 0.55, opacity: 1, transform: 'scale(1.12)' }), frame(to, { opacity: 1 })],
         // ย้ายโซน: ค้างที่จุดเริ่มระหว่างรอคิว (การ์ดออกจากโซนเดิมใน state ไปแล้ว ไม่ให้หายวับ)
         { duration: fx.mode === 'draw' ? 420 : fx.mode === 'move' ? 480 : 520, delay: fx.delay, easing: 'cubic-bezier(.3,.7,.3,1)', fill: fx.mode === 'move' ? 'both' : 'forwards' },
       );
-      if (fx.revealFirst) setTimeout(() => setRevealed(false), fx.delay + 240);
+      if (fx.revealFirst || fx.flipMid) setTimeout(() => setRevealed(false), fx.delay + 240);
     }
     anim.onfinish = () => {
+      if (fx.mode === 'brave' && fx.via) {
+        const host = document.querySelector(fx.via);
+        if (host) landImpact(host, '#34d399', false);
+      }
       if (fx.mode === 'play') {
         const target = document.querySelector(fx.to);
         const c = useGame.getState().state.cards[fx.cardId];

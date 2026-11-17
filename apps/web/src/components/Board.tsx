@@ -9,6 +9,7 @@ import { castHandSlots, sortHand } from '../store';
 import { CastRestCard, pickingCores } from './Fx';
 import { actingPlayer, canEvolve, db, isMultiHostCandidate, flashPlayer, inMain, isChoiceCandidate, isFxBlocking, handMagicTimings, responseOptions, simulateEvolve, simulateMove, useGame } from '../store';
 import { useFlashUsable } from './Controls';
+import { useHeld } from './useHeld';
 import { CardBack, CardFace } from './CardFace';
 import { FieldCracks } from './Cracks';
 import { Core, CoreRow, CoreTray } from './Core';
@@ -104,29 +105,6 @@ function BraveMenu({ braveId, onClose }: { braveId: string; onClose: () => void 
   );
 }
 
-/** ค่าที่หน่วงไว้ของการ์ดนี้ (ถ้ายังไม่ถึงเวลา) — render ใหม่เองเมื่อหมดเวลา */
-function useHeld(cardId: string): { bp?: number; level?: number; exhausted?: true } | null {
-  const hold = useGame((s) => s.holds[cardId]);
-  const [, tick] = useState(0);
-  useEffect(() => {
-    if (!hold) return;
-    const now = performance.now();
-    const timers = [hold.until, hold.exhaustedUntil ?? 0]
-      .filter((t) => t > now)
-      .map((t) => setTimeout(() => tick((n) => n + 1), t - now + 10));
-    return () => timers.forEach(clearTimeout);
-  }, [hold]);
-  if (!hold) return null;
-  const now = performance.now();
-  const out: { bp?: number; level?: number; exhausted?: true } = {};
-  if (now < hold.until) {
-    if (hold.bp !== undefined) out.bp = hold.bp;
-    if (hold.level !== undefined) out.level = hold.level;
-  }
-  if (hold.exhaustedUntil && now < hold.exhaustedUntil) out.exhausted = true;
-  return out;
-}
-
 function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }) {
   const state = useGame((s) => s.state);
   const dragging = useGame((s) => s.dragging);
@@ -139,6 +117,8 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
   const evolveMode = useGame((s) => !!s.evolveCard);
   const selectedCores = useGame((s) => s.selectedCores);
   const flying = useFlying(cardId);
+  /** เบรฟที่กำลังบินมาร่วมร่าง: ช่องเบรฟซ่อนไว้จนบินถึง */
+  const flyingBraves = useGame((s) => s.fx.filter((f) => f.kind === 'fly' && f.hideTarget).map((f) => (f.kind === 'fly' ? f.cardId : '')).join(','));
   const { clickFieldCard, moveCoresTo, openEvolve, closeEvolve, hover, openPlay } = useGame.getState();
   const [over, setOver] = useState(false);
   /** กำลังลาก Brave จากมือ และสปิริตนี้ร่วมร่างได้ */
@@ -334,7 +314,7 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
           <div
             key={b}
             data-brave-card={b}
-            className={`absolute top-6 z-[5] h-[4.6rem] w-[3.3rem] rounded ${bi % 2 === 0 ? '-right-8 rotate-12' : '-left-8 -rotate-12'} shadow-[0_4px_10px_rgba(0,0,0,0.7)] ${
+            className={`absolute top-6 z-[5] h-[4.6rem] w-[3.3rem] rounded ${bi % 2 === 0 ? '-right-8 rotate-12' : '-left-8 -rotate-12'} ${flyingBraves.split(',').includes(b) ? 'invisible' : ''} shadow-[0_4px_10px_rgba(0,0,0,0.7)] ${
               braveCandidate ? 'cursor-pointer ring-4 ring-fuchsia-400' : 'ring-2 ring-emerald-300'
             }`}
             title={`Brave: ${db.get(state.cards[b]!.cardNo).name}${ownTurnMain ? ' · คลิกเพื่อแยกร่าง/ย้าย' : ''}`}
@@ -578,7 +558,10 @@ function BurstSlot({ player }: { player: PlayerId }) {
   const state = useGame((s) => s.state);
   const hiddenBurst = useGame((s) => hiddenFrom(s, player));
   const { hover, pin } = useGame.getState();
-  const burst = state.players[player].burst;
+  const setBurst = state.players[player].burst;
+  // ใบที่กำลังบินมาเซ็ท: ช่องยังว่างจนบินถึง
+  const flyingIn = useFlying(setBurst ?? '');
+  const burst = flyingIn ? null : setBurst;
   const visible = !!burst && !hiddenBurst;
   const dropOk = useGame((s) => !!s.handDrag && s.state.cards[s.handDrag]!.owner === player && canDropBurst(s.state, s.handDrag));
   const dropHand = useGame((s) => s.dropHand);
