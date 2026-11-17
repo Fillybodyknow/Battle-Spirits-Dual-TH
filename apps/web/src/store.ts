@@ -541,6 +541,8 @@ export const CAST_MS = { intro: 1150, lift: 420, arrive: 420, glow: 450, pulse: 
 
 /** ความยาว cut-in อัญเชิญ (X / XX·XV) ใช้ทั้งไทม์ไลน์และตัวแอนิเมชันใน Fx */
 export const CUTIN_MS = { normal: 2500, special: 3300 } as const;
+/** จังหวะที่การ์ดทุบกลางจอใน cut-in (สัดส่วนของความยาว): ก่อนหน้า = ชาร์จพลัง, ตรงนี้ = แสงวาบ/คลื่น/จอสั่น */
+export const CUTIN_SLAM = 0.17;
 
 const T = {
   /** ป้ายสเต็ปเล็ก (Start/Core/Draw/Refresh/Main/End) */
@@ -1388,9 +1390,12 @@ export function castCards(s: GameState): string[] {
       const pl = s.players[p];
       return pl.hand.includes(id) || pl.field.includes(id) || pl.trashCards.includes(id) || pl.deck.includes(id) || pl.burst === id || pl.field.some((f) => s.cards[f]!.braves.includes(id));
     });
+  // เฉพาะเมจิก (ลง Trash เมื่อเอฟเฟกต์จบ) และเบิร์สที่เปิดอยู่ · การ์ดอื่นที่ไม่อยู่ในโซน (เช่น เบรฟที่แยกออกมารอเลือกว่าจะอยู่ต่อไหม) ไม่ใช่การ์ดที่กำลังร่าย
+  const casting = (q: GameState['queue'][number]) => q.trashWhenDone || !!q.isBurst;
   const ids = new Set<string>();
-  for (const q of s.queue) if (s.cards[q.sourceId] && !placed(q.sourceId)) ids.add(q.sourceId);
-  if (s.choice?.kind === 'placeCores' && !placed(s.choice.cardId)) ids.add(s.choice.cardId);
+  for (const q of s.queue) if (casting(q) && s.cards[q.sourceId] && !placed(q.sourceId)) ids.add(q.sourceId);
+  const pc = s.choice?.kind === 'placeCores' ? s.choice.cardId : null;
+  if (pc && !placed(pc) && s.queue.some((q) => q.sourceId === pc && casting(q))) ids.add(pc);
   return [...ids];
 }
 
@@ -1544,9 +1549,15 @@ function playFxSounds(list: Fx[]) {
         sfx('bigdamage', f.delay + 380);
         sfx('burst', f.delay + 420);
         break;
-      case 'summon':
-        sfx('xrare', f.delay);
+      case 'summon': {
+        // ชาร์จ → ทุบ (เสียงกระแทกหนัก ตรงจังหวะแสงวาบ)
+        const slam = f.delay + Math.round((f.special ? CUTIN_MS.special : CUTIN_MS.normal) * CUTIN_SLAM);
+        sfx('whoosh', f.delay);
+        sfx('xrare', slam - 60);
+        sfx('impact', slam);
+        sfx('bigdamage', slam + 20);
         break;
+      }
       case 'fly':
         if (f.mode === 'draw') sfx('draw', f.delay);
         else if (f.mode === 'play' && f.heavy) {

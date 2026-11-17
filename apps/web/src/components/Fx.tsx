@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { opponentOf, type PlayerId } from '@bs/engine';
 import { cardArt } from '../assets';
-import { CAST_MS, CUTIN_MS, castCards, castHandSlots, castTone, controls, CHARGE_KNOCK, actingPlayer, chainEntries, viewPlayer, db, fieldScaleOf, GHOST_MS, isFxBlocking, layoutRect, MILL_MS, millBreakAt, millDuration, PLAY_HIT, useGame, type Fx, type Rect, hiddenFrom } from '../store';
+import { CAST_MS, CUTIN_MS, CUTIN_SLAM, castCards, castHandSlots, castTone, controls, CHARGE_KNOCK, actingPlayer, chainEntries, viewPlayer, db, fieldScaleOf, GHOST_MS, isFxBlocking, layoutRect, MILL_MS, millBreakAt, millDuration, PLAY_HIT, useGame, type Fx, type Rect, hiddenFrom } from '../store';
 import { CardBack, CardFace } from './CardFace';
 import { sfx } from '../sfx';
 import { effects, flashScale, shakeScale } from '../gfx';
@@ -108,11 +108,18 @@ function SummonCutIn({ fx, onDone }: { fx: Extract<Fx, { kind: 'summon' }>; onDo
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  // จังหวะการ์ดทุบกลางจอ: จอสั่น
-  const SLAM = 0.26;
+  // จังหวะการ์ดทุบกลางจอ: จอสั่นแรงทั้งฉาก cut-in และกระดานด้านหลัง
+  const SLAM = CUTIN_SLAM;
+  const rootRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!shown) return;
-    const t = setTimeout(() => shakeMain(fx.special ? [[-12, 6], [10, -7], [-7, 4], [4, -2]] : [[-8, 4], [7, -4], [-4, 2]], fx.special ? 520 : 400), dur * SLAM);
+    const t = setTimeout(() => {
+      const pts: [number, number][] = fx.special
+        ? [[-22, 12], [18, -14], [-14, 9], [10, -6], [-5, 3], [2, -1]]
+        : [[-16, 9], [13, -10], [-9, 6], [5, -3], [-2, 1]];
+      shakeEl(rootRef.current, pts, fx.special ? 560 : 460);
+      shakeMain(pts, fx.special ? 560 : 460);
+    }, dur * SLAM);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shown]);
@@ -137,30 +144,88 @@ function SummonCutIn({ fx, onDone }: { fx: Extract<Fx, { kind: 'summon' }>; onDo
         backgroundSize: '48px 100%, 100% 100%',
         boxShadow: `0 0 40px ${ray}`,
         transform: 'skewY(-8deg)',
-        animation: `fx-ci-band ${ms(0.42)} ${ms(delay)} cubic-bezier(.2,.9,.2,1) both, fx-ci-lines 0.35s linear infinite, fx-ci-band-out ${ms(0.18)} ${ms(0.8)} ease-in both`,
+        // ปาดเข้าทันทีตอนทุบ (สั้นและเร็ว)
+        animation: `fx-ci-band ${ms(0.09)} ${ms(SLAM + delay)} cubic-bezier(.1,.9,.2,1) both, fx-ci-lines 0.25s linear infinite, fx-ci-band-out ${ms(0.18)} ${ms(0.8)} ease-in both`,
         mixBlendMode: 'screen',
       }}
     />
   );
   return (
     <div
+      ref={rootRef}
       className={`${BOARD} z-50 flex cursor-pointer flex-col items-center justify-center overflow-hidden ${fx.special ? 'bg-black/90' : 'bg-black/80'}`}
       style={{ animation: `fx-fade-in-out ${dur}ms ease both`, perspective: 1200 }}
       onClick={onDone}
       title="คลิกเพื่อข้าม"
     >
-      {/* แสงวาบเปิดฉาก */}
-      <div className="pointer-events-none absolute inset-0 bg-white" style={{ opacity: 0, animation: `fx-ci-flash ${ms(0.12)} ease-out both` }} />
-      {/* รัศมีหมุนสีการ์ด */}
+      {/* ชาร์จพลัง: เส้นแสงพุ่งเข้าหากลางจอ + ลูกแสงกลางจอโตขึ้น (ก่อนทุบ) */}
+      <div className="pointer-events-none absolute top-1/2 left-1/2" style={{ width: 0, height: 0 }}>
+        {Array.from({ length: 16 }, (_, i) => {
+          const ang = (i / 16) * 360 + prand(i + 40) * 12;
+          return (
+            <span
+              key={i}
+              className="absolute top-0 left-0 h-[3px] origin-left rounded-full"
+              style={{
+                width: `${30 + prand(i + 50) * 25}vmax`,
+                background: `linear-gradient(90deg, ${i % 2 ? '#fff' : ray}, transparent)`,
+                ['--r' as string]: `rotate(${ang}deg)`,
+                animation: `fx-ci-charge ${ms(SLAM)} ${Math.round(prand(i + 60) * dur * 0.05)}ms cubic-bezier(.6,0,.9,.5) both`,
+              }}
+            />
+          );
+        })}
+        <div
+          className="absolute rounded-full"
+          style={{ left: -60, top: -60, width: 120, height: 120, background: `radial-gradient(circle, #fff, ${ray} 45%, transparent 70%)`, animation: `fx-ci-core ${ms(SLAM)} ease-in both` }}
+        />
+      </div>
+      {/* รัศมีหมุนสีการ์ด (หลังทุบ) */}
       <div
         className="pointer-events-none absolute top-1/2 left-1/2 h-[170vmax] w-[170vmax] -translate-x-1/2 -translate-y-1/2 opacity-45"
         style={{
           background: `repeating-conic-gradient(from 0deg, ${ray} 0deg 3deg, transparent 3deg 14deg)`,
           maskImage: 'radial-gradient(circle, black 0%, transparent 55%)',
           WebkitMaskImage: 'radial-gradient(circle, black 0%, transparent 55%)',
-          animation: 'fx-rays 10s linear infinite',
+          animation: `fx-rays 10s linear infinite, fx-ci-after ${ms(0.1)} ${ms(SLAM)} ease-out both`,
         }}
       />
+      {/* ทุบ: เส้นความเร็วระเบิดออกจากกลางจอ */}
+      <div
+        className="pointer-events-none absolute top-1/2 left-1/2 h-[200vmax] w-[200vmax]"
+        style={{
+          background: 'repeating-conic-gradient(from 0deg, rgba(255,255,255,0.95) 0deg 0.6deg, transparent 0.6deg 7deg)',
+          maskImage: 'radial-gradient(circle, transparent 6%, #000 14%, #000 30%, transparent 55%)',
+          WebkitMaskImage: 'radial-gradient(circle, transparent 6%, #000 14%, #000 30%, transparent 55%)',
+          opacity: 0,
+          animation: `fx-ci-burst 0.55s ${ms(SLAM)} cubic-bezier(.1,.8,.3,1) forwards`,
+        }}
+      />
+      {/* ทุบ: รอยร้าวแตกออกจากจุดกระแทก */}
+      <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="-50 -50 100 100" preserveAspectRatio="xMidYMid slice" style={{ filter: `drop-shadow(0 0 2px #fff) drop-shadow(0 0 6px ${ray})` }}>
+        {Array.from({ length: fx.special ? 11 : 8 }, (_, i) => {
+          const n = fx.special ? 11 : 8;
+          const a = (i / n) * Math.PI * 2 + prand(i + 70) * 0.5;
+          const pts: string[] = ['0,0'];
+          for (let k = 1; k <= 4; k++) {
+            const r = k * (9 + prand(i * 9 + k) * 6);
+            const jit = (prand(i * 13 + k) - 0.5) * 0.5;
+            pts.push(`${(Math.cos(a + jit) * r).toFixed(1)},${(Math.sin(a + jit) * r).toFixed(1)}`);
+          }
+          return (
+            <polyline
+              key={i}
+              points={pts.join(' ')}
+              fill="none"
+              stroke="#fff"
+              strokeWidth={i % 3 === 0 ? 0.6 : 0.35}
+              pathLength={1}
+              strokeDasharray="1"
+              style={{ animation: `fx-ci-crack 0.9s ${Math.round(dur * SLAM)}ms ease-out both` }}
+            />
+          );
+        })}
+      </svg>
       {fx.special && (
         <>
           <div
@@ -180,8 +245,8 @@ function SummonCutIn({ fx, onDone }: { fx: Extract<Fx, { kind: 'summon' }>; onDo
         </>
       )}
       {/* แถบเฉียงปาดสวนกัน */}
-      {band(1, '14%', 0.03)}
-      {band(-1, '62%', 0.08)}
+      {band(1, '14%', 0)}
+      {band(-1, '62%', 0.02)}
       {/* ชื่อการ์ดตัวยักษ์วิ่งอยู่ด้านหลัง */}
       <div className="pointer-events-none absolute top-1/2 left-0 flex -translate-y-1/2 whitespace-nowrap" style={{ animation: `fx-ci-marquee ${dur * 1.6}ms linear both` }}>
         {[0, 1].map((i) => (
@@ -277,15 +342,6 @@ function SummonCutIn({ fx, onDone }: { fx: Extract<Fx, { kind: 'summon' }>; onDo
         style={{ borderColor: ray, animation: `fx-ci-plate ${ms(0.25)} ${ms(SLAM + 0.12)} cubic-bezier(.2,.9,.3,1.2) both` }}
       >
         <div className="flex skew-x-12 flex-col items-center gap-1">
-          {def.levels.length > 0 && fx.level > 0 && (
-            <div className="flex gap-1 text-xl text-yellow-300 drop-shadow">
-              {Array.from({ length: fx.level }, (_, i) => (
-                <span key={i} style={{ animation: `fx-cl-num 0.3s ${Math.round(dur * (SLAM + 0.18)) + i * 70}ms cubic-bezier(.2,.9,.3,1.4) both` }}>
-                  ★
-                </span>
-              ))}
-            </div>
-          )}
           {fx.special && (
             <span className="bg-gradient-to-r from-rose-400 via-yellow-200 to-sky-400 bg-clip-text text-sm font-black tracking-[0.5em] text-transparent">
               {rarity} RARE · SPECIAL SUMMON
@@ -300,6 +356,12 @@ function SummonCutIn({ fx, onDone }: { fx: Extract<Fx, { kind: 'summon' }>; onDo
           </span>
         </div>
       </div>
+      {/* ทุบ: แสงวาบเต็มจอ (บนสุด) */}
+      <div
+        className="pointer-events-none absolute inset-0"
+        // forwards (ไม่ใช่ both): ก่อนถึงจังหวะทุบต้องมองไม่เห็น
+        style={{ background: `radial-gradient(circle, #fff 0%, #fff 35%, ${ray} 80%)`, opacity: 0, animation: `fx-ci-flash ${Math.round(260 * flashScale())}ms ${ms(SLAM)} ease-out forwards` }}
+      />
     </div>
   );
 }
