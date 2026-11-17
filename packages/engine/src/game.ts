@@ -6,6 +6,10 @@ import {
   RuleError,
   activatedSourceCard,
   handMagic,
+  activeForcedAttack,
+  quickAbility,
+  lifeDamageCapped,
+  fieldCost,
   braveRoom,
   braveToSwap,
   blockersFor,
@@ -329,7 +333,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     if (inTrash && !trashRule) fail('NOT_IN_HAND', 'อัญเชิญการ์ดนี้จากแทรชไม่ได้ในตอนนี้');
     if (inTrash && braveOnto) fail('WRONG_PHASE', 'การ์ดจากแทรชร่วมร่างทันทีไม่ได้');
     const def = inTrash ? db.get(s.cards[cardId]!.cardNo) : cardInHand(ctx, player, cardId);
-    const quick = inTrash ? undefined : def.abilities.find((a) => a.kind === 'quick');
+    const quick = inTrash ? undefined : quickAbility(s, db, cardId);
     if (flash) {
       if (flash.priority !== player) fail('NOT_YOUR_PRIORITY', 'ยังไม่ถึงตาคุณใน Flash timing');
       if (!quick && !trashRule) fail('WRONG_PHASE', 'อัญเชิญใน Flash timing ได้เฉพาะการ์ดที่มี [Quick]');
@@ -559,6 +563,11 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     if (!isSpiritLike(ctx.db.get(card.cardNo))) fail('CANNOT_ATTACK', 'การ์ดนี้โจมตีไม่ได้');
     if (card.state !== 'refresh') fail('EXHAUSTED', 'การ์ดเสื่อมสภาพอยู่');
     if (!canAttackWith(s, ctx.db, attackerId)) fail('CANNOT_ATTACK', 'การ์ดนี้โจมตีไม่ได้ในเทิร์นนี้');
+    // อิจิโกะฮิโทฟุริ: ตัวที่ถูกระบุต้องโจมตีเป็นใบแรกของสเต็ป
+    const fa = activeForcedAttack(s, ctx.db, player);
+    if (fa && fa.attackerId !== attackerId) fail('MUST_ATTACK', `ต้องโจมตีด้วย ${ctx.db.get(s.cards[fa.attackerId]!.cardNo).name} ก่อน`);
+    s.forcedAttack = undefined;
+    if (s.firstAttack?.turn !== s.turn) s.firstAttack = { turn: s.turn, cardId: attackerId };
 
     card.state = 'exhausted';
     s.battle = {
@@ -576,8 +585,16 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
       lifeOnBlockerDestroyedByBlade: 0,
     };
     emit(ctx, { type: 'attackDeclared', attackerId });
+    // อิจิโกะฮิโทฟุริ: ผู้ร่วมร่างที่ระบุไว้เข้าป้องกันเองถ้าป้องกันได้
+    if (fa) {
+      const hc = s.cards[fa.holderId]!;
+      if ((hc.state === 'refresh' || canBlockExhausted(s, ctx.db, fa.holderId)) && !attackerUnblockable(s, attackerId, ctx.db.get(hc.cardNo).type)) {
+        s.battle.chosenBlockers.push(fa.holderId);
+        s.battle.skipFlash1 = true;
+      }
+    }
     // "ต้องโจมตีมาที่สปิริตนี้" (ราดัน): สปิริตนั้นเข้าป้องกันเองถ้าป้องกันได้
-    for (const h of forceAttackHolders(s, ctx.db, player)) {
+    for (const h of fa ? [] : forceAttackHolders(s, ctx.db, player)) {
       if (!matchesFilter(s, ctx.db, attackerId, h.filter)) continue;
       const hc = s.cards[h.id]!;
       const ok = (hc.state === 'refresh' || canBlockExhausted(s, ctx.db, h.id)) && !attackerUnblockable(s, attackerId, ctx.db.get(hc.cardNo).type);
@@ -677,7 +694,8 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     if (s.phase !== 'attack' || s.battle) fail('WRONG_PHASE', 'จบ Attack Step ได้เมื่อไม่มีการต่อสู้ค้างอยู่');
     const forced = forcedAttackers(s, ctx.db, player);
     if (forced.length > 0) {
-      fail('MUST_ATTACK', `ต้องโจมตีก่อนจบ Attack Step (เอฟเฟกต์ของ ${ctx.db.get(s.cards[forceAttackHolders(s, ctx.db, player)[0]!.id]!.cardNo).name}): ${forced.map((id) => ctx.db.get(s.cards[id]!.cardNo).name).join(', ')}`);
+      const holder = activeForcedAttack(s, ctx.db, player)?.holderId ?? forceAttackHolders(s, ctx.db, player)[0]!.id;
+      fail('MUST_ATTACK', `ต้องโจมตีก่อนจบ Attack Step (เอฟเฟกต์ของ ${ctx.db.get(s.cards[holder]!.cardNo).name}): ${forced.map((id) => ctx.db.get(s.cards[id]!.cardNo).name).join(', ')}`);
     }
     endTurn(ctx);
   },
@@ -910,6 +928,14 @@ function resolveBattle(ctx: Ctx): void {
     let dmg = override ?? symbolCount(attackerDef) + braveSymbols(ctx, attacker.id) + extra;
     // ทิพบอล: ในเทิร์นนี้การ์ดที่มีเจ็มตั้งแต่ N เม็ดถือว่ามีเจ็ม 0
     if (s.symbolsZero?.turn === s.turn && dmg >= s.symbolsZero.minSymbols) dmg = 0;
+    // ลิมิเต็ดบาเรีย: ไลฟ์ไม่ได้รับความเสียหายจากการโจมตีของสปิริตคอสต์ตั้งแต่ N
+    if ((s.lifeShields ?? []).some((l) => l.player === defender && l.turn === s.turn && fieldCost(s, db, attacker.id) >= l.minCost)) dmg = 0;
+    // ลองเคพ: เสียหายได้ 1 เม็ดต่อสปิริต 1 ตัวต่อเทิร์น
+    if (dmg > 0 && lifeDamageCapped(s, db, defender)) {
+      const rec = s.lifeDamageBy?.turn === s.turn && s.lifeDamageBy.player === defender ? s.lifeDamageBy : { turn: s.turn, player: defender, ids: [] as string[] };
+      dmg = rec.ids.includes(attacker.id) ? 0 : 1;
+      s.lifeDamageBy = { ...rec, ids: [...rec.ids, attacker.id] };
+    }
     if (dmg > 0) {
       if (loseLife(ctx, defender, dmg, attacker.owner)) return;
       lostLife = true;
@@ -934,6 +960,13 @@ function resolveBattle(ctx: Ctx): void {
       if (loseLife(ctx, defender, perBlocker * destroyedBlockers.length, attacker.owner)) return;
       lostLife = true;
       queueLifeLostTriggers(ctx, defender, perBlocker * destroyedBlockers.length);
+    }
+    // อุสึบะคาเงโร่: ชนะและทำลายจากการเทียบ BP → ส่งคอร์ไลฟ์คู่แข่งลงแทรช
+    const toTrash = !attackerLoses ? (battle.lifeOnBlockerDestroyedTrash ?? 0) : 0;
+    if (destroyedBlockers.length > 0 && toTrash > 0) {
+      if (loseLife(ctx, defender, toTrash * destroyedBlockers.length, attacker.owner, 'trash')) return;
+      lostLife = true;
+      queueLifeLostTriggers(ctx, defender, toTrash * destroyedBlockers.length);
     }
   }
 

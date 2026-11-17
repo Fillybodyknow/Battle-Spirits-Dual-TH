@@ -29,6 +29,8 @@ import bs04 from '../data/bs04.json';
 import { BS04_SCRIPTS } from '../data/bs04-scripts';
 import bs05 from '../data/bs05.json';
 import { BS05_SCRIPTS } from '../data/bs05-scripts';
+import bs06 from '../data/bs06.json';
+import { BS06_SCRIPTS } from '../data/bs06-scripts';
 import { attachScripts } from './abilities';
 import { createCardDatabase, type CardDatabase } from './database';
 import type { DeckEntry } from './deck';
@@ -76,6 +78,7 @@ export function loadAllCards(): CardDatabase {
     ...loadBS03Cards().all(),
     ...loadBS04Cards().all(),
     ...loadBS05Cards().all(),
+    ...loadBS06Cards().all(),
   ]);
 }
 
@@ -89,6 +92,11 @@ export function loadBS03Cards(): CardDatabase {
 /** การ์ดชุด Booster Set 04 (การ์ดของ SD04 เขียนเต็มไว้ที่นี่) */
 export function loadBS04Cards(): CardDatabase {
   return createCardDatabase(attachScripts(bs04, BS04_SCRIPTS));
+}
+
+/** การ์ดชุด Booster Set 06 (assets/files/BS06/*.text + data/bs06-scripts.ts) */
+export function loadBS06Cards(): CardDatabase {
+  return createCardDatabase(attachScripts(bs06, BS06_SCRIPTS));
 }
 
 /** การ์ดชุด Booster Set 05 (assets/files/BS05/*.text + data/bs05-scripts.ts) */

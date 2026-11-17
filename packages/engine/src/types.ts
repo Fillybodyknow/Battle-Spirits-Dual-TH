@@ -126,6 +126,12 @@ export interface Battle {
   noFlash?: PlayerId;
   /** ผู้เล่นที่สั่งใช้เบิร์สไม่ได้ในการต่อสู้นี้ */
   noBurst?: PlayerId;
+  /** ส่งคอร์ไลฟ์คู่แข่งลงแทรช ต่อผู้ป้องกัน 1 ตัวที่ถูกทำลายจากการเทียบ BP (อุสึบะคาเงโร่) */
+  lifeOnBlockerDestroyedTrash?: number;
+  /** ในการต่อสู้นี้ การ์ดนี้ไม่รับผลเอฟเฟกต์ของการ์ดประเภทเหล่านี้ของคู่แข่ง (ฮิสะมารุ บัสเตอร์) */
+  immune?: { cardId: string; types: string[] }[];
+  /** ผู้โจมตีไม่ถูกป้องกันโดยสปิริตของคู่แข่งที่ BP ไม่เกินผู้โจมตี (ฮาคุเกอิน) */
+  blockBpBan?: boolean;
 }
 
 /** เอฟเฟกต์ที่รอประมวลผล (หัวคิวคือที่กำลังทำ) */
@@ -183,6 +189,18 @@ export interface QueuedEffect {
   firstZeroBp?: boolean;
   /** เอฟเฟกต์นี้ทำให้การ์ดของคู่แข่งสูญสลาย */
   depleted?: boolean;
+  /** จำนวนสปิริตคู่แข่งที่เอฟเฟกต์นี้เสื่อมสภาพ */
+  exhaustedCount?: number;
+  /** Kagemusha: เป้าที่ถูกเลือกเดิม / การ์ด Kagemusha ที่อัญเชิญแล้ว (การเลือกครั้งต่อไปของเอฟเฟกต์นี้ถูกบังคับ) */
+  kageForce?: { orig: string; kage?: string };
+  /** Kagemusha ดูดเอฟเฟกต์มาหมด: การเลือกที่เหลือของ step ชนิดนี้ต้องเล็งการ์ดนี้ (เล็งไม่ได้ = จบ) */
+  kageAbsorb?: { cardId: string; stepDo: string };
+  /** การ์ดที่ Kagemusha ตัดสินแล้ว (ไม่ถามซ้ำ) */
+  kageDone?: string[];
+  /** เอฟเฟกต์ "เมื่อสปิริต/เบรฟนี้ถูกอัญเชิญ" */
+  onSummon?: boolean;
+  /** ผู้ควบคุมเลือกไม่ใช้เอฟเฟกต์ "สามารถ" นี้ */
+  declined?: boolean;
 }
 
 /** การตัดสินใจที่ engine รอจากผู้เล่น (ระหว่างนี้ทำได้แค่ choose หรือ concede) */
@@ -284,6 +302,14 @@ export interface GameState {
   symbolsZero?: { turn: number; minSymbols: number };
   /** เทิร์นที่มีสปิริตกลายเป็น BP0 โดย debuff ไปแล้ว */
   bpZeroTurn?: number;
+  /** ในเทิร์นนี้ ไลฟ์ของผู้เล่นนี้ไม่ได้รับความเสียหายจากการโจมตีของสปิริต/อัลติเมทคอสต์ตั้งแต่ minCost (ลิมิเต็ดบาเรีย) */
+  lifeShields?: { player: PlayerId; minCost: number; turn: number }[];
+  /** สปิริต/อัลติเมทที่ทำให้ไลฟ์ของ player เสียหายแล้วในเทิร์นนี้ (ลองเคพ) */
+  lifeDamageBy?: { turn: number; player: PlayerId; ids: string[] };
+  /** การโจมตีใบแรกสุดของเทิร์น */
+  firstAttack?: { turn: number; cardId: string };
+  /** อิจิโกะฮิโทฟุริ: สปิริตของ attackerOwner ตัวนี้ต้องโจมตีเป็นใบแรกของสเต็ป และ holder เข้าป้องกันเอง */
+  forcedAttack?: { turn: number; attackerId: string; holderId: string };
   players: Record<PlayerId, PlayerState>;
   cards: Record<string, CardInstance>;
   cores: Record<string, CoreInstance>;
@@ -408,6 +434,14 @@ export type GameEvent =
   /** Core ใหม่จากวอยด์ (cardId null = รีเสิร์ฟ) */
   | { type: 'voidCore'; player: PlayerId; cardId: string | null; count: number; trash?: true }
   | { type: 'soulToReserve'; cardId: string }
+  /** นำ Soul Core จากแทรชมาวางบนการ์ดนี้ (โอเทนตะ) */
+  | { type: 'soulFromTrash'; cardId: string }
+  /** ในเทิร์นนี้ ไลฟ์ไม่ได้รับความเสียหายจากการโจมตีของสปิริตคอสต์ตั้งแต่ minCost (ลิมิเต็ดบาเรีย) */
+  | { type: 'lifeShield'; player: PlayerId; minCost: number }
+  /** สปิริตนี้ต้องโจมตีมาที่ holder เป็นใบแรกของสเต็ป (อิจิโกะฮิโทฟุริ) */
+  | { type: 'forcedAttack'; cardId: string; holderId: string }
+  /** สปิริตของ player ตกเป็นเป้า: เปิดให้ใช้ Kagemusha */
+  | { type: 'kagemushaChance'; player: PlayerId; targetId: string }
   | { type: 'coresToTrash'; cardId: string; count: number }
   | { type: 'cardsToDeckBottom'; player: PlayerId; cardIds: string[] }
   | { type: 'braved'; cardId: string; hostId: string }

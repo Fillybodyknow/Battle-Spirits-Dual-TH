@@ -12,6 +12,7 @@ import { APP_VERSION } from './changelog';
 import {
   activatableAbilities,
   handMagic,
+  quickAbility,
   braveRoom,
   braveToSwap,
   baseCost,
@@ -124,8 +125,9 @@ export function canQuickSummon(s: GameState, cardId: string): boolean {
   const card = s.cards[cardId];
   if (!card || flashPlayer(s) !== card.owner || !s.players[card.owner].hand.includes(cardId)) return false;
   const def = db.get(card.cardNo);
-  const quick = def.abilities.find((a) => a.kind === 'quick');
-  if (!quick || quick.kind !== 'quick') return false;
+  // [Quick] ของตัวเอง หรือที่ได้รับจากการ์ดบนสนาม (เกรย์ไนท์)
+  const quick = quickAbility(s, db, cardId);
+  if (!quick) return false;
   const reserve = s.players[card.owner].reserve;
   const normal = reserve.filter((id) => !s.cores[id]!.isSoul).length;
   if (quick.soul) return normal + 0 >= minCores(def) && reserve.some((id) => s.cores[id]!.isSoul);

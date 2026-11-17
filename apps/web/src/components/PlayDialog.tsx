@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { baseCost, bpOf, levelOf, minCores, payableCost, quickAnyCores, trashSummonRule } from '@bs/engine';
+import { baseCost, bpOf, levelOf, minCores, payableCost, quickAbility, quickAnyCores, trashSummonRule } from '@bs/engine';
 import { cardName, playerLabel } from '../format';
 import { db, flashPlayer, layoutRect, useGame, type MagicTiming, type PlayKind } from '../store';
 import { CardFace } from './CardFace';
@@ -82,7 +82,7 @@ function PlayDialogInner({ cardId, kind, timing, braveOnto }: { cardId: string; 
   const p = state.players[player];
   const def = db.get(card.cardNo);
   // [Quick] ใน Flash timing: ใช้ Core จากรีเสิร์ฟเท่านั้น / [Soul Quick]: จ่ายด้วย Soul Core 1 ดวง
-  const quickAb = kind === 'summon' && flashPlayer(state) === player ? def.abilities.find((a) => a.kind === 'quick') : undefined;
+  const quickAb = kind === 'summon' && flashPlayer(state) === player ? quickAbility(state, db, cardId) : undefined;
   const soulQuick = quickAb?.kind === 'quick' && !!quickAb.soul;
   const reserveSoul = p.reserve.find((id) => state.cores[id]!.isSoul);
   // อัญเชิญจากแทรช: คอสต์ตาม "ถือว่ามีคอสต์" ในแทรช และบางเอฟเฟกต์ต้องใช้ Soul Core ร่วมจ่าย

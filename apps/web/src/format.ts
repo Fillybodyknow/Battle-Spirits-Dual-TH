@@ -134,6 +134,14 @@ export function formatEvent(e: GameEvent, s: GameState): string | null {
       return `💥 ${playerLabel(e.player)} เปิด Burst: ${name(e.cardId)}`;
     case 'spellResolved':
       return null;
+    case 'soulFromTrash':
+      return `นำ Soul Core จากแทรชวางบน ${name(e.cardId)}`;
+    case 'lifeShield':
+      return `ในเทิร์นนี้ ไลฟ์ของ${playerLabel(e.player)}ไม่ได้รับความเสียหายจากการโจมตีของสปิริตคอสต์ ${e.minCost} ขึ้นไป`;
+    case 'forcedAttack':
+      return `${name(e.cardId)} ต้องโจมตีมาที่ ${name(e.holderId)} เป็นใบแรก`;
+    case 'kagemushaChance':
+      return `${name(e.targetId)} ตกเป็นเป้า: ${playerLabel(e.player)} ใช้ Kagemusha ได้`;
     case 'lifeGained':
       return `${playerLabel(e.player)} ได้ไลฟ์ +${e.amount}`;
     case 'costPaid':

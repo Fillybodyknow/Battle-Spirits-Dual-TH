@@ -98,6 +98,10 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
   เน็กซัสถูกวาง = trigger `summon`, `activated.granted` (Flash ที่เบรฟให้ร่างหลัก),
   `destroyRefreshedByEffect` (ฟื้นสภาพด้วยเอฟเฟกต์ต้องผ่าน `refreshByEffect` ใน effects.ts เสมอ),
   `braveNotCounted` (เบรฟไม่นับในจำนวนเบรฟของผู้ร่วมร่าง: `braveRoom` / `braveToSwap`), subject `fromHand` (ใช้เมจิคจากในมือ ไม่ใช่นอกมือ)
+- **BS06**: Kagemusha (`kagemusha` / `kagemushaNoSoul` / `kagemushaFree`: ดักใน resolveChoice ของ step ใน `KAGE_STEPS` แล้วบังคับเป้าด้วย `item.kageForce` ใน `ask()`),
+  Charge `refreshCountBoost` / `exhaustCountBoost`, `braveSlots` (`braveLimit`), `grantQuick` (ใช้ `quickAbility()` แทนการหา ability quick ตรง ๆ),
+  `noMill`, `multiDrawPunish`, `opponentNoReduction`, `lifeDamageCap`, step `lifeShieldThisTurn` / `forceAttackChosen` (`state.forcedAttack`) / `moveSourceBrave` /
+  `setBurstFromField` / `battleImmune` / `catalyze.then` (หลังจากเบิร์สนั้นถูกสั่งใช้), เบิร์ส `afterOpponentSummonEffect` (item.onSummon, เลือก "ไม่ใช้" = item.declined)
 - **BP0 ไม่ถูกทำลายเอง** (เจ้าของโปรเจกต์กำหนด): ทำลายเฉพาะการ์ดที่เขียน "ทำลาย…ที่กลายเป็น BP0" = `debuffChosenOpponent.destroyAtZero`
 - **ย้ายการ์ดไปเขียนเต็มที่ชุดอื่น = รหัสการ์ดเปลี่ยน**: เพิ่มรหัสเดิม → รหัสใหม่ใน `packages/cards/src/legacy-card-no.ts`
   (เด็คที่ผู้เล่นจัดไว้ / รหัสเด็คออนไลน์แปลงตอนโหลดด้วย `migrateEntries` ใน decks.ts) ไม่งั้นเด็คเก่าหาการ์ดไม่เจอ
