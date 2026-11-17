@@ -371,7 +371,11 @@ function parseEffectLine(line: Line, type: CardDefInput['type'] | undefined, err
   if (/^การ์ด\S*นี้บนมือ/.test(rest)) return { hand: true, text: rest };
   // กฎของการ์ดเองที่ไม่ผูกกับเลเวล/จังหวะ เช่น "การ์ดสปิริตนี้ เมื่อถูกทิ้ง..." หรือ "ถ้าเรามี ... การลดคอสต์..."
   // หรือ "สปิริตนี้/การ์ดสปิริตนี้ถือว่ามีคำว่า ... ในชื่อการ์ดด้วย"
-  if (/^(การ์ด|ถ้า|สปิริตนี้)/.test(rest)) return { text: rest };
+  // "เบรฟนี้/การ์ดเบรฟนี้ จะไม่ถูกนับ..." · "Immortality: ..." (อัญเชิญจากแทรชได้เมื่อ...)
+  if (/^(การ์ด|ถ้า|สปิริตนี้|เบรฟนี้|Immortality\b)/.test(rest)) return { text: rest };
+  // การ์ดสปิริตที่ "ถือว่าเป็นการ์ดเมจิคด้วย": "Flash (เอฟเฟกต์นี้, ถ้าอยู่บนฟิลด์, จะใช้งานไม่ได้): ..." = ใช้จากมือแบบ Magic [Flash]
+  const asMagic = rest.match(/^Flash\s*\([^)]*\)\s*:\s*/);
+  if (asMagic) return { timing: 'flash', text: rest.slice(asMagic[0].length) };
 
   // "Flash [Quick] : ..." / "Flash Quick: ..." / "Flash Soul Quick ..." (คีย์เวิร์ดภาษาอังกฤษ มีหรือไม่มีวงเล็บก็ได้)
   const keyword =

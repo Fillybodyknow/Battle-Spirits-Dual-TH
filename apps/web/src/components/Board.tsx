@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { activatableAbilities, baseCost, canAttackWith, cardLevel, currentBp, isSpiritLike, payableCost, trashSummonRule, type CoreTarget, type PlayerId } from '@bs/engine';
+import { activatableAbilities, baseCost, braveToSwap, canAttackWith, cardLevel, currentBp, isSpiritLike, payableCost, trashSummonRule, type CoreTarget, type PlayerId } from '@bs/engine';
 import { playerLabel } from '../format';
 import { IMG } from '../assets';
 import type { Fx } from '../store';
@@ -7,7 +7,7 @@ import { blockCandidates, controls, hiddenFrom, mine, braveHostOf, braveHosts, c
 import { usePrefs, type HandLayout } from '../prefs';
 import { castHandSlots, sortHand } from '../store';
 import { CastRestCard } from './Fx';
-import { actingPlayer, canEvolve, db, isMultiHostCandidate, flashPlayer, inMain, isChoiceCandidate, isFxBlocking, magicTimings, responseOptions, simulateEvolve, simulateMove, useGame } from '../store';
+import { actingPlayer, canEvolve, db, isMultiHostCandidate, flashPlayer, inMain, isChoiceCandidate, isFxBlocking, handMagicTimings, responseOptions, simulateEvolve, simulateMove, useGame } from '../store';
 import { useFlashUsable } from './Controls';
 import { CardBack, CardFace } from './CardFace';
 import { FieldCracks } from './Cracks';
@@ -80,8 +80,8 @@ function BraveMenu({ braveId, onClose }: { braveId: string; onClose: () => void 
       <span className="px-1 text-[11px] font-bold text-emerald-300">{db.get(card.cardNo).name}</span>
       {hosts.map((h) => (
         <button key={h} type="button" className="rounded bg-emerald-500/20 px-2 py-1 text-left text-xs text-emerald-100 hover:bg-emerald-500/40" onClick={() => run(h)}>
-          {state.cards[h]!.braves.length > 0
-            ? `สลับกับ ${db.get(state.cards[state.cards[h]!.braves[0]!]!.cardNo).name} (บน ${db.get(state.cards[h]!.cardNo).name})`
+          {braveToSwap(state, db, h, braveId)
+            ? `สลับกับ ${db.get(state.cards[braveToSwap(state, db, h, braveId)!]!.cardNo).name} (บน ${db.get(state.cards[h]!.cardNo).name})`
             : `${attached ? 'ย้ายไปร่วมร่างกับ' : 'ร่วมร่างกับ'} ${db.get(state.cards[h]!.cardNo).name}`}
         </button>
       ))}
@@ -270,7 +270,7 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
   return (
     <div
       data-field-card={cardId}
-      className={`flex shrink-0 flex-col items-center gap-1 transition-[width] duration-300 ${exhausted ? 'w-40' : 'w-28'} ${card.braves.length > 0 ? 'mr-7' : ''} ${flying ? 'invisible' : ''}`}
+      className={`flex shrink-0 flex-col items-center gap-1 transition-[width] duration-300 ${exhausted ? 'w-40' : 'w-28'} ${card.braves.length > 0 ? 'mr-7' : ''} ${card.braves.length > 1 ? 'ml-7' : ''} ${flying ? 'invisible' : ''}`}
       onMouseEnter={() => hover(cardId)}
       onMouseLeave={() => hover(null)}
       {...(braveDrop
@@ -327,14 +327,14 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
           </div>
         )}
         {/* Brave ที่ร่วมร่าง: ซ้อนมุมบนขวาของผู้ร่วมร่าง */}
-        {card.braves.map((b) => {
+        {card.braves.map((b, bi) => {
           // เป็นเป้าหมายให้เลือก (เช่น ทำลายเบรฟที่ร่วมร่างอยู่)
           const braveCandidate = !fxBlocking && isChoiceCandidate(state, b);
           return (
           <div
             key={b}
             data-brave-card={b}
-            className={`absolute top-6 -right-8 z-[5] h-[4.6rem] w-[3.3rem] rotate-12 rounded shadow-[0_4px_10px_rgba(0,0,0,0.7)] ${
+            className={`absolute top-6 z-[5] h-[4.6rem] w-[3.3rem] rounded ${bi % 2 === 0 ? '-right-8 rotate-12' : '-left-8 -rotate-12'} shadow-[0_4px_10px_rgba(0,0,0,0.7)] ${
               braveCandidate ? 'cursor-pointer ring-4 ring-fuchsia-400' : 'ring-2 ring-emerald-300'
             }`}
             title={`Brave: ${db.get(state.cards[b]!.cardNo).name}${ownTurnMain ? ' · คลิกเพื่อแยกร่าง/ย้าย' : ''}`}
@@ -1027,7 +1027,7 @@ function HandCard({ cardId, hidden, small, fan, shown: order }: { cardId: string
 
   const main = mine(card.owner) && inMain(state) && card.owner === state.turnPlayer;
   const flash = mine(card.owner) && flashPlayer(state) === card.owner;
-  const timings = def.type === 'magic' ? magicTimings(card.cardNo) : [];
+  const timings = handMagicTimings(state, cardId);
   const pay = payableCost(state, db, card.owner, def, baseCost(state, db, cardId));
   const affordable = pay <= state.players[card.owner].reserve.length + state.players[card.owner].field.reduce((n, id) => n + state.cards[id]!.cores.length, 0);
   const quick = canQuickSummon(state, cardId);
@@ -1046,6 +1046,9 @@ function HandCard({ cardId, hidden, small, fan, shown: order }: { cardId: string
     if (main && timings.length === 0) options.push({ label: 'ใช้ Magic', run: () => openPlay(cardId, 'useMagic') });
     if (main && timings.includes('main')) options.push({ label: 'ใช้ [Main]', run: () => openPlay(cardId, 'useMagic', 'main') });
     if ((main || flash) && timings.includes('flash')) options.push({ label: 'ใช้ [Flash]', run: () => openPlay(cardId, 'useMagic', 'flash') });
+  } else if ((main || flash) && timings.includes('flash')) {
+    // การ์ดสปิริตที่ใช้เป็นเมจิคได้ (ยูคิเกิร์ล / ได้รับจากคาฉะเนโกะ-อิคุสะ)
+    options.push({ label: 'ใช้เป็นเมจิค [Flash]', run: () => openPlay(cardId, 'useMagic', 'flash') });
   }
   if (main && def.burst) options.push({ label: 'เซ็ทเป็น Burst', run: () => dispatch({ type: 'setBurst', player: card.owner, cardId }) });
 

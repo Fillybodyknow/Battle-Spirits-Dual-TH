@@ -118,6 +118,8 @@ export interface CardFilter {
   excludeNames?: string[];
   /** ตรงตัวกรองใดตัวกรองหนึ่งเหล่านี้ (หรือ) */
   anyOf?: CardFilter[];
+  /** มีคอร์วางอยู่ไม่เกิน N เม็ด (เฉพาะบนสนาม) */
+  maxCores?: number;
 }
 
 /** ปลายทางของ Core จากวอยด์ */
@@ -144,7 +146,7 @@ export type Step =
   /** ในเทิร์นนี้ สปิริตนี้ BP+ */
   | { do: 'buffSelf'; amount: number; if?: Condition }
   /** ในเทิร์นนี้ เลือกสปิริต/อัลติเมท 1 ตัว (ฝ่ายใดก็ได้) BP+ */
-  | { do: 'buffChosen'; amount: number }
+  | { do: 'buffChosen'; amount: number; /** เฉพาะสปิริตของเรา */ ally?: true }
   /** สปิริตต้นเหตุ (subject) BP+ ในเทิร์นนี้ */
   | { do: 'buffSubject'; amount: number }
   /** [True-Rage]: คู่แข่งต้องป้องกันถ้าทำได้ (ใช้ระหว่างการต่อสู้) */
@@ -282,6 +284,8 @@ export type Step =
       exclude?: string[];
       /** (engine ใช้ภายใน) ขยายจำนวนเป้าด้วย Dispersion แล้ว */
       dispersed?: true;
+      /** (engine ใช้ภายใน) บวก Charge แล้ว */
+      charged?: true;
     }
   /** ในเทิร์นนี้ การ์ดของคู่แข่งประเภทเหล่านี้ทั้งหมดโจมตีไม่ได้ */
   | { do: 'opponentCannotAttack'; types: CardType[]; if?: Condition }
@@ -354,6 +358,8 @@ export type Step =
       /** จำนวนเม็ดที่ส่งออกจากตัวที่เลือกแต่ละครั้ง (ไม่ระบุ = 1) */
       perPick?: number;
       if?: Condition;
+      /** (engine ใช้ภายใน) บวก Charge แล้ว */
+      charged?: true;
     }
   /**
    * (ภายใน engine) ส่งคอร์ n เม็ดออกจากการ์ด cardId ไป to
@@ -364,7 +370,7 @@ export type Step =
   /** ทิ้งใบบนสุดเด็คเราเอง */
   | { do: 'millSelf'; count: number }
   /** ในการต่อสู้นี้ ผู้โจมตีจะไม่ถูกป้องกัน (by: 'spirits' = ไม่ถูกป้องกันโดยสปิริตเท่านั้น) */
-  | { do: 'battleUnblockable'; by?: 'spirits' }
+  | { do: 'battleUnblockable'; /** spirits = ไม่ถูกป้องกันโดยสปิริต, ultimates = ไม่ถูกป้องกันโดยอัลติเมท */ by?: 'spirits' | 'ultimates' }
   /** ในเทิร์นนี้ เลือกสปิริตเราที่ตรงตัวกรอง N ตัวให้ไม่ถูกป้องกัน (countPerNexus = จำนวนเน็กซัสของผู้เล่นทุกคน) */
   | { do: 'unblockableThisTurn'; filter: CardFilter; count?: number; countPerNexus?: true }
   /** ในการต่อสู้นี้ คู่แข่งใช้การ์ดในมือในช่วง Flash ไม่ได้ */
@@ -420,7 +426,56 @@ export type Step =
    * options[].if = ตัวเลือกนี้เลือกได้เฉพาะเมื่อเงื่อนไขเป็นจริง ("สามารถ X เพื่อ Y": ต้องทำได้ทั้งสองท่อน)
    * ถ้าเหลือแต่ตัวเลือกที่ไม่ทำอะไร = ไม่ถาม
    */
-  | { do: 'chooseOne'; options: { label: string; steps: Step[]; if?: Condition }[]; if?: Condition };
+  | { do: 'chooseOne'; options: { label: string; steps: Step[]; if?: Condition }[]; if?: Condition }
+  // ---------------- BS05
+  /** ถ้าการ์ดที่ returnFromTrash ล่าสุดของเอฟเฟกต์นี้นำขึ้นมือตรงตัวกรอง: ทำ steps */
+  | { do: 'ifReturned'; filter: CardFilter; steps: Step[] }
+  /** ในเทิร์นนี้ เลือกการ์ดของคู่แข่งที่ตรงตัวกรอง count ตัว: โจมตี/ป้องกันไม่ได้ */
+  | { do: 'disableChosenOpponent'; filter: CardFilter; count?: number; countPerAllyFamily?: string; if?: Condition; dispersed?: true }
+  /** อัญเชิญไม่จ่ายคอสต์: subject = การ์ดต้นเหตุ (เช่น การ์ดสปิริตที่ใช้เป็นเมจิค) / self = การ์ดนี้ (ในแทรช) */
+  | { do: 'summonCardFree'; which: 'subject' | 'self' }
+  /** สามารถทิ้งการ์ดในมือเราได้ไม่เกิน max ใบ (จำจำนวนไว้ใช้กับ removeCoresPerDiscarded) */
+  | { do: 'discardUpTo'; max: number; filter?: CardFilter }
+  /** ส่งคอร์ 1 เม็ดบนสปิริตคู่แข่ง ต่อการ์ดที่ discardUpTo ทิ้งไป 1 ใบ */
+  | { do: 'removeCoresPerDiscarded'; to: 'reserve' | 'trash' }
+  /** อัญเชิญไม่จ่ายคอสต์การ์ดในแทรชเรากี่ใบก็ได้ คอสต์รวม (คอสต์ในแทรช) ไม่เกิน budget */
+  | { do: 'summonFromTrashBudget'; filter: CardFilter; budget: number }
+  /** ในการต่อสู้นี้: สปิริตคู่แข่งที่ฟื้นสภาพป้องกันไม่ได้ ที่เสื่อมสภาพป้องกันได้ และฟื้นสภาพเมื่อป้องกัน */
+  | { do: 'battleExhaustedBlock' }
+  /** เมื่อจบการต่อสู้นี้ ถ้าเงื่อนไขเป็นจริง (ตรวจตอนจบ) จบ Attack Step */
+  | { do: 'endAttackStepIfAfterBattle'; if: Condition }
+  /** นำการ์ดต้นเหตุ (เมจิคที่ใช้แล้ว) จากแทรชไปวางแสดงนอกมือ */
+  | { do: 'showSubjectFromTrash' }
+  /** สามารถนำการ์ดที่วางแสดงนอกมือที่มีเอฟเฟกต์ Burst 1 ใบไปเซ็ทได้ */
+  | { do: 'setBurstFromShown' }
+  /** เลือก 1 สี แล้วนำการ์ดที่ตรงตัวกรองสีนั้นทั้งหมดในแทรชเรากลับขึ้นมือ */
+  | { do: 'returnAllChosenColor'; filter: CardFilter; if?: Condition }
+  /** นำการ์ดในแทรชเราที่ตรงตัวกรองทั้งหมดกลับขึ้นมือ */
+  | { do: 'returnAllFromTrash'; filter: CardFilter }
+  /** ในการต่อสู้นี้ ผู้โจมตี (สปิริตนี้) ไม่ถูกป้องกันโดยสปิริตคู่แข่งที่คอสต์ไม่เกินคอสต์ของสปิริตนี้ */
+  | { do: 'unblockableByCostAtMostSelf' }
+  /** ในการต่อสู้นี้ คู่แข่งจะป้องกันได้ต้องส่งคอร์รีเสิร์ฟ N เม็ดลงแทรช */
+  | { do: 'blockTax'; reserveToTrash: number }
+  /** ทำลายเบรฟที่ให้เอฟเฟกต์นี้ (ร่วมร่างอยู่) ถ้าทำได้ ทำ then */
+  | { do: 'destroySourceBrave'; then?: Step[] }
+  /** ถ้า debuff ของเอฟเฟกต์นี้ทำให้สปิริตคู่แข่งกลายเป็น BP0 เป็นตัวแรกของเทิร์น: ทำ steps */
+  | { do: 'ifFirstZeroBp'; steps: Step[] }
+  /** นำคอร์รีเสิร์ฟเรา N เม็ดไปวางที่ไลฟ์เรา */
+  | { do: 'reserveToLife'; count: number }
+  /** ในการต่อสู้นี้ สปิริตนี้ถือว่าไร้สี */
+  | { do: 'battleColorless' }
+  /** นำคอร์ 1 เม็ดบนสปิริตคู่แข่งไปวางบนสปิริตตัวอื่นของคู่แข่ง (fromId: engine ใช้ภายใน) */
+  | { do: 'moveOpponentCore'; fromId?: string }
+  /** ในเทิร์นนี้ สปิริต/เน็กซัสของคู่แข่งทั้งหมดสูญเสียเอฟเฟกต์ทั้งหมด */
+  | { do: 'negateOpponentsThisTurn' }
+  /** นำ Soul Core บนการ์ดนี้ไปวางบนสปิริตเรา 1 ตัว (เลือก) */
+  | { do: 'soulToAlly' }
+  /** ถ้าเอฟเฟกต์นี้ทำให้การ์ดของคู่แข่งสูญสลาย: ทำ steps */
+  | { do: 'ifDepleted'; steps: Step[] }
+  /** ในเทิร์นนี้ สปิริต/อัลติเมทที่มีเจ็มตั้งแต่ minSymbols เม็ดถือว่ามีเจ็ม 0 */
+  | { do: 'symbolsZeroThisTurn'; minSymbols: number }
+  /** สามารถทำลายสปิริตเรากี่ตัวก็ได้ แล้วนำการ์ดในแทรชที่ตรงตัวกรองกลับขึ้นมือ ต่อจำนวนที่ทำลาย (count: engine ใช้ภายใน) */
+  | { do: 'destroyOwnForReturn'; filter: CardFilter; count?: number }
 
 /** ขอบเขตของ BP+ ถาวร */
 export type StaticScope =
@@ -494,7 +549,15 @@ export type TriggerEvent =
   /** เบิร์สของคู่แข่งถูกสั่งใช้ (ใช้กับ zone: 'hand') */
   | 'oppBurstActivated'
   /** การ์ดนี้สูญสลายโดยเอฟเฟกต์ของคู่แข่ง (ถูกถอดคอร์) */
-  | 'depletedByOpponent';
+  | 'depletedByOpponent'
+  /** สปิริตนี้ (ที่โจมตี) ไม่ถูกป้องกัน */
+  | 'unblocked'
+  /** สปิริต/อัลติเมทของคู่แข่ง (subject) โจมตี */
+  | 'oppAttack'
+  /** สตาร์ทสเต็ปของเรา */
+  | 'startStep'
+  /** การ์ดนี้ถูกทิ้งจากเด็คโดยเอฟเฟกต์ทิ้งเด็คของผู้เล่นคนใดก็ได้ (การ์ดอยู่ในแทรชแล้ว) */
+  | 'milledAny';
 
 /** เงื่อนไขของสปิริตที่ทำให้ trigger แบบ ally* ทำงาน */
 export interface SubjectFilter {
@@ -525,10 +588,19 @@ export interface SubjectFilter {
   fromTrash?: true;
   /** คอสต์ที่พิมพ์บนการ์ดต้นเหตุตั้งแต่ค่านี้ */
   minCost?: number;
+  /** อยู่ในเผ่าใดเผ่าหนึ่งเหล่านี้ */
+  families?: string[];
+  /** สปิริตต้นเหตุมี Holy Life (ของตัวเอง หรือได้รับจากการ์ดอื่น) */
+  holyLife?: true;
 }
 
 /** เงื่อนไขเปิด Burst */
-export type BurstEvent = 'afterLifeLost' | 'afterAllyDestroyedByOpponent' | 'afterOpponentHandIncreased';
+export type BurstEvent =
+  | 'afterLifeLost'
+  | 'afterAllyDestroyedByOpponent'
+  | 'afterOpponentHandIncreased'
+  /** หลังจากสปิริต/อัลติเมทคู่แข่งโจมตี */
+  | 'afterOpponentAttack';
 
 export type Ability =
   /** เอฟเฟกต์ที่ทำงานเมื่อเกิดเหตุการณ์ (เฉพาะเลเวลที่ระบุ) */
@@ -703,13 +775,29 @@ export type Ability =
    *  - if = ใช้ได้เมื่อเงื่อนไขเป็นจริง ("สามารถ X เพื่อ Y": ตรวจว่าทำได้ทั้งสองท่อน)
    *  - maxPerTurn = ใช้ได้เทิร์นละไม่เกิน N ครั้ง
    */
-  | { kind: 'activated'; source: number; levels: number[]; timing: 'attackFlash'; label: string; steps: Step[]; if?: Condition; maxPerTurn?: number }
+  | { kind: 'activated'; source: number; levels: number[]; timing: 'attackFlash'; label: string; steps: Step[]; if?: Condition; maxPerTurn?: number; /** Brave: ผู้ร่วมร่างได้รับ (เงื่อนไขดูที่ผู้ร่วมร่าง) */ granted?: true }
   /** "รีเฟรชสเต็ปของคู่แข่ง: การ์ดของคู่แข่งที่ตรงตัวกรองทั้งหมดจะฟื้นสภาพไม่ได้" */
   | { kind: 'opponentNoRefresh'; source: number; levels: number[]; filter: CardFilter }
   /** "ถ้า... การ์ดของเราที่ตรงตัวกรองบนสนามทั้งหมดคอสต์ +amount" */
   | { kind: 'costBoost'; source: number; levels: number[]; if?: Condition; filter: CardFilter; amount: number }
-  /** เอฟเฟกต์ Magic: [Main] หรือ [Flash] */
-  | { kind: 'magic'; source: number; timing: 'main' | 'flash'; steps: Step[]; oncePerTurn?: true };
+  /** เอฟเฟกต์ Magic: [Main] หรือ [Flash] (การ์ดสปิริตที่ "ถือว่าเป็นการ์ดเมจิคด้วย" ใช้จากมือได้เช่นกัน) */
+  | { kind: 'magic'; source: number; timing: 'main' | 'flash'; steps: Step[]; oncePerTurn?: true }
+  /** "การ์ดสปิริตนี้ ถือว่าเป็นการ์ดเมจิคด้วย" (ตัวกรอง types magic นับการ์ดนี้ด้วย) */
+  | { kind: 'alsoMagic'; source: number }
+  /** เบรฟนี้ไม่ถูกนับในจำนวนเบรฟที่รวมร่างได้ของสปิริตชื่อนี้ (ฮิเมะสึรุอิจิมอนจิ → ชิซุรุ) */
+  | { kind: 'braveNotCounted'; source: number; hostName: string }
+  /** สปิริตนี้โจมตีไม่ได้ */
+  | { kind: 'cannotAttack'; source: number; levels: number[]; if?: Condition }
+  /** การ์ดในมือเราที่ตรงตัวกรอง ถือว่าเป็นการ์ดเมจิคที่มีเอฟเฟกต์ [Flash] steps (attackStepOnly = แอทแท็คสเต็ปของผู้เล่นทุกคน) */
+  | { kind: 'grantMagic'; source: number; levels: number[]; filter: CardFilter; timing: 'flash'; steps: Step[]; label: string; attackStepOnly?: true }
+  /** เมนสเต็ปของผู้เล่นทุกคน: คอร์จากวอยด์ที่วางโดยเอฟเฟกต์ มาจากไลฟ์ของเจ้าของเอฟเฟกต์แทน (เสียไลฟ์นี้สั่งใช้เบิร์สไม่ได้) */
+  | { kind: 'voidFromLife'; source: number; levels: number[] }
+  /** เทิร์นของคู่แข่ง: ทำลายสปิริตสีที่ระบุทั้งหมดที่ฟื้นสภาพโดยเอฟเฟกต์ของสปิริต/อัลติเมท/เมจิค (ประตูปราสาทแห่งแคว้นบุปผาเหลือง) */
+  | { kind: 'destroyRefreshedByEffect'; source: number; levels: number[]; colors: Color[] }
+  /** Charge: [เอฟเฟกต์ BP-] ของเราที่ไม่ใช่ของอัลติเมท BP- เพิ่มขึ้น amount */
+  | { kind: 'bpMinusBoost'; source: number; levels: number[]; amount: number; granted?: true }
+  /** Charge: [เอฟเฟกต์ถอดคอร์] ลงรีเสิร์ฟของเราที่ไม่ใช่ของอัลติเมท ถอดคอร์เพิ่ม amount เม็ด */
+  | { kind: 'coreRemovalBoost'; source: number; levels: number[]; amount: number; granted?: true };
 
 /** สคริปต์ของการ์ดหนึ่งใบ เรียงตาม effects (null = ยังไม่รองรับ, array = บรรทัดเดียวมีหลายความสามารถ) */
 export type CardScript = (DistributiveOmit<Ability, 'source'> | DistributiveOmit<Ability, 'source'>[] | null)[];

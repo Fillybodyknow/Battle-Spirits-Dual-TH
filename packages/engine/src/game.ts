@@ -1,9 +1,13 @@
 import type { CardDatabase, CardDef, Step } from '@bs/cards';
-import { assertUsableCore, checkDepletion, destroy, drawCard, emit, endGame, loseLife, newCore, payCost, setPhase, type Ctx } from './ctx';
-import { destroyCard, enqueue, fireTriggers, newBatch, queueExhaustTriggers, queueLifeLostTriggers, queueMagicUsedTriggers, queueSummonTriggers, queueTriggers, resolveChoice, runQueue } from './effects';
+import { assertUsableCore, checkDepletion, destroy, drawCard, emit, endGame, loseLife, newCore, payCost, pendBurst, setPhase, type Ctx } from './ctx';
+import { destroyCard, enqueue, fireTriggers, refreshByEffect, newBatch, queueExhaustTriggers, queueLifeLostTriggers, queueMagicUsedTriggers, queueSummonTriggers, queueTriggers, resolveChoice, runQueue } from './effects';
 import { nextRandom, shuffle } from './rng';
 import {
   RuleError,
+  activatedSourceCard,
+  handMagic,
+  braveRoom,
+  braveToSwap,
   blockersFor,
   canAttackWith,
   magicUsedUp,
@@ -144,7 +148,27 @@ function beginTurn(ctx: Ctx): void {
     endGame(ctx, opponentOf(player), 'deckOut');
     return;
   }
+  // "สตาร์ทสเต็ปของเรา" (ประตูปราสาทแห่งแคว้นบุปผาเหลือง)
+  {
+    const batch = newBatch(ctx);
+    for (const id of [...p.field]) queueTriggers(ctx, id, 'startStep', batch);
+  }
+  if (s.queue.length > 0) {
+    runQueue(ctx);
+    if (s.winner) return;
+    if (s.choice) {
+      s.resume = 'afterStart';
+      return;
+    }
+  }
+  afterStart(ctx);
+}
 
+/** Core Step → Draw Step (ต่อจาก Start Step) */
+function afterStart(ctx: Ctx): void {
+  const { s } = ctx;
+  const player = s.turnPlayer;
+  const p = s.players[player];
   setPhase(ctx, 'core');
   if (!(s.turn === 1 && s.config.firstPlayerSkipsCoreStep)) {
     const coreId = newCore(ctx, player);
@@ -327,7 +351,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
       // "เมื่อเบรฟนี้ถูกอัญเชิญ" ทำงานเหมือนอัญเชิญเป็นสปิริต (กติกา 03 ข้อ 3, 04) โดยถือเป็นเลเวลต่ำสุดของการ์ด
       // (ตีความ: เบรฟที่ร่วมร่างไม่มี Core จึงใช้ [Lv1])
       if (def.type !== 'brave' || !def.braveCondition) fail('WRONG_CARD_TYPE', 'ร่วมร่างได้เฉพาะ Brave');
-      const host = braveHost(ctx, player, def, braveOnto);
+      const host = braveHost(ctx, player, def, braveOnto, cardId);
       // [Quick] ใน Flash timing: คอร์ที่จ่ายต้องมาจากรีเสิร์ฟ
       const { paid } = payCost(ctx, player, def, payment, placement, { noPlacement: true, reserveOnly: !!flash && !quickAnyCores(s, db, player) });
       removeFrom(p.hand, cardId);
@@ -402,6 +426,9 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     card.cores = [...placed];
     emit(ctx, { type: 'nexusDeployed', player, cardId, paid });
     checkDepletion(ctx);
+    // "เมื่อเน็กซัสนี้ถูกวาง"
+    queueTriggers(ctx, cardId, 'summon', newBatch(ctx));
+    runQueue(ctx);
   },
 
   useMagic(ctx, { player, cardId, payment, timing }) {
@@ -415,18 +442,21 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
       requireMain(ctx, player);
     }
     const def = cardInHand(ctx, player, cardId);
-    if (def.type !== 'magic') fail('WRONG_CARD_TYPE', 'ใช้ได้เฉพาะ Magic');
+    // เมจิค / การ์ดสปิริตที่ "ถือว่าเป็นการ์ดเมจิคด้วย" / การ์ดที่ได้รับเอฟเฟกต์เมจิคจากการ์ดบนสนาม (คาฉะเนโกะ-อิคุสะ)
+    const asMagic = handMagic(s, ctx.db, cardId);
+    if (def.type !== 'magic' && asMagic.length === 0) fail('WRONG_CARD_TYPE', 'ใช้ได้เฉพาะ Magic');
 
-    const has = (t: 'main' | 'flash') => magicTimings(def).includes(t);
+    const has = (t: 'main' | 'flash') => (def.type === 'magic' ? magicTimings(def).includes(t) : asMagic.some((m) => m.timing === t));
     const use = timing ?? (flash || !has('main') ? 'flash' : 'main');
     if (flash && use !== 'flash') fail('WRONG_TIMING', 'ระหว่าง Flash timing ใช้ได้เฉพาะเอฟเฟกต์ [Flash]');
     // การ์ดที่ไม่มีข้อความเอฟเฟกต์เลย (ชุดตัวอย่าง) ใช้ใน Main Step ได้ตามเดิม
-    if (def.effects.length > 0 && !has(use)) fail('NO_SUCH_EFFECT', `การ์ดนี้ไม่มีเอฟเฟกต์ [${use === 'main' ? 'Main' : 'Flash'}]`);
-    if (flash && def.effects.length === 0) fail('NO_SUCH_EFFECT', 'การ์ดนี้ไม่มีเอฟเฟกต์ [Flash]');
+    if ((def.effects.length > 0 || def.type !== 'magic') && !has(use)) fail('NO_SUCH_EFFECT', `การ์ดนี้ไม่มีเอฟเฟกต์ [${use === 'main' ? 'Main' : 'Flash'}]`);
+    if (flash && def.type === 'magic' && def.effects.length === 0) fail('NO_SUCH_EFFECT', 'การ์ดนี้ไม่มีเอฟเฟกต์ [Flash]');
 
     if (magicUsedUp(s, ctx.db, player, def.cardNo, use)) fail('ONCE_PER_TURN', 'เอฟเฟกต์นี้ใช้ได้เทิร์นละ 1 ครั้ง');
     const paidWithSoul = payment.some((id) => s.cores[id]?.isSoul);
-    const { paid } = payCost(ctx, player, def, payment, []);
+    // ใช้เป็นเมจิค: จ่ายคอสต์อย่างเดียว ไม่วาง Core (การ์ดสปิริตที่ใช้เป็นเมจิคก็เช่นกัน)
+    const { paid } = payCost(ctx, player, def, payment, [], { noPlacement: true });
     const once = def.abilities.find((a) => a.kind === 'magic' && a.timing === use && a.oncePerTurn);
     if (once) s.usedOncePerTurn = [...(s.usedOncePerTurn ?? []), `${player}:${def.cardNo}:${once.source}`];
     removeFrom(s.players[player].hand, cardId);
@@ -437,11 +467,27 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
       flash.consecutivePasses = 0;
       flash.priority = opponentOf(player);
     }
-    const abilities = def.abilities.filter((a) => a.kind === 'magic' && a.timing === use);
+    const effects = asMagic.filter((m) => m.timing === use);
+    const source = effects.find((m) => m.source >= 0)?.source;
+    // กติกา 03 ข้อ 5: เมจิคหนึ่งใบมีหลายความสามารถ เลือกใช้ได้เพียงความสามารถเดียว
+    // (เช่น ยูคิเกิร์ลมี Flash ของตัวเอง + ได้รับ Flash จากคาฉะเนโกะ-อิคุสะ)
+    const steps: Step[] =
+      effects.length > 1
+        ? [
+            {
+              do: 'chooseOne',
+              options: effects.map((m) => ({
+                label: m.label ?? `ใช้เอฟเฟกต์ [${use === 'main' ? 'Main' : 'Flash'}] ของ${def.name}`,
+                steps: m.steps,
+              })),
+            },
+          ]
+        : effects.flatMap((m) => m.steps);
     enqueue(ctx, {
       controller: player,
       sourceId: cardId,
-      steps: abilities.flatMap((a) => (a.kind === 'magic' ? a.steps : [])),
+      ...(def.type !== 'magic' && source !== undefined ? { source } : {}),
+      steps,
       paidWithSoul,
       trashWhenDone: true,
     });
@@ -543,7 +589,10 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     const batch = newBatch(ctx);
     queueTriggers(ctx, attackerId, 'attack', batch);
     for (const id of [...s.players[player].field]) queueTriggers(ctx, id, 'allyAttack', batch, { subject: attackerId });
+    for (const id of [...s.players[opponentOf(player)].field]) queueTriggers(ctx, id, 'oppAttack', batch, { subject: attackerId });
     queueExhaustTriggers(ctx, attackerId);
+    // Burst "หลังจากสปิริต/อัลติเมทคู่แข่งโจมตี" (เซ็นโงคุฮิเมะ คุอง)
+    pendBurst(ctx, opponentOf(player), 'afterOpponentAttack');
     runQueue(ctx);
   },
 
@@ -582,9 +631,11 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
       fail('CANNOT_BLOCK', battle.consecutiveBlade ? 'ต้องป้องกันด้วยสปิริตที่ไม่มีชีลด์ให้ครบก่อน ([Consecutive Blade])' : 'ป้องกันด้วยการ์ดนี้ไม่ได้');
     }
 
-    card.state = 'exhausted';
+    payBlockTax(ctx, player);
+    card.state = battle.exhaustedBlock ? 'refresh' : 'exhausted';
     battle.blockers.push(blockerId);
     emit(ctx, { type: 'blockDeclared', blockerId });
+    if (battle.exhaustedBlock) refreshByEffect(ctx, blockerId);
     // [Consecutive Blade]: ประกาศตัวถัดไปได้ (บังคับถ้าทำได้)
     if (!(battle.blockers.length < battle.maxBlockers && canBlockWith(ctx, player).length > 0)) openFlashAfterBlock(battle, player);
     const batch = newBatch(ctx);
@@ -605,6 +656,16 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
       return;
     }
     emit(ctx, { type: 'noBlock' });
+    // "เมื่อสปิริตนี้ไม่ถูกป้องกัน" (ทไวไลท์-แฟนตาเซีย) ทำงานก่อนตัดสินการต่อสู้
+    queueTriggers(ctx, battle.attackerId, 'unblocked', newBatch(ctx));
+    if (ctx.s.queue.length > 0) {
+      runQueue(ctx);
+      if (ctx.s.winner || !ctx.s.battle) return;
+      if (ctx.s.choice) {
+        ctx.s.resume = 'resolveBattle';
+        return;
+      }
+    }
     resolveBattle(ctx);
   },
 
@@ -632,7 +693,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     emit(ctx, { type: 'activated', player, cardId, source });
     flash.consecutivePasses = 0;
     flash.priority = opponentOf(player);
-    enqueue(ctx, { controller: player, sourceId: cardId, steps: [...ab.steps], paidWithSoul: false, trashWhenDone: false, source });
+    enqueue(ctx, { controller: player, sourceId: ab.granted ? activatedSourceCard(s, db, cardId, source) : cardId, steps: [...ab.steps], paidWithSoul: false, trashWhenDone: false, source });
     runQueue(ctx);
   },
 
@@ -705,9 +766,10 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
       if (hostId === from) fail('INVALID_HOST', 'ร่วมร่างกับสปิริตนี้อยู่แล้ว');
       // สลับเบรฟบนสปิริตรวมร่างสองตัวได้เลย ไม่ต้องแยกร่างก่อน (กติกา 04 ข้อ 3)
       const target = from ? s.cards[hostId] : undefined;
-      if (from && target && target.owner === player && p.field.includes(hostId) && target.braves.length > 0) {
-        const host = braveHost(ctx, player, def, hostId, true);
-        const otherId = target.braves[0]!;
+      const swapOut = from && target && target.owner === player && p.field.includes(hostId) ? braveToSwap(s, db, hostId, braveId) : undefined;
+      if (from && swapOut) {
+        const host = braveHost(ctx, player, def, hostId, braveId, true);
+        const otherId = swapOut;
         const other = s.cards[otherId]!;
         const fromHost = s.cards[from]!;
         const otherMin = db.get(other.cardNo).braveCondition?.minCost ?? 0;
@@ -727,7 +789,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
         checkDepletion(ctx);
         return;
       }
-      const host = braveHost(ctx, player, def, hostId);
+      const host = braveHost(ctx, player, def, hostId, braveId);
       // สภาพที่ติดไปด้วย: Brave เดี่ยว = สภาพของ Brave, ย้ายจากผู้ร่วมร่างเดิม = สภาพของผู้ร่วมร่างเดิม
       const carried = from ? s.cards[from]!.state : brave.state;
       if (from) removeFrom(s.cards[from]!.braves, braveId);
@@ -763,11 +825,11 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
 };
 
 /** ตรวจว่าสปิริตนี้เป็นผู้ร่วมร่างของ Brave ได้ (สปิริตของเรา, คอสต์ถึง, ยังไม่มี Brave ยกเว้นตอนสลับเบรฟ) */
-function braveHost(ctx: Ctx, player: PlayerId, def: CardDef, hostId: string, swapping = false) {
+function braveHost(ctx: Ctx, player: PlayerId, def: CardDef, hostId: string, braveId: string, swapping = false) {
   const host = fieldCard(ctx.s, player, hostId);
   const hostDef = ctx.db.get(host.cardNo);
   if (hostDef.type !== 'spirit') fail('INVALID_HOST', 'ร่วมร่างได้กับสปิริตเท่านั้น');
-  if (host.braves.length > 0 && !swapping) fail('INVALID_HOST', 'สปิริตนี้มี Brave ร่วมร่างอยู่แล้ว');
+  if (!swapping && !braveRoom(ctx.s, ctx.db, hostId, braveId)) fail('INVALID_HOST', 'สปิริตนี้มี Brave ร่วมร่างอยู่แล้ว');
   const min = def.braveCondition?.minCost ?? 0;
   if (hostDef.cost < min) fail('INVALID_HOST', `ผู้ร่วมร่างต้องมีคอสต์ตั้งแต่ ${min} ขึ้นไป`);
   return host;
@@ -794,10 +856,13 @@ function applyChosenBlockers(ctx: Ctx): void {
   const defender = opponentOf(s.turnPlayer);
   const chosen = battle.chosenBlockers.filter((id) => s.players[defender].field.includes(id));
   if (chosen.length === 0) return;
+  payBlockTax(ctx, defender);
   for (const id of chosen) {
-    s.cards[id]!.state = 'exhausted';
+    const wasExhausted = s.cards[id]!.state === 'exhausted';
+    s.cards[id]!.state = battle.exhaustedBlock ? 'refresh' : 'exhausted';
     battle.blockers.push(id);
     emit(ctx, { type: 'blockDeclared', blockerId: id });
+    if (battle.exhaustedBlock && wasExhausted) refreshByEffect(ctx, id);
   }
   // [Consecutive Blade] แต่ฝ่ายโจมตีเลือกไม่ครบ: ฝ่ายป้องกันประกาศตัวที่เหลือเอง
   if (!(battle.blockers.length < battle.maxBlockers && canBlockWith(ctx, defender).length > 0)) openFlashAfterBlock(battle, defender);
@@ -840,10 +905,14 @@ function resolveBattle(ctx: Ctx): void {
   if (blockers.length === 0) {
     const extra = Object.values(extraSymbols(s, db, attacker.id)).reduce<number>((n, v) => n + (v ?? 0), 0);
     const override = battle.symbolOverride?.cardId === attacker.id ? battle.symbolOverride.count : null;
-    const dmg = override ?? symbolCount(attackerDef) + braveSymbols(ctx, attacker.id) + extra;
-    if (loseLife(ctx, defender, dmg, attacker.owner)) return;
-    lostLife = true;
-    queueLifeLostTriggers(ctx, defender, dmg);
+    let dmg = override ?? symbolCount(attackerDef) + braveSymbols(ctx, attacker.id) + extra;
+    // ทิพบอล: ในเทิร์นนี้การ์ดที่มีเจ็มตั้งแต่ N เม็ดถือว่ามีเจ็ม 0
+    if (s.symbolsZero?.turn === s.turn && dmg >= s.symbolsZero.minSymbols) dmg = 0;
+    if (dmg > 0) {
+      if (loseLife(ctx, defender, dmg, attacker.owner)) return;
+      lostLife = true;
+      queueLifeLostTriggers(ctx, defender, dmg);
+    }
   } else {
     // เทียบ BP กับผู้ป้องกันทีละตัว โดยใช้ BP ก่อนมีใครถูกทำลาย (ต่อสู้พร้อมกัน)
     const bpA = currentBp(s, db, attacker.id);
@@ -855,8 +924,7 @@ function resolveBattle(ctx: Ctx): void {
     if (attackerLoses) destroyCard(ctx, attacker.id, defender, { bySource: results.find((r) => bpA <= r.bp)!.id });
     // "ชนะและทำลายสปิริตคู่แข่งจากการเทียบ BP → ฟื้นสภาพ" (คาราคุริโอโอคามิ)
     if (!attackerLoses && destroyedBlockers.length > 0 && battle.refreshOnWin?.includes(attacker.id) && s.players[attacker.owner].field.includes(attacker.id)) {
-      attacker.state = 'refresh';
-      emit(ctx, { type: 'cardRefreshed', cardId: attacker.id });
+      refreshByEffect(ctx, attacker.id, attacker.id);
     }
 
     const perBlocker = battle.lifeOnBlockerDestroyed + (battle.consecutiveBlade ? battle.lifeOnBlockerDestroyedByBlade : 0);
@@ -903,7 +971,21 @@ function endBattle(ctx: Ctx): void {
   }
   ctx.s.battle = null;
   emit(ctx, { type: 'battleEnded' });
-  if (battle.endAttackStepAfter) endTurn(ctx);
+  const cond = battle.endAttackStepIf;
+  const endIf = !!cond && !!ctx.s.cards[cond.sourceId] && conditionHolds(ctx.s, cond.sourceId, cond.cond, false, false, ctx.db);
+  if (battle.endAttackStepAfter || endIf) endTurn(ctx);
+}
+
+/** ฮิเมะเนโกะ: การป้องกันครั้งแรกของการต่อสู้นี้ ฝ่ายป้องกันส่งคอร์รีเสิร์ฟลงแทรช (คอร์ปกติก่อน) */
+function payBlockTax(ctx: Ctx, defender: PlayerId): void {
+  const tax = ctx.s.battle?.blockTax;
+  if (!tax || tax.paid) return;
+  const p = ctx.s.players[defender];
+  const pay = [...p.reserve].sort((a, b) => Number(ctx.s.cores[a]!.isSoul) - Number(ctx.s.cores[b]!.isSoul)).slice(0, tax.reserveToTrash);
+  for (const id of pay) removeFrom(p.reserve, id);
+  p.trashCores.push(...pay);
+  tax.paid = true;
+  emit(ctx, { type: 'coresPaidToBlock', player: defender, count: pay.length });
 }
 
 /** ผู้โจมตีหรือผู้ป้องกันออกจากสนามระหว่างการต่อสู้ (สูญสลาย/ถูกทำลายโดยเอฟเฟกต์) → การต่อสู้จบทันที */
@@ -952,7 +1034,10 @@ export function applyAction(state: GameState, input: Action, db: CardDatabase): 
       const resume = ctx.s.resume;
       ctx.s.resume = null;
       if (resume === 'afterDraw') afterDraw(ctx);
-      else if (resume === 'endTurn') finishTurn(ctx);
+      else if (resume === 'afterStart') afterStart(ctx);
+      else if (resume === 'resolveBattle') {
+        if (ctx.s.battle) resolveBattle(ctx);
+      } else if (resume === 'endTurn') finishTurn(ctx);
       else if (resume === 'drawStepStart') startDraw(ctx);
       else if (ctx.s.battle) endBattle(ctx);
     }

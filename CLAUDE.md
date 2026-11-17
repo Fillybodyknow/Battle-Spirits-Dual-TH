@@ -92,6 +92,11 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
   ทุก step ที่เลือก/ทำกับการ์ดคู่แข่งต้องกรองด้วย `hits`), `bounceOpponent` (`to`: มือ/บนสุด/ใต้สุดเด็ค, `anySide`, `costFrom`) / `bounceAllOpponent` / `bounceToBottom`,
   `blockWhileExhausted`, `battleUnblockable` / `unblockableThisTurn`, `battleNoHandFlash`, `battleStaysOnDestroy`, `useMagicFromHandFree`, `handCostDelta`,
   `negateOpponentNexus`, trigger `oppEndStep` / `oppHandIncreased` / `oncePerTurnByName`, เงื่อนไข `noLifeDamageThisTurn` / `oppTurn` / `selfInBattle` / `attackerFamily`
+- **BS05**: `alsoMagic` / `grantMagic` (สปิริตใช้เป็นเมจิคได้ = `handMagic` ใน rules.ts, ใน store ใช้ `handMagicTimings`), `cannotAttack`, `voidFromLife`,
+  Charge (`charged` + `bpMinusBoost` / `coreRemovalBoost` = `chargeBonus`), ล็อกโจมตี/ป้องกัน `disableChosenOpponent` (`state.turnLocks`), `negateOpponentsThisTurn` (`effectsLost`),
+  `battleExhaustedBlock`, `blockTax`, `battleColorless`, `symbolsZeroThisTurn`, เบิร์ส `afterOpponentAttack`, trigger `unblocked` / `oppAttack` / `startStep` / `milledAny`,
+  เน็กซัสถูกวาง = trigger `summon`, `activated.granted` (Flash ที่เบรฟให้ร่างหลัก),
+  `destroyRefreshedByEffect` (ฟื้นสภาพด้วยเอฟเฟกต์ต้องผ่าน `refreshByEffect` ใน effects.ts เสมอ)
 - **ย้ายการ์ดไปเขียนเต็มที่ชุดอื่น = รหัสการ์ดเปลี่ยน**: เพิ่มรหัสเดิม → รหัสใหม่ใน `packages/cards/src/legacy-card-no.ts`
   (เด็คที่ผู้เล่นจัดไว้ / รหัสเด็คออนไลน์แปลงตอนโหลดด้วย `migrateEntries` ใน decks.ts) ไม่งั้นเด็คเก่าหาการ์ดไม่เจอ
 

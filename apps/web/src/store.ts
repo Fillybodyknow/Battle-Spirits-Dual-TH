@@ -11,6 +11,9 @@ import { rarityOf, type TextEffect } from '@bs/cards';
 import { APP_VERSION } from './changelog';
 import {
   activatableAbilities,
+  handMagic,
+  braveRoom,
+  braveToSwap,
   baseCost,
   quickAnyCores,
   trashSummonRule,
@@ -83,6 +86,16 @@ export function magicTimings(cardNo: string): MagicTiming[] {
     .filter((t): t is MagicTiming => t === 'main' || t === 'flash');
 }
 
+/**
+ * การ์ดในมือนี้ใช้เป็นเมจิคได้จังหวะไหน: เมจิค (ตามข้อความ) / สปิริตที่ "ถือว่าเป็นการ์ดเมจิคด้วย" /
+ * การ์ดสปิริตที่ได้รับเอฟเฟกต์เมจิคจากการ์ดบนสนาม (คาฉะเนโกะ-อิคุสะ)
+ */
+export function handMagicTimings(s: GameState, cardId: string): MagicTiming[] {
+  const def = db.get(s.cards[cardId]!.cardNo);
+  if (def.type === 'magic') return magicTimings(def.cardNo);
+  return [...new Set(handMagic(s, db, cardId).map((m) => m.timing))];
+}
+
 /** Core นี้ลาก/ย้ายได้ตอนนี้หรือไม่ (Main Step ของเจ้าของ, อยู่ใน Reserve หรือบนการ์ดในสนาม) */
 export function canMoveCore(s: GameState, coreId: string): boolean {
   const core = s.cores[coreId];
@@ -144,10 +157,11 @@ export function braveHosts(s: GameState, cardId: string): string[] {
     const host = s.cards[id]!;
     const hd = db.get(host.cardNo);
     if (id === current || hd.type !== 'spirit' || hd.cost < min) return false;
-    if (host.braves.length === 0) return true;
+    const swapOut = braveToSwap(s, db, id, cardId);
+    if (!swapOut) return true;
     // สปิริตที่มีเบรฟอยู่แล้ว: สลับเบรฟได้ถ้าเบรฟนี้ร่วมร่างอยู่ และเบรฟอีกตัวร่วมร่างกับร่างเดิมของเบรฟนี้ได้ (กติกา 04)
     if (!current) return false;
-    const otherMin = db.get(s.cards[host.braves[0]!]!.cardNo).braveCondition?.minCost ?? 0;
+    const otherMin = db.get(s.cards[swapOut]!.cardNo).braveCondition?.minCost ?? 0;
     return db.get(s.cards[current]!.cardNo).cost >= otherMin;
   });
 }
@@ -175,8 +189,7 @@ export function responseOptions(
   const magic = p.hand.filter((id) => {
     const def = db.get(s.cards[id]!.cardNo);
     return (
-      def.type === 'magic' &&
-      magicTimings(def.cardNo).includes('flash') &&
+      handMagicTimings(s, id).includes('flash') &&
       payableCost(s, db, player, def) <= cores &&
       !magicUsedUp(s, db, player, def.cardNo, 'flash')
     );
@@ -255,7 +268,7 @@ export function multiHosts(s: GameState, m: MultiPlan | null, braveId: string): 
   return s.players[c.player].field.filter((id) => {
     const card = s.cards[id]!;
     const d = db.get(card.cardNo);
-    return d.type === 'spirit' && d.cost >= min && card.braves.length === 0 && !taken.has(id);
+    return d.type === 'spirit' && d.cost >= min && braveRoom(s, db, id, braveId) && !taken.has(id);
   });
 }
 
@@ -1079,6 +1092,14 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
           delay: t,
         });
         if (e.amount < 0) t += 500;
+        break;
+      case 'cardLocked':
+        out.push({ kind: 'float', anchor: `[data-field-card="${e.cardId}"]`, text: 'โจมตี/ป้องกันไม่ได้ในเทิร์นนี้', tone: 'bad', delay: t });
+        t += 450;
+        break;
+      case 'coresPaidToBlock':
+        out.push({ kind: 'float', anchor: `[data-reserve="${e.player}"]`, text: `-${e.count} Core (ค่าป้องกัน)`, tone: 'bad', delay: t });
+        t += 350;
         break;
       case 'attackBanned':
         out.push({ kind: 'banner', tone: 'step', title: 'ห้ามโจมตี', sub: `สปิริตของ${who(e.player)}โจมตีไม่ได้ในเทิร์นนี้`, delay: t });
@@ -2876,7 +2897,7 @@ export const useGame = create<Store>((set, get) => {
       if (!mine(owner)) return;
       const canPlay = inMain(state)
         ? owner === state.turnPlayer
-        : flashPlayer(state) === owner && (magicTimings(state.cards[cardId]!.cardNo).includes('flash') || canQuickSummon(state, cardId));
+        : flashPlayer(state) === owner && (handMagicTimings(state, cardId).includes('flash') || canQuickSummon(state, cardId));
       // เล่นตอนนี้ไม่ได้ก็ยังเปิดเมนูได้ (ปุ่มย้ายตำแหน่งการ์ดในมือ สำหรับจอสัมผัสที่ลากไม่ได้)
       set({ selectedHandCard: selectedHandCard === cardId ? null : cardId, selectedCores: canPlay ? [] : get().selectedCores });
     },

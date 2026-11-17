@@ -126,6 +126,10 @@ export function formatEvent(e: GameEvent, s: GameState): string | null {
       return `${name(e.cardId)} ฟื้นสภาพ`;
     case 'discarded':
       return `${playerLabel(e.player)} ทิ้ง ${name(e.cardId)} จากมือ`;
+    case 'cardLocked':
+      return `${name(e.cardId)} โจมตี/ป้องกันไม่ได้ในเทิร์นนี้`;
+    case 'coresPaidToBlock':
+      return `${playerLabel(e.player)} ส่งคอร์รีเสิร์ฟ ${e.count} เม็ดลงแทรชเพื่อป้องกัน`;
     case 'burstActivated':
       return `💥 ${playerLabel(e.player)} เปิด Burst: ${name(e.cardId)}`;
     case 'lifeGained':

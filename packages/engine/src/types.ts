@@ -1,4 +1,4 @@
-import type { BurstEvent, CardFilter, Step } from '@bs/cards';
+import type { BurstEvent, CardFilter, Condition, Step } from '@bs/cards';
 
 export type PlayerId = 'p1' | 'p2';
 export const PLAYERS: readonly PlayerId[] = ['p1', 'p2'];
@@ -104,8 +104,16 @@ export interface Battle {
   mustBlockBeforeBlade?: boolean;
   /** ในการต่อสู้นี้ เจ็มของการ์ดนี้ (รวม Brave) ถือเป็นสี color จำนวน count เม็ด */
   symbolOverride?: { cardId: string; color: string; count: number };
-  /** ผู้โจมตีไม่ถูกป้องกัน (spirits = ไม่ถูกป้องกันโดยสปิริต) */
-  unblockable?: 'all' | 'spirits';
+  /** ผู้โจมตีไม่ถูกป้องกัน (spirits = ไม่ถูกป้องกันโดยสปิริต, ultimates = ไม่ถูกป้องกันโดยอัลติเมท) */
+  unblockable?: 'all' | 'spirits' | 'ultimates';
+  /** ในการต่อสู้นี้ ตัวที่เสื่อมสภาพป้องกันได้ (ตัวที่ฟื้นสภาพป้องกันไม่ได้) และฟื้นสภาพเมื่อป้องกัน (รินเนะ) */
+  exhaustedBlock?: boolean;
+  /** จบ Attack Step เมื่อจบการต่อสู้นี้ ถ้าเงื่อนไขของผู้เล่นนี้เป็นจริงตอนจบ (ยูคิเกิร์ล) */
+  endAttackStepIf?: { player: PlayerId; sourceId: string; cond: Condition };
+  /** คู่แข่งต้องส่งคอร์รีเสิร์ฟ N เม็ดลงแทรชก่อนป้องกัน (ฮิเมะเนโกะ) · paid = จ่ายแล้วในการต่อสู้นี้ */
+  blockTax?: { reserveToTrash: number; paid?: boolean };
+  /** ผู้โจมตีถือว่าไร้สีในการต่อสู้นี้ (ไลท์นิ่ง-ชิออน) */
+  colorless?: boolean;
   /** ผู้เล่นที่ใช้การ์ดในมือในช่วง Flash ไม่ได้ในการต่อสู้นี้ */
   noHandFlash?: PlayerId;
   /** ผู้เล่นที่สปิริตถูกทำลายโดยคู่แข่งแล้วยังอยู่บนสนาม (เสื่อมสภาพ) ในการต่อสู้นี้ */
@@ -165,6 +173,14 @@ export interface QueuedEffect {
   zone?: 'hand' | 'trash';
   /** มี Soul Core บนการ์ดนี้ตอนเกิด trigger (การ์ดที่ออกจากสนามไปแล้ว) */
   soulSnapshot?: boolean;
+  /** การ์ดที่ returnFromTrash ล่าสุดของเอฟเฟกต์นี้นำขึ้นมือ */
+  returned?: string;
+  /** จำนวนการ์ดที่ discardUpTo ทิ้ง */
+  discardedCount?: number;
+  /** debuff ของเอฟเฟกต์นี้ทำให้สปิริตกลายเป็น BP0 เป็นตัวแรกของเทิร์น */
+  firstZeroBp?: boolean;
+  /** เอฟเฟกต์นี้ทำให้การ์ดของคู่แข่งสูญสลาย */
+  depleted?: boolean;
 }
 
 /** การตัดสินใจที่ engine รอจากผู้เล่น (ระหว่างนี้ทำได้แค่ choose หรือ concede) */
@@ -231,7 +247,7 @@ export interface GameState {
   /** เงื่อนไข Burst ที่เกิดขึ้นแล้ว รอถามเจ้าของ Burst เมื่อเอฟเฟกต์ที่กำลังทำงานจบ */
   pendingBursts: { player: PlayerId; on: BurstEvent }[];
   /** ขั้นตอนของเทิร์นที่ต้องเดินต่อเมื่อเลือกเสร็จ (เช่น เอฟเฟกต์ใน Draw Step ให้เลือกทิ้งการ์ด) */
-  resume: 'afterDraw' | 'endBattle' | 'endTurn' | 'drawStepStart' | null;
+  resume: 'afterDraw' | 'afterStart' | 'resolveBattle' | 'endBattle' | 'endTurn' | 'drawStepStart' | null;
   burstSetThisTurn: boolean;
   /** "ในเทิร์นนี้ ... โจมตีไม่ได้": การ์ดของ player ประเภท types โจมตีไม่ได้ในเทิร์น turn */
   attackBans?: { player: PlayerId; turn: number; types: string[] }[];
@@ -258,6 +274,14 @@ export interface GameState {
   turnTriggers?: { player: PlayerId; turn: number; on: 'allyDestroyed'; steps: Step[]; sourceId: string; paidWithSoul: boolean }[];
   /** Draw Step แบบกดจั่วเอง: ผู้เล่นที่ต้องกดจั่ว (ระหว่างนี้ทำ action อื่นไม่ได้) */
   awaitingDraw?: PlayerId;
+  /** "ในเทิร์นนี้ สปิริตนั้นจะโจมตี/ป้องกันไม่ได้" */
+  turnLocks?: { cardId: string; turn: number }[];
+  /** "ในเทิร์นนี้ สปิริต/เน็กซัสของคู่แข่งทั้งหมดสูญเสียเอฟเฟกต์ทั้งหมด": การ์ดของ player เสียเอฟเฟกต์ในเทิร์น turn */
+  effectsLost?: { player: PlayerId; turn: number }[];
+  /** "ในเทิร์นนี้ สปิริต/อัลติเมทที่มีเจ็มตั้งแต่ N เม็ดถือว่ามีเจ็ม 0" */
+  symbolsZero?: { turn: number; minSymbols: number };
+  /** เทิร์นที่มีสปิริตกลายเป็น BP0 โดย debuff ไปแล้ว */
+  bpZeroTurn?: number;
   players: Record<PlayerId, PlayerState>;
   cards: Record<string, CardInstance>;
   cores: Record<string, CoreInstance>;
@@ -364,6 +388,10 @@ export type GameEvent =
   | { type: 'evolved'; cardId: string; count: number; soul: boolean }
   | { type: 'cardRefreshed'; cardId: string }
   | { type: 'discarded'; player: PlayerId; cardId: string }
+  /** การ์ดนี้โจมตี/ป้องกันไม่ได้ในเทิร์นนี้ */
+  | { type: 'cardLocked'; cardId: string }
+  /** ฝ่ายป้องกันส่งคอร์รีเสิร์ฟลงแทรชเพื่อป้องกัน */
+  | { type: 'coresPaidToBlock'; player: PlayerId; count: number }
   | { type: 'burstActivated'; player: PlayerId; cardId: string }
   | { type: 'lifeGained'; player: PlayerId; amount: number }
   | { type: 'costPaid'; player: PlayerId; cardId: string; paid: number }
