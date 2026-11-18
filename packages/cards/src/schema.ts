@@ -27,6 +27,8 @@ export const BraveConditionSchema = z.object({
   maxSpirits: z.number().int().min(1).max(2).default(1),
   /** ผู้ร่วมร่างต้องมีคอสต์ตั้งแต่ค่านี้ */
   minCost: z.number().int().min(0).optional(),
+  /** ผู้ร่วมร่างต้องเป็นสปิริตเผ่านี้ (BS07 ชุดตุ๊กตาฟูริน) */
+  family: z.string().optional(),
   /** เอฟเฟกต์ติดตัวที่ให้ผู้ร่วมร่าง: BP+ */
   bp: z.number().int().min(0).optional(),
   /** เงื่อนไขอื่นเก็บเป็นข้อมูลดิบไว้ก่อน */
@@ -43,6 +45,10 @@ export const CardDefSchema = z
     reduction: SymbolMapSchema.default({}),
     symbols: SymbolMapSchema.default({}),
     family: z.array(z.string()).default([]),
+    /** ทีม (BS07 ดีว่า): "ทีม: ไชนี่ฮาร์ท" */
+    teams: z.array(z.string()).default([]),
+    /** ไทป์ของเมจิค (BS07): "ไทป์: เพลง" */
+    magicTypes: z.array(z.string()).default([]),
     levels: z.array(LevelSchema).default([]),
     /** การ์ดมีเอฟเฟกต์ Burst หรือไม่ (ใช้ตรวจตอนเซ็ท Burst) */
     burst: z.boolean().default(false),

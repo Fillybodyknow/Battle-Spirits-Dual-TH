@@ -3,6 +3,8 @@ import { assertUsableCore, checkDepletion, destroy, drawCard, emit, emitStatic, 
 import { destroyCard, enqueue, fireTriggers, refreshByEffect, newBatch, queueExhaustTriggers, queueLifeLostTriggers, queueMagicUsedTriggers, queueSummonTriggers, queueTriggers, resolveChoice, runQueue } from './effects';
 import { nextRandom, shuffle } from './rng';
 import {
+  onStageAbilities,
+  effectsNegated,
   RuleError,
   activatedSourceCard,
   handMagic,
@@ -14,6 +16,7 @@ import {
   noReductionBlocked,
   levelBoostSources,
   fieldCost,
+  braveFits,
   braveRoom,
   braveToSwap,
   blockersFor,
@@ -81,6 +84,7 @@ const emptyPlayer = (): PlayerState => ({
   life: [],
   reserve: [],
   trashCores: [],
+  songs: [],
 });
 
 /** เตรียมเกมตามหมวด 5 แล้วเริ่มเทิร์นแรกจนถึง Main Step */
@@ -253,6 +257,12 @@ function drawStep(ctx: Ctx): void {
 
 /** Refresh Step → Main Step */
 function afterDraw(ctx: Ctx): void {
+  refreshStep(ctx);
+  setPhase(ctx, 'main');
+}
+
+/** Refresh Step ของผู้เล่นเทิร์น (ใช้ซ้ำกับ "เข้า [รีเฟรชสเต็ปของเรา] อีก 1 ครั้ง") */
+function refreshStep(ctx: Ctx): void {
   const { s } = ctx;
   const player = s.turnPlayer;
   const p = s.players[player];
@@ -283,8 +293,46 @@ function afterDraw(ctx: Ctx): void {
   p.reserve.push(...p.trashCores);
   p.trashCores = [];
   emit(ctx, { type: 'refreshed', player });
+}
 
-  setPhase(ctx, 'main');
+/** เข้าแอทแท็คสเต็ป: "เมื่อเริ่มแอทแท็คสเต็ปของเรา/คู่แข่ง" */
+function enterAttackStep(ctx: Ctx, player: PlayerId): void {
+  setPhase(ctx, 'attack');
+  const batch = newBatch(ctx);
+  for (const id of [...ctx.s.players[player].field]) queueTriggers(ctx, id, 'ownAttackStepStart', batch);
+  for (const id of [...ctx.s.players[opponentOf(player)].field]) queueTriggers(ctx, id, 'oppAttackStepStart', batch);
+  runQueue(ctx);
+}
+
+/**
+ * จบแอทแท็คสเต็ปของเรา: "หลังจากจบสเต็ป เข้า [รีเฟรชสเต็ป]/[แอทแท็คสเต็ป] อีก 1 ครั้ง" (แจนนู-ดรานิเอส) แล้วไปเอนด์สเต็ป
+ */
+function afterAttackStep(ctx: Ctx): void {
+  const { s, db } = ctx;
+  const player = s.turnPlayer;
+  for (const id of [...s.players[player].field]) {
+    if (!s.players[player].field.includes(id) || effectsNegated(s, db, id)) continue;
+    const lv = cardLevel(s, db, id);
+    const def = db.get(s.cards[id]!.cardNo);
+    for (const ab of def.abilities) {
+      if (ab.kind !== 'extraSteps' || !ab.levels.includes(lv) || !conditionHolds(s, id, ab.if, false, false, db)) continue;
+      const key = `${player}:${def.name}:${ab.source}`;
+      const used = ab.once === 'turn' ? s.cards[id]!.usedThisTurn.includes(ab.source) : (s.usedOncePerGame ?? []).includes(key);
+      if (used) continue;
+      if (ab.once === 'turn') s.cards[id]!.usedThisTurn.push(ab.source);
+      else s.usedOncePerGame = [...(s.usedOncePerGame ?? []), key];
+      emit(ctx, { type: 'abilityTriggered', cardId: id, source: ab.source });
+      for (const st of ab.steps) {
+        emit(ctx, { type: 'extraStep', player, step: st, cardId: id });
+        if (st === 'refresh') refreshStep(ctx);
+      }
+      if (ab.steps.includes('attack')) {
+        enterAttackStep(ctx, player);
+        return;
+      }
+    }
+  }
+  endTurn(ctx);
 }
 
 function endTurn(ctx: Ctx): void {
@@ -519,6 +567,13 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
       paidWithSoul,
       trashWhenDone: true,
     });
+    {
+      const at = s.queue.length - 1;
+      const batch = newBatch(ctx);
+      for (const id of [...s.players[opponentOf(player)].field]) queueTriggers(ctx, id, 'oppMagicUse', batch, { subject: cardId });
+      const added = s.queue.splice(at + 1);
+      s.queue.splice(at, 0, ...added);
+    }
     queueMagicUsedTriggers(ctx, player, cardId, !fromShown);
     runQueue(ctx);
   },
@@ -565,16 +620,12 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
 
   endMain(ctx, { player }) {
     requireMain(ctx, player);
-    setPhase(ctx, 'attack');
     if (ctx.s.turn === 1 && ctx.s.config.firstPlayerSkipsAttackStep) {
+      setPhase(ctx, 'attack');
       endTurn(ctx);
       return;
     }
-    // "เมื่อเริ่มแอทแท็คสเต็ปของคู่แข่ง"
-    const batch = newBatch(ctx);
-    for (const id of [...ctx.s.players[player].field]) queueTriggers(ctx, id, 'ownAttackStepStart', batch);
-    for (const id of [...ctx.s.players[opponentOf(player)].field]) queueTriggers(ctx, id, 'oppAttackStepStart', batch);
-    runQueue(ctx);
+    enterAttackStep(ctx, player);
   },
 
   declareAttack(ctx, { player, attackerId }) {
@@ -606,6 +657,12 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
       lifeOnBlockerDestroyed: 0,
       lifeOnBlockerDestroyedByBlade: 0,
     };
+    // แคนดี้-ซาร์ด: ป้องกันได้ด้วยสปิริต/อัลติเมทตั้งแต่ 1 ตัวที่ Lv รวมตั้งแต่ N (ป้องกันหลายตัวได้)
+    const lb = levelBlockFor(ctx, attackerId);
+    if (lb) {
+      s.battle.levelBlock = lb;
+      s.battle.maxBlockers = 99;
+    }
     emit(ctx, { type: 'attackDeclared', attackerId });
     // อิจิโกะฮิโทฟุริ: ผู้ร่วมร่างที่ระบุไว้เข้าป้องกันเองถ้าป้องกันได้
     if (fa) {
@@ -677,10 +734,22 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     battle.blockers.push(blockerId);
     emit(ctx, { type: 'blockDeclared', blockerId });
     if (battle.exhaustedBlock) refreshByEffect(ctx, blockerId);
-    // [Consecutive Blade]: ประกาศตัวถัดไปได้ (บังคับถ้าทำได้)
-    if (!(battle.blockers.length < battle.maxBlockers && canBlockWith(ctx, player).length > 0)) openFlashAfterBlock(battle, player);
     const batch = newBatch(ctx);
+    if (battle.levelBlock) {
+      // แคนดี้-ซาร์ด: Lv รวมถึงแล้ว = ป้องกันครบ ผู้โจมตีเลือกสู้ 1 ตัว (ยังไม่ถึง = ต้องประกาศตัวถัดไป)
+      if (blockLevelTotal(ctx) >= battle.levelBlock) {
+        openFlashAfterBlock(battle, player);
+        if (battle.blockers.length > 1) {
+          enqueue(ctx, { controller: opponentOf(player), sourceId: battle.attackerId, steps: [{ do: 'chooseBattleBlocker' }], paidWithSoul: false, trashWhenDone: false, announce: false });
+        }
+      }
+    } else if (!(battle.blockers.length < battle.maxBlockers && canBlockWith(ctx, player).length > 0)) {
+      // [Consecutive Blade]: ประกาศตัวถัดไปได้ (บังคับถ้าทำได้)
+      openFlashAfterBlock(battle, player);
+    }
     queueTriggers(ctx, blockerId, 'block', batch);
+    for (const id of [...ctx.s.players[player].field]) if (id !== blockerId) queueTriggers(ctx, id, 'allyBlock', batch, { subject: blockerId });
+    queueTriggers(ctx, blockerId, 'allyBlock', batch, { subject: blockerId });
     queueBlockedTriggers(ctx, battle.attackerId, blockerId, batch);
     queueExhaustTriggers(ctx, blockerId);
     runQueue(ctx);
@@ -691,6 +760,9 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     const battle = requireBlockStep(ctx, player);
     if (battle.mustBlock && canBlockWith(ctx, player).some((id) => !effectBlocked(ctx.s, ctx.db, battle.attackerId, id))) {
       fail('MUST_BLOCK', battle.consecutiveBlade ? 'ต้องป้องกัน 2 ตัวถ้าทำได้ ([Consecutive Blade])' : 'ต้องป้องกันถ้าทำได้ ([True-Rage])');
+    }
+    if (battle.levelBlock && battle.blockers.length > 0 && blockLevelTotal(ctx) < battle.levelBlock) {
+      fail('MUST_BLOCK', `ต้องป้องกันเพิ่มให้ Lv รวมถึง ${battle.levelBlock}`);
     }
     if (battle.blockers.length > 0) {
       openFlashAfterBlock(battle, player);
@@ -719,7 +791,34 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
       const holder = activeForcedAttack(s, ctx.db, player)?.holderId ?? forceAttackHolders(s, ctx.db, player)[0]!.id;
       fail('MUST_ATTACK', `ต้องโจมตีก่อนจบ Attack Step (เอฟเฟกต์ของ ${ctx.db.get(s.cards[holder]!.cardNo).name}): ${forced.map((id) => ctx.db.get(s.cards[id]!.cardNo).name).join(', ')}`);
     }
-    endTurn(ctx);
+    afterAttackStep(ctx);
+  },
+
+  onStage(ctx, { player, cardId, source }) {
+    const { s, db } = ctx;
+    if (s.turnPlayer !== player) fail('NOT_YOUR_TURN', 'ไม่ใช่เทิร์นของคุณ');
+    if (s.phase !== 'attack' || s.battle) fail('WRONG_PHASE', 'On Stage ได้เฉพาะแอทแท็คสเต็ปของเรา ตอนที่ไม่มีการต่อสู้ค้างอยู่');
+    fieldCard(s, player, cardId);
+    const fa = activeForcedAttack(s, db, player);
+    if (fa) fail('MUST_ATTACK', `ต้องโจมตีด้วย ${db.get(s.cards[fa.attackerId]!.cardNo).name} ก่อน`);
+    const ab = onStageAbilities(s, db, player, cardId).find((a) => a.source === source);
+    if (!ab) fail('CANNOT_ON_STAGE', 'ใช้ความสามารถนี้ไม่ได้ตอนนี้ (สปิริตต้องสั่งโจมตีได้ และทำได้ครบตามเงื่อนไข)');
+    const card = s.cards[cardId]!;
+    const level = cardLevel(s, db, cardId);
+    const soul = card.cores.some((id) => s.cores[id]!.isSoul);
+    emit(ctx, { type: 'activated', player, cardId, source });
+    const done: Step[] = ab.keyword ? [{ do: 'onStageDone', cardId, level, soul }] : [];
+    enqueue(ctx, {
+      controller: player,
+      sourceId: cardId,
+      source,
+      steps: [{ do: 'onStageLeave', cardId, keyword: !!ab.keyword }, ...ab.steps, ...done],
+      paidWithSoul: false,
+      trashWhenDone: false,
+      onStage: !!ab.keyword,
+      soulSnapshot: soul,
+    });
+    runQueue(ctx);
   },
 
   activate(ctx, { player, cardId, source }) {
@@ -815,8 +914,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
         const otherId = swapOut;
         const other = s.cards[otherId]!;
         const fromHost = s.cards[from]!;
-        const otherMin = db.get(other.cardNo).braveCondition?.minCost ?? 0;
-        if (db.get(fromHost.cardNo).cost < otherMin) fail('INVALID_HOST', `${db.get(other.cardNo).name} ร่วมร่างกับสปิริตคอสต์ตั้งแต่ ${otherMin} ขึ้นไปเท่านั้น`);
+        if (!braveFits(db.get(other.cardNo), db.get(fromHost.cardNo))) fail('INVALID_HOST', `${db.get(other.cardNo).name} ร่วมร่างกับสปิริตนั้นไม่ได้`);
         // สภาพหลังสลับ: เบรฟติดสภาพของร่างเดิมมาด้วย ฝ่ายใดเสื่อมสภาพ = ร่างที่รวมแล้วเสื่อมสภาพ
         const anyExhausted = fromHost.state === 'exhausted' || host.state === 'exhausted' ? 'exhausted' : 'refresh';
         removeFrom(fromHost.braves, braveId);
@@ -875,6 +973,7 @@ function braveHost(ctx: Ctx, player: PlayerId, def: CardDef, hostId: string, bra
   if (!swapping && !braveRoom(ctx.s, ctx.db, hostId, braveId)) fail('INVALID_HOST', 'สปิริตนี้มี Brave ร่วมร่างอยู่แล้ว');
   const min = def.braveCondition?.minCost ?? 0;
   if (hostDef.cost < min) fail('INVALID_HOST', `ผู้ร่วมร่างต้องมีคอสต์ตั้งแต่ ${min} ขึ้นไป`);
+  if (!braveFits(def, hostDef)) fail('INVALID_HOST', `ผู้ร่วมร่างต้องเป็นสปิริตเผ่า ${def.braveCondition?.family}`);
   return host;
 }
 
@@ -1030,10 +1129,38 @@ function endBattle(ctx: Ctx): void {
     }
   }
   ctx.s.battle = null;
+  // BP+ / เจ็มที่มีผล "จนจบช่วงนั้น" ([เมื่อสปิริตนี้โจมตี/ป้องกัน] ที่ไม่บอกระยะเวลา) หมดลง
+  for (const c of Object.values(ctx.s.cards)) {
+    delete c.battleBp;
+    delete c.battleSymbols;
+  }
   emit(ctx, { type: 'battleEnded' });
   const cond = battle.endAttackStepIf;
   const endIf = !!cond && !!ctx.s.cards[cond.sourceId] && conditionHolds(ctx.s, cond.sourceId, cond.cond, false, false, ctx.db);
-  if (battle.endAttackStepAfter || endIf) endTurn(ctx);
+  if (battle.endAttackStepAfter || endIf) afterAttackStep(ctx);
+}
+
+/** แคนดี้-ซาร์ด: Lv รวมที่ฝ่ายป้องกันต้องใช้ป้องกันผู้โจมตีนี้ (null = ป้องกันตามปกติ) */
+function levelBlockFor(ctx: Ctx, attackerId: string): number | null {
+  const { s, db } = ctx;
+  const owner = s.cards[attackerId]!.owner;
+  let need: number | null = null;
+  for (const id of s.players[owner].field) {
+    if (effectsNegated(s, db, id)) continue;
+    const lv = cardLevel(s, db, id);
+    for (const ab of db.get(s.cards[id]!.cardNo).abilities) {
+      if (ab.kind !== 'blockLevelSum' || !ab.levels.includes(lv) || !conditionHolds(s, id, ab.if, false, false, db)) continue;
+      if (!matchesFilter(s, db, attackerId, ab.attacker)) continue;
+      emit(ctx, { type: 'staticApplied', player: owner, cardId: id, source: ab.source });
+      need = Math.max(need ?? 0, ab.minLevel);
+    }
+  }
+  return need;
+}
+
+/** Lv รวมของผู้ป้องกันที่ประกาศแล้ว */
+function blockLevelTotal(ctx: Ctx): number {
+  return (ctx.s.battle?.blockers ?? []).reduce((n, id) => n + cardLevel(ctx.s, ctx.db, id), 0);
 }
 
 /** ฮิเมะเนโกะ: การป้องกันครั้งแรกของการต่อสู้นี้ ฝ่ายป้องกันส่งคอร์รีเสิร์ฟลงแทรช (คอร์ปกติก่อน) */

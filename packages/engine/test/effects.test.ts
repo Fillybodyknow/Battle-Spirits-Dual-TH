@@ -165,7 +165,7 @@ describe('เมื่อสปิริตนี้โจมตี และ [T
     expect(s.players.p2.life).toHaveLength(4);
   });
 
-  it('จินไรดราก้อน: BP+3000 ในเทิร์นนี้ และได้ [True-Rage] เมื่อมี Soul Core', () => {
+  it('จินไรดราก้อน: BP+3000 (ไม่บอกระยะเวลา = จนจบการต่อสู้นั้น) และได้ [True-Rage] เมื่อมี Soul Core', () => {
     let s = setup();
     const jinrai = put(s, 'p1', JINRAI, 1);
     s = attack(toAttack(s), jinrai);
@@ -173,7 +173,7 @@ describe('เมื่อสปิริตนี้โจมตี และ [T
     expect(s.battle!.mustBlock).toBe(false);
     s = act(passBoth(s), { type: 'noBlock', player: 'p2' });
     s = act(s, { type: 'endAttackStep', player: 'p1' });
-    expect(currentBp(s, db, jinrai)).toBe(3000); // หมดผลเมื่อจบเทิร์น
+    expect(currentBp(s, db, jinrai)).toBe(3000); // จบการต่อสู้แล้วหมดผล
 
     let t = setup();
     const soulJinrai = put(t, 'p1', JINRAI, 1, true);

@@ -264,7 +264,10 @@ describe('แสดงใบบนสุดเด็คแล้วอัญเ�
     s = choose(atk(s, KUWAGA, 2, true), 0);
     const [rika, dariu, teppo] = s.players.p1.deck.slice(0, 3);
     s = choose(s, { summons: [] });
-    expect(s.choice).toMatchObject({ kind: 'card', candidates: [rika, dariu, teppo] });
+    expect(s.choice).toMatchObject({ kind: 'arrange', where: 'bottom', cardIds: [rika, dariu, teppo] });
+    // เรียงทีเดียว: ใบสุดท้าย = ล่างสุด
+    s = choose(s, { order: [teppo!, rika!, dariu!] });
+    expect(s.players.p1.deck.slice(-3)).toEqual([teppo, rika, dariu]);
   });
 
   it('อัญเชิญด้วยเอฟเฟกต์ใช้ Core บนการ์ดในสนามได้ (การ์ดที่ Core หมดสูญสลาย)', () => {

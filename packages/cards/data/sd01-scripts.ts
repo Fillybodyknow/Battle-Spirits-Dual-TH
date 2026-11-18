@@ -123,7 +123,7 @@ export const SD01_SCRIPTS: Record<string, CardScript> = {
       on: 'attack',
       levels: ALL_LV,
       steps: [
-        { do: 'buffSelf', amount: 3000 },
+        { do: 'buffSelf', amount: 3000, untilBattleEnd: true },
         { do: 'mustBlock', if: { soulOnSelf: true } },
       ],
     },

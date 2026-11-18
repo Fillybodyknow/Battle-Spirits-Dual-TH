@@ -42,7 +42,7 @@ export const BS01_SCRIPTS: Record<string, CardScript> = {
   ...Object.fromEntries(FROM_SD01.map((name) => [name, SD01_SCRIPTS[name]!])),
 
   // ---------------------------------------------------------------- Brave
-  'ชุดเกราะมังกร ดรากุมารุ': [{ kind: 'trigger', on: ['attack', 'block'], granted: true, levels: [], steps: [{ do: 'buffSelf', amount: 4000 }] }],
+  'ชุดเกราะมังกร ดรากุมารุ': [{ kind: 'trigger', on: ['attack', 'block'], granted: true, levels: [], steps: [{ do: 'buffSelf', amount: 4000, untilBattleEnd: true }] }],
   'มังกรบินชุดเกราะ โอโซเดลเกอร์': [
     {
       kind: 'trigger',

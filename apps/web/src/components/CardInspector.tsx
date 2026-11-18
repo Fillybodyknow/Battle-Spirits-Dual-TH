@@ -217,7 +217,12 @@ export function CardInspector() {
       </div>
 
       {/* แถบประเภท/เผ่า */}
-      <div className="border-y border-sky-400/20 bg-slate-700/70 px-3 py-1 text-sm font-semibold text-slate-100">[{typeLine}]</div>
+      <div className="border-y border-sky-400/20 bg-slate-700/70 px-3 py-1 text-sm font-semibold text-slate-100">
+        [{typeLine}]
+        {/* BS07: ทีม / ไทป์ของเมจิค */}
+        {def.teams.length > 0 && <span className="ml-2 rounded bg-pink-500/80 px-1.5 text-xs font-black text-white">ทีม: {def.teams.join(' / ')}</span>}
+        {def.magicTypes.length > 0 && <span className="ml-2 rounded bg-fuchsia-600/80 px-1.5 text-xs font-black text-white">ไทป์: {def.magicTypes.join(' / ')}</span>}
+      </div>
 
       {/* สถานะ + ตารางเลเวล */}
       <div className="flex flex-col gap-1.5 px-3 pt-2 text-xs">

@@ -2231,6 +2231,17 @@ function SpellFx({ fx, onDone }: { fx: Extract<Fx, { kind: 'spell' }>; onDone: (
           });
           anims.push(a);
           a.onfinish = onDone;
+        } else if (fx.exit === 'song') {
+          // เมจิคไทป์เพลง: ย่อลงไปวางที่โซนเพลงบนฟิลด์
+          const slot = rectOf(document.querySelector(`[data-song-card="${fx.cardId}"]`));
+          if (!slot) return onDone();
+          const a = el.animate([frame(cur, { opacity: 1, transform: 'rotate(0deg)' }), frame(slot, { opacity: 1, transform: 'rotate(0deg)' })], {
+            duration: CAST_MS.exit,
+            easing: 'cubic-bezier(.5,0,.6,1)',
+            fill: 'forwards',
+          });
+          anims.push(a);
+          a.onfinish = onDone;
         } else if (fx.exit === 'stay' && cur !== rest) {
           // วัดที่พักใหม่ตอนนี้: พัดมืออาจเปลี่ยนระหว่างที่ผลเล่นอยู่ (เช่น จั่วการ์ดเพิ่ม)
           moveTo(restRect(fx.owner, fx.tone, fx.cardId), REST_MS).onfinish = onDone;
@@ -2888,6 +2899,9 @@ export function RevealFan({
   title,
   chosenIds,
   chosenLabel,
+  chosenLabels,
+  onConfirm,
+  flatChosen,
 }: {
   owner: string;
   cardIds: string[];
@@ -2901,6 +2915,12 @@ export function RevealFan({
   chosenIds?: string[];
   /** ป้ายใต้ใบที่เลือก */
   chosenLabel?: string;
+  /** ป้ายใต้ใบที่เลือกแยกรายใบ (เช่น ลำดับ 1, 2, 3) */
+  chosenLabels?: Record<string, string>;
+  /** ปุ่มยืนยันบนแถบชื่อ */
+  onConfirm?: { label: string; disabled: boolean; run: () => void };
+  /** ใบที่เลือกแล้วไม่ยกขึ้น (เรียงลำดับ: ไม่บังแถบชื่อ/ปุ่มยืนยัน) */
+  flatChosen?: boolean;
 }) {
   const cards = useGame((s) => s.state.cards);
   const hover = useGame((s) => s.hover);
@@ -2926,6 +2946,16 @@ export function RevealFan({
             ไม่เลือก
           </button>
         )}
+        {onConfirm && (
+          <button
+            type="button"
+            disabled={onConfirm.disabled}
+            onClick={onConfirm.run}
+            className="pointer-events-auto ml-3 rounded-full bg-yellow-300 px-3 py-0.5 text-xs font-black text-slate-900 hover:bg-yellow-200 disabled:opacity-40"
+          >
+            {onConfirm.label}
+          </button>
+        )}
       </div>
       {cardIds.map((id, i) => {
         const card = cards[id];
@@ -2944,7 +2974,7 @@ export function RevealFan({
               top: p.y,
               width: p.W,
               height: p.H,
-              transform: `rotate(${isChosen ? 0 : p.rot}deg) translateY(${isChosen ? -36 : 0}px) scale(${isChosen ? 1.12 : 1})`,
+              transform: isChosen && !flatChosen ? 'rotate(0deg) translateY(-36px) scale(1.12)' : `rotate(${p.rot}deg)`,
               filter: dim ? 'brightness(0.45) grayscale(0.5)' : undefined,
               zIndex: isChosen ? 5 : i,
             }}
@@ -2962,7 +2992,7 @@ export function RevealFan({
             </div>
             </div>
             {can && !isChosen && <div className="absolute inset-x-2 -bottom-3 rounded bg-fuchsia-500 py-0.5 text-center text-xs font-bold text-white shadow">คลิกเพื่อเลือก</div>}
-            {isChosen && <div className="absolute inset-x-2 -bottom-3 rounded bg-yellow-300 py-0.5 text-center text-xs font-black text-slate-900 shadow">{chosenLabel ?? 'เลือก ✓ ขึ้นมือ'}</div>}
+            {isChosen && <div className="absolute inset-x-2 -bottom-3 rounded bg-yellow-300 py-0.5 text-center text-xs font-black text-slate-900 shadow">{chosenLabels?.[id] ?? chosenLabel ?? 'เลือก ✓ ขึ้นมือ'}</div>}
           </div>
         );
       })}

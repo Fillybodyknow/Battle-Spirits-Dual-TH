@@ -249,11 +249,14 @@ export function PromptBar() {
       title = 'อัญเชิญ: วาง Core กำหนด Lv';
       detail = `${src} · เลือก ${selectedCores.length} ดวง (ขั้นต่ำ ${choice.min}) · ปรับ Lv ได้ที่แผงมุมสนาม`;
       add('place', `วาง ${selectedCores.length} ดวง`, () => choose({ pay: selectedCores }), 'primary', selectedCores.length < choice.min, `เลือก Core อีก ${choice.min - selectedCores.length} ดวง`);
-    } else if (isInlineChoice(state)) {
+    } else if (choice.kind === 'arrange') {
+      tag = 'target';
+      detail = `${src} · คลิกการ์ดตามลำดับ แล้วกดยืนยัน`;
+    } else if (isInlineChoice(state) && choice.kind === 'card') {
       tag = 'target';
       detail = `${src} · คลิกการ์ดที่เรืองแสงสีชมพู`;
       if (choice.optional) add('skip', choice.skipLabel ?? 'ไม่เลือก', () => choose(null), 'secondary');
-    } else {
+    } else if (choice.kind === 'card') {
       tag = 'target';
       detail = choice.revealed ? `${src} · คลิกการ์ดที่เรืองแสงจากที่แสดง` : `${src} · เลือกในหน้าต่าง`;
     }
@@ -283,17 +286,23 @@ export function PromptBar() {
     highlight = true;
     tag = 'block';
     source = battle.attackerId;
-    title =
-      battle.blockers.length > 0
+    const lvSum = battle.blockers.reduce((n, id) => n + cardLevel(state, db, id), 0);
+    title = battle.levelBlock
+      ? battle.blockers.length > 0
+        ? `ป้องกันเพิ่ม: Lv รวม ${lvSum}/${battle.levelBlock}`
+        : `ถูกโจมตี! ต้องป้องกันด้วย Lv รวมตั้งแต่ ${battle.levelBlock}`
+      : battle.blockers.length > 0
         ? 'ป้องกันตัวที่ 2 ด้วยสปิริตตัวไหน?'
         : 'ถูกโจมตี! จะป้องกันด้วยสปิริตตัวไหน?';
-    detail = battle.consecutiveBlade
+    detail = battle.levelBlock
+      ? 'ใช้สปิริต/อัลติเมทกี่ตัวก็ได้ที่ Lv รวมถึงเกณฑ์ แล้วผู้โจมตีเลือกสู้ 1 ตัว · คลิกสปิริตที่มีกรอบสีฟ้า'
+      : battle.consecutiveBlade
       ? '[Consecutive Blade] ต้องป้องกัน 2 ตัวถ้าทำได้ · คลิกสปิริตที่มีกรอบสีฟ้า'
       : battle.mustBlock
         ? '[True-Rage] ต้องป้องกันถ้าทำได้ · คลิกสปิริตที่มีกรอบสีฟ้า'
         : 'คลิกสปิริตที่มีกรอบสีฟ้าบนสนามเพื่อป้องกัน';
     // ไม่ป้องกัน = คลิกแผง Life ของฝ่ายป้องกัน (ไม่มีปุ่มแล้ว)
-    if (!(battle.mustBlock && candidates.length > 0)) {
+    if (!(battle.mustBlock && candidates.length > 0) && !(battle.levelBlock && battle.blockers.length > 0)) {
       detail += battle.blockers.length > 0 ? ' · คลิกแผง Life = ไม่ป้องกันเพิ่ม' : ' · คลิกแผง Life = ไม่ป้องกัน (รับด้วย Life)';
     }
   } else if (truth && state.phase === 'main') {
@@ -678,12 +687,14 @@ export function ChoiceDialog() {
   if (!mine) {
     // อีกฝ่ายกำลังเลือกจากการ์ดที่แสดงจากเด็ค (ข้อมูลเปิดเผย): ให้เห็นค้างไว้จนกว่าจะเลือกเสร็จ
     if (blocking || !choice) return null;
-    const shown = choice.kind === 'card' ? choice.revealed : choice.kind === 'multiSummon' ? choice.revealed : undefined;
+    // การ์ดในมือที่เลือกอัญเชิญ (เลยา-ควาโทร): ไม่เปิดให้อีกฝ่ายเห็น
+    const shown = choice.kind === 'card' ? choice.revealed : choice.kind === 'multiSummon' && choice.step.do !== 'summonFromHandFree' ? choice.revealed : undefined;
     if (!shown?.length) return null;
     return <RevealFan owner={choice.player} cardIds={shown} title={`${playerLabel(choice.player)} แสดงการ์ดจากเด็ค · กำลังเลือก…`} />;
   }
   if (!blocking && choice?.kind === 'order') return <OrderPanel />;
   if (!blocking && choice?.kind === 'multiSummon') return <MultiPickFan />;
+  if (!blocking && choice?.kind === 'arrange') return <ArrangeFan key={choice.cardIds.join('|')} />;
   if (blocking || !choice || choice.kind !== 'card' || isInlineChoice(state)) return null;
   // การ์ดที่เปิดจากเด็ค: เรียงเป็นพัดบนกระดาน (ทั้งสองฝ่ายเห็น)
   if (choice.revealed) {
@@ -701,6 +712,22 @@ export function ChoiceDialog() {
 
   // การ์ดในแทรช: เรียงเป็นพัดบนกระดานเหมือนการ์ดที่เปิดจากเด็ค (ไม่บังกระดานด้วยหน้าต่าง)
   const trashOwner = PLAYERS.find((p) => choice.candidates.length > 0 && choice.candidates.every((id) => state.players[p].trashCards.includes(id)));
+  // เมจิคไทป์ [เพลง] บนฟิลด์ (และในแทรช): เรียงเป็นพัดเหมือนกัน
+  const songOwner = PLAYERS.find(
+    (p) => choice.candidates.length > 0 && choice.candidates.every((id) => state.players[p].trashCards.includes(id) || (state.players[p].songs ?? []).includes(id)),
+  );
+  if (!trashOwner && songOwner) {
+    return (
+      <RevealFan
+        owner={choice.player}
+        cardIds={choice.candidates}
+        candidates={choice.candidates}
+        onPick={(id) => choose(id)}
+        title={`${choice.prompt}${songOwner === choice.player ? '' : ` (ของ${playerLabel(songOwner)})`}`}
+        onSkip={choice.optional ? () => choose(null) : undefined}
+      />
+    );
+  }
   if (trashOwner) {
     return (
       <RevealFan
@@ -741,6 +768,35 @@ export function ChoiceDialog() {
   );
 }
 
+/**
+ * "นำกลับไปไว้บนสุด/ใต้สุดเด็คโดยเรียงลำดับได้": คลิกการ์ดตามลำดับ 1..N (คลิกซ้ำ = ถอดออก) แล้วกดยืนยันทีเดียว
+ */
+function ArrangeFan() {
+  const state = useGame((s) => s.state);
+  const choose = useGame((s) => s.choose);
+  const [order, setOrder] = useState<string[]>([]);
+  const choice = state.choice;
+  if (choice?.kind !== 'arrange') return null;
+  const n = choice.cardIds.length;
+  const labels = Object.fromEntries(
+    order.map((id, i) => [id, choice.where === 'top' ? (i === 0 ? '1 · บนสุด' : `${i + 1}`) : i === n - 1 ? `${i + 1} · ล่างสุด` : `${i + 1}`]),
+  );
+  const toggle = (id: string) => setOrder((o) => (o.includes(id) ? o.filter((x) => x !== id) : [...o, id]));
+  return (
+    <RevealFan
+      owner={choice.player}
+      cardIds={choice.cardIds}
+      candidates={choice.cardIds}
+      chosenIds={order}
+      chosenLabels={labels}
+      flatChosen
+      onPick={toggle}
+      title={`${choice.where === 'top' ? 'เรียงการ์ดกลับบนสุดเด็ค' : 'เรียงการ์ดไปใต้สุดเด็ค'}: คลิกตามลำดับ 1-${n} (${choice.where === 'top' ? '1 = บนสุด' : `${n} = ล่างสุด`}) · ${order.length}/${n}`}
+      onConfirm={{ label: 'ยืนยัน', disabled: order.length !== n, run: () => choose({ order }) }}
+    />
+  );
+}
+
 /** อัญเชิญหลายใบจากที่แสดง ขั้นเลือกการ์ด: พัดการ์ดบนกระดาน (คลิกเพื่อเลือก/ยกเลิก) */
 function MultiPickFan() {
   const state = useGame((s) => s.state);
@@ -758,7 +814,11 @@ function MultiPickFan() {
       chosenIds={m.picks}
       chosenLabel="เลือก ✓ อัญเชิญ"
       onPick={multiToggle}
-      title={`${playerLabel(choice.player)} แสดงการ์ดจากเด็ค · ${choice.max === null ? 'เลือกอัญเชิญได้กี่ใบก็ได้' : `เลือกอัญเชิญได้สูงสุด ${choice.max} ใบ`} · ที่เหลือไว้ใต้สุดเด็ค`}
+      title={
+        choice.step.do === 'summonFromHandFree'
+          ? `เลือกการ์ดในมือที่จะอัญเชิญพร้อมกัน (สูงสุด ${choice.max} ใบ)`
+          : `${playerLabel(choice.player)} แสดงการ์ดจากเด็ค · ${choice.max === null ? 'เลือกอัญเชิญได้กี่ใบก็ได้' : `เลือกอัญเชิญได้สูงสุด ${choice.max} ใบ`} · ที่เหลือไว้ใต้สุดเด็ค`
+      }
     />
   );
 }

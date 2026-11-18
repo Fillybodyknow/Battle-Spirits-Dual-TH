@@ -43,6 +43,10 @@ const KEYWORDS: { id: string; label: string; test: (c: CardDef, text: string) =>
   { id: 'evolution', label: 'Evolution', test: (_c, t) => t.includes('Evolution') },
   { id: 'shield', label: 'Shield', test: (_c, t) => t.includes('Shield') },
   { id: 'soulcore', label: 'ใช้ Soul Core', test: (_c, t) => t.includes('โซลคอร์') || t.includes('Soul Core') },
+  { id: 'onstage', label: 'On Stage', test: (_c, t) => t.includes('On Stage') },
+  { id: 'solo', label: 'Solo Part', test: (_c, t) => t.includes('Solo Part') },
+  { id: 'unit', label: 'My Unit', test: (_c, t) => t.includes('My Unit') },
+  { id: 'song', label: 'เพลง', test: (c) => c.magicTypes.includes('เพลง') },
 ];
 const cardText = (c: CardDef) =>
   [...(c.effects as { text?: string }[]).map((e) => e.text ?? ''), typeof c.burst === 'string' ? c.burst : JSON.stringify(c.burst ?? '')].join(' ');
@@ -126,7 +130,7 @@ export function DeckBuilder() {
     const q = query.trim().toLowerCase();
     return allCards
       .filter((c) => (set === 'all' || setOf(c.cardNo) === set) && (colors.length === 0 || c.colors.some((x) => colors.includes(x))) && (types.length === 0 || types.includes(c.type)))
-      .filter((c) => !q || c.name.toLowerCase().includes(q) || c.family.some((f) => f.includes(q)) || c.cardNo.toLowerCase().includes(q))
+      .filter((c) => !q || c.name.toLowerCase().includes(q) || c.family.some((f) => f.includes(q)) || c.teams.some((f) => f.includes(q)) || c.cardNo.toLowerCase().includes(q))
       .filter((c) => costs.length === 0 || costs.includes(costBucket(c)))
       .filter((c) => rarities.length === 0 || rarities.includes(rarityCode(c)))
       .filter((c) => family === 'all' || c.family.includes(family))

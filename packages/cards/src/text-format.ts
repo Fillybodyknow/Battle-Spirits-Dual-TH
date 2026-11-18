@@ -306,14 +306,24 @@ function parseCardBlock(block: Line[], autoCardNo: string, errors: string[]): Ca
   }
 
   // เอฟเฟกต์: "[Lv1][Lv2] ข้อความ" / "[Main] ข้อความ" / "[Flash] ข้อความ"
+  // บรรทัด "ทีม: A/B" และ "ไทป์: เพลง" (BS07) = ข้อมูลของการ์ด ไม่ใช่บรรทัดเอฟเฟกต์
+  const teams: string[] = [];
+  const magicTypes: string[] = [];
+  const effectLine = (line: Line) => {
+    const tag = line.text.trim().match(/^(ทีม|ไทป์)\s*:\s*(.+)$/);
+    if (tag) {
+      const list = tag[2]!.split(/[,/]/).map((s) => s.trim()).filter(Boolean);
+      (tag[1] === 'ทีม' ? teams : magicTypes).push(...list);
+      return;
+    }
+    effects.push(parseEffectLine(line, type, (msg) => errIn(line, msg)));
+  };
   const effectField = optional('เอฟเฟกต์');
   if (effectField && !isNone(effectField.value) && effectField.value !== '') {
     // เอฟเฟกต์เดียว: "เอฟเฟกต์: [Flash] ..." บรรทัดเดียวกับหัวข้อ
-    effects.push(parseEffectLine({ ...effectField.line, text: effectField.value }, type, (msg) => errIn(effectField.line, msg)));
+    effectLine({ ...effectField.line, text: effectField.value });
   }
-  for (const line of children.get('เอฟเฟกต์') ?? []) {
-    effects.push(parseEffectLine(line, type, (msg) => errIn(line, msg)));
-  }
+  for (const line of children.get('เอฟเฟกต์') ?? []) effectLine(line);
 
   // Brave: เงื่อนไขร่วมร่าง + เอฟเฟกต์ติดตัวที่ให้ผู้ร่วมร่าง
   let braveCondition: CardDefInput['braveCondition'];
@@ -321,12 +331,21 @@ function parseCardBlock(block: Line[], autoCardNo: string, errors: string[]): Ca
   if (braveField) {
     const all = [braveField.value, ...(children.get('Brave') ?? []).map((l) => l.text.trim())].join(' ');
     const minCost = all.match(/คอสต์ตั้งแต่\s*(\d+)/);
+    // "ร่วมร่างกับสปิริตเผ่าดีว่า" / "เผ่า [ดีว่า]" (BS07 ชุดตุ๊กตาฟูริน)
+    const family = braveField.value.match(/เผ่า\s*\[?([^\],\s]+)\]?/);
     const bp = all.match(/BP\s*\+\s*(\d+)/);
-    if (!minCost) errIn(braveField.line, 'Brave ต้องระบุ "คอสต์ตั้งแต่ N ขึ้นไป"');
-    braveCondition = { maxSpirits: 1, ...(minCost ? { minCost: Number(minCost[1]) } : {}), ...(bp ? { bp: Number(bp[1]) } : {}) };
+    if (!minCost && !family) errIn(braveField.line, 'Brave ต้องระบุ "คอสต์ตั้งแต่ N ขึ้นไป" หรือ "สปิริตเผ่า..."');
+    braveCondition = {
+      maxSpirits: 1,
+      ...(minCost ? { minCost: Number(minCost[1]) } : {}),
+      ...(family ? { family: family[1]! } : {}),
+      ...(bp ? { bp: Number(bp[1]) } : {}),
+    };
     for (const line of children.get('Brave') ?? []) {
       const text = line.text.trim();
       if (text.startsWith('[')) effects.push({ text, granted: true });
+      // บรรทัดต่อของเอฟเฟกต์ร่วมร่างก่อนหน้า ("เมื่อร่วมร่างกับสปิริตเผ่า [ดีว่า], นอกจากนี้...")
+      else if (effects.length > 0 && effects[effects.length - 1]!.granted) effects[effects.length - 1]!.text += ' ' + text;
     }
   } else if (type === 'brave') {
     errIn(block[0]!, 'การ์ด Brave ต้องมีหัวข้อ "Brave:"');
@@ -349,6 +368,8 @@ function parseCardBlock(block: Line[], autoCardNo: string, errors: string[]): Ca
     effects,
     ...(rarity ? { rarity } : {}),
     ...(braveCondition ? { braveCondition } : {}),
+    ...(teams.length ? { teams } : {}),
+    ...(magicTypes.length ? { magicTypes } : {}),
   };
 }
 
@@ -402,7 +423,9 @@ const FOIL_NAMES: Record<string, Foil> = { ฟอยรุ้ง: 'rainbow', ฟ
  * ใบที่ไม่ได้ระบุฟอยเป็นการ์ดปกติ
  */
 function parseDeck(lines: Line[], cards: readonly { name: string; cardNo: string }[], errors: string[]): DeckEntry[] {
-  const byName = new Map(cards.map((c) => [c.name, c.cardNo]));
+  // ชื่อซ้ำ (ต่างอาร์ต) = ใช้ใบแรก (อาร์ตปกติ)
+  const byName = new Map<string, string>();
+  for (const c of cards) if (!byName.has(c.name)) byName.set(c.name, c.cardNo);
   const counts = new Map<string, number>();
   const foils = new Map<string, Foil[]>();
   for (const line of lines) {

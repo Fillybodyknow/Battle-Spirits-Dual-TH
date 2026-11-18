@@ -71,9 +71,9 @@ export function handIncreasedByEffect(ctx: Ctx, player: PlayerId): void {
 }
 
 /** จดเงื่อนไข Burst ไว้ ถามเจ้าของเมื่อเอฟเฟกต์ที่กำลังทำงานจบ (ดู flushBursts) */
-export function pendBurst(ctx: Ctx, player: PlayerId, on: GameState['pendingBursts'][number]['on']): void {
+export function pendBurst(ctx: Ctx, player: PlayerId, on: GameState['pendingBursts'][number]['on'], subjectId?: string): void {
   const list = ctx.s.pendingBursts;
-  if (!list.some((b) => b.player === player && b.on === on)) list.push({ player, on });
+  if (!list.some((b) => b.player === player && b.on === on)) list.push({ player, on, ...(subjectId ? { subjectId } : {}) });
 }
 
 export function setPhase(ctx: Ctx, phase: Phase): void {
@@ -108,6 +108,8 @@ export function leaveField(ctx: Ctx, cardId: string, to: 'trash' | 'hand'): void
   card.cores = [];
   card.state = 'refresh';
   card.turnBp = 0;
+  delete card.battleBp;
+  delete card.battleSymbols;
   card.usedThisTurn = [];
   (to === 'trash' ? p.trashCards : p.hand).push(cardId);
   for (const braveId of card.braves) {

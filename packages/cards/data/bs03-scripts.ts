@@ -71,7 +71,7 @@ export const BS03_SCRIPTS: Record<string, CardScript> = {
       levels: [1],
       steps: [{ do: 'draw', count: 2 }, { do: 'draw', count: 1, if: paidSoul }, { do: 'discard', count: 2 }],
     },
-    { kind: 'trigger', on: ['attack', 'block'], granted: true, levels: [], steps: [{ do: 'buffSelf', amount: 4000 }] },
+    { kind: 'trigger', on: ['attack', 'block'], granted: true, levels: [], steps: [{ do: 'buffSelf', amount: 4000, untilBattleEnd: true }] },
   ],
 
   // ---------------------------------------------------------------- Magic

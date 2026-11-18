@@ -13,6 +13,7 @@ import {
   activatableAbilities,
   handMagic,
   quickAbility,
+  braveFits,
   braveRoom,
   braveToSwap,
   baseCost,
@@ -156,17 +157,15 @@ export function braveHosts(s: GameState, cardId: string): string[] {
   const current = braveHostOf(s, cardId);
   if (def.type !== 'brave' || !def.braveCondition) return [];
   if (!p.hand.includes(cardId) && !p.field.includes(cardId) && !current) return [];
-  const min = def.braveCondition.minCost ?? 0;
   return p.field.filter((id) => {
     const host = s.cards[id]!;
     const hd = db.get(host.cardNo);
-    if (id === current || hd.type !== 'spirit' || hd.cost < min) return false;
+    if (id === current || !braveFits(def, hd)) return false;
     const swapOut = braveToSwap(s, db, id, cardId);
     if (!swapOut) return true;
     // สปิริตที่มีเบรฟอยู่แล้ว: สลับเบรฟได้ถ้าเบรฟนี้ร่วมร่างอยู่ และเบรฟอีกตัวร่วมร่างกับร่างเดิมของเบรฟนี้ได้ (กติกา 04)
     if (!current) return false;
-    const otherMin = db.get(s.cards[swapOut]!.cardNo).braveCondition?.minCost ?? 0;
-    return db.get(s.cards[current]!.cardNo).cost >= otherMin;
+    return braveFits(db.get(s.cards[swapOut]!.cardNo), db.get(s.cards[current]!.cardNo));
   });
 }
 
@@ -268,12 +267,11 @@ export function multiHosts(s: GameState, m: MultiPlan | null, braveId: string): 
   if (c?.kind !== 'multiSummon' || !m) return [];
   const def = db.get(s.cards[braveId]!.cardNo);
   if (def.type !== 'brave') return [];
-  const min = def.braveCondition?.minCost ?? 0;
   const taken = new Set(Object.entries(m.plans).flatMap(([id, p]) => (id !== braveId && 'host' in p ? [p.host] : [])));
   return s.players[c.player].field.filter((id) => {
     const card = s.cards[id]!;
     const d = db.get(card.cardNo);
-    return d.type === 'spirit' && d.cost >= min && braveRoom(s, db, id, braveId) && !taken.has(id);
+    return braveFits(def, d) && braveRoom(s, db, id, braveId) && !taken.has(id);
   });
 }
 
@@ -432,7 +430,7 @@ export type Fx =
       delay: number;
       pulses: number[];
       end: number;
-      exit: 'trash' | 'field' | 'stay';
+      exit: 'trash' | 'field' | 'stay' | 'song';
     }
   /** เอฟเฟกต์หลายอันทำงานพร้อมกัน: แสดงการ์ดเรียงพร้อมเลขลำดับและโซ่ (CHAIN → RESOLVE) */
   | { id: number; kind: 'chain'; cardIds: string[]; delay: number; duration: number }
@@ -559,6 +557,7 @@ function snapRects(): Record<string, Rect> {
     });
   };
   grab('[data-hand-card]', (el) => `hand:${el.dataset.handCard}`);
+  grab('[data-song-card]', (el) => `song:${el.dataset.songCard}`);
   grab('[data-field-card] > div:first-child', (el) => `field:${el.parentElement!.dataset.fieldCard}`);
   grab('[data-burst-card]', (el) => `burst:${el.dataset.burstCard}`);
   grab('[data-brave-card]', (el) => `brave:${el.dataset.braveCard}`);
@@ -755,7 +754,8 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
       t = 900;
     }
   }
-  if (pc?.kind === 'multiSummon' && typeof pick === 'object' && pick !== null && 'summons' in pick) {
+  // อัญเชิญหลายใบจากที่แสดงจากเด็ค (การ์ดจากมือ = ภาพบินจากมือตามปกติ ไม่ต้องเปิดพัด)
+  if (pc?.kind === 'multiSummon' && pc.step.do !== 'summonFromHandFree' && typeof pick === 'object' && pick !== null && 'summons' in pick) {
     pc.revealed.forEach((id) => revealed.add(id));
     out.push({ kind: 'reveal', owner: pc.player, cardIds: pc.revealed, chosen: null, delay: 0, duration: 650, title: 'อัญเชิญการ์ดที่เลือก · ที่เหลือไว้ใต้สุดเด็ค' });
     t = 650;
@@ -1109,6 +1109,52 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         }
         break;
       }
+      // ---------------- BS07
+      case 'songPlaced': {
+        if (e.from === 'used') {
+          // เมจิคไทป์เพลงที่ใช้เสร็จ: ออกจากเวทีไปวางที่โซนเพลงแทนลงแทรช
+          const c = casting.get(e.cardId);
+          if (c && !c.exitSet) {
+            const soFar = Math.max(t, ghostsEnd, ...out.filter((f) => f.kind !== 'banner' && f.kind !== 'result' && f.kind !== 'finalBlow' && f !== c).map(fxEnd));
+            Object.assign(c, { end: c.from === 'stage' ? soFar : Math.max(soFar, c.delay + T.cast), exit: 'song', exitSet: true });
+          }
+        } else {
+          const rect = rects[`hand:${e.cardId}`];
+          if (rect) out.push({ kind: 'fly', cardId: e.cardId, from: rect, to: `[data-song-card="${e.cardId}"]`, mode: 'move', delay: t, hideTarget: true, revealFirst: true });
+          t += 500;
+        }
+        out.push({ kind: 'float', anchor: `[data-song-zone="${e.player}"]`, text: '♪ เพลง', tone: 'good', delay: t });
+        break;
+      }
+      case 'songRemoved': {
+        const rect = rects[`song:${e.cardId}`];
+        const to = e.to === 'trash' ? `[data-trash="${e.player}"]` : `[data-hand-card="${e.cardId}"]`;
+        if (rect) out.push({ kind: 'fly', cardId: e.cardId, from: rect, to, mode: 'move', delay: t, hideTarget: e.to === 'hand', shrink: e.to === 'trash' });
+        t += 500;
+        break;
+      }
+      case 'onStage':
+        out.push({ kind: 'banner', tone: 'step', title: 'ON STAGE!', sub: db.get(s.cards[e.cardId]!.cardNo).name, delay: t });
+        if (e.exhaustedInstead) out.push({ kind: 'float', anchor: `[data-field-card="${e.cardId}"]`, text: 'เสื่อมสภาพแทนกลับใต้เด็ค', tone: 'bad', delay: t });
+        t += 700;
+        break;
+      case 'myUnit':
+        out.push({ kind: 'banner', tone: 'step', title: 'MY UNIT!', sub: e.cardIds.map((id) => db.get(s.cards[id]!.cardNo).name).join(' · '), delay: t });
+        for (const id of e.cardIds) out.push({ kind: 'float', anchor: `[data-field-card="${id}"]`, text: 'My Unit', tone: 'good', delay: t });
+        t += 700;
+        break;
+      case 'magicNegated':
+        out.push({ kind: 'banner', tone: 'step', title: 'ไร้ผล!', sub: `เอฟเฟกต์ของ ${db.get(s.cards[e.cardId]!.cardNo).name}`, delay: t });
+        t += 800;
+        break;
+      case 'extraStep':
+        out.push({ kind: 'banner', tone: 'step', title: e.step === 'refresh' ? 'REFRESH STEP' : 'ATTACK STEP', sub: `อีกครั้ง (${db.get(s.cards[e.cardId]!.cardNo).name})`, delay: t });
+        t += 900;
+        break;
+      case 'cleansed':
+        out.push({ kind: 'float', anchor: `[data-field-card="${e.cardId}"]`, text: 'เอฟเฟกต์คู่แข่งไร้ผล', tone: 'good', delay: t });
+        t += 400;
+        break;
       case 'burstActivated':
         out.push({ kind: 'banner', tone: 'burst', title: 'BURST!', sub: db.get(s.cards[e.cardId]!.cardNo).name });
         // พลิกหงายที่ช่อง Burst → เวที (ขยายให้อ่านง่าย) → เรืองแสง · ค้างจนผลจบ / รอเลือก แล้วค่อยลง Trash หรือลงสนาม
@@ -1502,7 +1548,7 @@ function fxEnd(f: FxInput): number {
     case 'summon':
       return d + (f.special ? CUTIN_MS.special : CUTIN_MS.normal);
     case 'spell':
-      return f.end + (f.exit === 'trash' ? T.castExit : 0);
+      return f.end + (f.exit === 'trash' || f.exit === 'song' ? T.castExit : 0);
     case 'cardActivate':
     case 'chain':
     case 'reveal':
@@ -1890,7 +1936,7 @@ function playFxSounds(list: Fx[]) {
         // ยก/พลิกขึ้นเวที → เสียงประจำประเภทตอนเรืองแสงครั้งแรก · เรืองแสงซ้ำ = เสียงเอฟเฟกต์ทำงาน · ลง Trash = ปัด
         if (f.from !== 'stage') sfx('swish', f.delay);
         f.pulses.forEach((p, i) => sfx(i === 0 && f.from !== 'stage' ? (f.tone === 'burst' ? 'burstCard' : f.tone === 'flash' ? 'flash' : 'magic') : 'activate', p));
-        if (f.exit === 'trash') sfx('whoosh', f.end);
+        if (f.exit === 'trash' || f.exit === 'song') sfx('whoosh', f.end);
         break;
       case 'chainAdd': {
         // ตรงกับไทม์ไลน์ของ ChainAddFx (Fx.tsx): พุ่งเข้า 0 · โซ่ลาก CL_DRAW_AT · ล็อก CL_LOCK_AT · เลขพลิกหลังล็อก

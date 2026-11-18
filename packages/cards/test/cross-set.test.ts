@@ -108,9 +108,14 @@ describe('การ์ดข้ามชุด (Starter Deck ที่มีก�
     expect(validateDeck([...SD03_DECK], loadAllCards())).toMatchObject({ valid: true, total: 40 });
   });
 
-  it('ฐานข้อมูลรวมไม่มีชื่อการ์ดหรือรหัสซ้ำ', () => {
+  it('ฐานข้อมูลรวมไม่มีรหัสซ้ำ · ชื่อซ้ำได้เฉพาะต่างอาร์ตที่ข้อมูลเหมือนกันทุกช่องยกเว้นรหัส', () => {
     const all = loadAllCards().all();
-    expect(new Set(all.map((c) => c.name)).size).toBe(all.length);
     expect(new Set(all.map((c) => c.cardNo)).size).toBe(all.length);
+    const byName = new Map<string, (typeof all)[number]>();
+    for (const c of all) {
+      const first = byName.get(c.name);
+      if (!first) byName.set(c.name, c);
+      else expect({ ...c, cardNo: '' }).toEqual({ ...first, cardNo: '' });
+    }
   });
 });

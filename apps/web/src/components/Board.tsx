@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { activatableAbilities, baseCost, braveToSwap, canAttackWith, cardLevel, currentBp, isSpiritLike, payableCost, trashSummonRule, type CoreTarget, type PlayerId } from '@bs/engine';
+import { activatableAbilities, onStageAbilities, baseCost, braveToSwap, canAttackWith, cardLevel, currentBp, isSpiritLike, payableCost, trashSummonRule, type CoreTarget, type PlayerId } from '@bs/engine';
 import { playerLabel } from '../format';
 import { IMG } from '../assets';
 import type { Fx } from '../store';
@@ -469,6 +469,23 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
             {ab.label.startsWith('[') ? ab.label.slice(0, ab.label.indexOf(']') + 1) : '[Flash]'} ใช้เอฟเฟกต์
           </button>
         ))}
+      {/* On Stage (BS07): แอทแท็คสเต็ปของเรา กลับไปใต้เด็คแทนการโจมตี */}
+      {own &&
+        !evolveMode &&
+        mine(card.owner) &&
+        onStageAbilities(state, db, card.owner, cardId).map((ab) => (
+          <button
+            key={`stage-${ab.source}`}
+            type="button"
+            onClick={() => useGame.getState().dispatch({ type: 'onStage', player: card.owner, cardId, source: ab.source })}
+            onMouseEnter={() => hover(cardId)}
+            onMouseLeave={() => hover(null)}
+            title={ab.label}
+            className="w-full rounded-md bg-pink-400 py-1 text-xs font-bold text-slate-900 shadow hover:bg-pink-300"
+          >
+            {ab.keyword ? 'On Stage' : 'กลับใต้เด็คแทนโจมตี'}
+          </button>
+        ))}
     </div>
   );
 }
@@ -767,6 +784,42 @@ function TrashSlot({ player }: { player: PlayerId }) {
   );
 }
 
+/**
+ * เมจิคไทป์ [เพลง] ที่วางบนฟิลด์ (BS07 กติกา 14 ไทป์:เพลง): วางแสดงไว้เฉย ๆ ใช้งานไม่ได้ (ไม่ใช่นอกมือ)
+ * การ์ดซ้อนกันเป็นแถว ชี้/แตะค้างดูรายละเอียดได้
+ */
+const NO_SONGS: string[] = [];
+function SongZone({ player }: { player: PlayerId }) {
+  const songs = useGame((s) => s.state.players[player].songs) ?? NO_SONGS;
+  const hover = useGame((s) => s.hover);
+  // การ์ดที่ยังเล่นแอนิเมชันอยู่ (บินจากเวที/มือ): ซ่อนตัวจริงไว้จนภาพมาถึง
+  const busy = useGame((s) => s.fx.flatMap((f) => ((f.kind === 'spell' && f.exit === 'song') || (f.kind === 'fly' && f.hideTarget) ? [f.cardId] : [])).join('|')).split('|');
+  return (
+    <div className="flex w-36 shrink-0 justify-end">
+      {songs.length > 0 && (
+        <div data-song-zone={player} className="flex flex-col items-end gap-0.5" title="เมจิคไทป์ [เพลง] บนฟิลด์ (วางแสดง ใช้งานไม่ได้)">
+          <span className="rounded bg-fuchsia-600/80 px-1.5 text-[10px] font-black tracking-wide text-white shadow">♪ เพลง {songs.length}</span>
+          <div className="flex">
+            {songs.map((id, i) => (
+              <div
+                key={id}
+                data-song-card={id}
+                className={`h-14 w-10 shrink-0 cursor-pointer rounded shadow-[0_2px_8px_rgba(0,0,0,0.6)] transition hover:-translate-y-1 ${busy.includes(id) ? 'invisible' : ''}`}
+                style={{ marginLeft: i === 0 ? 0 : songs.length > 3 ? -28 : -18, zIndex: i }}
+                onMouseEnter={() => hover(id)}
+                onMouseLeave={() => hover(null)}
+                onClick={() => useGame.setState({ pinned: id })}
+              >
+                <CardFace def={db.get(useGame.getState().state.cards[id]!.cardNo)} size="xs" />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** ป้ายหกเหลี่ยม "Turn N · สเต็ป" บนสนามของผู้ถือเทิร์น */
 /**
  * แผ่นรองเล่นของผู้เล่น
@@ -926,8 +979,8 @@ export function PlayerMat({ player, top }: { player: PlayerId; top?: boolean }) 
               )}
             </div>
           </div>
-          {/* ถ่วงขวาให้ช่อง Nexus อยู่กลางสนาม */}
-          <div className="w-36 shrink-0" />
+          {/* ขวา: เมจิคไทป์ [เพลง] ที่วางบนฟิลด์ (BS07) · ถ่วงให้ช่อง Nexus อยู่กลางสนาม */}
+          <SongZone player={player} />
         </div>
 
         {/* แถว Spirit / Ultimate: แถวเดียว ย่อตามจำนวนตัว (data-field-scale ให้แอนิเมชันวัดขนาดการ์ดที่ย่อแล้วได้ถูก) */}

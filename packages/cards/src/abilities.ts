@@ -92,8 +92,37 @@ export type Condition =
   | { firstAttackOfTurn: true }
   /** สปิริต/อัลติเมทของเราที่ตรงตัวกรองกำลังต่อสู้อยู่ */
   | { allyInBattle: CardFilter }
+  // ---------------- BS07
+  /** มีการ์ดเมจิคไทป์ [เพลง] วางบนฟิลด์เราอย่างน้อย N ใบ */
+  | { songsAtLeast: number }
+  /** (trigger summon) การ์ดนี้ถูกอัญเชิญโดย On Stage */
+  | { summonedByOnStage: true }
+  /** (trigger summon) การ์ดนี้ถูกอัญเชิญโดยเอฟเฟกต์ของการ์ดที่ตรงตัวกรอง */
+  | { summonedBy: CardFilter }
+  /** สปิริตนี้ถูกนำไปวางชิดด้านข้างโดย My Unit ในการต่อสู้นี้ */
+  | { inUnit: true }
+  /** สปิริต/อัลติเมทของเราที่ตรงตัวกรองอย่างน้อย count ตัว */
+  | { alliesMatchAtLeast: { filter: CardFilter; count: number } }
+  /** การ์ดนี้ยังไม่ได้ใช้ "เทิร์นละ 1 ครั้ง" ชื่อนี้ (ใช้คู่กับ step markOnce: นับเฉพาะครั้งที่ทำจริง) */
+  | { onceFree: string }
+  /** สปิริตนี้ (เบรฟ granted = ผู้ร่วมร่าง) ตรงตัวกรอง */
+  | { selfIs: CardFilter }
   /** กลับเงื่อนไข */
   | { not: Condition };
+
+/** "ต่อจำนวน ... N ตัว/ใบ": ตัวคูณของ step (ได้ 0 = ไม่ทำ) */
+export interface CountPer {
+  /** สปิริต/อัลติเมทของเราที่ตรงตัวกรอง */
+  allies?: CardFilter;
+  /** การ์ดเมจิคไทป์ [เพลง] บนฟิลด์เรา */
+  songs?: true;
+  /** เบรฟที่ร่วมร่างกับสปิริตต้นเหตุ (subject) */
+  subjectBraves?: true;
+  /** จำนวนชื่อทีมที่แตกต่างกันของสปิริตเรา */
+  distinctTeams?: true;
+  /** หารด้วย (ต่อ 2 ตัว = 2) ไม่ระบุ = 1 */
+  div?: number;
+}
 
 /** ตัวกรองการ์ด */
 export interface CardFilter {
@@ -137,6 +166,27 @@ export interface CardFilter {
   noBraves?: true;
   /** เจ็มรวม (รวมเบรฟที่ร่วมร่าง) ตั้งแต่ N เม็ด */
   minSymbols?: number;
+  // ---------------- BS07
+  /** อยู่ในทีมนี้ */
+  team?: string;
+  /** ไทป์ของเมจิค (เช่น เพลง) */
+  magicType?: string;
+  /** การ์ดมี On Stage */
+  hasOnStage?: true;
+  /** การ์ดมี Solo Part */
+  hasSoloPart?: true;
+  /** ไม่ใช่การ์ดที่วางแสดงนอกมือ ("ในมือเรา" อย่างเดียว) */
+  notShown?: true;
+  /** อยู่ทีมเดียวกันกับการ์ดเจ้าของเอฟเฟกต์ (self) / การ์ดต้นเหตุ (subject) อย่างน้อย 1 ทีม */
+  sameTeamAs?: 'self' | 'subject';
+  /** (engine ใช้ภายใน) อยู่ทีมใดทีมหนึ่งเหล่านี้ (แปลงจาก sameTeamAs) */
+  teamsAny?: string[];
+  /** (เงื่อนไข handHas) นับการ์ดที่วางแสดงนอกมือด้วย ("ในมือ/นอกมือ") */
+  withShown?: true;
+  /** ไม่ใช่สปิริตนี้ ("ที่ไม่ใช่สปิริตนี้") */
+  notSelf?: true;
+  /** (engine ใช้ภายใน) ไม่ใช่การ์ดเหล่านี้ (แปลงจาก notSelf) */
+  excludeIds?: string[];
 }
 
 /** ปลายทางของ Core จากวอยด์ */
@@ -159,11 +209,18 @@ export type VoidTarget =
 /** ขั้นตอนของเอฟเฟกต์ ทำตามลำดับ */
 export type Step =
   /** เราจั่วการ์ด */
-  | { do: 'draw'; count: number; if?: Condition; /** จำนวนใบ × จำนวนคอร์ไลฟ์ที่ลดลง (trigger lifeLost) */ perLifeLost?: true }
+  | { do: 'draw'; count: number; if?: Condition; /** จำนวนใบ × จำนวนคอร์ไลฟ์ที่ลดลง (trigger lifeLost) */ perLifeLost?: true; per?: CountPer; }
   /** ในเทิร์นนี้ สปิริตนี้ BP+ */
-  | { do: 'buffSelf'; amount: number; if?: Condition }
+  | {
+      do: 'buffSelf';
+      amount: number;
+      if?: Condition;
+      per?: CountPer;
+      /** ข้อความไม่บอกระยะเวลา ([เมื่อสปิริตนี้โจมตี/ป้องกัน]) = มีผลจนจบการต่อสู้นั้น (ไม่ระบุ = ในเทิร์นนี้) */
+      untilBattleEnd?: true;
+    }
   /** ในเทิร์นนี้ เลือกสปิริต/อัลติเมท 1 ตัว (ฝ่ายใดก็ได้) BP+ */
-  | { do: 'buffChosen'; amount: number; /** เฉพาะสปิริตของเรา */ ally?: true; /** หลังจากนั้น ถ้าสปิริตนั้นมี BP ตั้งแต่ค่านี้ ฟื้นสภาพสปิริตนั้น */ refreshIfMinBp?: number }
+  | { do: 'buffChosen'; amount: number; /** เฉพาะสปิริตของเรา */ ally?: true; filter?: CardFilter; /** หลังจากนั้น ถ้าสปิริตนั้นมี BP ตั้งแต่ค่านี้ ฟื้นสภาพสปิริตนั้น */ refreshIfMinBp?: number }
   /** สปิริตต้นเหตุ (subject) BP+ ในเทิร์นนี้ */
   | { do: 'buffSubject'; amount: number }
   /** [True-Rage]: คู่แข่งต้องป้องกันถ้าทำได้ (ใช้ระหว่างการต่อสู้) */
@@ -171,7 +228,7 @@ export type Step =
   /** ทำลายการ์ดของคู่แข่งทั้งหมดที่ตรงตัวกรอง */
   | { do: 'destroyAllOpponent'; filter: CardFilter }
   /** แสดงใบบนสุดเด็ค N ใบ เลือก 1 ใบที่ตรงตัวกรองขึ้นมือ ที่เหลือลง Trash */
-  | { do: 'revealPickRestTrash'; count: number; filter: CardFilter; /** การ์ดที่เหลือ: ลงแทรช (ค่าเริ่มต้น) / ใต้สุดเด็คเรียงลำดับได้ */ rest?: 'trash' | 'bottom' }
+  | { do: 'revealPickRestTrash'; count: number; filter: CardFilter; /** การ์ดที่เหลือ: ลงแทรช (ค่าเริ่มต้น) / ใต้สุดเด็ค / บนสุดเด็ค เรียงลำดับได้ */ rest?: 'trash' | 'bottom' | 'top' }
   /** แสดงใบบนสุดเด็ค N ใบ นำการ์ดที่ตรงตัวกรองทั้งหมดขึ้นมือ ที่เหลือลงแทรช */
   | { do: 'revealTakeAll'; count: number; filter: CardFilter }
   /** นำการ์ดในแทรชเรา 1 ใบที่ตรงตัวกรอง กลับขึ้นมือ */
@@ -247,6 +304,7 @@ export type Step =
       dispersed?: true;
       /** คอสต์ไม่เกิน: subject = คอสต์ (บนสนาม) ของการ์ดต้นเหตุ */
       costFrom?: 'subject' | 'self';
+      per?: CountPer;
     }
   /** ถ้าเอฟเฟกต์นี้ทำลายการ์ดที่ตรงเงื่อนไขได้ (BP ตอนถูกทำลาย / ประเภท) ทำ steps ต่อ */
   | { do: 'ifDestroyed'; filter: { minBp?: number; types?: CardType[]; opponent?: true }; steps: Step[] }
@@ -286,7 +344,7 @@ export type Step =
   /** นำการ์ดทั้งหมดในแทรชเราไปไว้ใต้สุดเด็ค (เรียงลำดับได้) */
   | { do: 'trashToDeckBottom' }
   /** สามารถอัญเชิญไม่จ่ายคอสต์การ์ดบนมือเรา 1 ใบที่ตรงตัวกรอง */
-  | { do: 'summonFromHandFree'; filter: CardFilter; if?: Condition }
+  | { do: 'summonFromHandFree'; filter: CardFilter; if?: Condition; /** อัญเชิญได้ไม่เกิน max ใบ (ไม่ระบุ = 1) */ max?: number }
   /**
    * ในเทิร์นนี้ เลือกการ์ดของคู่แข่งที่ตรงตัวกรอง BP-amount แล้วทำลายตัวที่ BP กลายเป็น 0
    * count = จำนวนตัว (ไม่ระบุ = 1), countPerAllyFamily = จำนวนตัวเท่าสปิริตเราเผ่านี้
@@ -297,6 +355,8 @@ export type Step =
       filter: CardFilter;
       /** "ทำลายสปิริตที่กลายเป็น BP0 โดยเอฟเฟกต์นี้" (ไม่ระบุ = BP0 แล้วยังอยู่บนสนาม) */
       destroyAtZero?: true;
+      /** "เสื่อมสภาพสปิริตที่กลายเป็น BP0 โดยเอฟเฟกต์นี้" */
+      exhaustAtZero?: true;
       count?: number;
       countPerAllyFamily?: string;
       if?: Condition;
@@ -341,6 +401,7 @@ export type Step =
       if?: Condition;
       /** (engine ใช้ภายใน) ขยายจำนวนเป้าด้วย Dispersion แล้ว */
       dispersed?: true;
+      per?: CountPer;
     }
   /** นำการ์ดของคู่แข่งที่ตรงตัวกรองทั้งหมดกลับขึ้นมือ */
   | { do: 'bounceAllOpponent'; filter: CardFilter; if?: Condition }
@@ -382,7 +443,8 @@ export type Step =
       do: 'removeOpponentCores';
       count: number;
       filter?: CardFilter;
-      to?: 'reserve' | 'trash';
+      /** void = ออกจากเกม (ไปวอยด์) */
+      to?: 'reserve' | 'trash' | 'void';
       untilOne?: true;
       opponentChooses?: true;
       countPerAllyFamily?: string;
@@ -392,6 +454,7 @@ export type Step =
       /** จำนวนเม็ดที่ส่งออกจากตัวที่เลือกแต่ละครั้ง (ไม่ระบุ = 1) */
       perPick?: number;
       if?: Condition;
+      per?: CountPer;
       /** (engine ใช้ภายใน) บวก Charge แล้ว */
       charged?: true;
     }
@@ -400,7 +463,7 @@ export type Step =
    * มี Soul Core และเลือกได้ (ส่งไม่หมด และคอร์ปกติพอ) = เจ้าของการ์ดเลือกว่าจะส่ง Soul Core ด้วยหรือไม่ (กติกา 07 Q2)
    * soul = ผลที่เลือกแล้ว · byOpponent = เอฟเฟกต์ของคู่แข่ง (เช็กสูญสลายโดยคู่แข่ง)
    */
-  | { do: 'coresOff'; cardId: string; n: number; to: 'reserve' | 'trash'; byOpponent: boolean; soul?: boolean }
+  | { do: 'coresOff'; cardId: string; n: number; to: 'reserve' | 'trash' | 'void'; byOpponent: boolean; soul?: boolean }
   /** ทิ้งใบบนสุดเด็คเราเอง */
   | { do: 'millSelf'; count: number }
   /** ในการต่อสู้นี้ ผู้โจมตีจะไม่ถูกป้องกัน (by: 'spirits' = ไม่ถูกป้องกันโดยสปิริตเท่านั้น) */
@@ -441,6 +504,8 @@ export type Step =
   | { do: 'catalyze'; /** ไม่ระบุ = ทุกสี */ color?: Color; /** "หลังจากเบิร์สนั้นถูกสั่งใช้": ทำต่อหลังเบิร์สทำงานจบ */ then?: Step[] }
   /** (engine ใช้ภายใน) ไล่วางการ์ดที่เหลือไว้ใต้สุดเด็คตามลำดับที่เลือก */
   | { do: 'toDeckBottom'; cardIds: string[] }
+  /** (engine ใช้ภายใน) การ์ดที่แสดง (ยังอยู่บนสุดเด็ค) เรียงลำดับใหม่บนสุดเด็ค: ใบที่เลือกทีหลังอยู่บนกว่า */
+  | { do: 'toDeckTop'; cardIds: string[] }
   /** (engine ใช้ภายใน) วาง Core จากรีเสิร์ฟบนการ์ดที่อัญเชิญไม่จ่ายคอสต์ แล้วนำลงสนาม */
   | {
       do: 'placeCores';
@@ -465,9 +530,9 @@ export type Step =
   /** ถ้าการ์ดที่ returnFromTrash ล่าสุดของเอฟเฟกต์นี้นำขึ้นมือตรงตัวกรอง: ทำ steps */
   | { do: 'ifReturned'; filter: CardFilter; steps: Step[] }
   /** ในเทิร์นนี้ เลือกการ์ดของคู่แข่งที่ตรงตัวกรอง count ตัว: โจมตี/ป้องกันไม่ได้ */
-  | { do: 'disableChosenOpponent'; filter: CardFilter; count?: number; countPerAllyFamily?: string; if?: Condition; dispersed?: true }
+  | { do: 'disableChosenOpponent'; filter: CardFilter; count?: number; countPerAllyFamily?: string; if?: Condition; dispersed?: true; per?: CountPer; }
   /** อัญเชิญไม่จ่ายคอสต์: subject = การ์ดต้นเหตุ (เช่น การ์ดสปิริตที่ใช้เป็นเมจิค) / self = การ์ดนี้ (ในแทรช) */
-  | { do: 'summonCardFree'; which: 'subject' | 'self' }
+  | { do: 'summonCardFree'; which: 'subject' | 'self'; /** "เมื่อเป็นเช่นนั้น": ทำต่อเมื่ออัญเชิญสำเร็จ */ then?: Step[] }
   /** สามารถทิ้งการ์ดในมือเราได้ไม่เกิน max ใบ (จำจำนวนไว้ใช้กับ removeCoresPerDiscarded) */
   | { do: 'discardUpTo'; max: number; filter?: CardFilter }
   /** ส่งคอร์ 1 เม็ดบนสปิริตคู่แข่ง ต่อการ์ดที่ discardUpTo ทิ้งไป 1 ใบ */
@@ -522,7 +587,7 @@ export type Step =
   /** นำการ์ดของเรา 1 ใบที่ตรงตัวกรองกลับขึ้นมือ (บังคับถ้ามี) other = ไม่ใช่สปิริตนี้ */
   | { do: 'returnOwnToHand'; filter: CardFilter; other?: true }
   /** สามารถย้าย Soul Core บนสปิริตของเรา ไปวางบนสปิริตอื่นของเรา (fromId: engine ใช้ภายใน) */
-  | { do: 'moveAllySoul'; fromId?: string }
+  | { do: 'moveAllySoul'; fromId?: string; /** ย้ายจากสปิริตที่ตรงตัวกรองเท่านั้น */ filter?: CardFilter }
   /** สามารถนำสปิริตของเราที่ตรงตัวกรอง 1 ตัวไปเซ็ทเบิร์ส */
   | { do: 'setBurstFromField'; filter: CardFilter }
   /** ในการต่อสู้นี้ สปิริตนี้ไม่รับผลเอฟเฟกต์ของการ์ดประเภทเหล่านี้ของคู่แข่ง */
@@ -543,6 +608,53 @@ export type Step =
   | { do: 'lifeShieldThisTurn'; minCost: number }
   /** (engine ใช้ภายใน) Kagemusha: จดว่าการ์ดนี้ถูกอัญเชิญแล้ว เอฟเฟกต์ที่เล็งอยู่ต้องเล็งการ์ดนี้แทน */
   | { do: 'kageSet'; cardId: string }
+  // ---------------- BS07
+  /** (เมจิคไทป์เพลง) นำการ์ดเมจิคนี้ไปวางบนฟิลด์เรา แทนลงแทรช */
+  | { do: 'placeThisSong' }
+  /** นำการ์ดเมจิคไทป์ [เพลง] ในมือเรา 1 ใบไปวางบนฟิลด์เรา */
+  | { do: 'songFromHand' }
+  /** ทิ้งการ์ดเมจิคไทป์ [เพลง] บนฟิลด์เรา (opponent = ของคู่แข่ง) 1 ใบ */
+  | { do: 'songToTrash'; opponent?: true }
+  /** นำการ์ดเมจิคไทป์ [เพลง] จากแทรชหรือบนฟิลด์เรา 1 ใบกลับขึ้นมือ */
+  | { do: 'songToHand' }
+  /** My Unit: นำสปิริตเผ่า [ดีว่า] ที่ฟื้นสภาพของเรา count ตัวมาวางชิดสปิริตนี้ */
+  | { do: 'myUnit'; count: number; /** (engine ใช้ภายใน) ที่เลือกแล้ว */ picked?: string[] }
+  /** ทำลายสปิริตนี้ */
+  | { do: 'destroySelf' }
+  /** (engine ใช้ภายใน) On Stage: สปิริตกลับไปใต้สุดเด็ค (หรือเสื่อมสภาพแทน: รีเซ่-โดรมเวล) */
+  | { do: 'onStageLeave'; cardId: string; keyword: boolean; /** (ตัดสินแล้ว) เสื่อมสภาพแทนกลับใต้เด็ค */ exhaust?: boolean }
+  /** (engine ใช้ภายใน) ถ้าการ์ดนี้อยู่บนสนาม ทำ steps ("เมื่อเป็นเช่นนั้น" หลังอัญเชิญ) */
+  | { do: 'ifOnField'; cardId: string; steps: Step[] }
+  /** (engine ใช้ภายใน) เบิร์สของเราที่ถูกคู่แข่งทิ้ง ไม่สั่งใช้: ลงแทรช */
+  | { do: 'trashOwnBurst' }
+  /** (engine ใช้ภายใน) On Stage จบ: trigger "เมื่อสปิริตนี้/สปิริตของเรา On Stage" */
+  | { do: 'onStageDone'; cardId: string; level: number; soul: boolean }
+  /** แสดงใบบนสุดเด็ค count ใบ นำการ์ดที่ตรงตัวกรองแต่ละตัวอย่างละ 1 ใบขึ้นมือ ที่เหลือลงแทรช (picked: engine ใช้ภายใน) */
+  | { do: 'revealPickEach'; count: number; filters: CardFilter[]; revealed?: string[]; index?: number }
+  /** นำสปิริตคู่แข่งกี่ตัวก็ได้ BP รวมไม่เกิน maxTotal กลับขึ้นมือ / ทำลาย */
+  | { do: 'opponentTotalBp'; maxTotal: number; action: 'bounce' | 'destroy'; used?: number }
+  /** ในเทิร์นนี้ สปิริตนี้เจ็มสี color เพิ่ม count เม็ด */
+  | { do: 'symbolThisTurn'; color: Color; count: number; per?: CountPer; /** มีผลจนจบการต่อสู้นั้น */ untilBattleEnd?: true }
+  /** ทำให้เอฟเฟกต์ของการ์ดเมจิคต้นเหตุ (subject) ไร้ผล */
+  | { do: 'negateSubjectMagic' }
+  /** นำการ์ดต้นเหตุ (subject) ของคู่แข่งกลับไปไว้ใต้สุดเด็ค */
+  | { do: 'returnSubjectToDeck' }
+  /** ทำลายสปิริตของคู่แข่งที่ทำลายสปิริตต้นเหตุ (subject) */
+  | { do: 'destroyDestroyer' }
+  /** สามารถนำเบรฟบนฟิลด์เราไม่เกิน max ใบมารวมร่างกับสปิริตต้นเหตุ (subject) */
+  | { do: 'braveFromField'; max: number }
+  /** เอฟเฟกต์ของคู่แข่งทั้งหมดที่ทำงานบนสปิริต/อัลติเมทของเรา 1 ตัวไร้ผล */
+  | { do: 'cleanseAlly' }
+  /** จดว่าการ์ดนี้ใช้ "เทิร์นละ 1 ครั้ง" ชื่อนี้แล้ว (ดู onceFree) */
+  | { do: 'markOnce'; key: string }
+  /** ในเทิร์นนี้ สปิริตของเราที่ตรงตัวกรอง 1 ตัวป้องกันได้แม้อยู่ในรูปแบบเสื่อมสภาพ */
+  | { do: 'blockExhaustedThisTurn'; filter: CardFilter }
+  /** ในเทิร์นนี้ การ์ดในมือ/นอกมือเราที่ตรงตัวกรองทั้งหมด คอสต์ +delta */
+  | { do: 'handCostThisTurn'; filter: CardFilter; delta: number }
+  /** ถ้าเงื่อนไขเป็นจริงทำ steps ไม่งั้นทำ else */
+  | { do: 'when'; if: Condition; steps: Step[]; else?: Step[] }
+  /** (engine ใช้ภายใน) แคนดี้-ซาร์ด: ผู้โจมตีเลือกสู้กับผู้ป้องกัน 1 ตัว */
+  | { do: 'chooseBattleBlocker' };
 
 /** ขอบเขตของ BP+ ถาวร */
 export type StaticScope =
@@ -552,7 +664,11 @@ export type StaticScope =
   /** สปิริตเราที่ชื่อมีคำใดคำหนึ่งนี้ทั้งหมด */
   | { ownNamed: string[] }
   /** สปิริตเราทั้งหมดที่ตรงเงื่อนไข (สี / เผ่า / มี Soul Core) */
-  | { ownSpirits: { color?: Color; family?: string; soul?: true } };
+  | { ownSpirits: { color?: Color; family?: string; soul?: true } }
+  /** สปิริตเราทั้งหมดที่ตรงตัวกรอง (BS07: ทีม / Solo Part) */
+  | { own: CardFilter }
+  /** (เบรฟ granted) ผู้ร่วมร่าง และสปิริตเราทั้งหมดที่อยู่ทีมเดียวกันกับผู้ร่วมร่าง */
+  | { sameTeam: true };
 
 /**
  * เหตุการณ์ที่ trigger รอ
@@ -623,6 +739,14 @@ export type TriggerEvent =
   | 'oppAttack'
   /** สตาร์ทสเต็ปของเรา */
   | 'startStep'
+  /** สปิริตนี้ On Stage (การ์ดกลับไปใต้เด็คแล้ว) */
+  | 'onStage'
+  /** สปิริตของเรา (subject = ตัวที่ On Stage) On Stage */
+  | 'allyOnStage'
+  /** สปิริตของเรา (subject) ป้องกัน */
+  | 'allyBlock'
+  /** คู่แข่งใช้งานการ์ดเมจิค (subject = เมจิคนั้น ทำงานก่อนเอฟเฟกต์ของเมจิค) */
+  | 'oppMagicUse'
   /** การ์ดนี้ถูกทิ้งจากเด็คโดยเอฟเฟกต์ทิ้งเด็คของผู้เล่นคนใดก็ได้ (การ์ดอยู่ในแทรชแล้ว) */
   | 'milledAny';
 
@@ -661,6 +785,17 @@ export interface SubjectFilter {
   families?: string[];
   /** สปิริตต้นเหตุมี Holy Life (ของตัวเอง หรือได้รับจากการ์ดอื่น) */
   holyLife?: true;
+  // ---------------- BS07
+  /** อยู่ในทีมนี้ */
+  team?: string;
+  /** สปิริตต้นเหตุกำลังต่อสู้อยู่ */
+  inBattle?: true;
+  /** allyDestroyed: ถูกทำลายโดยสปิริต/อัลติเมทของคู่แข่ง (ต่อสู้ หรือเอฟเฟกต์ของสปิริต/อัลติเมท) */
+  bySpirit?: true;
+  /** allySummoned: ถูกอัญเชิญโดย On Stage */
+  byOnStage?: true;
+  /** การ์ดต้นเหตุตรงตัวกรอง (เช่น มี Solo Part) */
+  card?: CardFilter;
 }
 
 /** เงื่อนไขเปิด Burst */
@@ -764,9 +899,31 @@ export type Ability =
   /** Flash [Evolution]: นำ Core บนสปิริตอื่นของเรากี่ดวงก็ได้มาวางบนสปิริตนี้ (ใช้ด้วย action evolve) */
   | { kind: 'evolution'; source: number; levels: number[] }
   /** BP+ ที่มีผลตลอดเวลาขณะการ์ดอยู่บนสนาม */
-  | { kind: 'staticBp'; source: number; levels: number[]; if?: Condition; scope: StaticScope; amount: number }
+  | {
+      kind: 'staticBp';
+      source: number;
+      levels: number[];
+      if?: Condition;
+      scope: StaticScope;
+      amount: number;
+      /** BP+ × จำนวนการ์ดเมจิคไทป์ [เพลง] บนฟิลด์เรา */
+      perSongs?: true;
+      /** เบรฟ: ผลที่ผู้ร่วมร่างได้รับ ("สปิริตนี้" = ผู้ร่วมร่าง) */
+      granted?: true;
+    }
   /** "ถ้า...สปิริตนี้เจ็มสี color เพิ่ม count เม็ด" */
-  | { kind: 'extraSymbol'; source: number; levels: number[]; if?: Condition; color: Color; count: number; /** Brave: ผู้ร่วมร่างได้รับ */ granted?: true }
+  | {
+      kind: 'extraSymbol';
+      source: number;
+      levels: number[];
+      if?: Condition;
+      color: Color;
+      count: number;
+      /** Brave: ผู้ร่วมร่างได้รับ */
+      granted?: true;
+      /** สปิริตของเราที่ตรงตัวกรองทั้งหมดได้รับ (แทนตัวการ์ดนี้) */
+      allies?: CardFilter;
+    }
   /** "เจ็มของสปิริตนี้ถือว่าเป็นเจ็มสี color ด้วย" */
   | { kind: 'symbolAlsoColor'; source: number; levels: number[]; color: Color }
   /** "เมื่ออัญเชิญการ์ดที่ชื่อมีคำ ... สปิริตนี้เจ็มสี color เพิ่ม count" (นับเฉพาะตอนจ่ายคอสต์การ์ดนั้น) */
@@ -785,7 +942,7 @@ export type Ability =
       source: number;
       levels: number[];
       if?: Condition;
-      scope: 'self' | 'allNexus' | { ownFamily: string } | { ownNamed: string[] } | { ownColor: Color };
+      scope: 'self' | 'allNexus' | { ownFamily: string } | { ownNamed: string[] } | { ownColor: Color } | { own: CardFilter };
       colors?: Color[];
       types?: CardType[];
       oppTurnOnly?: true;
@@ -892,9 +1049,30 @@ export type Ability =
   /** คู่แข่งอัญเชิญการ์ดสปิริตคอสต์ดั้งเดิมไม่เกิน maxCost: ใช้สัญลักษณ์ลดคอสต์ไม่ได้ */
   | { kind: 'opponentNoReduction'; source: number; levels: number[]; maxCost: number }
   /** สปิริตนี้รวมร่างกับเบรฟได้ไม่เกิน count ใบ */
-  | { kind: 'braveSlots'; source: number; levels: number[]; count: number }
+  | { kind: 'braveSlots'; source: number; levels: number[]; count: number; /** สปิริตของเราที่ตรงตัวกรองทั้งหมด (แทนตัวการ์ดนี้) */ allies?: CardFilter }
   /** ไลฟ์ของเราได้รับความเสียหายจากสปิริต/อัลติเมทของคู่แข่งได้เพียง 1 เม็ดต่อ 1 ตัวต่อเทิร์น */
-  | { kind: 'lifeDamageCap'; source: number; levels: number[] };
+  | { kind: 'lifeDamageCap'; source: number; levels: number[] }
+  // ---------------- BS07
+  /**
+   * On Stage (แอทแท็คสเต็ปของเรา): สปิริตนี้กลับไปใต้เด็คแทนการโจมตี แล้วทำ steps (action onStage)
+   * keyword = เป็น "On Stage" จริง (ปลุก trigger onStage/allyOnStage) · ไม่ใส่ = กลับใต้เด็คแทนการโจมตีเฉย ๆ (ลิลี่)
+   * if = เงื่อนไขที่ต้องทำได้ ("เพื่อ" ท่อนหลังต้องทำได้)
+   */
+  | { kind: 'onStage'; source: number; levels: number[]; label: string; steps: Step[]; if?: Condition; keyword?: true }
+  /** "เมื่อสปิริตของเราจะทำการ On Stage, สามารถเสื่อมสภาพสปิริตนั้น เพื่อถือว่ากลับใต้สุดเด็คแล้ว" (รีเซ่-โดรมเวล) */
+  | { kind: 'onStageReplace'; source: number; levels: number[]; if?: Condition }
+  /** การ์ดของเราที่ตรง scope ไม่ถูกทำลายโดยเอฟเฟกต์ของคู่แข่ง (soloPart = เป็นความสามารถ Solo Part) */
+  | { kind: 'destroyImmune'; source: number; levels: number[]; if?: Condition; scope: { ownNamed: string[] } | { own: CardFilter }; soloPart?: true }
+  /** "หลังจากจบแอทแท็คสเต็ปของเรา: เข้า [รีเฟรชสเต็ป] / [แอทแท็คสเต็ป] อีก 1 ครั้ง" once = ไม่เกินเทิร์นละ/เกมละ 1 ครั้ง */
+  | { kind: 'extraSteps'; source: number; levels: number[]; if?: Condition; steps: ('refresh' | 'attack')[]; once: 'turn' | 'game' }
+  /** "เมื่อ <attacker> ของเราโจมตี คู่แข่งป้องกันได้ด้วยสปิริต/อัลติเมทตั้งแต่ 1 ตัวที่ Lv รวมตั้งแต่ minLevel แล้วเราเลือกสู้ 1 ตัว" */
+  | { kind: 'blockLevelSum'; source: number; levels: number[]; if?: Condition; attacker: CardFilter; minLevel: number }
+  /** "แอทแท็คสเต็ปของเรา: <attacker> ของเราจะไม่ถูกป้องกันโดยสปิริต/อัลติเมทคอสต์ไม่เกิน maxCost ของคู่แข่ง" */
+  | { kind: 'unblockableByCost'; source: number; levels: number[]; if?: Condition; attacker: CardFilter; maxCost: number }
+  /** "การ์ดสปิริตนี้, เมื่อ..., จะถือว่ามีคอสต์ N" (ในมือ/นอกมือ) */
+  | { kind: 'selfCostIf'; source: number; cost: number; if: Condition }
+  /** "การ์ดนี้ที่เซ็ทอยู่ เมื่อถูกทิ้งโดยคู่แข่ง, สามารถสั่งใช้เบิร์สโดยไม่สนเงื่อนไขได้" */
+  | { kind: 'burstOnDiscard'; source: number };
 
 /** สคริปต์ของการ์ดหนึ่งใบ เรียงตาม effects (null = ยังไม่รองรับ, array = บรรทัดเดียวมีหลายความสามารถ) */
 export type CardScript = (DistributiveOmit<Ability, 'source'> | DistributiveOmit<Ability, 'source'>[] | null)[];

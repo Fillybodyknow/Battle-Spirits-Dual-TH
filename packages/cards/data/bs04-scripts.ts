@@ -215,7 +215,7 @@ export const BS04_SCRIPTS: Record<string, CardScript> = {
   'นักรบเครื่องกล ชิรานุอิ': [
     { kind: 'effectImmune', levels: [1, 2], scope: 'self', colors: ['red', 'purple', 'white'], types: ULTRA },
     { kind: 'blockWhileExhausted', levels: [1, 2], if: soulOnSelf },
-    { kind: 'trigger', on: 'block', levels: [2], steps: [{ do: 'buffSelf', amount: 5000 }] },
+    { kind: 'trigger', on: 'block', levels: [2], steps: [{ do: 'buffSelf', amount: 5000, untilBattleEnd: true }] },
   ],
   'สมิงเครื่องกล โยโรอิเฟนท์': [
     { kind: 'symbolAlsoColor', levels: ALL_LV, color: 'purple' },

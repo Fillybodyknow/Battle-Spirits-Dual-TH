@@ -66,6 +66,8 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
    - ไฟล์ `SD1.text` → ชุด SD01 รหัส `SD01-001…` ตามลำดับ · โฟลเดอร์ `BS01/` → รหัส `BS01-SP-R001` (ชุด-ประเภท-ระดับ+เลข)
    - การ์ดหนึ่งใบเขียนข้อมูลเต็ม **ที่เดียว** (เช่นการ์ด Booster ที่อยู่ใน Starter Deck) อีกชุดใส่แค่ชื่อในรายการเด็ค · ชื่อ/รหัสซ้ำ = error
    - ฟอย: ในรายการเด็ค `ชื่อการ์ด 3 (ฟอยรุ้ง 1, ฟอยขาว 1)`
+   - ต่างอาร์ต (การ์ดใบเดียวกันคนละภาพ เช่น BS07-SP-X006/X007): เขียนซ้ำในชุดเดียวกันด้วยชื่อเดียวกัน ข้อมูลต้องเหมือนกันทุกช่องยกเว้นรหัส
+     (ลิมิตในเด็คนับตามชื่อ = รวมกันไม่เกิน 3, สคริปต์ใช้ร่วมกัน, รายการเด็คอ้างชื่อ = ใบแรก)
 2. `npm run cards`
 3. **เขียนสคริปต์** ใน `packages/cards/data/<set>-scripts.ts`: `Record<ชื่อการ์ด, CardScript>` ช่องที่ i = บรรทัดเอฟเฟกต์ที่ i
    (array = บรรทัดเดียวหลายความสามารถ, `null` = ยังไม่รองรับ) · จำนวนช่องต้องเท่าจำนวนบรรทัด ไม่งั้น attachScripts โยน error
@@ -102,6 +104,12 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
   Charge `refreshCountBoost` / `exhaustCountBoost`, `braveSlots` (`braveLimit`), `grantQuick` (ใช้ `quickAbility()` แทนการหา ability quick ตรง ๆ),
   `noMill`, `multiDrawPunish`, `opponentNoReduction`, `lifeDamageCap`, step `lifeShieldThisTurn` / `forceAttackChosen` (`state.forcedAttack`) / `moveSourceBrave` /
   `setBurstFromField` / `battleImmune` / `catalyze.then` (หลังจากเบิร์สนั้นถูกสั่งใช้), เบิร์ส `afterOpponentSummonEffect` (item.onSummon, เลือก "ไม่ใช้" = item.declined)
+- **BS07**: ข้อมูลการ์ด `teams` ("ทีม:") / `magicTypes` ("ไทป์: เพลง") / เบรฟ `braveCondition.family` (ตรวจด้วย `braveFits`),
+  On Stage (`onStage` ability + action `onStage`, step ภายใน `onStageLeave`/`onStageDone`, trigger `onStage`/`allyOnStage`, `onStageReplace`, เงื่อนไข `summonedByOnStage`/`summonedBy`),
+  เพลงบนฟิลด์ = `players[p].songs` (step `placeThisSong`/`songFromHand`/`songToTrash`/`songToHand`, เงื่อนไข `songsAtLeast`, `staticBp.perSongs`),
+  Solo Part = `destroyImmune` (`soloPart`, ตรวจใน `destroyCard`), My Unit = step `myUnit` (`battle.unit`, เงื่อนไข `inUnit`),
+  ตัวคูณ "ต่อจำนวน..." = `per` บน step (`CountPer`), `when` (if/else), `extraSteps` (`afterAttackStep` ใน game.ts), `blockLevelSum` (`battle.levelBlock`),
+  `unblockableByCost`, `selfCostIf`, `burstOnDiscard`, trigger `allyBlock`/`oppMagicUse` (`negateSubjectMagic`), ตัวกรอง `team`/`sameTeamAs`/`notSelf`/`hasSoloPart`/`hasOnStage`
 - **BP0 ไม่ถูกทำลายเอง** (เจ้าของโปรเจกต์กำหนด): ทำลายเฉพาะการ์ดที่เขียน "ทำลาย…ที่กลายเป็น BP0" = `debuffChosenOpponent.destroyAtZero`
 - **ย้ายการ์ดไปเขียนเต็มที่ชุดอื่น = รหัสการ์ดเปลี่ยน**: เพิ่มรหัสเดิม → รหัสใหม่ใน `packages/cards/src/legacy-card-no.ts`
   (เด็คที่ผู้เล่นจัดไว้ / รหัสเด็คออนไลน์แปลงตอนโหลดด้วย `migrateEntries` ใน decks.ts) ไม่งั้นเด็คเก่าหาการ์ดไม่เจอ
@@ -119,6 +127,8 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
 | "…หลังจากนั้น…" | เหมือนข้างบน แต่ทำต่อเนื่องทันที | steps ต่อกัน |
 | "ในเทิร์นนี้…" | ติดจนจบเทิร์นแม้ตัวที่ให้ผลออกจากสนามแล้ว ถ้าเป็น "ทั้งหมด" ตัวที่ลงมาใหม่ในเทิร์นก็โดนด้วย | `buffAllies` (เก็บใน `state.turnBuffs`), `opponentCannotAttack` (`attackBans`) |
 | "ในเกมนี้…" | ติดจนจบเกม | ยังไม่มี step |
+| ไม่บอกระยะเวลา เช่น "[เมื่อสปิริตนี้โจมตี]: สปิริตนี้ BP+3000" (เจ้าของโปรเจกต์กำหนด) | มีผลจนจบช่วงนั้น (จบการต่อสู้นั้น) | `buffSelf.untilBattleEnd` / `symbolThisTurn.untilBattleEnd` (`card.battleBp` / `battleSymbols` ล้างใน `endBattle` และ `leaveField`) |
+| "...นำกลับไปไว้บนสุด/ใต้สุดเด็คโดยเรียงลำดับได้" | เรียงทีเดียว คลิก 1..N แล้วยืนยัน | step `toDeckTop` / `toDeckBottom` → choice `arrange` (pick `{ order }`) |
 | "…หรือ…" | เลือกทำอย่างใดอย่างหนึ่ง | `chooseOne` (ใส่ `if` ให้ตัวเลือกที่ไม่มีเป้าหมาย) |
 | "ไม่เกิน N" | รวม N | `maxBp` / `maxCost` / `lifeAtMost` |
 | "…เมื่อเป็นเช่นนั้น…" | ท่อนหน้าต้องทำได้จริงก่อน ท่อนหลังถึงเกิด | `ifDestroyed` / ตรวจใน engine (เช่น `replaceDestroy.mill` ต้องทิ้งเด็คได้ครบ) |

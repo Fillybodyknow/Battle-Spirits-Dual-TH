@@ -85,7 +85,7 @@ export const BS06_SCRIPTS: Record<string, CardScript> = {
       // อัญเชิญด้วย [Quick] (แอทแท็คสเต็ป) โดยใช้ Soul Core ร่วมจ่าย: นำคอร์วอยด์ 1 เม็ดวางรีเสิร์ฟ
       { kind: 'trigger', on: 'allySummoned', subject: { self: true, paidWithSoul: true }, levels: [1, 2], attackStepOnly: true, steps: [{ do: 'voidCore', to: 'reserve', count: 1 }] },
     ],
-    { kind: 'trigger', on: ['attack', 'block'], levels: [1, 2], steps: [{ do: 'buffSelf', amount: 3000 }] },
+    { kind: 'trigger', on: ['attack', 'block'], levels: [1, 2], steps: [{ do: 'buffSelf', amount: 3000, untilBattleEnd: true }] },
   ],
   'มารวายุ เกรย์ไนท์': [{ kind: 'grantQuick', levels: [1, 2, 3], filter: { types: ['spirit'], family: NINJA }, if: soulOnSelf }],
   'นินจาเขี้ยวพิศวง จากัน': [

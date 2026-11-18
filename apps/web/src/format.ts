@@ -179,11 +179,26 @@ export function formatEvent(e: GameEvent, s: GameState): string | null {
     case 'attackBanned':
       return `ในเทิร์นนี้ สปิริตของ${playerLabel(e.player)}โจมตีไม่ได้`;
     case 'activated': {
-      const ab = db.get(s.cards[e.cardId]!.cardNo).abilities.find((a) => a.kind === 'activated' && a.source === e.source);
+      const ab = db.get(s.cards[e.cardId]!.cardNo).abilities.find((a) => (a.kind === 'activated' || a.kind === 'onStage') && a.source === e.source);
+      if (ab?.kind === 'onStage') return `${playerLabel(e.player)} ใช้ ${name(e.cardId)}: ${ab.label}`;
       return `${playerLabel(e.player)} ใช้เอฟเฟกต์ [Flash] ของ ${name(e.cardId)}${ab?.kind === 'activated' ? `: ${ab.label}` : ''}`;
     }
     case 'coresRemoved':
-      return `${name(e.cardId)} ถูกส่งคอร์ ${e.count} เม็ดไป${e.to === 'trash' ? 'แทรช' : 'รีเสิร์ฟ'}`;
+      return `${name(e.cardId)} ถูกส่งคอร์ ${e.count} เม็ดไป${e.to === 'trash' ? 'แทรช' : e.to === 'void' ? 'วอยด์' : 'รีเสิร์ฟ'}`;
+    case 'songPlaced':
+      return `${playerLabel(e.player)} วาง ${name(e.cardId)} (เพลง) บนฟิลด์`;
+    case 'songRemoved':
+      return `${name(e.cardId)} (เพลง) ออกจากฟิลด์ไป${e.to === 'trash' ? 'แทรช' : 'มือ'}`;
+    case 'onStage':
+      return e.exhaustedInstead ? `[On Stage] ${name(e.cardId)} เสื่อมสภาพแทนกลับใต้เด็ค` : `[On Stage] ${name(e.cardId)} กลับไปใต้สุดเด็ค`;
+    case 'myUnit':
+      return `[My Unit] ${e.cardIds.map(name).join(', ')} มาวางชิด ${name(e.attackerId)}`;
+    case 'magicNegated':
+      return `เอฟเฟกต์ของ ${name(e.cardId)} ไร้ผล (${name(e.bySource)})`;
+    case 'extraStep':
+      return `${name(e.cardId)}: ${playerLabel(e.player)} เข้า${e.step === 'refresh' ? 'รีเฟรชสเต็ป' : 'แอทแท็คสเต็ป'}อีกครั้ง`;
+    case 'cleansed':
+      return `เอฟเฟกต์ของคู่แข่งบน ${name(e.cardId)} ไร้ผล`;
     case 'gameOver':
       return `🏆 ${playerLabel(e.winner)} ชนะ (${END_REASON[e.reason]})`;
   }
@@ -200,10 +215,14 @@ export const RARITY_BADGE: Record<number, string> = {
 };
 
 /** ข้อความเงื่อนไขร่วมร่างของ Brave */
-export function braveText(b: { minCost?: number; bp?: number; maxSpirits?: number } | undefined): { cond: string; bonus: string | null } | null {
+export function braveText(b: { minCost?: number; bp?: number; maxSpirits?: number; family?: string } | undefined): { cond: string; bonus: string | null } | null {
   if (!b) return null;
   return {
-    cond: b.minCost !== undefined ? `ร่วมร่างกับสปิริตคอสต์ตั้งแต่ ${b.minCost} ขึ้นไป` : 'ร่วมร่างกับสปิริตได้',
+    cond: b.family
+      ? `ร่วมร่างกับสปิริตเผ่า ${b.family}`
+      : b.minCost !== undefined
+        ? `ร่วมร่างกับสปิริตคอสต์ตั้งแต่ ${b.minCost} ขึ้นไป`
+        : 'ร่วมร่างกับสปิริตได้',
     bonus: b.bp ? `ผู้ร่วมร่าง BP +${b.bp.toLocaleString()}` : null,
   };
 }

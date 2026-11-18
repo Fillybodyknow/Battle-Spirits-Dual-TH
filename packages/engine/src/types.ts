@@ -45,6 +45,10 @@ export interface CardInstance {
   cores: string[];
   /** BP+ จากเอฟเฟกต์ "ในเทิร์นนี้" (ล้างตอนจบเทิร์น และเมื่อออกจากสนาม) */
   turnBp: number;
+  /** BP+ จากเอฟเฟกต์ที่ไม่บอกระยะเวลา ([เมื่อสปิริตนี้โจมตี]): มีผลจนจบการต่อสู้นั้น */
+  battleBp?: number;
+  /** เจ็มที่เพิ่มจากเอฟเฟกต์ที่ไม่บอกระยะเวลา: มีผลจนจบการต่อสู้นั้น */
+  battleSymbols?: { color: string; count: number }[];
   /** source ของเอฟเฟกต์ "เทิร์นละ 1 ครั้ง" ที่ใช้ไปแล้วในเทิร์นนี้ */
   usedThisTurn: number[];
   /** Brave ที่ร่วมร่างอยู่บนการ์ดนี้ (Brave ที่ร่วมร่างไม่อยู่ใน field ของผู้เล่น) */
@@ -61,6 +65,8 @@ export interface PlayerState {
   life: string[];
   reserve: string[];
   trashCores: string[];
+  /** การ์ดเมจิคไทป์ [เพลง] ที่วางบนฟิลด์ (BS07: ไม่ใช่การ์ดนอกมือ ใช้งานไม่ได้ วางแสดงเฉย ๆ) */
+  songs?: string[];
 }
 
 export interface FlashWindow {
@@ -132,6 +138,10 @@ export interface Battle {
   immune?: { cardId: string; types: string[] }[];
   /** ผู้โจมตีไม่ถูกป้องกันโดยสปิริตของคู่แข่งที่ BP ไม่เกินผู้โจมตี (ฮาคุเกอิน) */
   blockBpBan?: boolean;
+  /** My Unit: สปิริตที่ถูกนำมาวางชิดผู้โจมตี */
+  unit?: string[];
+  /** แคนดี้-ซาร์ด: ฝ่ายป้องกันต้องใช้สปิริต/อัลติเมทที่ Lv รวมตั้งแต่ค่านี้ (ป้องกันหลายตัว แล้วผู้โจมตีเลือกสู้ 1 ตัว) */
+  levelBlock?: number;
 }
 
 /** เอฟเฟกต์ที่รอประมวลผล (หัวคิวคือที่กำลังทำ) */
@@ -197,6 +207,13 @@ export interface QueuedEffect {
   kageAbsorb?: { cardId: string; stepDo: string };
   /** การ์ดที่ Kagemusha ตัดสินแล้ว (ไม่ถามซ้ำ) */
   kageDone?: string[];
+  /** (BS07) เอฟเฟกต์ On Stage: การ์ดที่อัญเชิญด้วยเอฟเฟกต์นี้ถือว่าอัญเชิญโดย On Stage */
+  onStage?: boolean;
+  /** (BS07) trigger summon: การ์ดถูกอัญเชิญโดย On Stage / โดยเอฟเฟกต์ของการ์ดนี้ */
+  summonByOnStage?: boolean;
+  summonBySource?: string;
+  /** (BS07) trigger allyDestroyed: การ์ดของคู่แข่งที่ทำลาย subject */
+  destroyerId?: string;
   /** เอฟเฟกต์ "เมื่อสปิริต/เบรฟนี้ถูกอัญเชิญ" */
   onSummon?: boolean;
   /** ผู้ควบคุมเลือกไม่ใช้เอฟเฟกต์ "สามารถ" นี้ */
@@ -241,6 +258,11 @@ export type PendingChoice =
       max: number | null;
       step: Step;
     }
+  /**
+   * เรียงลำดับการ์ดที่จะนำกลับไปไว้บนสุด/ใต้สุดเด็ค ("โดยเรียงลำดับได้"): ตอบด้วย pick: { order: [...] } ครบทุกใบ
+   * order[0] = ใบที่อยู่บนสุดของกลุ่ม · ใบสุดท้าย = ล่างสุดของกลุ่ม (ใต้สุดเด็ค = ใบสุดท้ายอยู่ล่างสุดของเด็ค)
+   */
+  | { kind: 'arrange'; player: PlayerId; sourceId: string; prompt: string; cardIds: string[]; where: 'top' | 'bottom'; step: Step }
   /** เอฟเฟกต์หลายอันเกิดพร้อมกัน: เลือกอันที่จะทำงานก่อน (pick = index ใน effects) ที่เหลือจะถามต่อ */
   | {
       kind: 'order';
@@ -265,7 +287,7 @@ export interface GameState {
   /** รอผู้เล่นตัดสินใจ */
   choice: PendingChoice | null;
   /** เงื่อนไข Burst ที่เกิดขึ้นแล้ว รอถามเจ้าของ Burst เมื่อเอฟเฟกต์ที่กำลังทำงานจบ */
-  pendingBursts: { player: PlayerId; on: BurstEvent }[];
+  pendingBursts: { player: PlayerId; on: BurstEvent; /** การ์ดต้นเหตุ (เช่น การ์ดของคู่แข่งที่เอฟเฟกต์อัญเชิญเพิ่งทำงาน) */ subjectId?: string }[];
   /** ขั้นตอนของเทิร์นที่ต้องเดินต่อเมื่อเลือกเสร็จ (เช่น เอฟเฟกต์ใน Draw Step ให้เลือกทิ้งการ์ด) */
   resume: 'afterDraw' | 'afterStart' | 'resolveBattle' | 'endBattle' | 'endTurn' | 'drawStepStart' | null;
   burstSetThisTurn: boolean;
@@ -308,6 +330,17 @@ export interface GameState {
   lifeDamageBy?: { turn: number; player: PlayerId; ids: string[] };
   /** การโจมตีใบแรกสุดของเทิร์น */
   firstAttack?: { turn: number; cardId: string };
+  // ---------------- BS07
+  /** ในเทิร์นนี้ การ์ดนี้เจ็มสี color เพิ่ม count เม็ด */
+  turnSymbols?: { cardId: string; turn: number; color: string; count: number }[];
+  /** ในเทิร์นนี้ การ์ดนี้ป้องกันได้แม้อยู่ในรูปแบบเสื่อมสภาพ */
+  turnBlockExhausted?: { cardId: string; turn: number }[];
+  /** ในเทิร์นนี้ การ์ดในมือ/นอกมือของ player ที่ตรงตัวกรอง คอสต์ +delta */
+  turnHandCost?: { player: PlayerId; turn: number; filter: CardFilter; delta: number }[];
+  /** ความสามารถ "เกมละ 1 ครั้ง" ที่ใช้แล้ว (player:cardNo:source) */
+  usedOncePerGame?: string[];
+  /** สเต็ปที่ต้องเข้าเพิ่มหลังจบแอทแท็คสเต็ป (จาก extraSteps) */
+  extraSteps?: ('refresh' | 'attack')[];
   /** อิจิโกะฮิโทฟุริ: สปิริตของ attackerOwner ตัวนี้ต้องโจมตีเป็นใบแรกของสเต็ป และ holder เข้าป้องกันเอง */
   forcedAttack?: { turn: number; attackerId: string; holderId: string };
   players: Record<PlayerId, PlayerState>;
@@ -358,7 +391,9 @@ export type Action =
   | { type: 'brave'; player: PlayerId; braveId: string; hostId: string | null; placement?: string[] }
   | { type: 'concede'; player: PlayerId }
   /** Draw Step แบบกดจั่วเอง (config.manualDraw) */
-  | { type: 'drawStep'; player: PlayerId };
+  | { type: 'drawStep'; player: PlayerId }
+  /** (BS07) แอทแท็คสเต็ปของเรา: ใช้ On Stage ของการ์ดบนสนาม (ability onStage ที่บรรทัด source) แทนการโจมตี */
+  | { type: 'onStage'; player: PlayerId; cardId: string; source: number };
 
 /** การ์ดหนึ่งใบที่อัญเชิญพร้อมกัน: วาง Core (cores) หรือ Brave ร่วมร่างกับ braveOnto */
 export interface SummonPick {
@@ -367,7 +402,7 @@ export interface SummonPick {
   braveOnto?: string;
 }
 
-export type ChoicePick = number | string | { pay: string[] } | { summons: SummonPick[] } | null;
+export type ChoicePick = number | string | { pay: string[] } | { summons: SummonPick[] } | { order: string[] } | null;
 
 export type GameEvent =
   | { type: 'gameStarted'; firstPlayer: PlayerId }
@@ -393,7 +428,7 @@ export type GameEvent =
   /** cost = คอสต์บนสนามตอนถูกทำลาย (รวมคอสต์ Brave ที่ร่วมร่าง: Brave แยกออกไปแล้วหลังทำลาย จึงต้องจดไว้ตอนนั้น) */
   | { type: 'destroyed'; cardId: string; bySource?: string; stays?: true; cost?: number }
   /** คอร์บนการ์ดถูกส่งออก (เอฟเฟกต์ถอดคอร์) */
-  | { type: 'coresRemoved'; cardId: string; count: number; to: 'reserve' | 'trash' }
+  | { type: 'coresRemoved'; cardId: string; count: number; to: 'reserve' | 'trash' | 'void' }
   /** การ์ดในมือถูกวางแสดงนอกมือ */
   | { type: 'cardShown'; player: PlayerId; cardId: string }
   /** การ์ดบนสนามกลับไปไว้ในเด็ค (บนสุด/ใต้สุด) */
@@ -451,7 +486,22 @@ export type GameEvent =
   | { type: 'braveSeparated'; cardId: string; stays: boolean }
   | { type: 'catalyze'; cardId: string; burstId: string }
   /** การ์ดของ player โจมตีไม่ได้ในเทิร์นนี้ */
-  | { type: 'attackBanned'; player: PlayerId };
+  | { type: 'attackBanned'; player: PlayerId }
+  // ---------------- BS07
+  /** เมจิคไทป์เพลงถูกวางบนฟิลด์ (from: ใช้เสร็จ / จากมือ) */
+  | { type: 'songPlaced'; player: PlayerId; cardId: string; from: 'used' | 'hand' }
+  /** เมจิคไทป์เพลงบนฟิลด์ออกไป (to: แทรช / มือ) */
+  | { type: 'songRemoved'; player: PlayerId; cardId: string; to: 'trash' | 'hand' }
+  /** สปิริตทำ On Stage (กลับไปใต้เด็ค หรือเสื่อมสภาพแทน) */
+  | { type: 'onStage'; player: PlayerId; cardId: string; exhaustedInstead?: true }
+  /** My Unit: สปิริตถูกนำมาวางชิดผู้โจมตี */
+  | { type: 'myUnit'; attackerId: string; cardIds: string[] }
+  /** เอฟเฟกต์ของการ์ดเมจิคถูกทำให้ไร้ผล */
+  | { type: 'magicNegated'; cardId: string; bySource: string }
+  /** สเต็ปเพิ่มจากเอฟเฟกต์ (รีเฟรช/แอทแท็คสเต็ปอีกครั้ง) */
+  | { type: 'extraStep'; player: PlayerId; step: 'refresh' | 'attack'; cardId: string }
+  /** เอฟเฟกต์ของคู่แข่งบนการ์ดนี้ถูกล้าง */
+  | { type: 'cleansed'; cardId: string };
 
 export type ActionResult =
   | { ok: true; state: GameState; events: GameEvent[] }
