@@ -653,7 +653,9 @@ function PickCard({ cardId, disabled, onPick, note }: { cardId: string; disabled
     <button
       type="button"
       aria-disabled={disabled || !onPick}
-      onClick={() => !disabled && onPick?.()}
+      data-pick-card={cardId}
+      // เลือกไม่ได้ (เช่นดูการ์ดใน Trash): คลิก = ปักรายละเอียดการ์ดไว้
+      onClick={() => (!disabled && onPick ? onPick() : useGame.setState({ pinned: cardId }))}
       onMouseEnter={() => hover(cardId)}
       onMouseLeave={() => hover(null)}
       className={`flex flex-col items-center gap-1 rounded-lg p-1.5 transition ${onPick && !disabled ? 'hover:bg-yellow-300/20' : 'cursor-default'} ${disabled ? 'opacity-35' : ''}`}

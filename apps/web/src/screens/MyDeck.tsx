@@ -9,7 +9,7 @@ import { CardDetail } from '../components/CardDetail';
 import { CASE_COLORS, DeckBox, autoKeyCards, keyCards } from '../components/DeckBox';
 import { decodeDeck, deckInfo, deckSizeOf, deleteMyDeck, encodeDeck, loadDeckAcc, loadMyDecks, newDeckId, saveDeckAcc, saveMyDeck, STARTER_DECKS, type DeckId } from '../decks';
 import { sfx } from '../sfx';
-import { db, useGame } from '../store';
+import { db, playableDecks, useGame } from '../store';
 import { useAccount } from '../account/account';
 import { BackButton, CardArt, deckColor } from './shared';
 
@@ -83,7 +83,7 @@ function DeckTileBox({ id, onClick }: { id: DeckId; onClick: () => void }) {
 
 // ---------------------------------------------------------------- ตาราง + เมนู
 
-function Grid({ starters, onOpen, onCreate }: { starters: boolean; onOpen: (id: DeckId) => void; onCreate: () => void }) {
+function Grid({ starters, onOpen, onCreate, selected }: { starters: boolean; onOpen: (id: DeckId) => void; onCreate: () => void; selected?: DeckId | null }) {
   // วาดใหม่เมื่อซิงก์บัญชีดึงเด็คจากเครื่องอื่นลงมา
   useAccount((s) => s.pulledAt);
   const mine = loadMyDecks().map((d) => `u:${d.id}`);
@@ -101,7 +101,9 @@ function Grid({ starters, onOpen, onCreate }: { starters: boolean; onOpen: (id: 
         </button>
       )}
       {ids.map((id) => (
-        <DeckTileBox key={id} id={id} onClick={() => onOpen(id)} />
+        <div key={id} className={id === selected ? 'rounded-xl ring-4 ring-lime-300 shadow-[0_0_24px_rgba(190,242,100,0.5)]' : undefined}>
+          <DeckTileBox id={id} onClick={() => onOpen(id)} />
+        </div>
       ))}
       {!starters && mine.length === 0 && <div className="col-span-full text-center text-sm text-slate-400">ยังไม่มีเด็คที่จัดเอง · กด + เพื่อสร้าง หรือดู "รายการ Starter Deck" แล้วคัดลอกมาจัดต่อ</div>}
     </div>
@@ -414,14 +416,36 @@ export function MyDeck() {
   const [create, setCreate] = useState(false);
   const [starters, setStarters] = useState(false);
   const count = loadMyDecks().length;
+  // โหมดเลือกเด็คให้ห้องดวล (กด "เปลี่ยนเด็ค" ในห้อง): คลิกเด็ค = ใช้เด็คนั้นแล้วกลับห้อง
+  const pick = useGame((s) => s.deckPick);
+  const [pickErr, setPickErr] = useState<string | null>(null);
+  const leavePick = () => {
+    useGame.setState({ deckPick: null, deckReturn: 'home' });
+    setScreen('lobby');
+  };
+  const choosePick = (id: DeckId) => {
+    if (!playableDecks().includes(id)) {
+      setPickErr(`${deckInfo(id).label}: เด็คยังไม่ครบตามกติกา (อย่างน้อย 40 ใบ ชื่อเดียวกันไม่เกิน 3 ใบ) ใช้ดวลไม่ได้`);
+      return;
+    }
+    sfx('click');
+    try {
+      localStorage.setItem('bs-lobby-deck', id);
+    } catch {
+      /* เก็บไม่ได้ก็ไม่เป็นไร */
+    }
+    leavePick();
+  };
   const back = () => {
     if (view.kind !== 'grid') return setView({ kind: 'grid' });
     if (starters) return setStarters(false);
     lastView = { kind: 'grid' };
+    if (pick) return leavePick();
     setScreen('home');
   };
-  const title =
-    view.kind === 'acc' ? ['CHANGE ACCESSORIES', 'เปลี่ยนของตกแต่ง'] : view.kind === 'detail' ? ['DECK', 'ดูเด็ค'] : starters ? ['STARTER DECK', 'รายการ Starter Deck'] : ['MY DECK', 'เด็คของฉัน'];
+  const title = pick && view.kind === 'grid'
+    ? ['SELECT DECK', 'เลือกเด็คที่จะใช้ในห้องดวล']
+    : view.kind === 'acc' ? ['CHANGE ACCESSORIES', 'เปลี่ยนของตกแต่ง'] : view.kind === 'detail' ? ['DECK', 'ดูเด็ค'] : starters ? ['STARTER DECK', 'รายการ Starter Deck'] : ['MY DECK', 'เด็คของฉัน'];
 
   return (
     <div className="game-bg relative flex h-screen min-w-[1200px] flex-col overflow-hidden">
@@ -434,12 +458,23 @@ export function MyDeck() {
           <div className="text-[11px] tracking-[0.4em] text-sky-300">{title[1]}</div>
           <div className="text-2xl font-black text-white">{title[0]}</div>
         </div>
-        {view.kind === 'grid' && !starters && <div className="ml-auto rounded-full bg-black/60 px-4 py-1.5 text-sm font-bold text-slate-200 ring-1 ring-white/15">เด็คของฉัน {count} เด็ค</div>}
+        {pick && view.kind === 'grid' ? (
+          <div className="ml-auto rounded-full bg-lime-300/15 px-4 py-1.5 text-sm font-bold text-lime-200 ring-1 ring-lime-300/50">
+            ใช้อยู่: {deckInfo(pick).label} · คลิกเด็คเพื่อเลือก
+          </div>
+        ) : (
+          view.kind === 'grid' && !starters && <div className="ml-auto rounded-full bg-black/60 px-4 py-1.5 text-sm font-bold text-slate-200 ring-1 ring-white/15">เด็คของฉัน {count} เด็ค</div>
+        )}
       </header>
 
       {view.kind === 'grid' ? (
         <>
-          <Grid starters={starters} onOpen={setMenu} onCreate={() => setCreate(true)} />
+          <Grid starters={starters} onOpen={pick ? choosePick : setMenu} onCreate={() => setCreate(true)} selected={pick} />
+          {pick && pickErr && (
+            <div className="absolute bottom-24 left-1/2 z-20 -translate-x-1/2 rounded-lg bg-rose-600/90 px-4 py-2 text-sm font-bold text-white shadow-lg" onClick={() => setPickErr(null)}>
+              {pickErr}
+            </div>
+          )}
           <div className="absolute right-12 bottom-6 z-10 flex gap-3">
             <button
               type="button"

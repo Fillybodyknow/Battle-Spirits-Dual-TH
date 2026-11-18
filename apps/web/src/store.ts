@@ -791,9 +791,15 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
     const attacker = prev.cards[attackerId]!;
     defender = opponentOf(attacker.owner);
     const blocked = blockers.length > 0;
-    const resolved = blocked
-      ? destroyedIds.has(attackerId) || blockers.some((b) => destroyedIds.has(b))
-      : events.some((e) => e.type === 'lifeLost' && e.player === defender);
+    // ตัดสินการต่อสู้แล้วแต่ไม่มีใครเสียอะไร (เช่น ลิมิเต็ดบาเรีย / ลองเคพ / เจ็ม 0 / ทั้งคู่ไม่ถูกทำลาย): ยังวิ่งชนให้เห็น
+    // ไม่นับการต่อสู้ที่จบเพราะผู้โจมตี/ผู้ป้องกันออกจากสนามไปก่อน
+    const onFieldBoth = (id: string) => PLAYERS.some((p) => prev.players[p].field.includes(id) && s.players[p].field.includes(id));
+    const quietEnd =
+      events.some((e) => e.type === 'battleEnded') && onFieldBoth(attackerId) && (!blocked || blockers.some(onFieldBoth)) && (!pb || pb.step !== 'flashBeforeBlock');
+    const resolved =
+      (blocked
+        ? destroyedIds.has(attackerId) || blockers.some((b) => destroyedIds.has(b))
+        : events.some((e) => e.type === 'lifeLost' && e.player === defender)) || quietEnd;
     const from = rects[`field:${attackerId}`];
     if (resolved && from) {
       attackerDies = destroyedIds.has(attackerId);
@@ -818,7 +824,7 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
   const battleResult = (e: GameEvent) =>
     !!charge &&
     hitAt === null &&
-    ((e.type === 'destroyed' && (e.cardId === attackerId || blockers.includes(e.cardId))) || (e.type === 'lifeLost' && e.player === defender));
+    ((e.type === 'destroyed' && (e.cardId === attackerId || blockers.includes(e.cardId))) || (e.type === 'lifeLost' && e.player === defender) || e.type === 'battleEnded');
 
   /** ภาพการ์ดแตก/สูญสลายเล่นจบเมื่อไหร่: ขั้นถัดไปต้องรอ ไม่งั้นเอฟเฟกต์ที่ตามมาจะยกเรืองแสงทับกับการ์ดที่กำลังแตก */
   let ghostsEnd = 0;
@@ -2130,6 +2136,8 @@ interface Store {
   deckView: DeckId;
   /** หน้าดู/จัดเด็คกดย้อนกลับแล้วไปหน้านี้ (เปิดจากหน้า DUEL = lobby) */
   deckReturn: Screen;
+  /** หน้าเด็คของฉันในโหมดเลือกเด็คให้ห้องดวล (เด็คที่ใช้อยู่) · null = โหมดปกติ */
+  deckPick: DeckId | null;
   onlineJoin(code: string, deck: DeckId): Promise<void>;
   onlineLeave(): void;
   /** ห้องดวลที่อยู่ (หลายคน หลายโต๊ะ) */
@@ -2670,6 +2678,7 @@ export async function duelLeave(): Promise<void> {
   try {
     if (host) {
       await transport.removePath(roomPath(d.code));
+      await transport.removePath(chatPath(d.code)).catch(() => {});
       await transport.unpublishRoom(d.code);
     } else {
       const res = await transport.transactPath(roomPath(d.code), (cur: DuelRoom | null) => {
@@ -2721,6 +2730,43 @@ export function duelSetDeck(deck: DeckId) {
   lastLobbyDeck = deck;
   if (!d) return;
   void transport.setPath(`${roomPath(d.code)}/members/${d.uid}/deck`, deckToken(deck)).catch((e: Error) => useGame.setState({ error: `เปลี่ยนเด็คไม่สำเร็จ: ${e.message}` }));
+}
+
+// ---------------------------------------------------------------- แชตในห้องดวล
+// เก็บแยกจากข้อมูลห้องที่ rooms/<code>-chat (ใช้กฎ Realtime Database ของ rooms เดิม ·
+// ไม่ชนกับทรานแซกชันของห้อง และหน้าห้องไม่ต้องวาดใหม่ทุกข้อความ)
+
+export interface ChatMsg {
+  uid: string;
+  name: string;
+  text: string;
+  at: number;
+  avatar?: string;
+}
+
+/** ความยาวข้อความแชตสูงสุด */
+export const CHAT_MAX = 200;
+const chatPath = (code: string) => `rooms/${code}-chat`;
+
+/** ติดตามแชตของห้องดวล (เรียงตามเวลา เก็บ 100 ข้อความล่าสุด) */
+export function watchDuelChat(code: string, cb: (msgs: ChatMsg[]) => void): () => void {
+  return transport.watchPath(chatPath(code), (v) => {
+    const all = Object.values((v ?? {}) as Record<string, ChatMsg>).filter((m) => m && typeof m.text === 'string');
+    all.sort((a, b) => a.at - b.at);
+    cb(all.slice(-100));
+  });
+}
+
+export function duelChatSend(text: string) {
+  const d = useGame.getState().duel;
+  const msg = text.trim().slice(0, CHAT_MAX);
+  if (!d || !msg) return;
+  const at = Date.now();
+  const avatar = storedAvatar();
+  const m: ChatMsg = { uid: d.uid, name: useGame.getState().playerName, text: msg, at, ...(avatar ? { avatar } : {}) };
+  void transport
+    .setPath(`${chatPath(d.code)}/${at.toString(36)}-${d.uid.slice(0, 8)}`, m)
+    .catch((e: Error) => useGame.setState({ error: `ส่งข้อความไม่สำเร็จ: ${e.message}` }));
 }
 
 /** เข้าชมการดวลของโต๊ะ t (มือทั้งสองฝ่ายคว่ำ สั่งอะไรไม่ได้) */
@@ -2848,6 +2894,7 @@ export const useGame = create<Store>((set, get) => {
     localInProgress: false,
     deckView: 'sd01',
     deckReturn: 'home',
+    deckPick: null,
     pregame: null,
     startLocal: (decks) => {
       set({ decks });

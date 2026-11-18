@@ -4,7 +4,7 @@
  *  - สร้างห้อง: ตั้งชื่อห้อง ความคิดเห็น แสดงในรายการห้อง เด็คที่ใช้
  *  - หน้าห้อง: โต๊ะ 1 โต๊ะ 2 ที่นั่ง กด ENTRY เพื่อนั่ง (ครบสองคน = เริ่มเกม)
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { PLAYERS, type PlayerId } from '@bs/engine';
 import type { DuelRoom, LobbyEntry } from '../online/transport';
 import { sfx } from '../sfx';
@@ -15,6 +15,10 @@ import {
   duelLeave,
   duelReady,
   duelSetDeck,
+  duelChatSend,
+  watchDuelChat,
+  CHAT_MAX,
+  type ChatMsg,
   duelSit,
   duelSpectate,
   duelStand,
@@ -32,7 +36,7 @@ import { DeckBox, keyCards } from '../components/DeckBox';
 import { COLOR_LABEL } from '../format';
 import { deckInfo } from '../decks';
 import { db } from '../store';
-import { BackButton, CardArt, DeckTile, deckColor, deckSize } from './shared';
+import { BackButton, CardArt, deckColor, deckSize } from './shared';
 import { AvatarImg } from '../components/AccountDialog';
 
 const LOBBY_DECK_KEY = 'bs-lobby-deck';
@@ -46,6 +50,13 @@ let lastView: View = { kind: 'menu' };
 let resyncDeck = false;
 
 /** ไปหน้าดู/จัดเด็ค แล้วกลับมาที่หน้า DUEL */
+/** เปลี่ยนเด็ค: เปิดหน้าเด็คของฉันในโหมดเลือก · เลือกแล้วกลับห้อง (useLobbyDeck อ่านเด็คที่เลือกจาก LOBBY_DECK_KEY แล้วส่งขึ้นห้อง) */
+function pickDeckScreen(deck: DeckId) {
+  resyncDeck = true;
+  useGame.setState({ deckPick: deck, deckReturn: 'lobby' });
+  useGame.getState().setScreen('mydeck');
+}
+
 function openDeckScreen(deck: DeckId, screen: 'decks' | 'builder') {
   useGame.setState({ deckView: deck, deckReturn: 'lobby' });
   useGame.getState().setScreen(screen);
@@ -224,7 +235,6 @@ function DeckMenu({
   onEdit?: () => void;
   onView: () => void;
 }) {
-  const [picking, setPicking] = useState(false);
   const custom = deckInfo(deck).custom;
   const item = (label: string, sub: string, onClick?: () => void) => (
     <button
@@ -261,31 +271,14 @@ function DeckMenu({
             {deckSize(deck)} ใบ · {deckInfo(deck).entries.length} ชนิด · สี {colors.map((c) => COLOR_LABEL[c as keyof typeof COLOR_LABEL] ?? c).join(' / ')}
           </div>
         </div>
-        {picking ? (
-          <div className="flex max-h-[45vh] flex-wrap justify-center gap-3 overflow-y-auto px-8 py-5">
-            {playableDecks().map((id) => (
-              <DeckTile
-                key={id}
-                id={id}
-                selected={id === deck}
-                onClick={() => {
-                  sfx('click');
-                  onChange?.(id);
-                  onClose();
-                }}
-              />
-            ))}
-          </div>
-        ) : (
           <div className="flex flex-col gap-3 bg-gradient-to-b from-sky-900/30 to-transparent px-16 py-6">
             {item(custom ? 'แก้ไขเด็ค' : 'จัดเด็คใหม่จากเด็คนี้', lockedReason ?? (custom ? 'เปิดหน้าจัดเด็ค' : 'คัดลอก Starter Deck ไปจัดเอง'), lockedReason ? undefined : onEdit)}
-            {item('เปลี่ยนเด็ค', lockedReason ?? 'เลือกเด็คอื่นที่จะใช้ในห้องนี้', lockedReason ? undefined : onChange && (() => setPicking(true)))}
+            {item('เปลี่ยนเด็ค', lockedReason ?? 'ไปหน้าเด็คของฉันเพื่อเลือกเด็คที่จะใช้ในห้องนี้', lockedReason ? undefined : onChange && (() => pickDeckScreen(deck)))}
             {item('ดูการ์ดในเด็ค', 'รายการการ์ดทั้งหมดของเด็คนี้', onView)}
           </div>
-        )}
         <div className="flex justify-center pt-2">
-          <button type="button" onClick={() => (picking ? setPicking(false) : onClose())} className="w-96 rounded-lg border border-white/40 bg-black py-2.5 text-lg font-black text-lime-300 hover:border-lime-300">
-            {picking ? 'ย้อนกลับ' : 'ยกเลิก'}
+          <button type="button" onClick={onClose} className="w-96 rounded-lg border border-white/40 bg-black py-2.5 text-lg font-black text-lime-300 hover:border-lime-300">
+            ยกเลิก
           </button>
         </div>
       </div>
@@ -356,7 +349,6 @@ function RoomMatch({ onClose, onCreate, onEnter }: { onClose: () => void; onCrea
 
 function CreateRoom({ deck }: { deck: DeckId }) {
   const playerName = useGame((s) => s.playerName);
-  const setName = useGame((s) => s.setPlayerName);
   const [roomName, setRoomName] = useState(`ห้องของ ${playerName}`);
   const [comment, setComment] = useState('');
   const [listed, setListed] = useState(true);
@@ -397,9 +389,6 @@ function CreateRoom({ deck }: { deck: DeckId }) {
         <h3 className="mt-4 mb-1 text-lg font-black text-white">ตั้งค่าขั้นสูง</h3>
         <SettingRow label="แสดงในรายการห้อง" hint="ปิด = เข้าได้ด้วยรหัสห้องเท่านั้น">
           <Toggle on={listed} onChange={setListed} />
-        </SettingRow>
-        <SettingRow label="ชื่อของคุณ">
-          <input defaultValue={playerName} maxLength={16} onBlur={(e) => setName(e.target.value)} className={input} />
         </SettingRow>
       </div>
       {/* เด็คเลือก/เปลี่ยนในหน้าห้อง (สร้างห้องด้วยเด็คที่เลือกล่าสุด) */}
@@ -699,7 +688,8 @@ function RoomView({ deck, setDeck }: { deck: DeckId; setDeck: (id: DeckId) => vo
             });
           })}
           {menu(host ? 'ยุบห้อง' : 'ออกจากห้อง', () => confirm(host ? 'ยุบห้องนี้? (ทุกคนจะถูกพาออก)' : 'ออกจากห้อง?') && void duelLeave(), true)}
-          <div className="mt-auto">
+          <RoomChat code={duel.code} uid={uid} />
+          <div className="shrink-0">
             <DeckCard
               deck={deck}
               lockedReason={locked}
@@ -715,6 +705,64 @@ function RoomView({ deck, setDeck }: { deck: DeckId; setDeck: (id: DeckId) => vo
             />
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** แชตในห้องดวล: ทุกคนในห้อง (ผู้เล่น/ผู้ชม) คุยกันได้ · Enter = ส่ง */
+function RoomChat({ code, uid }: { code: string; uid: string }) {
+  const [msgs, setMsgs] = useState<ChatMsg[]>([]);
+  const [text, setText] = useState('');
+  const list = useRef<HTMLDivElement>(null);
+  const seen = useRef(0);
+  useEffect(() => watchDuelChat(code, setMsgs), [code]);
+  useEffect(() => {
+    const el = list.current;
+    if (el) el.scrollTop = el.scrollHeight;
+    // เสียงเบา ๆ เมื่อมีข้อความใหม่จากคนอื่น (ไม่นับตอนโหลดครั้งแรก)
+    if (seen.current && msgs.length > seen.current && msgs.at(-1)?.uid !== uid) sfx('hover');
+    seen.current = msgs.length;
+  }, [msgs, uid]);
+  const send = () => {
+    if (!text.trim()) return;
+    duelChatSend(text);
+    setText('');
+  };
+  return (
+    <div className="flex min-h-40 flex-1 flex-col overflow-hidden rounded-lg border border-white/15 bg-black/60">
+      <div className="border-b border-white/10 px-3 py-1.5 text-xs font-bold tracking-wider text-sky-300">แชตในห้อง</div>
+      <div ref={list} className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto px-3 py-2 text-sm">
+        {msgs.length === 0 && <div className="m-auto text-xs text-slate-500">ยังไม่มีข้อความ · ทักทายเพื่อนในห้องได้เลย</div>}
+        {msgs.map((m) => (
+          <div key={`${m.at}-${m.uid}`} className={`flex items-start gap-2 ${m.uid === uid ? 'flex-row-reverse text-right' : ''}`}>
+            <Avatar name={m.name} avatar={m.avatar} size="sm" />
+            <div className="min-w-0">
+              <div className="text-[10px] text-slate-400">
+                {m.uid === uid ? 'คุณ' : m.name} · {new Date(m.at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+              </div>
+              <div className={`inline-block max-w-full rounded-lg px-2 py-1 break-words whitespace-pre-wrap ${m.uid === uid ? 'bg-lime-300/20 text-lime-50' : 'bg-slate-700/70 text-slate-100'}`}>{m.text}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-1.5 border-t border-white/10 p-2">
+        <input
+          value={text}
+          maxLength={CHAT_MAX}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              send();
+            }
+          }}
+          placeholder="พิมพ์ข้อความ…"
+          className="min-w-0 flex-1 rounded bg-slate-900 px-2 py-1.5 text-sm text-white ring-1 ring-slate-600 focus:ring-lime-300 focus:outline-none"
+        />
+        <button type="button" onClick={send} disabled={!text.trim()} className="rounded bg-lime-300 px-3 text-sm font-black text-slate-900 disabled:opacity-40">
+          ส่ง
+        </button>
       </div>
     </div>
   );

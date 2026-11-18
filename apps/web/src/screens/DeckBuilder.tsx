@@ -257,50 +257,13 @@ export function DeckBuilder() {
 
   return (
     <div className="game-bg relative flex h-screen min-w-[1200px] flex-col overflow-hidden">
-      {/* ---------------- แถบบน: เลือกเด็ค / ชื่อ / บันทึก */}
+      {/* ---------------- แถบบน: ชื่อเด็ค / บันทึก (เลือก/สร้าง/คัดลอกเด็คทำที่หน้าเด็คของฉัน) */}
       <header className="flex items-center gap-4 pt-5 pr-6">
         <BackButton onClick={() => leave(() => (useGame.getState().setScreen(useGame.getState().deckReturn), useGame.setState({ deckReturn: 'home' })))} label={{ lobby: 'กลับห้องดวล', mydeck: 'เด็คของฉัน' }[useGame.getState().deckReturn as string] ?? 'หน้าหลัก'} />
         <div className="shrink-0">
           <div className="text-xs tracking-[0.4em] text-sky-300">DECK BUILDER</div>
           <div className="text-2xl font-black text-white italic">จัดเด็ค</div>
         </div>
-        <select
-          value={draft.id ?? ''}
-          onChange={(e) => {
-            const d = myDecks.find((x) => x.id === e.target.value);
-            if (d) open({ id: d.id, name: d.name, entries: d.entries });
-          }}
-          className="max-w-56 rounded-lg bg-slate-800 px-3 py-2 text-sm text-slate-100 ring-1 ring-slate-600"
-          title="เด็คของฉัน"
-        >
-          <option value="" disabled>
-            {myDecks.length ? 'เด็คของฉัน…' : 'ยังไม่มีเด็คที่บันทึก'}
-          </option>
-          {myDecks.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name} ({deckSizeOf(d.entries)})
-            </option>
-          ))}
-        </select>
-        <button type="button" className={BTN.secondary} onClick={() => open({ id: null, name: 'เด็คใหม่', entries: [] })}>
-          + เด็คใหม่
-        </button>
-        <select
-          value=""
-          onChange={(e) => {
-            const s = STARTER_DECKS[e.target.value];
-            if (s) open({ id: null, name: `${s.label} (แก้ไข)`, entries: s.entries.map((x) => ({ ...x })) });
-          }}
-          className="rounded-lg bg-slate-800 px-3 py-2 text-sm text-slate-100 ring-1 ring-slate-600"
-        >
-          <option value="">คัดลอกจาก Starter…</option>
-          {Object.keys(STARTER_DECKS).map((id) => (
-            <option key={id} value={id}>
-              {deckInfo(id).label}
-            </option>
-          ))}
-        </select>
-
         <div className="ml-auto flex items-center gap-3">
           <input
             value={draft.name}
