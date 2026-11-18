@@ -342,7 +342,7 @@ export function currentBp(state: GameState, db: CardDatabase, cardId: string): n
 
 /** การ์ดตรงตัวกรองหรือไม่ (maxBp ใช้ BP ปัจจุบันบนสนาม) */
 /** คอสต์ของการ์ดบนสนาม (คอสต์ที่พิมพ์ + เอฟเฟกต์ "คอสต์ +N" ของการ์ดฝ่ายเดียวกัน) การ์ดนอกสนาม = คอสต์ที่พิมพ์ */
-export function fieldCost(state: GameState, db: CardDatabase, cardId: string, ignoreBraveCost = false): number {
+export function fieldCost(state: GameState, db: CardDatabase, cardId: string, ignoreBraveCost = false, out?: (StaticSource & { amount: number })[]): number {
   const card = state.cards[cardId]!;
   const def = db.get(card.cardNo);
   const owner = state.players[card.owner];
@@ -359,9 +359,17 @@ export function fieldCost(state: GameState, db: CardDatabase, cardId: string, ig
       if (ab.kind !== 'costBoost' || !ab.levels.includes(level)) continue;
       if (!conditionHolds(state, id, ab.if, false, false, db) || !matchesFilter(state, db, cardId, ab.filter)) continue;
       cost += ab.amount;
+      out?.push({ cardId: id, source: ab.source, amount: ab.amount });
     }
   }
   return cost;
+}
+
+/** การ์ดที่ทำให้คอสต์บนสนามของการ์ดนี้เปลี่ยน ("เน็กซัสของเราทั้งหมดคอสต์ +2" มิซึมาตะโอโรจิ) พร้อมจำนวน */
+export function costBoostSources(state: GameState, db: CardDatabase, cardId: string): (StaticSource & { amount: number })[] {
+  const out: (StaticSource & { amount: number })[] = [];
+  fieldCost(state, db, cardId, false, out);
+  return out;
 }
 
 export function matchesFilter(state: GameState, db: CardDatabase, cardId: string, filter: CardFilter): boolean {

@@ -26,6 +26,8 @@ import {
   trashImmune,
   dispersionCount,
   bounceBottomSource,
+  costBoostSources,
+  type StaticSource,
   levelBoostSources,
   effectBlocker,
   negatedBy,
@@ -1453,21 +1455,40 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
         if (!subject) return;
         filter = { ...filter, maxBp: db.get(subject.cardNo).levels[0]?.bp ?? 0 };
       }
-      if (step.costFrom === 'self') {
-        if (!onField(ctx, self)) return;
-        filter = { ...filter, maxCost: fieldCost(s, db, self) };
-      }
-      if (step.costFrom === 'subject') {
-        if (!item.subjectId || !s.cards[item.subjectId]) return;
-        filter = { ...filter, maxCost: fieldCost(s, db, item.subjectId) };
+      // คอสต์ไม่เกินคอสต์ของการ์ดอ้างอิง (ตัวนี้ / การ์ดที่เป็นเหตุ) · "คอสต์ +N" บนการ์ดนั้น (มิซึมาตะโอโรจิ) นับรวม
+      // แถบด้านบนตัดข้อความยาว: เพดานคอสต์อยู่ต้นข้อความ (costCap) ที่มาของ +N อยู่ท้าย (costNote อ่านเต็มตอนกดขยาย)
+      let costCap = '';
+      let costNote = '';
+      let boostedOnly: (cap: number) => boolean = () => false;
+      let boostSrc: StaticSource[] = [];
+      const capFrom = step.costFrom === 'self' ? self : step.costFrom === 'subject' ? item.subjectId : undefined;
+      if (step.costFrom) {
+        if (!capFrom || !s.cards[capFrom] || (step.costFrom === 'self' && !onField(ctx, self))) return;
+        const boosts = costBoostSources(s, db, capFrom);
+        const cap = fieldCost(s, db, capFrom);
+        const bonus = boosts.reduce((n, b) => n + b.amount, 0);
+        filter = { ...filter, maxCost: cap };
+        costCap = `คอสต์ไม่เกิน ${cap}`;
+        if (bonus !== 0) {
+          const names = [...new Set(boosts.map((b) => db.get(s.cards[b.cardId]!.cardNo).name))].join(', ');
+          costNote = ` (${db.get(s.cards[capFrom]!.cardNo).name} ${cap - bonus} ${bonus > 0 ? '+' : ''}${bonus} จาก ${names})`;
+          boostSrc = boosts;
+          // เป้าที่เลือกได้เพราะ "คอสต์ +N" เท่านั้น (คอสต์เกินคอสต์เดิมของการ์ดอ้างอิง)
+          boostedOnly = (c) => c > cap - bonus;
+        }
       }
       // เลือกหลายตัว = คนละตัว (ตัวที่รอดด้วยเอฟเฟกต์แทนที่ไม่ถูกเลือกซ้ำ)
       const pool = step.anySide ? [...s.players[me].field, ...s.players[opponentOf(me)].field] : s.players[opponentOf(me)].field;
       const candidates = pool.filter((id) => matchesFilter(s, db, id, filter) && !step.exclude?.includes(id) && hits(id));
       if (candidates.length === 0) return;
+      // "คอสต์ +N" ทำให้มีเป้าเพิ่มจริง → เรืองแสงการ์ดต้นเหตุก่อนให้เลือก
+      if (candidates.some((id) => boostedOnly(fieldCost(s, db, id)))) emitStatic(ctx, boostSrc);
       const n = step.count ?? 1;
       const whose = step.anySide ? '' : 'ของคู่แข่ง';
-      ask(ctx, item, { kind: 'card', prompt: n > 1 ? `เลือกการ์ด${whose}ที่จะทำลาย (อีก ${n} ตัว)` : `เลือกการ์ด${whose} 1 ใบที่จะทำลาย`, candidates, step });
+      // เพดานคอสต์ขึ้นต้นประโยค (แถบด้านบนตัดท้าย) เช่น "คอสต์ไม่เกิน 6: เลือกการ์ดของคู่แข่งที่จะทำลาย (No.3 ร็อคแฮนด์ 4 +2 จาก มิซึมาตะโอโรจิแห่งเขียวคราม)"
+      const base = n > 1 ? `เลือกการ์ด${whose}ที่จะทำลาย (อีก ${n} ตัว)` : costCap ? `เลือกการ์ด${whose}ที่จะทำลาย` : `เลือกการ์ด${whose} 1 ใบที่จะทำลาย`;
+      const prompt = costCap ? `${costCap}: ${base}` : base;
+      ask(ctx, item, { kind: 'card', prompt: prompt + costNote, candidates, step });
       return;
     }
 

@@ -290,9 +290,24 @@ describe('Booster Set 02 / 03', () => {
       let x = activate(attackFlash(s, orochi), orochi, 1);
       x = choose(x, nexus);
       expect(x.choice?.kind === 'card' && x.choice.candidates).toEqual([cost6]);
+      // ข้อความเลือกเป้าบอกเพดานคอสต์ + ที่มาของ +2 · เป้าคอสต์ 6 เลือกได้เพราะ +2 → มิซึมาตะเรืองแสง (บรรทัด "คอสต์ +2")
+      expect(x.choice?.prompt).toContain('คอสต์ไม่เกิน 6');
+      expect(x.choice?.prompt).toContain('+2 จาก มิซึมาตะโอโรจิแห่งเขียวคราม');
+      expect(x.log.some((e) => e.type === 'staticApplied' && e.cardId === orochi && e.source === 2)).toBe(true);
       x = choose(x, cost6);
       expect(x.players.p2.field).not.toContain(cost6);
       expect(x.players.p2.field).toContain(cost8);
+    });
+
+    it('มิซึมาตะโอโรจิ: +2 ไม่ได้ทำให้มีเป้าเพิ่ม (เป้าคอสต์ไม่เกินคอสต์เดิมของเน็กซัส) = ไม่เรืองแสงบรรทัด "คอสต์ +2"', () => {
+      const s = setup();
+      const orochi = put(s, 'p1', no('มิซึมาตะโอโรจิแห่งเขียวคราม'), 2, true);
+      const nexus = put(s, 'p1', no('No.3 ร็อคแฮนด์'), 0); // คอสต์ 4 → 6
+      const cost1 = put(s, 'p2', DARIU, 1);
+      let x = activate(attackFlash(s, orochi), orochi, 1);
+      x = choose(x, nexus);
+      expect(x.choice?.kind === 'card' && x.choice.candidates).toEqual([cost1]);
+      expect(x.log.some((e) => e.type === 'staticApplied' && e.cardId === orochi)).toBe(false);
     });
 
     it('โอกุมะ: ส่ง Soul Core ลงแทรช เพื่ออัญเชิญจากแทรช (จ่ายคอสต์) กี่ใบก็ได้', () => {
@@ -769,5 +784,6 @@ describe('ความปลอดภัยของการคำนวณ', (
       }
     }
     expect(true).toBe(true);
-  });
+    // เทสต์หนัก (สุ่มหลายร้อยสนาม) ปกติ 3–5 วิ: รันพร้อมไฟล์อื่นบางครั้งเกินค่าเริ่มต้น 5 วิ · วนไม่จบจริงจะค้างเกิน 20 วิอยู่ดี
+  }, 20_000);
 });
