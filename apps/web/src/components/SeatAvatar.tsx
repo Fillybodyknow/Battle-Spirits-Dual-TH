@@ -1,7 +1,7 @@
 /**
  * รูปโปรไฟล์ของผู้เล่นแต่ละที่นั่ง (ระหว่างเกม / ฉากเปิดเกม)
- * ออนไลน์ = รูปที่ผู้เล่นตั้งไว้ (rooms/<code>/avatars) · ไม่มี = หน้าปกเด็คของที่นั่งนั้น
- * เครื่องเดียว = ผู้เล่น 1 ใช้รูปของบัญชีนี้ ผู้เล่น 2 ใช้หน้าปกเด็ค
+ * ออนไลน์ = รูปที่ผู้เล่นตั้งไว้ (rooms/<code>/avatars) · ไม่มี = รูปเริ่มต้น (ไม่ใช้หน้าปกเด็ค: ไม่เผยเด็คก่อนดวล)
+ * เครื่องเดียว = ผู้เล่น 1 ใช้รูปของบัญชีนี้ ผู้เล่น 2 ใช้รูปเริ่มต้น
  */
 import type { PlayerId } from '@bs/engine';
 import { useAccount } from '../account/account';
@@ -9,7 +9,7 @@ import { deckCover } from '../screens/shared';
 import { useGame, type DeckId } from '../store';
 import { AvatarImg } from './AccountDialog';
 
-/** หน้าปกเด็คเป็นรูปสำรอง (รหัสเด็คที่ถอดไม่ได้ = ปก Starter) */
+/** รูปเริ่มต้น = ปก Starter Deck 02 (เหมือนป้ายโปรไฟล์หน้าแรก) · ส่งรหัสเด็คมา = หน้าปกเด็คนั้น */
 export function coverOf(deck?: string | null): string {
   try {
     if (deck) return deckCover(deck as DeckId);
@@ -21,15 +21,14 @@ export function coverOf(deck?: string | null): string {
 
 export function useSeatAvatar(p: PlayerId): string {
   const online = useGame((s) => s.online);
-  const decks = useGame((s) => s.decks);
   const mine = useAccount((s) => s.avatar);
   if (online) {
     const a = online.avatars[p];
     if (a) return a;
     if (!online.spectator && p === online.me && mine) return mine;
-    return coverOf(online.setup?.decks[p]);
+    return coverOf();
   }
-  return p === 'p1' && mine ? mine : coverOf(decks[p]);
+  return p === 'p1' && mine ? mine : coverOf();
 }
 
 /** รูปโปรไฟล์ในกรอบข้าวหลามตัด (ตัดภาพให้เต็มกรอบ ไม่เอียงตาม) */

@@ -541,6 +541,7 @@ input:-webkit-autofill:focus {
   85% { transform: scale(1.04); opacity: 1; }
   100% { transform: scale(1.1); opacity: 0; }
 }
+@keyframes intro-sheen { 0% { background-position: 120% 0; } 60%, 100% { background-position: -120% 0; } }
 @keyframes intro-in-left { from { transform: translateX(-120px); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes intro-in-right { from { transform: translateX(120px); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes intro-spin { to { transform: rotate(360deg); } }

@@ -2152,6 +2152,9 @@ function enterRoom(code: string, me: PlayerId, uid: string, spectator = false) {
   unsubRoom = transport.watchRoom(code, (info) => onRoom(code, info));
 }
 
+/** ที่นั่ง (uid) ของห้องเกมล่าสุด: ฉากเปิดเกมใช้แสดง Player ID */
+let lastSeats: Partial<Record<PlayerId, string>> = {};
+
 function onRoom(code: string, info: RoomInfo | null) {
   const on = useGame.getState().online;
   if (!on || on.code !== code) return;
@@ -2170,6 +2173,7 @@ function onRoom(code: string, info: RoomInfo | null) {
   const ready = !!info.setup.decks.p2 && !!info.seats.p2;
   const names = info.names ?? {};
   const avatars = info.avatars ?? {};
+  lastSeats = info.seats;
   if (ready && (on.status === 'waiting' || on.setup?.round !== info.setup.round)) {
     useGame.setState({ online: { ...on, names, avatars } });
     void startRound(code, info.setup, opponentHere);
@@ -2205,7 +2209,7 @@ async function startRound(code: string, setup: RoomSetup, opponentHere: boolean)
   // ฉากเปิดเกม: จอของคนชนะการเสี่ยงออกหัว จอของอีกฝั่งออกก้อย
   const intro: Fx[] =
     st.animations && existing === 0
-      ? matchIntro(winner === me, { name: names[me] ?? st.playerName, deck: decks[me], avatar: avatars[me] ?? storedAvatar() }, { name: names[opp] ?? 'คู่แข่ง', deck: decks[opp], avatar: avatars[opp] })
+      ? matchIntro(winner === me, { name: names[me] ?? st.playerName, deck: decks[me], avatar: avatars[me] ?? storedAvatar(), uid: lastSeats[me] ?? st.online.uid }, { name: names[opp] ?? 'คู่แข่ง', deck: decks[opp], avatar: avatars[opp], uid: lastSeats[opp] })
       : [];
   const nav = st.screen === 'lobby' ? {} : { screen: 'game' as const };
   if (setup.first) {
@@ -2606,6 +2610,8 @@ export interface IntroSide {
   deck: string;
   /** รูปโปรไฟล์ (รหัสการ์ด) · ไม่มี = หน้าปกเด็ค */
   avatar?: string;
+  /** uid ของที่นั่ง (แสดง Player ID) · เล่นเครื่องเดียว = ไม่มี */
+  uid?: string;
 }
 
 /** ฉากเปิดเกม (โยนเหรียญ + เลือกเริ่มก่อน/หลัง) ป้ายเทิร์นที่ 1 ขึ้นเมื่อฉากจบ (introDone) */

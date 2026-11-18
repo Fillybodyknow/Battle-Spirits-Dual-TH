@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { sfx } from '../sfx';
-import { useGame, type DeckId, type Fx } from '../store';
-import { deckInfo } from '../decks';
-import { CardArt, deckColor, deckCover } from '../screens/shared';
+import { useGame, type Fx } from '../store';
+import { playerId } from '../account/account';
+import { IMG } from '../assets';
 import { coverOf, DiamondAvatar } from './SeatAvatar';
 
 /** ลายบนเหรียญ: แกนคอร์หกเหลี่ยม + วงแหวน (ด้านทอง = หัว, ด้านเทา = ก้อย) */
@@ -53,26 +53,34 @@ const COIN_FLIGHT = 1700;
 /** จุดดังที่สุดของเสียง coin (ms นับจากต้นไฟล์) ให้ตรงกับจังหวะเหรียญตก */
 const COIN_SFX_HIT = 780;
 
-/** ป้ายผู้เล่นมุมล่าง + การ์ดปกเด็คลอย (ฝั่งซ้ายสีฟ้า / ฝั่งขวาสีแดง) */
-function Plate({ side, name, deck, avatar }: { side: 'left' | 'right'; name: string; deck: string; avatar?: string }) {
+/**
+ * ป้ายผู้เล่นมุมล่าง + หลังการ์ดลอย (ฝั่งซ้ายสีฟ้า / ฝั่งขวาสีแดง)
+ * ไม่เผยเด็คก่อนดวล: ไม่แสดงการ์ด/ชื่อเด็ค/สีเด็ค · หลังการ์ดเตรียมไว้เปลี่ยนเป็น Sleeve ที่ผู้เล่นเลือกในอนาคต
+ */
+function Plate({ side, name, avatar, uid }: { side: 'left' | 'right'; name: string; avatar?: string; uid?: string }) {
   const left = side === 'left';
   const accent = left ? '#38bdf8' : '#f43f5e';
-  const glow = deckColor(deck as DeckId);
   return (
     <div className={`absolute bottom-[9%] ${left ? 'left-[4%]' : 'right-[4%]'} flex w-[30%] flex-col ${left ? 'items-start' : 'items-end'}`} style={{ animation: `${left ? 'intro-in-left' : 'intro-in-right'} 0.55s cubic-bezier(.2,.9,.3,1) both` }}>
       <div className="relative mb-4 w-[min(15vw,220px)]" style={{ animation: 'home-float 3.2s ease-in-out infinite' }}>
-        <div className="absolute inset-[-35%] rounded-full blur-3xl" style={{ background: `radial-gradient(circle, ${glow}66, transparent 65%)` }} />
-        <CardArt cardNo={deckCover(deck as DeckId)} className={`relative w-full shadow-[0_24px_50px_rgba(0,0,0,0.75)] ${left ? 'rotate-[-7deg]' : 'rotate-[7deg]'}`} />
+        <div className="absolute inset-[-35%] rounded-full blur-3xl" style={{ background: `radial-gradient(circle, ${accent}66, transparent 65%)` }} />
+        <div className={`relative aspect-[63/88] w-full overflow-hidden rounded-[5%] shadow-[0_24px_50px_rgba(0,0,0,0.75)] ${left ? 'rotate-[-7deg]' : 'rotate-[7deg]'}`} style={{ boxShadow: `0 24px 50px rgba(0,0,0,0.75), 0 0 0 2px ${accent}99, 0 0 22px ${accent}66` }}>
+          <img src={IMG.cardBack} alt="" draggable={false} className="h-full w-full object-cover" />
+          {/* ประกายแสงวิ่งผ่านหลังการ์ด */}
+          <div className="absolute inset-0" style={{ background: 'linear-gradient(115deg, transparent 35%, rgba(255,255,255,0.28) 50%, transparent 65%)', backgroundSize: '250% 100%', animation: 'intro-sheen 2.8s ease-in-out infinite' }} />
+        </div>
       </div>
       <div className="relative w-full">
         <div className="h-[3px] w-full" style={{ background: `linear-gradient(${left ? '90deg' : '270deg'}, ${accent}, transparent)`, boxShadow: `0 0 12px ${accent}` }} />
         <div className={`flex items-center gap-3 bg-gradient-to-r py-2.5 ${left ? 'from-slate-950/90 to-transparent pl-4' : 'flex-row-reverse from-transparent to-slate-950/90 pr-4'}`}>
-          <DiamondAvatar cardNo={avatar || coverOf(deck)} accent={accent} className={`h-14 w-14 ${left ? 'mr-1' : 'ml-1'}`} />
+          <DiamondAvatar cardNo={avatar || coverOf()} accent={accent} className={`h-14 w-14 ${left ? 'mr-1' : 'ml-1'}`} />
           <div className={left ? 'text-left' : 'text-right'}>
             <div className="text-xl font-black text-white drop-shadow">{name}</div>
-            <div className="text-xs" style={{ color: `${accent}cc` }}>
-              {deckInfo(deck).label}
-            </div>
+            {uid && (
+              <div className="text-xs tracking-wider" style={{ color: `${accent}cc` }}>
+                Player ID: {playerId(uid)}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -251,8 +259,8 @@ export function MatchIntro({ fx, onDone }: { fx: Extract<Fx, { kind: 'intro' }>;
       {stage && (
         <>
           <Vortex fade={false} />
-          <Plate side="left" name={fx.left.name} deck={fx.left.deck} avatar={fx.left.avatar} />
-          <Plate side="right" name={fx.right.name} deck={fx.right.deck} avatar={fx.right.avatar} />
+          <Plate side="left" name={fx.left.name} avatar={fx.left.avatar} uid={fx.left.uid} />
+          <Plate side="right" name={fx.right.name} avatar={fx.right.avatar} uid={fx.right.uid} />
           {phase === 'vs' && (
             <div className="absolute top-1/2 left-1/2 text-[9rem] font-black italic text-white" style={{ textShadow: '0 0 30px rgba(196,181,253,0.95), 0 0 4px #fff', animation: 'intro-vs 1.6s cubic-bezier(.2,1.4,.4,1) both' }}>
               VS
