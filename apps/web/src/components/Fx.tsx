@@ -8,6 +8,7 @@ import { effects, flashScale, shakeScale } from '../gfx';
 import { playerLabel } from '../format';
 import { MatchIntro } from './MatchIntro';
 import { MatchResult } from './MatchResult';
+import { CutInIdol, IdolFxView, IdolSparkles, isDivaCard, isSongCard, SongWaves } from './IdolFx';
 
 /** เรียก onDone เมื่อครบเวลา (ms = null → ไม่ปิดเอง) */
 function useAutoDismiss(onDone: () => void, ms: number | null) {
@@ -92,7 +93,7 @@ function Banner({ fx, onDone }: { fx: Extract<Fx, { kind: 'banner' }>; onDone: (
 // ---------------------------------------------------------------- summon cut-in
 
 /** ธีม Cut-in ตามสีหลักของการ์ด (สีที่ไม่มีธีม = แบบเดิม: แถบความเร็ว + สะเก็ดไฟ) */
-type CutInThemeName = 'fire' | 'water' | 'dark' | 'wind' | 'ice' | 'holy';
+type CutInThemeName = 'fire' | 'water' | 'dark' | 'wind' | 'ice' | 'holy' | 'idol';
 const CUTIN_THEME: Partial<Record<string, CutInThemeName>> = { red: 'fire', blue: 'water', purple: 'dark', green: 'wind', white: 'ice', yellow: 'holy' };
 
 /** ค่าที่ทุกธีมใช้: ms(สัดส่วนเวลา) · at = จังหวะทุบ (ms) · n(เต็ม, ต่ำ) = จำนวนอนุภาคตามระดับกราฟิก */
@@ -472,6 +473,7 @@ function CutInTheme({ theme, dur, slam, special, rich }: { theme: CutInThemeName
   if (theme === 'wind') return <CutInWind {...args} />;
   if (theme === 'ice') return <CutInIce {...args} />;
   if (theme === 'holy') return <CutInHoly {...args} />;
+  if (theme === 'idol') return <CutInIdol at={at} special={special} n={n} />;
   if (theme === 'fire') {
     const flames = n(12, 6);
     const embers = n(special ? 48 : 34, 12);
@@ -687,10 +689,12 @@ function SummonCutIn({ fx, onDone }: { fx: Extract<Fx, { kind: 'summon' }>; onDo
   const ray = COLOR_HEX[main] ?? '#ef4444';
   const rich = effects().matMotion;
   const ms = (k: number) => `${Math.round(dur * k)}ms`;
-  const sparks = rich && !CUTIN_THEME[main] ? (fx.special ? 28 : 18) : 0;
+  // เผ่าดีว่า (BS07): ธีมไอดอล (เวที สปอตไลต์ ดาว กระดาษสี) แทนธีมตามสี
+  const idol = def.family.includes('ดีว่า');
+  const sparks = rich && !CUTIN_THEME[main] && !idol ? (fx.special ? 28 : 18) : 0;
   const rarity = (def.rarity ?? 'X').toUpperCase();
   // ธีมตามสีหลัก (แดง = ไฟ, ฟ้า = น้ำ) · สีอื่นใช้แถบความเร็ว + สะเก็ดไฟแบบเดิม
-  const theme = CUTIN_THEME[main] ?? null;
+  const theme: CutInThemeName | null = idol ? 'idol' : (CUTIN_THEME[main] ?? null);
   // แถบความเร็ว: สีการ์ด + เส้นขาวบาง ๆ วิ่ง
   const band = (dir: 1 | -1, top: string, delay: number) => (
     <div
@@ -1163,6 +1167,8 @@ export function FxLayer() {
           <ChainDisplay key={f.id} fx={f} onDone={() => dismiss(f.id)} />
         ) : f.kind === 'damage' ? (
           <Damage key={f.id} fx={f} onDone={() => dismiss(f.id)} />
+        ) : f.kind === 'idol' ? (
+          <IdolFxView key={f.id} fx={f} onDone={() => dismiss(f.id)} />
         ) : null,
       )}
       <SpellStage />
@@ -1704,6 +1710,7 @@ function CardActivate({ fx, onDone }: { fx: Extract<Fx, { kind: 'cardActivate' }
       {/* ทั้งจอสลัว (รวม HUD) */}
       <div className="pointer-events-none fixed inset-0 z-[45] bg-slate-950/75" style={{ animation: `fx-spot ${fx.duration}ms ${fx.delay}ms ease-out both` }} />
       {burst && <Sunburst burst={{ ...rect, y: rect.y + view.lift + 18 }} duration={fx.duration} />}
+      {burst && isDivaCard(card.cardNo) && <IdolSparkles rect={{ ...rect, y: rect.y + view.lift }} delay={0} duration={fx.duration} />}
       {/* สำเนาการ์ดเหนือจอสลัว + วงไฮไลต์ */}
       <div className="pointer-events-none fixed z-[47] flex items-center justify-center" style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h }}>
         <div ref={cloneRef} className="rounded-lg" style={{ width: cw, height: ch, transform: 'scale(1)', opacity: 0 }}>
@@ -2073,6 +2080,8 @@ function SpellCardBody({ cardId, tone, flipRef, pulse }: { cardId: string; tone:
   const t = SPELL_TONE[tone];
   return (
     <>
+      {/* เมจิคไทป์เพลง (BS07): คลื่นเสียง + โน้ตหมุนรอบการ์ดตลอดที่อยู่บนเวที */}
+      {isSongCard(card.cardNo) && <SongWaves color={t.color} />}
       {/* รัศมีหมุน + คลื่น ตอนเอฟเฟกต์ทำงาน */}
       {pulse > 0 && (
         <>

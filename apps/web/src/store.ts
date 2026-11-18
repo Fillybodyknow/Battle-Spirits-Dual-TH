@@ -392,6 +392,19 @@ export type Fx =
    * ค้างไว้จนการต่อสู้นี้จบ (ถูกป้องกัน / ชนเข้า Life / ฉาก FINAL BLOW เล่นจบ)
    */
   | { id: number; kind: 'finalBlowBanner'; attackerId: string; delay: number }
+  /** ธีมไอดอล (เผ่าดีว่า BS07): ON STAGE! / MY UNIT! / SOLO PART / โน้ตดนตรีตอนวาง-ทิ้งเพลง (ดู IdolFx.tsx) */
+  | {
+      id: number;
+      kind: 'idol';
+      variant: 'onStage' | 'myUnit' | 'soloPart' | 'notes' | 'notesBurst';
+      cardId?: string;
+      cardIds?: string[];
+      title?: string;
+      anchor?: string;
+      rect?: Rect;
+      delay: number;
+      duration: number;
+    }
   | { id: number; kind: 'summon'; cardId: string; level: number; bp: number; delay: number; special?: boolean; /** เบรฟที่อัญเชิญไปร่วมร่างทันที: ชื่อผู้ร่วมร่าง (bp = BP+ ที่ให้) */ braveOnto?: string }
   | { id: number; kind: 'activate'; cardId: string; label: string; text: string; delay: number }
   /** การ์ดบนสนามที่เอฟเฟกต์ทำงาน: ยกขึ้น + เรืองแสง ก่อนผลของเอฟเฟกต์จะเกิด */
@@ -795,7 +808,7 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
     // ไม่นับการต่อสู้ที่จบเพราะผู้โจมตี/ผู้ป้องกันออกจากสนามไปก่อน
     const onFieldBoth = (id: string) => PLAYERS.some((p) => prev.players[p].field.includes(id) && s.players[p].field.includes(id));
     const quietEnd =
-      events.some((e) => e.type === 'battleEnded') && onFieldBoth(attackerId) && (!blocked || blockers.some(onFieldBoth)) && (!pb || pb.step !== 'flashBeforeBlock');
+      events.some((e) => e.type === 'battleEnded') && onFieldBoth(attackerId) && (!blocked || blockers.some(onFieldBoth)) && (!pb || (pb.step !== 'flashBeforeBlock' && !pb.resolved));
     const resolved =
       (blocked
         ? destroyedIds.has(attackerId) || blockers.some((b) => destroyedIds.has(b))
@@ -1117,31 +1130,33 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
           if (c && !c.exitSet) {
             const soFar = Math.max(t, ghostsEnd, ...out.filter((f) => f.kind !== 'banner' && f.kind !== 'result' && f.kind !== 'finalBlow' && f !== c).map(fxEnd));
             Object.assign(c, { end: c.from === 'stage' ? soFar : Math.max(soFar, c.delay + T.cast), exit: 'song', exitSet: true });
+            out.push({ kind: 'idol', variant: 'notes', anchor: `[data-song-zone="${e.player}"]`, delay: c.end + T.castExit, duration: 1100 });
           }
         } else {
           const rect = rects[`hand:${e.cardId}`];
           if (rect) out.push({ kind: 'fly', cardId: e.cardId, from: rect, to: `[data-song-card="${e.cardId}"]`, mode: 'move', delay: t, hideTarget: true, revealFirst: true });
           t += 500;
+          out.push({ kind: 'idol', variant: 'notes', anchor: `[data-song-zone="${e.player}"]`, delay: t, duration: 1100 });
         }
-        out.push({ kind: 'float', anchor: `[data-song-zone="${e.player}"]`, text: '♪ เพลง', tone: 'good', delay: t });
         break;
       }
       case 'songRemoved': {
         const rect = rects[`song:${e.cardId}`];
+        if (rect && e.to === 'trash') out.push({ kind: 'idol', variant: 'notesBurst', rect, delay: t, duration: 900 });
         const to = e.to === 'trash' ? `[data-trash="${e.player}"]` : `[data-hand-card="${e.cardId}"]`;
         if (rect) out.push({ kind: 'fly', cardId: e.cardId, from: rect, to, mode: 'move', delay: t, hideTarget: e.to === 'hand', shrink: e.to === 'trash' });
         t += 500;
         break;
       }
       case 'onStage':
-        out.push({ kind: 'banner', tone: 'step', title: 'ON STAGE!', sub: db.get(s.cards[e.cardId]!.cardNo).name, delay: t });
+        // ม่านเวทีเปิด + สปอตไลต์ (ธีมไอดอล) แล้วการ์ดค่อยกลับใต้เด็ค
+        out.push({ kind: 'idol', variant: 'onStage', cardId: e.cardId, title: db.get(s.cards[e.cardId]!.cardNo).name, delay: t, duration: 1700 });
+        t += 1500;
         if (e.exhaustedInstead) out.push({ kind: 'float', anchor: `[data-field-card="${e.cardId}"]`, text: 'เสื่อมสภาพแทนกลับใต้เด็ค', tone: 'bad', delay: t });
-        t += 700;
         break;
       case 'myUnit':
-        out.push({ kind: 'banner', tone: 'step', title: 'MY UNIT!', sub: e.cardIds.map((id) => db.get(s.cards[id]!.cardNo).name).join(' · '), delay: t });
-        for (const id of e.cardIds) out.push({ kind: 'float', anchor: `[data-field-card="${id}"]`, text: 'My Unit', tone: 'good', delay: t });
-        t += 700;
+        out.push({ kind: 'idol', variant: 'myUnit', cardId: e.attackerId, cardIds: e.cardIds, title: e.cardIds.map((id) => db.get(s.cards[id]!.cardNo).name).join(' · '), delay: t, duration: 1400 });
+        t += 1400;
         break;
       case 'magicNegated':
         out.push({ kind: 'banner', tone: 'step', title: 'ไร้ผล!', sub: `เอฟเฟกต์ของ ${db.get(s.cards[e.cardId]!.cardNo).name}`, delay: t });
@@ -1212,6 +1227,10 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
           ...(!onHost ? { lying: exhaustedAt(e.cardId, idx) } : {}),
         });
         out.push({ kind: 'activate', cardId: e.cardId, label: 'เอฟเฟกต์ถาวร', text: effectText(s.cards[e.cardId]!.cardNo, e.source), delay: t });
+        {
+          const ab = db.get(s.cards[e.cardId]!.cardNo).abilities.find((a) => a.source === e.source);
+          if (ab?.kind === 'destroyImmune' && ab.soloPart && onAnyField(e.cardId)) out.push({ kind: 'idol', variant: 'soloPart', cardId: e.cardId, delay: t + 200, duration: 1300 });
+        }
         t += T.activate;
         draws = 0;
         break;
@@ -1553,6 +1572,7 @@ function fxEnd(f: FxInput): number {
     case 'chain':
     case 'reveal':
     case 'target':
+    case 'idol':
       return d + f.duration;
     case 'charge':
       return d + T.chargeEnd;
@@ -1706,6 +1726,7 @@ export function isFxBlocking(fx: Fx[]): boolean {
       f.kind === 'chainAdd' ||
       f.kind === 'target' ||
       f.kind === 'finalBlow' ||
+      (f.kind === 'idol' && (f.variant === 'onStage' || f.variant === 'myUnit')) ||
       (f.kind === 'banner' && f.tone === 'win' && (f.delay ?? 0) > 0) ||
       (f.kind === 'result' && f.delay > 0) ||
       f.kind === 'charge' ||

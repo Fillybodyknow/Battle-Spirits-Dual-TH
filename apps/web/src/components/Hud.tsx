@@ -233,7 +233,8 @@ export function TurnAura() {
 export function FinalBlowWarning() {
   const state = useGame((s) => s.state);
   const battle = state.battle;
-  if (!battle || state.winner || battle.blockers.length > 0) return null;
+  // ตัดสินผลแล้ว (เสียไลฟ์ไปแล้ว รอเบิร์ส/เอฟเฟกต์ก่อนจบการต่อสู้): ไม่ใช่การโจมตีที่จะถึงตายอีก
+  if (!battle || state.winner || battle.blockers.length > 0 || battle.resolved) return null;
   const attacker = state.cards[battle.attackerId];
   if (!attacker) return null;
   const defender = opponentOf(attacker.owner);

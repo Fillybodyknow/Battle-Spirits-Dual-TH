@@ -1038,6 +1038,7 @@ function queueBlockedTriggers(ctx: Ctx, attackerId: string, blockerId: string, b
 function resolveBattle(ctx: Ctx): void {
   const { s, db } = ctx;
   const battle = s.battle!;
+  battle.resolved = true;
   const attacker = s.cards[battle.attackerId]!;
   const attackerDef = db.get(attacker.cardNo);
   const defender = opponentOf(attacker.owner);

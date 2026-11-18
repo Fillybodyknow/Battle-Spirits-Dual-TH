@@ -12,6 +12,7 @@ import { useFlashUsable } from './Controls';
 import { useHeld } from './useHeld';
 import { CardBack, CardFace } from './CardFace';
 import { FieldCracks } from './Cracks';
+import { Note } from './IdolFx';
 import { Core, CoreRow, CoreTray } from './Core';
 import { beginCardDrag } from './DragGhost';
 
@@ -798,7 +799,12 @@ function SongZone({ player }: { player: PlayerId }) {
     <div className="flex w-36 shrink-0 justify-end">
       {songs.length > 0 && (
         <div data-song-zone={player} className="flex flex-col items-end gap-0.5" title="เมจิคไทป์ [เพลง] บนฟิลด์ (วางแสดง ใช้งานไม่ได้)">
-          <span className="rounded bg-fuchsia-600/80 px-1.5 text-[10px] font-black tracking-wide text-white shadow">♪ เพลง {songs.length}</span>
+          <span className="relative flex items-center gap-1 rounded bg-fuchsia-600/80 px-1.5 text-[10px] font-black tracking-wide text-white shadow">
+            {/* โน้ตลอยขึ้นเบา ๆ ตลอดที่มีเพลงบนฟิลด์ */}
+            <Note size={12} color="#fde047" style={{ position: 'absolute', left: -10, top: -6, animation: 'idol-note-float 2.4s ease-in-out infinite' }} />
+            <Note size={10} color="#f9a8d4" double style={{ position: 'absolute', right: -8, top: -4, animation: 'idol-note-float 2.4s 1.2s ease-in-out infinite' }} />
+            เพลง {songs.length}
+          </span>
           <div className="flex">
             {songs.map((id, i) => (
               <div
