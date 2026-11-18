@@ -47,8 +47,11 @@ export class AccountError extends Error {}
 
 export interface CloudBackend {
   name: string;
-  /** แจ้งทุกครั้งที่สถานะล็อกอินเปลี่ยน (null = ยังไม่ล็อกอิน / ล็อกอินแบบไม่ระบุตัว) */
-  onUser(cb: (user: CloudUser | null) => void): () => void;
+  /**
+   * แจ้งทุกครั้งที่สถานะล็อกอินเปลี่ยน (null = ยังไม่ล็อกอิน / ล็อกอินแบบไม่ระบุตัว)
+   * onNotice = ข้อความให้ผู้เล่น (เช่น กลับมาจากล็อกอินแบบเปลี่ยนหน้าแล้วไม่สำเร็จ)
+   */
+  onUser(cb: (user: CloudUser | null) => void, onNotice?: (message: string) => void): () => void;
   signInGoogle(): Promise<void>;
   signInEmail(email: string, password: string): Promise<void>;
   signUpEmail(email: string, password: string): Promise<void>;

@@ -257,12 +257,16 @@ export function installAccount() {
   if (installed) return;
   installed = true;
   try {
-    cloud.onUser((user) => {
-      const prev = useAccount.getState().user;
-      useAccount.setState({ ready: true, user, error: null });
-      if (!user) return stopSync();
-      if (prev?.uid !== user.uid) startSync(user.uid);
-    });
+    cloud.onUser(
+      (user) => {
+        const prev = useAccount.getState().user;
+        useAccount.setState({ ready: true, user, ...(user ? { error: null } : {}) });
+        if (!user) return stopSync();
+        if (prev?.uid !== user.uid) startSync(user.uid);
+      },
+      // กลับมาจากล็อกอินแบบเปลี่ยนหน้าแล้วไม่สำเร็จ: แสดงที่หน้าล็อกอิน
+      (message) => useAccount.setState({ error: message }),
+    );
   } catch {
     // ตั้งค่า Firebase ไม่ครบ: ใช้แบบไม่ล็อกอิน
     useAccount.setState({ ready: true });

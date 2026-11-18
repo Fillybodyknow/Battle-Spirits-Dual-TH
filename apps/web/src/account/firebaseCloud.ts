@@ -51,13 +51,36 @@ function thai(e: unknown): AccountError {
     'auth/cancelled-popup-request': 'ปิดหน้าต่างล็อกอินก่อนเสร็จ',
     'auth/operation-not-allowed': 'ยังไม่ได้เปิดวิธีล็อกอินนี้ใน Firebase Console',
     'auth/unauthorized-domain': 'โดเมนนี้ยังไม่ได้รับอนุญาตใน Firebase Console (Authorized domains)',
+    'auth/account-exists-with-different-credential': 'อีเมลของบัญชี Google นี้สมัครด้วยอีเมล/รหัสผ่านไว้แล้ว: เข้าสู่ระบบด้วยอีเมล/รหัสผ่านเดิมแทน',
+    'auth/web-storage-unsupported': 'เบราว์เซอร์นี้ปิดที่เก็บข้อมูลของเว็บ: เปิดคุกกี้/ที่เก็บข้อมูลแล้วลองใหม่ หรือใช้อีเมล/รหัสผ่าน',
   };
   return new AccountError(msg[code] ?? `ล็อกอินไม่สำเร็จ (${code || (e as Error)?.message || 'ไม่ทราบสาเหตุ'})`);
 }
 
-/** แอปที่ติดตั้งบนมือถือ (PWA) มักบล็อกป๊อปอัป: ใช้แบบเปลี่ยนหน้าแทน */
-const standalone = () =>
-  typeof window !== 'undefined' && (window.matchMedia?.('(display-mode: standalone)').matches || (navigator as { standalone?: boolean }).standalone === true);
+/**
+ * ล็อกอิน Google ใช้ป๊อปอัปเป็นหลัก (รวมแอปที่ติดตั้งไว้)
+ * แบบเปลี่ยนหน้า (redirect) ใช้ไม่ได้บนเบราว์เซอร์รุ่นใหม่ เมื่อเว็บ (github.io) กับ authDomain (firebaseapp.com) คนละโดเมน:
+ * Chrome 115+ / Safari / Firefox แยกที่เก็บข้อมูลข้ามโดเมน กลับมาแล้วผลล็อกอินหาย → ใช้เป็นทางสำรองตอนเปิดป๊อปอัปไม่ได้เท่านั้น
+ */
+const REDIRECT_KEY = 'bs-google-redirect';
+const POPUP_UNAVAILABLE = ['auth/popup-blocked', 'auth/operation-not-supported-in-this-environment'];
+const REDIRECT_FAILED = 'ล็อกอิน Google แบบเปลี่ยนหน้าไม่สำเร็จ (เบราว์เซอร์นี้บล็อกข้อมูลข้ามเว็บ): อนุญาตป๊อปอัปให้เว็บนี้แล้วกดอีกครั้ง หรือใช้อีเมล/รหัสผ่านแทน';
+function markRedirect() {
+  try {
+    sessionStorage.setItem(REDIRECT_KEY, '1');
+  } catch {
+    /* ไม่มีที่เก็บ: ไม่แจ้งเตือนตอนกลับมา */
+  }
+}
+function takeRedirectMark(): boolean {
+  try {
+    const v = sessionStorage.getItem(REDIRECT_KEY) === '1';
+    sessionStorage.removeItem(REDIRECT_KEY);
+    return v;
+  } catch {
+    return false;
+  }
+}
 
 /** บัญชี Google นี้ผูกกับ uid อื่นไว้แล้ว (ล็อกอินเครื่องที่สอง): สลับไปใช้บัญชีนั้น */
 async function signInExisting(e: unknown): Promise<boolean> {
@@ -71,10 +94,18 @@ async function signInExisting(e: unknown): Promise<boolean> {
 export const firebaseCloud: CloudBackend = {
   name: 'Firebase',
 
-  onUser(cb) {
+  onUser(cb, onNotice) {
     const a = auth();
-    // กลับมาจากล็อกอินแบบเปลี่ยนหน้า: จัดการกรณีบัญชี Google ผูกกับ uid อื่นไว้แล้ว
-    getRedirectResult(a).catch((e) => signInExisting(e).catch(() => {}));
+    // กลับมาจากล็อกอินแบบเปลี่ยนหน้า: จัดการกรณีบัญชี Google ผูกกับ uid อื่นไว้แล้ว · ไม่ได้ผลล็อกอินกลับมา = แจ้งผู้เล่น (ไม่เงียบ)
+    const redirected = takeRedirectMark();
+    getRedirectResult(a)
+      .then((r) => {
+        if (redirected && !toUser(r?.user ?? a.currentUser)) onNotice?.(REDIRECT_FAILED);
+      })
+      .catch(async (e) => {
+        const ok = await signInExisting(e).catch(() => false);
+        if (!ok && redirected) onNotice?.(thai(e).message);
+      });
     return onAuthStateChanged(a, (u) => cb(toUser(u)));
   },
 
@@ -83,15 +114,12 @@ export const firebaseCloud: CloudBackend = {
     const provider = new GoogleAuthProvider();
     const cur = a.currentUser;
     try {
-      if (standalone()) {
-        await (cur?.isAnonymous ? linkWithRedirect(cur, provider) : signInWithRedirect(a, provider));
-        return;
-      }
       if (cur?.isAnonymous) await linkWithPopup(cur, provider);
       else await signInWithPopup(a, provider);
     } catch (e) {
       if (await signInExisting(e)) return;
-      if ((e as { code?: string })?.code === 'auth/popup-blocked') {
+      if (POPUP_UNAVAILABLE.includes((e as { code?: string })?.code ?? '')) {
+        markRedirect();
         await (cur?.isAnonymous ? linkWithRedirect(cur, provider) : signInWithRedirect(a, provider));
         return;
       }
