@@ -1,5 +1,5 @@
 import type { CardDatabase, CardDef } from '@bs/cards';
-import { cardLevel, fail, fieldCost, isSpiritLike, levelOf, locateCore, minCores, payableCost, removeCore, removeFrom } from './rules';
+import { cardLevel, fail, fieldCost, isSpiritLike, levelOf, locateCore, minCores, levelBoostSources, payableCost, removeCore, removeFrom, summonLevelCostBoost, type StaticSource } from './rules';
 import { PLAYERS, opponentOf, type EndReason, type GameEvent, type GameState, type Phase, type PlayerId } from './types';
 import { newBatch, queueLifeLostTriggers, queueTriggers } from './effects';
 
@@ -8,6 +8,22 @@ export interface Ctx {
   s: GameState;
   db: CardDatabase;
   events: GameEvent[];
+  /** state ก่อน action นี้ (อ่านอย่างเดียว): ใช้เทียบว่าความสามารถถาวรเพิ่งมีผลใน action นี้หรือไม่ */
+  start?: GameState;
+}
+
+/**
+ * ความสามารถถาวรของการ์ดบนสนามลงมือ: ให้หน้าเว็บเรืองแสงการ์ดต้นเหตุ (ไม่เปลี่ยน state)
+ * บรรทัดเอฟเฟกต์เดียวกันแจ้งครั้งเดียวต่อ action (เช่น Shield กันหลายเอฟเฟกต์ติดกัน)
+ */
+export function emitStatic(ctx: Ctx, src: StaticSource | StaticSource[] | 'battle' | null | undefined): void {
+  if (!src || src === 'battle') return;
+  for (const { cardId, source } of Array.isArray(src) ? src : [src]) {
+    const card = ctx.s.cards[cardId];
+    if (!card) continue;
+    if (ctx.events.some((e) => e.type === 'staticApplied' && e.cardId === cardId && e.source === source)) continue;
+    emit(ctx, { type: 'staticApplied', player: card.owner, cardId, source });
+  }
 }
 
 export function emit(ctx: Ctx, event: GameEvent): void {
@@ -162,9 +178,17 @@ export function checkDepletion(ctx: Ctx): string[] {
       // คอร์ไม่ถึงเลเวลต่ำสุด (รวม "Lv คอสต์ +N" จากเอฟเฟกต์ เช่นราโชว) = สูญสลาย ทั้งสปิริตและเน็กซัส
       const counts = isSpiritLike(def) || (def.type === 'nexus' && def.levels.length > 0);
       if (counts && (levelOf(def, card.cores.length) === 0 || cardLevel(ctx.s, ctx.db, cardId) === 0)) {
+        // สูญสลายเพราะ "Lv คอสต์ +N" (คอร์ถึง Lv1 ตามที่พิมพ์ แต่ไม่ถึงเมื่อรวม +N) → เรืองแสงการ์ดต้นเหตุก่อน
+        if (levelOf(def, card.cores.length) > 0) emitStatic(ctx, levelBoostSources(ctx.s, ctx.db, cardId));
         sendToTrash(ctx, cardId);
         emit(ctx, { type: 'depleted', cardId });
         depleted.push(cardId);
+      } else if (counts && ctx.start?.players[player].field.includes(cardId)) {
+        // "Lv คอสต์ +N" เพิ่งมีผลกับการ์ดที่อยู่บนสนามอยู่แล้วใน action นี้ จนเลเวลตก (อาเมะลงสนาม / ได้โซลคอร์)
+        const was = summonLevelCostBoost(ctx.start, ctx.db, cardId);
+        const now = summonLevelCostBoost(ctx.s, ctx.db, cardId);
+        const n = card.cores.length;
+        if (now > was && levelOf(def, n - now) < levelOf(def, n - was)) emitStatic(ctx, levelBoostSources(ctx.s, ctx.db, cardId));
       }
     }
   }

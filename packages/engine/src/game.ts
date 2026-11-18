@@ -1,5 +1,5 @@
 import type { CardDatabase, CardDef, Step } from '@bs/cards';
-import { assertUsableCore, checkDepletion, destroy, drawCard, emit, endGame, loseLife, newCore, payCost, pendBurst, setPhase, type Ctx } from './ctx';
+import { assertUsableCore, checkDepletion, destroy, drawCard, emit, emitStatic, endGame, loseLife, newCore, payCost, pendBurst, setPhase, type Ctx } from './ctx';
 import { destroyCard, enqueue, fireTriggers, refreshByEffect, newBatch, queueExhaustTriggers, queueLifeLostTriggers, queueMagicUsedTriggers, queueSummonTriggers, queueTriggers, resolveChoice, runQueue } from './effects';
 import { nextRandom, shuffle } from './rng';
 import {
@@ -9,6 +9,10 @@ import {
   activeForcedAttack,
   quickAbility,
   lifeDamageCapped,
+  staticSources,
+  handCostDeltaSources,
+  noReductionBlocked,
+  levelBoostSources,
   fieldCost,
   braveRoom,
   braveToSwap,
@@ -256,15 +260,25 @@ function afterDraw(ctx: Ctx): void {
   // ฟื้นสภาพไม่ได้: ถูกล็อกด้วยเอฟเฟกต์ (เคล็ดวิชาปลดปล่อยพสุธา) / เอฟเฟกต์ของคู่แข่งบนสนาม (โซอุม)
   const locks = s.refreshLocks ?? [];
   const opp = s.players[opponentOf(player)];
-  const blocked = (id: string) =>
-    locks.includes(id) ||
-    opp.field.some((src) => {
+  /** การ์ดของคู่แข่งที่ทำให้การ์ดนี้ฟื้นสภาพไม่ได้ (โซอุม) */
+  const noRefreshBy = (id: string) => {
+    for (const src of opp.field) {
       const level = cardLevel(s, ctx.db, src);
-      return ctx.db
-        .get(s.cards[src]!.cardNo)
-        .abilities.some((a) => a.kind === 'opponentNoRefresh' && a.levels.includes(level) && matchesFilter(s, ctx.db, id, a.filter));
-    });
-  for (const id of p.field) if (!blocked(id)) s.cards[id]!.state = 'refresh';
+      const a = ctx.db.get(s.cards[src]!.cardNo).abilities.find((a) => a.kind === 'opponentNoRefresh' && a.levels.includes(level) && matchesFilter(s, ctx.db, id, a.filter));
+      if (a) return { cardId: src, source: a.source };
+    }
+    return null;
+  };
+  for (const id of p.field) {
+    if (locks.includes(id)) continue;
+    const by = noRefreshBy(id);
+    // เสื่อมสภาพอยู่แล้วฟื้นไม่ได้เพราะโซอุม → เรืองแสงโซอุม
+    if (by) {
+      if (s.cards[id]!.state === 'exhausted') emitStatic(ctx, by);
+      continue;
+    }
+    s.cards[id]!.state = 'refresh';
+  }
   if (locks.length > 0) s.refreshLocks = locks.filter((id) => s.cards[id]!.owner !== player);
   p.reserve.push(...p.trashCores);
   p.trashCores = [];
@@ -397,6 +411,8 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
       paid = 1;
       placed = placement;
     } else {
+      // ฮาคุโดวโทคาเงะ: สัญลักษณ์บนสนามลดคอสต์ได้แต่ถูกห้าม = จ่ายแพงขึ้นจริง → เรืองแสงก่อนการ์ดลงสนาม
+      emitStatic(ctx, noReductionBlocked(s, db, player, def, baseCost(s, db, cardId)));
       ({ paid, placed } = payCost(ctx, player, def, payment, placement, {
         reserveOnly: !!flash && !trashRule && !quickAnyCores(s, db, player),
         baseCost: baseCost(s, db, cardId),
@@ -463,7 +479,10 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     if (magicUsedUp(s, ctx.db, player, def.cardNo, use)) fail('ONCE_PER_TURN', 'เอฟเฟกต์นี้ใช้ได้เทิร์นละ 1 ครั้ง');
     const paidWithSoul = payment.some((id) => s.cores[id]?.isSoul);
     // ใช้เป็นเมจิค: จ่ายคอสต์อย่างเดียว ไม่วาง Core (การ์ดสปิริตที่ใช้เป็นเมจิคก็เช่นกัน)
-    const { paid } = payCost(ctx, player, def, payment, [], { noPlacement: true });
+    // คอสต์ในมือ (ทริคสเตอร์: แอทแท็คสเต็ปของเรา เมจิคในมือคอสต์ -1) ต้องใช้ตอนจ่ายจริงด้วย ไม่ใช่แค่ตอนแสดง
+    const handCost = baseCost(s, ctx.db, cardId);
+    emitStatic(ctx, handCost !== def.cost ? handCostDeltaSources(s, ctx.db, cardId) : []);
+    const { paid } = payCost(ctx, player, def, payment, [], { noPlacement: true, baseCost: handCost });
     const once = def.abilities.find((a) => a.kind === 'magic' && a.timing === use && a.oncePerTurn);
     if (once) s.usedOncePerTurn = [...(s.usedOncePerTurn ?? []), `${player}:${def.cardNo}:${once.source}`];
     // ใช้จากการ์ดที่วางแสดงนอกมือ (ไม่ใช่ "จากในมือ")
@@ -937,7 +956,9 @@ function resolveBattle(ctx: Ctx): void {
     // ลองเคพ: เสียหายได้ 1 เม็ดต่อสปิริต 1 ตัวต่อเทิร์น
     if (dmg > 0 && lifeDamageCapped(s, db, defender)) {
       const rec = s.lifeDamageBy?.turn === s.turn && s.lifeDamageBy.player === defender ? s.lifeDamageBy : { turn: s.turn, player: defender, ids: [] as string[] };
-      dmg = rec.ids.includes(attacker.id) ? 0 : 1;
+      const capped = rec.ids.includes(attacker.id) ? 0 : 1;
+      if (capped < dmg) emitStatic(ctx, staticSources(s, db, [defender], 'lifeDamageCap'));
+      dmg = capped;
       s.lifeDamageBy = { ...rec, ids: [...rec.ids, attacker.id] };
     }
     if (dmg > 0) {
@@ -1052,7 +1073,7 @@ export function applyAction(state: GameState, input: Action, db: CardDatabase): 
   // คัดลอก action: engine ห้ามแก้ object ของผู้เรียก (array ใน action ถูกใช้เป็นข้อมูลใน state เช่น Core บนการ์ด)
   const action = structuredClone(input);
   if (state.winner) return { ok: false, error: { code: 'GAME_OVER', message: 'เกมจบแล้ว' } };
-  const ctx: Ctx = { s: structuredClone(state), db, events: [] };
+  const ctx: Ctx = { s: structuredClone(state), db, events: [], start: state };
   try {
     if (state.choice && action.type !== 'choose' && action.type !== 'concede') {
       fail('CHOICE_PENDING', 'ต้องเลือกให้เสร็จก่อน');

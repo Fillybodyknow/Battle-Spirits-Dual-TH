@@ -320,13 +320,15 @@ describe('Booster Set 02 / 03', () => {
 
     it('โซอุม Lv2: รีเฟรชสเต็ปของคู่แข่ง สปิริตคอสต์ ≥ 8 ของคู่แข่งฟื้นสภาพไม่ได้', () => {
       const s = setup();
-      put(s, 'p1', no('พระนักรบร่างประหลาด โซอุม'), 3);
+      const soum = put(s, 'p1', no('พระนักรบร่างประหลาด โซอุม'), 3);
       const big = put(s, 'p2', no('นินจาเขี้ยวพิศวงชั้นสูง เฮียวโซวกะ'), 1, false, 'exhausted');
       const small = put(s, 'p2', DARIU, 1, false, 'exhausted');
       const x = endTurn(s);
       expect(x.turnPlayer).toBe('p2');
       expect(x.cards[big]!.state).toBe('exhausted');
       expect(x.cards[small]!.state).toBe('refresh');
+      // หน้าเว็บเรืองแสงโซอุมตอนรีเฟรชสเต็ปของคู่แข่ง
+      expect(x.log.some((e) => e.type === 'staticApplied' && e.cardId === soum)).toBe(true);
     });
 
     it('เคล็ดวิชาปลดปล่อยพสุธา (Soul Core): ตัวที่เสื่อมสภาพฟื้นสภาพไม่ได้ในรีเฟรชสเต็ปครั้งถัดไปของคู่แข่ง', () => {

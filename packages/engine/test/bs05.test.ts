@@ -81,7 +81,7 @@ describe('Booster Set 05', () => {
 
   it('อาเมะโอชิโนะมิโคโตะ: อัญเชิญการ์ดที่โดน Lv คอสต์ +3 ต้องวาง Core ให้ถึง Lv1 จริง (วางไม่พอ = อัญเชิญไม่ได้)', () => {
     let s = setup();
-    put(s, 'p2', no('ราชาวิญญาณเทพ อาเมะโอชิโนะมิโคโตะ'), 1, true);
+    const ame = put(s, 'p2', no('ราชาวิญญาณเทพ อาเมะโอชิโนะมิโคโตะ'), 1, true);
     const yakshi = inHand(s, 'p1', no('ยักษ์วิญญาณ')); // คอสต์ 0: โดน
     const dariu = inHand(s, 'p1', DARIU); // คอสต์ 1: ไม่โดน
     expect(summonLevelCostBoost(s, db, yakshi)).toBe(3);
@@ -93,6 +93,50 @@ describe('Booster Set 05', () => {
     // วาง 4 ดวง = Lv1
     s = act(s, { type: 'summon', player: 'p1', cardId: yakshi, payment: [], placement: normalCores(s).slice(0, 4) });
     expect(cardLevel(s, db, yakshi)).toBe(1);
+    // ลงสนามมาโดนผล: หน้าเว็บเรืองแสงอาเมะ · อัญเชิญดาริว (ไม่โดน) ไม่เรืองแสง
+    expect(s.log.filter((e) => e.type === 'staticApplied' && e.cardId === ame)).toHaveLength(1);
+    s = act(s, { type: 'summon', player: 'p1', cardId: dariu, payment: normalCores(s).slice(0, 1), placement: normalCores(s).slice(1, 2) });
+    expect(s.log.filter((e) => e.type === 'staticApplied' && e.cardId === ame)).toHaveLength(1);
+  });
+
+  describe('อาเมะได้โซลคอร์ระหว่างเกม: Lv คอสต์ +3 เริ่มมีผลกับสปิริตคู่แข่งที่อยู่บนสนามอยู่แล้ว', () => {
+    /** อาเมะ (ไม่มีโซลคอร์) ฝั่ง p1 · ยักษ์วิญญาณฝั่ง p2 วางคอร์ n ดวง → p1 ย้ายโซลคอร์ขึ้นอาเมะ */
+    const run = (n: number) => {
+      let s = setup();
+      const ame = put(s, 'p1', no('ราชาวิญญาณเทพ อาเมะโอชิโนะมิโคโตะ'), 1);
+      const yakshi = put(s, 'p2', no('ยักษ์วิญญาณ'), n); // Lv1 1 / Lv2 3 / Lv3 5
+      const soul = 't5-soul-ame';
+      s.cores[soul] = { id: soul, owner: 'p1', isSoul: true };
+      s.players.p1.reserve.push(soul);
+      s = act(s, { type: 'moveCores', player: 'p1', moves: [{ coreId: soul, to: { cardId: ame } }] });
+      const glow = s.log.findIndex((e) => e.type === 'staticApplied' && e.cardId === ame);
+      return { s, ame, yakshi, glow };
+    };
+
+    it('คอร์ 5 ดวง: Lv3 → Lv1 (ยังอยู่) · อาเมะเรืองแสง', () => {
+      const { s, yakshi, glow } = run(5);
+      expect(cardLevel(s, db, yakshi)).toBe(1);
+      expect(glow).toBeGreaterThanOrEqual(0);
+    });
+
+    it('คอร์ 3 ดวง: Lv2 → สูญสลาย · อาเมะเรืองแสงก่อนสูญสลาย', () => {
+      const { s, yakshi, glow } = run(3);
+      expect(s.players.p2.trashCards).toContain(yakshi);
+      const depleted = s.log.findIndex((e) => e.type === 'depleted' && e.cardId === yakshi);
+      expect(glow).toBeGreaterThanOrEqual(0);
+      expect(glow).toBeLessThan(depleted);
+    });
+
+    it('คู่แข่งไม่มีสปิริตที่โดนผล (ดาริว คอสต์ 1): ไม่เรืองแสง', () => {
+      let s = setup();
+      const ame = put(s, 'p1', no('ราชาวิญญาณเทพ อาเมะโอชิโนะมิโคโตะ'), 1);
+      put(s, 'p2', DARIU, 3);
+      const soul = 't5-soul-ame2';
+      s.cores[soul] = { id: soul, owner: 'p1', isSoul: true };
+      s.players.p1.reserve.push(soul);
+      s = act(s, { type: 'moveCores', player: 'p1', moves: [{ coreId: soul, to: { cardId: ame } }] });
+      expect(s.log.some((e) => e.type === 'staticApplied')).toBe(false);
+    });
   });
 
   it('อาเมะโอชิโนะมิโคโตะ Lv2 โจมตี: นำการ์ดม่วงในแทรชขึ้นมือ · ถ้าเป็นข้ารับใช้ คู่แข่งเลือกทำลายสปิริตตนเอง', () => {
@@ -213,6 +257,7 @@ describe('Booster Set 05', () => {
     s = act(s, { type: 'summon', player: 'p1', cardId: hanu, payment: normal.slice(0, cost), placement: normal.slice(cost, cost + 1) });
     expect(s.players.p1.life.length).toBe(life - 1);
     expect(s.pendingBursts).toEqual([]);
+    expect(s.log.some((e) => e.type === 'staticApplied' && e.cardId === om)).toBe(true);
   });
 
   it('พยัคฆ์ควันม่วง: ถูกทิ้งจากเด็คโดยเอฟเฟกต์ทิ้งเด็ค → อัญเชิญไม่จ่ายคอสต์ได้', () => {
@@ -385,7 +430,7 @@ describe('Booster Set 05', () => {
   it('ประตูปราสาทแห่งแคว้นบุปผาเหลือง Lv2: เทิร์นคู่แข่ง สปิริตแดงที่ฟื้นสภาพโดยเอฟเฟกต์เมจิคถูกทำลาย · Lv1 ไม่มีผล', () => {
     const run = (gateCores: number) => {
       let s = setup();
-      put(s, 'p2', no('ประตูปราสาทแห่งแคว้นบุปผาเหลือง'), gateCores);
+      const gate = put(s, 'p2', no('ประตูปราสาทแห่งแคว้นบุปผาเหลือง'), gateCores);
       const red = put(s, 'p1', DARIU, 1, false, 'exhausted');
       const soul = 't5-soul';
       s.cores[soul] = { id: soul, owner: 'p1', isSoul: true };
@@ -394,14 +439,17 @@ describe('Booster Set 05', () => {
       const cost = payableCost(s, db, 'p1', db.get(no('ไทม์รีวินด์')));
       s = act(s, { type: 'useMagic', player: 'p1', cardId: magic, payment: [soul, ...normalCores(s).slice(0, cost - 1)], timing: 'flash' });
       if (s.choice?.kind === 'card') s = choose(s, red);
-      return { s, red };
+      return { s, red, gate };
     };
+    const glows = (r: { s: GameState; gate: string }) => r.s.log.some((e) => e.type === 'staticApplied' && e.cardId === r.gate);
     const lv2 = run(2);
     expect(lv2.s.players.p1.field).not.toContain(lv2.red);
     expect(lv2.s.players.p1.trashCards).toContain(lv2.red);
+    expect(glows(lv2)).toBe(true);
     const lv1 = run(0);
     expect(lv1.s.players.p1.field).toContain(lv1.red);
     expect(lv1.s.cards[lv1.red]!.state).toBe('refresh');
+    expect(glows(lv1)).toBe(false); // Lv1 ไม่มีผล = ไม่เรืองแสง
   });
 
   it('ฮิเมะสึรุอิจิมอนจิ: ไม่ถูกนับในจำนวนเบรฟของชิซุรุ → ชิซุรุมีเบรฟอื่น + ฮิเมะสึรุได้ · สปิริตอื่นมีได้ 1 ใบตามปกติ', () => {

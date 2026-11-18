@@ -110,22 +110,29 @@ export function summonMinCores(state: GameState, db: CardDatabase, cardId: strin
   return minCores(db.get(state.cards[cardId]!.cardNo)) + summonLevelCostBoost(state, db, cardId);
 }
 
-export function summonLevelCostBoost(state: GameState, db: CardDatabase, cardId: string): number {
+export function summonLevelCostBoost(state: GameState, db: CardDatabase, cardId: string, out?: StaticSource[]): number {
   const card = state.cards[cardId]!;
   const opp = state.players[card.owner === 'p1' ? 'p2' : 'p1'];
   // กันวนไม่จบ: เลเวลของการ์ดนี้ → ชีลด์ของการ์ดที่มีเลเวล → เลเวลคอสต์ของการ์ดนี้อีก (ระหว่างคำนวณถือว่าไม่มี +N)
   if (boostingLevel.has(cardId)) return 0;
   boostingLevel.add(cardId);
   try {
-    return levelCostBoostOf(state, db, cardId, opp.field);
+    return levelCostBoostOf(state, db, cardId, opp.field, out);
   } finally {
     boostingLevel.delete(cardId);
   }
 }
 
+/** การ์ดที่ให้ "Lv คอสต์ +N" กับการ์ดนี้ (อาเมะโอชิโนะมิโคโตะ / ราโชว) */
+export function levelBoostSources(state: GameState, db: CardDatabase, cardId: string): StaticSource[] {
+  const out: StaticSource[] = [];
+  summonLevelCostBoost(state, db, cardId, out);
+  return out;
+}
+
 const boostingLevel = new Set<string>();
 
-function levelCostBoostOf(state: GameState, db: CardDatabase, cardId: string, oppField: string[]): number {
+function levelCostBoostOf(state: GameState, db: CardDatabase, cardId: string, oppField: string[], out?: StaticSource[]): number {
   let n = 0;
   for (const src of oppField) {
     for (const ab of db.get(state.cards[src]!.cardNo).abilities) {
@@ -144,6 +151,7 @@ function levelCostBoostOf(state: GameState, db: CardDatabase, cardId: string, op
       if (effectsNegated(state, db, src) || !ab.levels.includes(cardLevel(state, db, src))) continue;
       if (!conditionHolds(state, src, ab.if, false, false, db)) continue;
       n += ab.amount;
+      out?.push({ cardId: src, source: ab.source });
     }
   }
   return n;
@@ -589,9 +597,17 @@ export function canBlockExhausted(state: GameState, db: CardDatabase, cardId: st
  * ใช้กับเอฟเฟกต์ที่เลือก/ทำกับการ์ดของอีกฝ่ายเท่านั้น
  */
 export function effectBlocked(state: GameState, db: CardDatabase, sourceId: string, targetId: string): boolean {
+  return effectBlocker(state, db, sourceId, targetId) !== null;
+}
+
+/**
+ * การ์ดที่ทำให้การ์ด targetId ไม่รับผลเอฟเฟกต์ของ sourceId (Ultra/Heavy Shield ฯลฯ)
+ * 'battle' = กันด้วยผลในการต่อสู้นี้ (ไม่ใช่ความสามารถถาวร) · null = ไม่ถูกกัน
+ */
+export function effectBlocker(state: GameState, db: CardDatabase, sourceId: string, targetId: string): StaticSource | 'battle' | null {
   const src = state.cards[sourceId];
   const target = state.cards[targetId];
-  if (!src || !target || src.owner === target.owner) return false;
+  if (!src || !target || src.owner === target.owner) return null;
   const tDef = db.get(target.cardNo);
   const hostOf = (braveId: string) => braveHostOf(state, braveId);
   // ต้นเหตุเป็นสปิริตรวมร่าง (หรือเบรฟที่ให้ความสามารถแก่ผู้ร่วมร่าง): นับเป็นสปิริต ได้สีของเบรฟด้วย (กติกา 04)
@@ -602,7 +618,7 @@ export function effectBlocked(state: GameState, db: CardDatabase, sourceId: stri
   const colorless = !!state.battle?.colorless && state.battle.attackerId === srcHost;
   const srcColors = new Set(colorless ? [] : [hostCard, ...hostCard.braves.map((b) => state.cards[b]!)].flatMap((c) => db.get(c.cardNo).colors));
   // ฮิสะมารุ บัสเตอร์: ในการต่อสู้นี้ไม่รับผลเอฟเฟกต์เมจิคของคู่แข่ง
-  if ((state.battle?.immune ?? []).some((im) => im.cardId === targetId && im.types.includes(srcType))) return true;
+  if ((state.battle?.immune ?? []).some((im) => im.cardId === targetId && im.types.includes(srcType))) return 'battle';
   for (const p of ['p1', 'p2'] as const) {
     if (p === src.owner) continue; // ผู้ถือความสามารถต้องเป็นคู่แข่งของต้นเหตุ
     for (const holder of state.players[p].field.flatMap((f) => [f, ...state.cards[f]!.braves])) {
@@ -629,26 +645,33 @@ export function effectBlocked(state: GameState, db: CardDatabase, sourceId: stri
                   : 'ownNamed' in sc
                     ? nameHas(tDef, sc.ownNamed)
                     : tDef.colors.includes(sc.ownColor));
-        if (inScope) return true;
+        if (inScope) return { cardId: holder, source: ab.source };
       }
     }
   }
-  return false;
+  return null;
 }
 
 /** การ์ดของผู้เล่นนี้ที่ถูกนำกลับขึ้นมือ ต้องไปไว้ใต้สุดเด็คแทน (คองโก) */
 export function bounceGoesBottom(state: GameState, db: CardDatabase, cardId: string): boolean {
+  return bounceBottomSource(state, db, cardId) !== null;
+}
+
+/** การ์ดที่ทำให้การ์ดนี้ไปใต้สุดเด็คแทนการกลับขึ้นมือ (คองโก) */
+export function bounceBottomSource(state: GameState, db: CardDatabase, cardId: string): StaticSource | null {
   const owner = state.cards[cardId]!.owner;
   const opp = state.players[owner === 'p1' ? 'p2' : 'p1'];
-  return opp.field.some((id) => {
-    if (effectsNegated(state, db, id)) return false;
+  for (const id of opp.field) {
+    if (effectsNegated(state, db, id)) continue;
     const level = cardLevel(state, db, id);
-    return db
+    const a = db
       .get(state.cards[id]!.cardNo)
-      .abilities.some(
+      .abilities.find(
         (a) => a.kind === 'bounceToBottom' && a.levels.includes(level) && (!a.attackStepOnly || state.phase === 'attack') && conditionHolds(state, id, a.if, false, false, db),
       );
-  });
+    if (a) return { cardId: id, source: a.source };
+  }
+  return null;
 }
 
 /** การ์ดในมือจริง (ไม่รวมการ์ดที่วางแสดงนอกมือ): ใช้กับเอฟเฟกต์ทิ้งการ์ด / เงื่อนไขจำนวนการ์ดในมือ */
@@ -807,23 +830,98 @@ export function payableCost(state: GameState, db: CardDatabase, player: PlayerId
 
 /** การ์ดสปิริตนี้ของผู้เล่นนี้ใช้สัญลักษณ์ลดคอสต์ไม่ได้ (การ์ดของคู่แข่งห้ามไว้) */
 export function noReductionFor(state: GameState, db: CardDatabase, player: PlayerId, def: CardDef): boolean {
+  return noReductionSources(state, db, player, def).length > 0;
+}
+
+/** การ์ดของคู่แข่งที่ทำให้การ์ดสปิริตนี้ใช้สัญลักษณ์ลดคอสต์ไม่ได้ (ฮาคุโดวโทคาเงะ) */
+export function noReductionSources(state: GameState, db: CardDatabase, player: PlayerId, def: CardDef): StaticSource[] {
   const opp = state.players[player === 'p1' ? 'p2' : 'p1'];
-  return opp.field.some((id) => {
-    if (effectsNegated(state, db, id)) return false;
+  const out: StaticSource[] = [];
+  for (const id of opp.field) {
+    if (effectsNegated(state, db, id)) continue;
     const level = cardLevel(state, db, id);
-    return db.get(state.cards[id]!.cardNo).abilities.some((a) => a.kind === 'opponentNoReduction' && a.levels.includes(level) && def.cost <= a.maxCost);
-  });
+    for (const a of db.get(state.cards[id]!.cardNo).abilities) {
+      if (a.kind === 'opponentNoReduction' && a.levels.includes(level) && def.cost <= a.maxCost) out.push({ cardId: id, source: a.source });
+    }
+  }
+  return out;
+}
+
+/**
+ * อัญเชิญ/ใช้การ์ดนี้แล้ว "ไม่ได้ลดคอสต์" เพราะการ์ดของคู่แข่ง (ฮาคุโดวโทคาเงะ): คืนต้นเหตุเฉพาะเมื่อสัญลักษณ์บนสนามลดคอสต์ได้จริง
+ * (ไม่มีสัญลักษณ์ให้ลดอยู่แล้ว = ไม่ได้ทำให้จ่ายแพงขึ้น ไม่ต้องเรืองแสง)
+ */
+export function noReductionBlocked(state: GameState, db: CardDatabase, player: PlayerId, def: CardDef, base: number): StaticSource[] {
+  if (def.type !== 'spirit') return [];
+  const src = noReductionSources(state, db, player, def);
+  if (src.length === 0) return [];
+  const symbols = fieldSymbols(state, db, player);
+  const couldReduce = (Object.entries(def.reduction) as [SymbolColor, number][]).some(([color, max]) => max > 0 && (symbols[color] ?? 0) > 0);
+  return couldReduce && base > 0 ? src : [];
+}
+
+/** การ์ดบนสนามของเราที่ทำให้คอสต์ของการ์ดในมือใบนี้เปลี่ยน ("แอทแท็คสเต็ปของเรา: เมจิคในมือคอสต์ -1" ทริคสเตอร์) */
+export function handCostDeltaSources(state: GameState, db: CardDatabase, cardId: string): StaticSource[] {
+  const card = state.cards[cardId]!;
+  const owner = state.players[card.owner];
+  if (!owner.hand.includes(cardId) || (state.shownCards ?? []).includes(cardId)) return [];
+  const out: StaticSource[] = [];
+  for (const id of owner.field) {
+    if (effectsNegated(state, db, id)) continue;
+    const level = cardLevel(state, db, id);
+    for (const ab of db.get(state.cards[id]!.cardNo).abilities) {
+      if (ab.kind !== 'handCostDelta' || !ab.levels.includes(level) || !matchesFilter(state, db, cardId, ab.filter)) continue;
+      if (ab.ownAttackStepOnly && (state.phase !== 'attack' || state.turnPlayer !== card.owner)) continue;
+      if (ab.delta !== 0) out.push({ cardId: id, source: ab.source });
+    }
+  }
+  return out;
 }
 
 /** การ์ดที่มีความสามารถนี้ (ไม่ถูกปิดเอฟเฟกต์ เลเวลตรง) อยู่บนสนามของผู้เล่นเหล่านี้ */
 function fieldHas(state: GameState, db: CardDatabase, players: readonly PlayerId[], kind: Ability['kind']): boolean {
-  return players.some((p) =>
-    state.players[p].field.some((id) => {
-      if (effectsNegated(state, db, id)) return false;
+  return staticSources(state, db, players, kind).length > 0;
+}
+
+/** การ์ดต้นเหตุของความสามารถถาวร (บรรทัดเอฟเฟกต์ที่ทำงาน) ใช้ส่ง event ให้หน้าเว็บเรืองแสงการ์ดนั้น */
+export interface StaticSource {
+  cardId: string;
+  source: number;
+}
+
+/** การ์ดบนสนามของผู้เล่นเหล่านี้ที่มีความสามารถถาวรชนิดนี้ทำงานอยู่ (เลเวลตรง · ไม่ถูกปิดเอฟเฟกต์) */
+export function staticSources(state: GameState, db: CardDatabase, players: readonly PlayerId[], kind: Ability['kind']): StaticSource[] {
+  const out: StaticSource[] = [];
+  for (const p of players) {
+    for (const id of state.players[p].field) {
+      if (effectsNegated(state, db, id)) continue;
       const level = cardLevel(state, db, id);
-      return db.get(state.cards[id]!.cardNo).abilities.some((a) => a.kind === kind && 'levels' in a && a.levels.includes(level));
-    }),
-  );
+      for (const a of db.get(state.cards[id]!.cardNo).abilities) {
+        if (a.kind === kind && 'levels' in a && a.levels.includes(level)) out.push({ cardId: id, source: a.source });
+      }
+    }
+  }
+  return out;
+}
+
+/** การ์ดที่ทำให้เอฟเฟกต์ของการ์ดนี้ไม่ทำงาน (เลิฟพรินเซส / เมียวโอดาบแดง) · ถูกปิดด้วยเอฟเฟกต์ในเทิร์นนี้ (เมจิค) = null */
+export function negatedBy(state: GameState, db: CardDatabase, cardId: string): StaticSource | null {
+  const c = state.cards[cardId];
+  if (!c || !effectsNegated(state, db, cardId)) return null;
+  const def = db.get(c.cardNo);
+  const opp = c.owner === 'p1' ? 'p2' : 'p1';
+  for (const id of state.players[opp].field) {
+    const level = cardLevel(state, db, id);
+    for (const a of db.get(state.cards[id]!.cardNo).abilities) {
+      if (a.kind === 'negateOpponentNexus' && def.type === 'nexus' && !nameHas(def, a.unlessNamed) && a.levels.includes(level) && conditionHolds(state, id, a.if, false, false, db)) {
+        return { cardId: id, source: a.source };
+      }
+      if (a.kind === 'negateOpponentEffects' && state.phase === 'attack' && opp === state.turnPlayer && a.levels.includes(level) && def.cost <= a.maxCost) {
+        return { cardId: id, source: a.source };
+      }
+    }
+  }
+  return null;
 }
 
 /** ทาเนงาชิมะ: เด็คของผู้เล่นทุกคนจะไม่ถูกทิ้ง */

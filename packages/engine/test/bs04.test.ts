@@ -4,6 +4,7 @@ import {
   applyAction,
   baseCost,
   blockersFor,
+  negatedBy,
   cardLevel,
   createGame,
   effectBlocked,
@@ -95,10 +96,12 @@ describe('Booster Set 04', () => {
   it('Ultra Shield ที่ Brave ให้ผู้ร่วมร่าง (ไฟเตอร์: เขียว/ฟ้า): เมจิคสีเขียวของคู่แข่งเลือกตัวนั้นไม่ได้', () => {
     const s = setup();
     const host = put(s, 'p2', no('นักบวชนินจา ฮิกุราชิ'), 1); // คอสต์ 3
-    brave(s, host, 'แขนเสื้อเกราะ ไฟเตอร์');
+    const fighter = brave(s, host, 'แขนเสื้อเกราะ ไฟเตอร์');
     const plain = put(s, 'p2', DARIU, 1);
     const x = magic(s, 'เคล็ดวิชาปลดปล่อยพสุธา');
     expect(x.choice?.kind === 'card' && x.choice.candidates).toEqual([plain]);
+    // Shield กันไว้: หน้าเว็บเรืองแสงไฟเตอร์ (ที่ให้ Shield) · Dariu ไม่มี Shield ไม่เกี่ยว
+    expect(x.log.filter((e) => e.type === 'staticApplied').map((e) => (e as { cardId: string }).cardId)).toEqual([fighter]);
   });
 
   it('ไทม์รีวินด์ (Main): นำเน็กซัสคู่แข่งกลับไปไว้ใต้สุดเด็ค', () => {
@@ -111,7 +114,7 @@ describe('Booster Set 04', () => {
 
   it('คองโก Lv2 (Soul Core) แอทแท็คสเต็ป: การ์ดคู่แข่งที่ถูกนำกลับขึ้นมือไปไว้ใต้สุดเด็คแทน', () => {
     let s = setup();
-    put(s, 'p1', no('มหานักรบเครื่องกล คองโก'), 3, true);
+    const kongo = put(s, 'p1', no('มหานักรบเครื่องกล คองโก'), 3, true);
     const atk = put(s, 'p1', DARIU, 1);
     const target = put(s, 'p2', DARIU, 1);
     s = act(act(s, { type: 'endMain', player: 'p1' }), { type: 'declareAttack', player: 'p1', attackerId: atk });
@@ -119,6 +122,8 @@ describe('Booster Set 04', () => {
     const x = choose(magic(s, 'ดรีมบับเบิล'), target);
     expect(x.players.p2.hand).not.toContain(target);
     expect(x.players.p2.deck.at(-1)).toBe(target);
+    // หน้าเว็บเรืองแสงคองโก (ความสามารถถาวรลงมือ)
+    expect(x.log.some((e) => e.type === 'staticApplied' && e.cardId === kongo)).toBe(true);
   });
 
   it('ชิงุเระ Lv3 (Soul Core) โจมตี: ส่ง Soul Core ลงแทรช → ไม่ถูกป้องกันโดยสปิริต', () => {
@@ -180,11 +185,14 @@ describe('Booster Set 04', () => {
 
   it('เลิฟพรินเซส Lv2 (Soul Core): เน็กซัสคู่แข่งที่ไม่มีคำว่า "No." สูญเสียเอฟเฟกต์', () => {
     const s = setup();
-    put(s, 'p1', no('No.38 เลิฟพรินเซส'), 2, true);
+    const love = put(s, 'p1', no('No.38 เลิฟพรินเซส'), 2, true);
     const plain = put(s, 'p2', no('ปราสาทเครื่องกล'), 0);
     const numbered = put(s, 'p2', no('No.3 ร็อคแฮนด์'), 0);
     expect(effectsNegated(s, db, plain)).toBe(true);
     expect(effectsNegated(s, db, numbered)).toBe(false);
+    // ต้นเหตุที่หน้าเว็บเรืองแสงเมื่อ trigger ของเน็กซัสนั้นถูกตัด
+    expect(negatedBy(s, db, plain)).toMatchObject({ cardId: love });
+    expect(negatedBy(s, db, numbered)).toBeNull();
   });
 
   it('ทริคสเตอร์ Lv2: แอทแท็คสเต็ปของเรา เมจิคในมือคอสต์ -1', () => {
@@ -194,6 +202,23 @@ describe('Booster Set 04', () => {
     expect(baseCost(s, db, m)).toBe(4);
     s.phase = 'attack';
     expect(baseCost(s, db, m)).toBe(3);
+  });
+
+  it('ทริคสเตอร์ Lv2: ใช้เมจิคจริงในแอทแท็คสเต็ปของเรา จ่ายคอสต์ที่ลดแล้ว · การ์ดทริคสเตอร์เรืองแสง', () => {
+    let s = setup();
+    const trick = put(s, 'p1', no('เซ็นโงคุฮิเมะ ทริคสเตอร์'), 3);
+    const atk = put(s, 'p1', DARIU, 1);
+    put(s, 'p2', DARIU, 1);
+    const bubble = inHand(s, 'p1', no('ดรีมบับเบิล'));
+    s = act(act(s, { type: 'endMain', player: 'p1' }), { type: 'declareAttack', player: 'p1', attackerId: atk });
+    if (s.battle?.flash?.priority === 'p2') s = act(s, { type: 'passFlash', player: 'p2' });
+    const def = db.get(no('ดรีมบับเบิล'));
+    const cost = payableCost(s, db, 'p1', def, baseCost(s, db, bubble));
+    expect(cost).toBe(payableCost(s, db, 'p1', def) - 1);
+    const normal = s.players.p1.reserve.filter((id) => !s.cores[id]!.isSoul);
+    s = act(s, { type: 'useMagic', player: 'p1', cardId: bubble, payment: normal.slice(0, cost), timing: 'flash' });
+    expect(s.players.p1.hand).not.toContain(bubble);
+    expect(s.log.some((e) => e.type === 'staticApplied' && e.cardId === trick)).toBe(true);
   });
 
   it('นายูทะ Lv2 (Soul Core): Flash ใช้เมจิคในมือ 1 ใบไม่จ่ายคอสต์', () => {

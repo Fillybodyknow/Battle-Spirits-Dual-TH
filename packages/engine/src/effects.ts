@@ -5,7 +5,7 @@
  * action `choose` จะทำ step นั้นให้จบแล้วเดินคิวต่อ ระหว่างรอเลือก action อื่นถูกปฏิเสธ
  */
 import type { Step, SubjectFilter, TriggerEvent } from '@bs/cards';
-import { assertUsableCore, checkDepletion, destroy, drawCard, emit, endGame, handIncreasedByEffect, leaveField, loseLife, newCore, payCost, pendBurst, sendToTrash, type Ctx } from './ctx';
+import { assertUsableCore, checkDepletion, destroy, drawCard, emit, emitStatic, endGame, handIncreasedByEffect, leaveField, loseLife, newCore, payCost, pendBurst, sendToTrash, type Ctx } from './ctx';
 import {
   baseCost,
   braveHostOf,
@@ -23,10 +23,13 @@ import {
   cardLevel,
   effectsNegated,
   handCards,
-  effectBlocked,
   trashImmune,
   dispersionCount,
-  bounceGoesBottom,
+  bounceBottomSource,
+  levelBoostSources,
+  effectBlocker,
+  negatedBy,
+  staticSources,
   handImmune,
   levelOf,
   extraBurstEvents,
@@ -67,8 +70,15 @@ export function refreshByEffect(ctx: Ctx, cardId: string, sourceId?: string): vo
       const level = cardLevel(s, db, gateId);
       const ab = db.get(s.cards[gateId]!.cardNo).abilities.find((a) => a.kind === 'destroyRefreshedByEffect' && a.levels.includes(level));
       if (!ab || ab.kind !== 'destroyRefreshedByEffect' || !def.colors.some((c) => ab.colors.includes(c))) continue;
-      if (card.owner !== gateOwner && effectBlocked(s, db, gateId, cardId)) continue;
+      if (card.owner !== gateOwner) {
+        const blocker = effectBlocker(s, db, gateId, cardId);
+        if (blocker) {
+          emitStatic(ctx, blocker);
+          continue;
+        }
+      }
       if (!s.players[card.owner].field.includes(cardId)) return;
+      emitStatic(ctx, { cardId: gateId, source: ab.source });
       destroyCard(ctx, cardId, gateOwner, { bySource: gateId, effect: true });
       return;
     }
@@ -124,8 +134,8 @@ export function queueTriggers(
   const def = db.get(card.cardNo);
   const inHand = s.players[card.owner].hand.includes(cardId);
   const inTrash = s.players[card.owner].trashCards.includes(cardId);
-  // เอฟเฟกต์ของการ์ดบนสนามที่ถูกปิด (เมียวโอดาบแดง)
-  if (!inHand && opts.level === undefined && effectsNegated(s, db, cardId)) return;
+  // เอฟเฟกต์ของการ์ดบนสนามที่ถูกปิด (เมียวโอดาบแดง / เลิฟพรินเซส): trigger ที่ควรทำงานถูกตัด → เรืองแสงการ์ดที่ปิด
+  const negated = !inHand && opts.level === undefined && effectsNegated(s, db, cardId);
   const level = opts.level ?? cardLevel(s, db, cardId);
   const own = def.abilities.map((ab) => ({ ab, src: cardId }));
   // Brave ที่ร่วมร่างอยู่: เอฟเฟกต์ที่ผู้ร่วมร่างได้รับ
@@ -153,6 +163,10 @@ export function queueTriggers(
     if (ab.ownTurnOnly && s.turnPlayer !== card.owner) continue;
     if (ab.oppTurnOnly && s.turnPlayer === card.owner) continue;
     if (ab.mainStepOnly && s.phase !== 'main') continue;
+    if (negated) {
+      emitStatic(ctx, negatedBy(s, db, cardId));
+      continue;
+    }
     if (ab.oncePerTurnByName) {
       const key = `${card.owner}:${db.get(s.cards[src]!.cardNo).name}:${ab.source}`;
       if ((s.usedOncePerTurn ?? []).includes(key)) continue;
@@ -429,7 +443,9 @@ export function queueExhaustTriggers(ctx: Ctx, cardId: string): void {
 function returnCard(ctx: Ctx, cardId: string, to: 'hand' | 'deckTop' | 'deckBottom'): void {
   const { s, db } = ctx;
   const owner = s.cards[cardId]!.owner;
-  const dest = to === 'hand' && bounceGoesBottom(s, db, cardId) ? 'deckBottom' : to;
+  const bottom = to === 'hand' ? bounceBottomSource(s, db, cardId) : null;
+  emitStatic(ctx, bottom);
+  const dest = bottom ? 'deckBottom' : to;
   leaveField(ctx, cardId, 'hand');
   if (dest === 'hand') {
     emit(ctx, { type: 'bounced', player: owner, cardId });
@@ -461,6 +477,8 @@ export function queueSummonTriggers(
   opts: { paidWithSoul?: boolean; fromTrash?: boolean; from?: string; /** เลเวลที่ใช้ตรวจ trigger (Brave ที่อัญเชิญมาร่วมร่างทันทีไม่มี Core) */ level?: number } = {},
 ): void {
   const owner = ctx.s.cards[cardId]!.owner;
+  // ลงสนามมาโดนผล "Lv คอสต์ +N" ของคู่แข่ง (ต้องวางคอร์เพิ่ม): เรืองแสงการ์ดต้นเหตุตอนการ์ดลงสนาม (เบรฟที่ร่วมร่างไม่มีเลเวลจากคอร์)
+  if (!braveHostOf(ctx.s, cardId)) emitStatic(ctx, levelBoostSources(ctx.s, ctx.db, cardId));
   const level = opts.level ?? cardLevel(ctx.s, ctx.db, cardId);
   if (level > 0)
     queueTriggers(ctx, cardId, 'summon', batch, {
@@ -695,7 +713,12 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
   const opp = opponentOf(me);
   const spiritLike = (id: string) => isSpiritLike(db.get(s.cards[id]!.cardNo));
   /** เอฟเฟกต์นี้ส่งผลถึงการ์ดนี้ได้ (ไม่ติด Ultra Shield ฯลฯ) */
-  const hits = (id: string) => !effectBlocked(s, db, item.sourceId, id);
+  // ทุกจุดเรียกหลังกรองเป้าตามเอฟเฟกต์แล้ว: ถูกกัน = การ์ดนี้ควรโดนแต่ Shield กันไว้ → เรืองแสงการ์ดที่ให้ Shield
+  const hits = (id: string) => {
+    const blocker = effectBlocker(s, db, item.sourceId, id);
+    emitStatic(ctx, blocker);
+    return blocker === null;
+  };
   /** การ์ดในแทรชที่เอฟเฟกต์ส่งผลได้ (เทปเปคิวอลล์ไม่รับผล) */
   const inTrashOk = (id: string) => !trashImmune(db, s, id);
   /**
@@ -721,6 +744,7 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       const n = s.players[me].hand.length - before;
       // คิชูด็อก: จั่วตั้งแต่ 2 ใบในครั้งเดียวโดยเอฟเฟกต์ → การ์ดบนสนามและในมือทั้งหมดของฝ่ายนี้ไปใต้สุดเด็ค
       if (n >= 2 && multiDrawPunished(s, db)) {
+        emitStatic(ctx, staticSources(s, db, PLAYERS, 'multiDrawPunish'));
         massToDeckBottom(ctx, me);
         return;
       }
@@ -765,7 +789,10 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       return;
 
     case 'millSelf': {
-      if (millBlocked(s, db)) return;
+      if (millBlocked(s, db)) {
+        if (step.count > 0 && s.players[me].deck.length > 0) emitStatic(ctx, staticSources(s, db, PLAYERS, 'noMill'));
+        return;
+      }
       const deck = s.players[me].deck;
       const ids = deck.splice(0, Math.min(step.count, deck.length));
       if (ids.length === 0) return;
@@ -1392,7 +1419,10 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
 
     case 'gainLifeFromVoid': {
       // องเมียววาราชิ: คอร์มาจากไลฟ์ของเจ้าของเอฟเฟกต์เอง = ไลฟ์ไม่เปลี่ยน
-      if (voidFromLife(s, db)) return;
+      if (voidFromLife(s, db)) {
+        emitStatic(ctx, staticSources(s, db, PLAYERS, 'voidFromLife'));
+        return;
+      }
       for (let i = 0; i < step.count; i++) s.players[me].life.push(newCore(ctx, me));
       emit(ctx, { type: 'lifeGained', player: me, amount: step.count });
       return;
@@ -1457,7 +1487,10 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
     }
 
     case 'mill': {
-      if (millBlocked(s, db)) return;
+      if (millBlocked(s, db)) {
+        if (s.players[opp].deck.length > 0) emitStatic(ctx, staticSources(s, db, PLAYERS, 'noMill'));
+        return;
+      }
       const n = step.count === 'level' ? (onField(ctx, self) ? cardLevel(s, db, self) : 0) : step.count;
       const ids = s.players[opp].deck.slice(0, n);
       item.milled = ids;
@@ -2051,6 +2084,7 @@ function addVoidCores(ctx: Ctx, player: PlayerId, cardId: string, count: number)
 function takeVoid(ctx: Ctx, player: PlayerId, count: number): string[] {
   const { s, db } = ctx;
   if (!voidFromLife(s, db)) return Array.from({ length: count }, () => newCore(ctx, player));
+  if (count > 0) emitStatic(ctx, staticSources(s, db, PLAYERS, 'voidFromLife'));
   const life = s.players[player].life;
   const got = life.splice(Math.max(0, life.length - count), count);
   if (got.length > 0) emit(ctx, { type: 'lifeLost', player, amount: got.length });

@@ -193,7 +193,8 @@ export function responseOptions(
     const def = db.get(s.cards[id]!.cardNo);
     return (
       handMagicTimings(s, id).includes('flash') &&
-      payableCost(s, db, player, def) <= cores &&
+      // คอสต์ในมือ (ทริคสเตอร์ -1) ตรงกับที่ engine เรียกเก็บตอนใช้จริง
+      payableCost(s, db, player, def, baseCost(s, db, id)) <= cores &&
       !magicUsedUp(s, db, player, def.cardNo, 'flash')
     );
   });
@@ -1002,6 +1003,27 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         t += T.cast;
         draws = 0;
         break;
+      case 'staticApplied': {
+        // ความสามารถถาวรลงมือ (Shield กัน, ปิดเอฟเฟกต์, ส่งใต้เด็คแทนขึ้นมือ ฯลฯ): การ์ดต้นเหตุยกขึ้นเรืองแสง + ข้อความเอฟเฟกต์ ก่อนผลจะเกิด
+        const onHost = !onAnyField(e.cardId) && [s, prev].some((st) => Object.values(st.cards).some((c) => c.braves.includes(e.cardId)));
+        if (!onAnyField(e.cardId) && !onHost) break;
+        const idx = events.indexOf(e);
+        const goneLater = PLAYERS.some((p) => prev.players[p].field.includes(e.cardId)) && !PLAYERS.some((p) => s.players[p].field.includes(e.cardId));
+        const fieldRect = goneLater ? rects[`field:${e.cardId}`] : undefined;
+        out.push({
+          kind: 'cardActivate',
+          cardId: e.cardId,
+          delay: t,
+          duration: T.activate,
+          brave: onHost,
+          ...(fieldRect ? { rect: fieldRect } : {}),
+          ...(!onHost ? { lying: exhaustedAt(e.cardId, idx) } : {}),
+        });
+        out.push({ kind: 'activate', cardId: e.cardId, label: 'เอฟเฟกต์ถาวร', text: effectText(s.cards[e.cardId]!.cardNo, e.source), delay: t });
+        t += T.activate;
+        draws = 0;
+        break;
+      }
       case 'evolved':
         // [Evolution]: สปิริตที่รับ Core ยกขึ้นเรืองแสง
         if (onAnyField(e.cardId)) out.push({ kind: 'cardActivate', cardId: e.cardId, delay: t, duration: T.activate });

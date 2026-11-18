@@ -404,6 +404,8 @@ export type GameEvent =
   | { type: 'gameOver'; winner: PlayerId; reason: EndReason }
   /** source = index บรรทัดเอฟเฟกต์ใน CardDef.effects */
   | { type: 'abilityTriggered'; cardId: string; source: number }
+  /** ความสามารถถาวรของการ์ดบนสนามเปลี่ยนผลของเกมตอนนี้ (Shield กันเอฟเฟกต์, ปิดเอฟเฟกต์, ส่งใต้เด็คแทนขึ้นมือ ฯลฯ) ไม่มีผลกับ state */
+  | { type: 'staticApplied'; player: PlayerId; cardId: string; source: number }
   /** เอฟเฟกต์เริ่มทำงาน (หลังเลือกลำดับแล้ว) source = null คือ Magic / Burst */
   | { type: 'effectResolving'; player: PlayerId; cardId: string; source: number | null }
   | { type: 'bpBuffed'; cardId: string; amount: number }

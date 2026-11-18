@@ -132,6 +132,10 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
   อัญเชิญจากแทรช (ability `trashSummon`) = action `summon` ที่ cardId อยู่ในแทรช · ของใหม่แบบนี้ต้องเพิ่มใน `responseOptions` (store) ด้วย ไม่งั้น AUTO จะ pass Flash ข้ามไป
 - `config.manualDraw` (หน้าเว็บเปิดไว้): Draw Step หยุดรอ action `drawStep` · เทสต์ใช้ค่าเริ่มต้น (จั่วเอง)
 - เปลี่ยนลำดับ action ที่ engine คาดหวัง = ห้องออนไลน์ที่เล่นค้างอยู่จะเล่นต่อไม่ได้ (บอกเจ้าของโปรเจกต์ด้วย)
+- ความสามารถถาวร (ไม่ผ่านคิว) ไม่มี `effectResolving` → ตรงจุดที่มัน "ลงมือจริง" ให้เรียก `emitStatic(ctx, { cardId, source })` (event `staticApplied`)
+  หน้าเว็บจะเรืองแสงการ์ดต้นเหตุ + ป้าย "เอฟเฟกต์ถาวร" · ตัวช่วยหาต้นเหตุ: `staticSources` / `effectBlocker` / `negatedBy` / `bounceBottomSource` ใน rules.ts
+  · Shield กันใน `hits()` ของ execStep แล้ว (เรียก `hits` หลังกรองเป้าตามเอฟเฟกต์เสมอ ไม่งั้นเรืองแสงผิดใบ)
+  · ผลที่ "เพิ่งเริ่มมีผล" (Lv คอสต์ +N ใน `checkDepletion`) เทียบกับ `ctx.start` (state ก่อน action) · เรืองแสงเฉพาะตอนตัวเลขเปลี่ยนจริง ไม่ใช่ทุกครั้งที่เช็ก
 
 ## หลักของหน้าเว็บ
 

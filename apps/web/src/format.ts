@@ -108,6 +108,8 @@ export function formatEvent(e: GameEvent, s: GameState): string | null {
       return null;
     case 'abilityTriggered':
       return `✦ เอฟเฟกต์ของ ${name(e.cardId)} ทำงาน`;
+    case 'staticApplied':
+      return `✦ เอฟเฟกต์ถาวรของ ${name(e.cardId)} ทำงาน`;
     case 'bpBuffed':
       return `${name(e.cardId)} BP+${e.amount} ในเทิร์นนี้`;
     case 'mustBlock':

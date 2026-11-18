@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { baseCost, bpOf, levelOf, minCores, payableCost, quickAbility, quickAnyCores, summonLevelCostBoost, trashSummonRule } from '@bs/engine';
+import { baseCost, bpOf, handCostDeltaSources, levelBoostSources, levelOf, minCores, noReductionBlocked, payableCost, quickAbility, quickAnyCores, summonLevelCostBoost, trashSummonRule } from '@bs/engine';
 import { cardName, playerLabel } from '../format';
 import { db, flashPlayer, layoutRect, useGame, type MagicTiming, type PlayKind } from '../store';
 import { CardFace } from './CardFace';
@@ -128,6 +128,17 @@ function PlayDialogInner({ cardId, kind, timing, braveOnto }: { cardId: string; 
   // วาง Core ไม่ถึง Lv1 จริง (รวม Lv คอสต์ +N) = กดอัญเชิญไม่ได้ (engine ก็ไม่รับ)
   const ok = (manual ? manualPay.length === cost && manualPlace.length >= needLv1 : auto.ok) && (!mustSoul || soulPaid);
   const level = allowPlace ? levelOf(def, placement.length - boost) : undefined;
+  // คอสต์เปลี่ยนเพราะการ์ดบนสนาม: บอกก่อนตัดสินใจ (ตอนลงจริงการ์ดต้นเหตุจะเรืองแสงให้อีกฝ่ายเห็น)
+  const sourceNames = (list: { cardId: string }[]) => [...new Set(list.map((x) => cardName(state, x.cardId)))].join(', ');
+  const costNotes: string[] = [];
+  if (!soulQuick && !fromTrash) {
+    const delta = handCostDeltaSources(state, db, cardId);
+    if (delta.length > 0 && base !== def.cost) costNotes.push(`คอสต์ ${base < def.cost ? '' : '+'}${base - def.cost} (${sourceNames(delta)})`);
+    if (kind === 'summon') {
+      const noRed = noReductionBlocked(state, db, player, def, base);
+      if (noRed.length > 0) costNotes.push(`ใช้สัญลักษณ์ลดคอสต์ไม่ได้ (${sourceNames(noRed)})`);
+    }
+  }
 
   // Core ที่คลิกปรับได้: Reserve + Core บนการ์ดในสนาม ([Quick] ใช้ได้แค่ Reserve เว้นแต่มีเอฟเฟกต์ให้ใช้ Core บนสนาม)
   const pool = quickAb && fieldPool.length === 0 ? p.reserve : [...p.reserve, ...p.field.flatMap((id) => state.cards[id]!.cores)];
@@ -252,7 +263,16 @@ function PlayDialogInner({ cardId, kind, timing, braveOnto }: { cardId: string; 
           ) : (
             !auto.ok && <div className="font-bold text-rose-300">Core ใน Reserve ไม่พอ: เลือก Lv ต่ำลง หรือคลิก Core บนการ์ดในสนามเพื่อดึงมาใช้</div>
           )}
-          {boost > 0 && <div className="font-bold text-amber-300">Lv คอสต์ +{boost} จากเอฟเฟกต์คู่แข่ง: ต้องวาง Core อย่างน้อย {needLv1} ดวงถึงจะเป็น Lv1</div>}
+          {boost > 0 && (
+            <div className="font-bold text-amber-300">
+              Lv คอสต์ +{boost} ({sourceNames(levelBoostSources(state, db, cardId))}): ต้องวาง Core อย่างน้อย {needLv1} ดวงถึงจะเป็น Lv1
+            </div>
+          )}
+          {costNotes.map((n) => (
+            <div key={n} className="font-bold text-amber-300">
+              {n}
+            </div>
+          ))}
           {depletingNow.length > 0 && <div className="font-bold text-rose-300">{depletingNow.map((id) => cardName(state, id)).join(', ')} จะสูญสลาย</div>}
           <div className="text-slate-400">
             คลิก Core บนกระดานเพื่อปรับ: ว่าง → <span className="text-rose-300">จ่าย</span>

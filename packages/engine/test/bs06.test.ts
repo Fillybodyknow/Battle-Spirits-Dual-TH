@@ -178,16 +178,17 @@ describe('Booster Set 06', () => {
 
   it('ทาเนงาชิมะ: เด็คของผู้เล่นทุกคนไม่ถูกทิ้ง', () => {
     let s = setup();
-    put(s, 'p2', no('ทหารจักรกลพลปืนยาว ทาเนงาชิมะ'), 1);
+    const tane = put(s, 'p2', no('ทหารจักรกลพลปืนยาว ทาเนงาชิมะ'), 1);
     const doji = put(s, 'p1', no('โดจิทะเลฟ้า'), 1);
     const deck = s.players.p2.deck.length;
     s = attack(s, doji);
     expect(s.players.p2.deck.length).toBe(deck);
+    expect(s.log.some((e) => e.type === 'staticApplied' && e.cardId === tane)).toBe(true);
   });
 
   it('คิชูด็อก: จั่ว 2 ใบในครั้งเดียวโดยเอฟเฟกต์ → การ์ดบนสนามและในมือทั้งหมดของฝ่ายนั้นไปใต้สุดเด็ค', () => {
     let s = setup();
-    put(s, 'p2', no('สุนัขเครื่องกล คิชูด็อก'), 1);
+    const dog = put(s, 'p2', no('สุนัขเครื่องกล คิชูด็อก'), 1);
     const mine = put(s, 'p1', DARIU, 2);
     const draw2 = inHand(s, 'p1', no('ดับเบิ้ลดรอว์'));
     const deck = s.players.p1.deck.length;
@@ -198,6 +199,7 @@ describe('Booster Set 06', () => {
     expect(s.players.p1.deck).toContain(mine);
     // เด็ค: -2 (จั่ว) + การ์ดในมือ (ไม่รวมเมจิคที่ใช้) + 2 ใบที่จั่ว + สนาม 1
     expect(s.players.p1.deck.length).toBe(deck - 2 + (hand - 1) + 2 + 1);
+    expect(s.log.some((e) => e.type === 'staticApplied' && e.cardId === dog)).toBe(true);
   });
 
   it('ฮาคุโดวโทคาเงะ Lv2: คู่แข่งอัญเชิญสปิริตคอสต์ไม่เกิน 3 ใช้สัญลักษณ์ลดคอสต์ไม่ได้', () => {
@@ -206,6 +208,20 @@ describe('Booster Set 06', () => {
     expect(payableCost(s, db, 'p1', db.get(DARIU))).toBe(0);
     put(s, 'p2', no('ฮาคุโดวโทคาเงะ'), 2);
     expect(payableCost(s, db, 'p1', db.get(DARIU))).toBe(1);
+  });
+
+  it('ฮาคุโดวโทคาเงะ: เรืองแสงเฉพาะตอนคู่แข่งต้องจ่ายแพงขึ้นจริง (มีสัญลักษณ์ที่ลดได้)', () => {
+    const summonDariu = (withSymbol: boolean) => {
+      let s = setup();
+      if (withSymbol) put(s, 'p1', DARIU, 1); // เจ็มแดงที่ปกติลดคอสต์ดาริวได้
+      const haku = put(s, 'p2', no('ฮาคุโดวโทคาเงะ'), 2);
+      const card = inHand(s, 'p1', DARIU);
+      const [pay, place] = normalCores(s);
+      s = act(s, { type: 'summon', player: 'p1', cardId: card, payment: [pay!], placement: [place!] });
+      return s.log.some((e) => e.type === 'staticApplied' && e.cardId === haku);
+    };
+    expect(summonDariu(true)).toBe(true);
+    expect(summonDariu(false)).toBe(false); // ไม่มีสัญลักษณ์ให้ลดอยู่แล้ว = ไม่ได้จ่ายแพงขึ้น
   });
 
   it('ไคโดว ทสึโนะชิงะ: รวมร่างกับเบรฟได้ 2 ใบ · Lv2 รวมร่าง 2 ใบ: จบการต่อสู้แล้วฟื้นสภาพ', () => {
@@ -256,7 +272,7 @@ describe('Booster Set 06', () => {
 
   it('ลองเคพ: ไลฟ์เสียหายจากสปิริตคู่แข่งได้ 1 เม็ดต่อตัวต่อเทิร์น', () => {
     let s = setup();
-    put(s, 'p2', no('No.42 ลองเคพ'), 0);
+    const cape = put(s, 'p2', no('No.42 ลองเคพ'), 0);
     const host = put(s, 'p1', no('ขุนศึกดาบศักดิ์สิทธิ์ ไคโดว ทสึโนะชิงะ'), 1);
     brave(s, host, 'อสูรเกราะกระดอง คาบุโตะกาเมะ'); // เจ็ม 2
     const life = s.players.p2.life.length;
@@ -264,6 +280,7 @@ describe('Booster Set 06', () => {
     while (s.battle?.flash) s = act(s, { type: 'passFlash', player: s.battle.flash.priority });
     s = act(s, { type: 'noBlock', player: 'p2' });
     expect(s.players.p2.life.length).toBe(life - 1);
+    expect(s.log.some((e) => e.type === 'staticApplied' && e.cardId === cape)).toBe(true);
   });
 
   it('ลิมิเต็ดบาเรีย: ในเทิร์นนี้ไลฟ์ไม่เสียหายจากการโจมตีของสปิริตคอสต์ 4 ขึ้นไป', () => {

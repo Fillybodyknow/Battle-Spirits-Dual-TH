@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { bpOf, cardLevel, currentBp, isSpiritLike, levelOf, minCores, opponentOf, PLAYERS, summonLevelCostBoost, summonMinCores, trashSummonRule, type GameState, type PlayerId } from '@bs/engine';
+import { bpOf, cardLevel, currentBp, isSpiritLike, levelOf, minCores, opponentOf, PLAYERS, levelBoostSources, summonLevelCostBoost, summonMinCores, trashSummonRule, type GameState, type PlayerId } from '@bs/engine';
 import { cardName, formatEvent, playerLabel } from '../format';
 import {
   actingPlayer,
@@ -837,7 +837,11 @@ function SummonCoreDetail({ state, cardId, selected, min, pay }: { state: GameSt
                 </button>
               ))}
             </div>
-            {boost > 0 && <div className="font-bold text-amber-300">Lv คอสต์ +{boost} จากเอฟเฟกต์คู่แข่ง: Lv1 ต้องวาง {needLv1} ดวง</div>}
+            {boost > 0 && (
+              <div className="font-bold text-amber-300">
+                Lv คอสต์ +{boost} ({[...new Set(levelBoostSources(state, db, cardId).map((x) => cardName(state, x.cardId)))].join(', ')}): Lv1 ต้องวาง {needLv1} ดวง
+              </div>
+            )}
             <div>
               เลือก <b>{selected.length}</b> ดวง (ขั้นต่ำ {min})
               {lv > 0 ? (
