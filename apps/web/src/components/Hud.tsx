@@ -7,6 +7,7 @@ import { CardFace } from './CardFace';
 import { CardInspector } from './CardInspector';
 import { GameLog } from './Controls';
 import { Icon } from './Icon';
+import { DiamondAvatar, useSeatAvatar } from './SeatAvatar';
 import { setTouchInspected, useLastInputTouch, useTouchInspected } from '../touch';
 
 /** ชื่อที่แสดงของผู้เล่น (ออนไลน์ = ชื่อที่ตั้ง, เครื่องเดียว = ผู้เล่น 1/2) */
@@ -23,15 +24,18 @@ export function PlayerPlate({ player, corner }: { player: PlayerId; corner: 'bot
   const hand = useGame((s) => s.state.players[player].hand.length);
   const turn = useGame((s) => s.state.turnPlayer === player && !s.state.winner);
   const name = useSeatName(player);
+  const avatar = useSeatAvatar(player);
   const bottom = corner === 'bottom-left';
   const accent = bottom ? '#38bdf8' : '#f43f5e';
   return (
     <div data-setup="plate" className={`pointer-events-none fixed z-[42] flex items-center gap-2 ${bottom ? 'bottom-4 left-5' : 'top-4 right-5 flex-row-reverse'}`}>
-      <div
-        className="flex h-14 w-14 rotate-45 items-center justify-center border-2 bg-slate-950/90 shadow-lg"
-        style={{ borderColor: accent, boxShadow: `0 0 14px ${accent}88` }}
-      >
-        <span className="-rotate-45 text-lg font-black" style={{ color: accent }}>
+      <div className="relative">
+        <DiamondAvatar cardNo={avatar} accent={accent} />
+        {/* เลขที่นั่งเล็ก ๆ ที่มุมล่างของกรอบ */}
+        <span
+          className="absolute -bottom-2 left-1/2 -translate-x-1/2 rounded-full border bg-slate-950 px-1.5 text-[10px] leading-4 font-black"
+          style={{ color: accent, borderColor: accent }}
+        >
           {player === 'p1' ? '1' : '2'}
         </span>
       </div>

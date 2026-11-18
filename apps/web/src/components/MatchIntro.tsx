@@ -3,6 +3,7 @@ import { sfx } from '../sfx';
 import { useGame, type DeckId, type Fx } from '../store';
 import { deckInfo } from '../decks';
 import { CardArt, deckColor, deckCover } from '../screens/shared';
+import { coverOf, DiamondAvatar } from './SeatAvatar';
 
 /** ลายบนเหรียญ: แกนคอร์หกเหลี่ยม + วงแหวน (ด้านทอง = หัว, ด้านเทา = ก้อย) */
 export function CoinFace({ gold }: { gold: boolean }) {
@@ -53,7 +54,7 @@ const COIN_FLIGHT = 1700;
 const COIN_SFX_HIT = 780;
 
 /** ป้ายผู้เล่นมุมล่าง + การ์ดปกเด็คลอย (ฝั่งซ้ายสีฟ้า / ฝั่งขวาสีแดง) */
-function Plate({ side, name, deck }: { side: 'left' | 'right'; name: string; deck: string }) {
+function Plate({ side, name, deck, avatar }: { side: 'left' | 'right'; name: string; deck: string; avatar?: string }) {
   const left = side === 'left';
   const accent = left ? '#38bdf8' : '#f43f5e';
   const glow = deckColor(deck as DeckId);
@@ -66,7 +67,7 @@ function Plate({ side, name, deck }: { side: 'left' | 'right'; name: string; dec
       <div className="relative w-full">
         <div className="h-[3px] w-full" style={{ background: `linear-gradient(${left ? '90deg' : '270deg'}, ${accent}, transparent)`, boxShadow: `0 0 12px ${accent}` }} />
         <div className={`flex items-center gap-3 bg-gradient-to-r py-2.5 ${left ? 'from-slate-950/90 to-transparent pl-4' : 'flex-row-reverse from-transparent to-slate-950/90 pr-4'}`}>
-          <div className="h-11 w-11 rotate-45 border-2 bg-slate-900" style={{ borderColor: accent, boxShadow: `0 0 12px ${accent}88` }} />
+          <DiamondAvatar cardNo={avatar || coverOf(deck)} accent={accent} className={`h-14 w-14 ${left ? 'mr-1' : 'ml-1'}`} />
           <div className={left ? 'text-left' : 'text-right'}>
             <div className="text-xl font-black text-white drop-shadow">{name}</div>
             <div className="text-xs" style={{ color: `${accent}cc` }}>
@@ -250,8 +251,8 @@ export function MatchIntro({ fx, onDone }: { fx: Extract<Fx, { kind: 'intro' }>;
       {stage && (
         <>
           <Vortex fade={false} />
-          <Plate side="left" name={fx.left.name} deck={fx.left.deck} />
-          <Plate side="right" name={fx.right.name} deck={fx.right.deck} />
+          <Plate side="left" name={fx.left.name} deck={fx.left.deck} avatar={fx.left.avatar} />
+          <Plate side="right" name={fx.right.name} deck={fx.right.deck} avatar={fx.right.avatar} />
           {phase === 'vs' && (
             <div className="absolute top-1/2 left-1/2 text-[9rem] font-black italic text-white" style={{ textShadow: '0 0 30px rgba(196,181,253,0.95), 0 0 4px #fff', animation: 'intro-vs 1.6s cubic-bezier(.2,1.4,.4,1) both' }}>
               VS

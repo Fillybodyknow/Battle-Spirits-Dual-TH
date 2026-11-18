@@ -33,6 +33,7 @@ import { COLOR_LABEL } from '../format';
 import { deckInfo } from '../decks';
 import { db } from '../store';
 import { BackButton, CardArt, DeckTile, deckColor, deckSize } from './shared';
+import { AvatarImg } from '../components/AccountDialog';
 
 const LOBBY_DECK_KEY = 'bs-lobby-deck';
 const COMMENTS = ['', 'ยินดีต้อนรับทุกคน', 'มือใหม่ ฝึกเล่น', 'เด็คสนุก ๆ', 'ดวลจริงจัง', 'Starter Deck เท่านั้น', 'ทดสอบเด็ค'];
@@ -489,8 +490,9 @@ function RoomList({ onOpen }: { onOpen: (code: string) => void }) {
   );
 }
 
-/** รูปโปรไฟล์ชั่วคราว: ตัวอักษรแรกของชื่อบนพื้นสีที่ได้จากชื่อ (ยังไม่มีระบบรูปโปรไฟล์) */
-function Avatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' }) {
+/** รูปโปรไฟล์ของสมาชิก · ไม่มี (เครื่องเวอร์ชันเก่า) = ตัวอักษรแรกของชื่อบนพื้นสีที่ได้จากชื่อ */
+function Avatar({ name, avatar, size = 'md' }: { name: string; avatar?: string; size?: 'sm' | 'md' }) {
+  if (avatar) return <AvatarImg cardNo={avatar} className={size === 'sm' ? 'h-8 w-8 shrink-0 rounded-full ring-1 ring-white/30' : 'h-full w-full'} />;
   let h = 0;
   for (const ch of name) h = (h * 31 + ch.codePointAt(0)!) % 360;
   const letter = [...name.trim()][0]?.toUpperCase() ?? '?';
@@ -507,7 +509,7 @@ function Avatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' }) {
 const HEX = 'polygon(25% 2%, 75% 2%, 100% 50%, 75% 98%, 25% 98%, 0 50%)';
 
 /** ที่นั่งบนโต๊ะ: กดที่ว่างเพื่อนั่ง · ที่นั่งของเรามีปุ่มลุก */
-function Seat({ name, me, ready, onSit, onStand, locked }: { name?: string; me?: boolean; ready?: boolean; onSit?: () => void; onStand?: () => void; locked?: boolean }) {
+function Seat({ name, avatar, me, ready, onSit, onStand, locked }: { name?: string; avatar?: string; me?: boolean; ready?: boolean; onSit?: () => void; onStand?: () => void; locked?: boolean }) {
   const filled = !!name;
   return (
     <div className="flex w-36 flex-col items-center gap-1.5">
@@ -520,7 +522,7 @@ function Seat({ name, me, ready, onSit, onStand, locked }: { name?: string; me?:
         style={{ clipPath: HEX }}
       >
         <div className="flex h-full w-full items-center justify-center overflow-hidden bg-slate-800" style={{ clipPath: HEX }}>
-          {filled ? <Avatar name={name} /> : <span className="text-sm font-bold text-slate-400 group-enabled:group-hover:text-lime-300">{onSit ? 'นั่งที่นี่' : 'ว่าง'}</span>}
+          {filled ? <Avatar name={name} avatar={avatar} /> : <span className="text-sm font-bold text-slate-400 group-enabled:group-hover:text-lime-300">{onSit ? 'นั่งที่นี่' : 'ว่าง'}</span>}
         </div>
       </button>
       <div className={`max-w-full truncate text-sm font-bold ${filled ? 'text-white' : 'text-slate-500'}`}>{name ?? 'ว่าง'}</div>
@@ -544,6 +546,7 @@ function TableCard({ room, t, uid }: { room: DuelRoom; t: string; uid: string })
   const p2 = seatUid(room, t, 'p2');
   const mySeat = p1 === uid ? 'p1' : p2 === uid ? 'p2' : null;
   const name = (u?: string) => (u ? room.members?.[u]?.name : undefined);
+  const avatar = (u?: string) => (u ? room.members?.[u]?.avatar : undefined);
   const game = tb.game;
   const ready = (s: PlayerId) => !!tb.ready?.[s];
   const iAmReady = mySeat ? ready(mySeat) : false;
@@ -595,9 +598,9 @@ function TableCard({ room, t, uid }: { room: DuelRoom; t: string; uid: string })
         {game && <span className="text-xs font-bold text-rose-600">● กำลังดวล</span>}
       </div>
       <div className="flex items-center justify-center gap-8 px-6 py-4">
-        <Seat name={name(p1)} me={mySeat === 'p1'} ready={ready('p1')} onSit={canSit ? () => duelSit(t, 'p1') : undefined} onStand={duelStand} locked={!!game || iAmReady} />
+        <Seat name={name(p1)} avatar={avatar(p1)} me={mySeat === 'p1'} ready={ready('p1')} onSit={canSit ? () => duelSit(t, 'p1') : undefined} onStand={duelStand} locked={!!game || iAmReady} />
         <div className="flex w-64 flex-col items-center gap-2 text-center">{center}</div>
-        <Seat name={name(p2)} me={mySeat === 'p2'} ready={ready('p2')} onSit={canSit ? () => duelSit(t, 'p2') : undefined} onStand={duelStand} locked={!!game || iAmReady} />
+        <Seat name={name(p2)} avatar={avatar(p2)} me={mySeat === 'p2'} ready={ready('p2')} onSit={canSit ? () => duelSit(t, 'p2') : undefined} onStand={duelStand} locked={!!game || iAmReady} />
       </div>
     </div>
   );
@@ -678,7 +681,7 @@ function RoomView({ deck, setDeck }: { deck: DeckId; setDeck: (id: DeckId) => vo
                 const s = seatOf(room, u);
                 return (
                   <div key={u} className="flex items-center gap-2">
-                    <Avatar name={m.name} size="sm" />
+                    <Avatar name={m.name} avatar={m.avatar} size="sm" />
                     <span className="min-w-0 flex-1 truncate font-bold text-white">
                       {m.name}
                       {u === uid && <span className="ml-1 text-lime-300">(คุณ)</span>}

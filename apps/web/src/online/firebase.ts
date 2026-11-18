@@ -40,6 +40,7 @@ function toInfo(v: unknown): RoomInfo | null {
     seats?: RoomInfo['seats'];
     names?: RoomInfo['names'];
     versions?: RoomInfo['versions'];
+    avatars?: RoomInfo['avatars'];
     meta?: RoomInfo['meta'];
     setup?: { round: number; seed: number; decks?: { p1?: string; p2?: string }; first?: 'p1' | 'p2' };
   };
@@ -48,6 +49,7 @@ function toInfo(v: unknown): RoomInfo | null {
     seats: r.seats ?? {},
     names: r.names ?? {},
     ...(r.versions ? { versions: r.versions } : {}),
+    ...(r.avatars ? { avatars: r.avatars } : {}),
     ...(r.meta ? { meta: r.meta } : {}),
     setup: {
       round: r.setup.round,
@@ -141,6 +143,10 @@ export const firebaseTransport: Transport = {
 
   async setVersion(code, seat, version) {
     await set(ref(database(), `rooms/${code}/versions/${seat}`), version);
+  },
+
+  async setAvatar(code, seat, avatar) {
+    await set(ref(database(), `rooms/${code}/avatars/${seat}`), avatar);
   },
 
   async leave(code, seat) {

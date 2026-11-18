@@ -2070,7 +2070,18 @@ export interface OnlineState {
   opponentHere: boolean;
   /** ชื่อผู้เล่นในห้อง */
   names: Partial<Record<PlayerId, string>>;
+  /** รูปโปรไฟล์ (รหัสการ์ด) ของแต่ละที่นั่ง · ไม่มี = ใช้หน้าปกเด็คของที่นั่งนั้น */
+  avatars: Partial<Record<PlayerId, string>>;
 }
+
+/** รูปโปรไฟล์ที่เลือกไว้ (เก็บโดย account.ts) · ยังไม่เลือก = undefined */
+export const storedAvatar = (): string | undefined => {
+  try {
+    return localStorage.getItem('bs-avatar') || undefined;
+  } catch {
+    return undefined;
+  }
+};
 
 /** ?online=local = ทดสอบ 2 แท็บในเครื่องเดียว (ไม่ใช้ Firebase) */
 const useLocal = typeof location !== 'undefined' && new URLSearchParams(location.search).get('online') === 'local';
@@ -2135,7 +2146,7 @@ function enterRoom(code: string, me: PlayerId, uid: string, spectator = false) {
   stopSync();
   if (!spectator) sessionStorage.setItem(SESSION, JSON.stringify({ code, me, via: transport.name }));
   useGame.setState({
-    online: { code, me, uid, via: transport.name, status: 'waiting', setup: null, applied: 0, opponentHere: me === 'p2', names: {}, ...(spectator ? { spectator } : {}) },
+    online: { code, me, uid, via: transport.name, status: 'waiting', setup: null, applied: 0, opponentHere: me === 'p2', names: {}, avatars: {}, ...(spectator ? { spectator } : {}) },
     error: null,
   });
   unsubRoom = transport.watchRoom(code, (info) => onRoom(code, info));
@@ -2158,16 +2169,17 @@ function onRoom(code: string, info: RoomInfo | null) {
   }
   const ready = !!info.setup.decks.p2 && !!info.seats.p2;
   const names = info.names ?? {};
+  const avatars = info.avatars ?? {};
   if (ready && (on.status === 'waiting' || on.setup?.round !== info.setup.round)) {
-    useGame.setState({ online: { ...on, names } });
+    useGame.setState({ online: { ...on, names, avatars } });
     void startRound(code, info.setup, opponentHere);
   } else if (on.status === 'choosing' && info.setup.first && on.setup?.round === info.setup.round) {
     // คนชนะการเสี่ยงเลือกแล้ว: สร้างเกมด้วยผู้เริ่มก่อนที่เลือก แล้วเริ่มรับ action
-    useGame.setState({ online: { ...on, opponentHere, names } });
+    useGame.setState({ online: { ...on, opponentHere, names, avatars } });
     beginPlay(code, info.setup, opponentHere, 0);
   } else {
     // ยังรอคู่แข่ง: เก็บ setup ของห้องไว้ (หน้า Lobby แสดงเด็คที่เลือกจริงจากห้อง)
-    useGame.setState({ online: { ...on, opponentHere, names, ...(on.status === 'waiting' ? { setup: info.setup } : {}) } });
+    useGame.setState({ online: { ...on, opponentHere, names, avatars, ...(on.status === 'waiting' ? { setup: info.setup } : {}) } });
   }
 }
 
@@ -2189,10 +2201,11 @@ async function startRound(code: string, setup: RoomSetup, opponentHere: boolean)
   const opp = opponentOf(me);
   const winner = coinWinner(setup.seed);
   const names = st.online.names;
+  const avatars = st.online.avatars;
   // ฉากเปิดเกม: จอของคนชนะการเสี่ยงออกหัว จอของอีกฝั่งออกก้อย
   const intro: Fx[] =
     st.animations && existing === 0
-      ? matchIntro(winner === me, { name: names[me] ?? st.playerName, deck: decks[me] }, { name: names[opp] ?? 'คู่แข่ง', deck: decks[opp] })
+      ? matchIntro(winner === me, { name: names[me] ?? st.playerName, deck: decks[me], avatar: avatars[me] ?? storedAvatar() }, { name: names[opp] ?? 'คู่แข่ง', deck: decks[opp], avatar: avatars[opp] })
       : [];
   const nav = st.screen === 'lobby' ? {} : { screen: 'game' as const };
   if (setup.first) {
@@ -2353,6 +2366,12 @@ function onDuel(code: string, uid: string, room: DuelRoom | null) {
   if (tb.game && !leftGames.has(tb.game) && st.online?.code !== tb.game) enterRoom(tb.game, mine.seat, uid);
 }
 
+/** avatars ของห้องเกม (ไม่ใส่ค่าว่าง: Firebase ไม่รับ undefined) */
+function seatAvatars(a1?: string, a2?: string): { avatars?: Partial<Record<PlayerId, string>> } {
+  const avatars = { ...(a1 ? { p1: a1 } : {}), ...(a2 ? { p2: a2 } : {}) };
+  return Object.keys(avatars).length ? { avatars } : {};
+}
+
 async function startTable(code: string, room: DuelRoom, t: string, uid: string) {
   startingTable = true;
   try {
@@ -2361,7 +2380,7 @@ async function startTable(code: string, room: DuelRoom, t: string, uid: string) 
     const m2 = room.members![p2]!;
     const game = `${code}-${randomCode()}`;
     const setup: RoomSetup = { round: 1, seed: randomSeed(), decks: { p1: m1.deck, p2: m2.deck } };
-    await transport.createRoom(game, { seats: { p1: uid, p2 }, setup, names: { p1: m1.name, p2: m2.name }, versions: { p1: m1.version, p2: m2.version } });
+    await transport.createRoom(game, { seats: { p1: uid, p2 }, setup, names: { p1: m1.name, p2: m2.name }, versions: { p1: m1.version, p2: m2.version }, ...seatAvatars(m1.avatar, m2.avatar) });
     const res = await transport.transactPath(`${roomPath(code)}/tables/${t}`, (cur: DuelTable | null) => {
       if (!cur) return cur;
       if (cur.game || !cur.ready?.p1 || !cur.ready?.p2 || cur.seats?.p1 !== uid || cur.seats?.p2 !== p2) return undefined;
@@ -2379,7 +2398,8 @@ async function startTable(code: string, room: DuelRoom, t: string, uid: string) 
 let lastLobbyDeck: DeckId = 'sd01';
 function myMember(deck: DeckId): DuelMember {
   lastLobbyDeck = deck;
-  return { name: useGame.getState().playerName, deck: deckToken(deck), version: APP_VERSION, joinedAt: Date.now() };
+  const avatar = storedAvatar();
+  return { name: useGame.getState().playerName, deck: deckToken(deck), version: APP_VERSION, joinedAt: Date.now(), ...(avatar ? { avatar } : {}) };
 }
 
 function lobbyCount(code: string, room: DuelRoom | null) {
@@ -2584,6 +2604,8 @@ if (typeof window !== 'undefined') setTimeout(() => void resumeSession(), 0);
 export interface IntroSide {
   name: string;
   deck: string;
+  /** รูปโปรไฟล์ (รหัสการ์ด) · ไม่มี = หน้าปกเด็ค */
+  avatar?: string;
 }
 
 /** ฉากเปิดเกม (โยนเหรียญ + เลือกเริ่มก่อน/หลัง) ป้ายเทิร์นที่ 1 ขึ้นเมื่อฉากจบ (introDone) */
@@ -2693,6 +2715,8 @@ export const useGame = create<Store>((set, get) => {
         await transport.createRoom(code, { seats: { p1: uid }, setup, names: { p1: name }, meta: roomMeta });
         // เวอร์ชันของเรา: เขียนแยก เขียนไม่ได้ก็เล่นได้ตามเดิม (แค่ตรวจเวอร์ชันไม่ได้)
         void transport.setVersion(code, 'p1', APP_VERSION).catch(() => {});
+        const av1 = storedAvatar();
+        if (av1) void transport.setAvatar(code, 'p1', av1).catch(() => {});
         // ลงรายการห้อง: ลงไม่ได้ (สิทธิ์ฐานข้อมูล) ก็ยังเข้าด้วยรหัสห้องได้
         if (roomMeta.listed) {
           void transport
@@ -2718,6 +2742,8 @@ export const useGame = create<Store>((set, get) => {
         // ห้องเต็มแล้ว: เอาออกจากรายการห้อง
         void transport.unpublishRoom(c).catch(() => {});
         void transport.setVersion(c, 'p2', APP_VERSION).catch(() => {});
+        const av2 = storedAvatar();
+        if (av2) void transport.setAvatar(c, 'p2', av2).catch(() => {});
         enterRoom(c, 'p2', uid);
       } catch (e) {
         set({ error: `เข้าห้องไม่สำเร็จ: ${(e as Error).message}` });
@@ -2830,7 +2856,7 @@ export const useGame = create<Store>((set, get) => {
       const seed = randomSeed();
       const state = startGame(seed, get().decks);
       const d = get().decks;
-      const fx: Fx[] = get().animations ? matchIntro(true, { name: 'ผู้เล่น 1', deck: d.p1 }, { name: 'ผู้เล่น 2', deck: d.p2 }) : [];
+      const fx: Fx[] = get().animations ? matchIntro(true, { name: 'ผู้เล่น 1', deck: d.p1, avatar: storedAvatar() }, { name: 'ผู้เล่น 2', deck: d.p2 }) : [];
       // คนชนะการเสี่ยง = ผู้เริ่มก่อนชั่วคราวที่ seed สุ่มได้ (ไม่มีแอนิเมชัน = ใช้ตามนั้นเลย)
       set({ pregame: { winner: state.turnPlayer, chosen: get().animations ? null : state.turnPlayer } });
       set({ ...resetUi, state, truth: null, seed, history: [], error: null, pinned: null, hovered: null, fx, viewTurn: state.turnPlayer });
