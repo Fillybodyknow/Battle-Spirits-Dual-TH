@@ -644,7 +644,7 @@ export const drawTier = (rank: number) => (rank >= 5 ? 3 : rank === 4 ? 2 : rank
  * สโลว์โมชันตอน Life เป็น 0: ทุกแอนิเมชันบนจอเล่นที่ความเร็ว rate ค้างไว้ hold ms แล้วค่อย ๆ เร่งกลับปกติใน ramp ms
  * จอสั่น + เสียงระเบิดเกิดตอนปล่อย (RELEASE)
  */
-export const LETHAL_SLOW = { rate: 0.12, hold: 1300, ramp: 900 };
+export const LETHAL_SLOW = { rate: 0.12, hold: 2400, ramp: 1300 };
 /** เวลาจริงที่ยืดออกเพราะสโลว์ (แอนิเมชันตามหลังเวลาจริงเท่านี้) */
 // ช่วงเร่งกลับใช้ความเร็ว rate + (1 - rate)·u² → เฉลี่ยเสียไป (1 - rate)·2/3 ของช่วงนั้น
 export const LETHAL_SLOW_EXTRA = Math.round(LETHAL_SLOW.hold * (1 - LETHAL_SLOW.rate) + LETHAL_SLOW.ramp * (1 - LETHAL_SLOW.rate) * (2 / 3));

@@ -3,7 +3,7 @@ import { opponentOf, type PlayerId } from '@bs/engine';
 import { cardArt } from '../assets';
 import { CAST_MS, CHARGE_HIT, CHARGE_MS, DRAW_FLIP_MS, DRAW_TIER, LETHAL_RELEASE, LETHAL_SLOW, LETHAL_SLOW_EXTRA, CUTIN_MS, CUTIN_SLAM, castCards, castHandSlots, castTone, controls, CHARGE_KNOCK, actingPlayer, chainEntries, viewPlayer, db, fieldScaleOf, GHOST_MS, isFxBlocking, layoutRect, MILL_MS, millBreakAt, millDuration, PLAY_HIT, useGame, type Fx, type Rect, hiddenFrom } from '../store';
 import { CardBack, CardFace } from './CardFace';
-import { sfx } from '../sfx';
+import { setSfxTimeScale, sfx } from '../sfx';
 import { effects, flashScale, shakeScale } from '../gfx';
 import { playerLabel } from '../format';
 import { MatchIntro } from './MatchIntro';
@@ -1779,6 +1779,8 @@ function FinalBlow({ fx, onDone }: { fx: Extract<Fx, { kind: 'finalBlow' }>; onD
       const r = rate + (1 - rate) * u * u;
       // จอสั่นตอนปล่อย: ไม่ทำให้ช้า
       for (const x of document.getAnimations()) if (!(x as Animation & { _noSlow?: boolean })._noSlow) x.playbackRate = r;
+      // เสียงช้าตามภาพ
+      setSfxTimeScale(r);
       if (u < 1) raf = requestAnimationFrame(tick);
     };
     tick();
@@ -1800,6 +1802,7 @@ function FinalBlow({ fx, onDone }: { fx: Extract<Fx, { kind: 'finalBlow' }>; onD
       cancelAnimationFrame(raf);
       clearTimeout(shake);
       document.getAnimations().forEach((x) => (x.playbackRate = 1));
+      setSfxTimeScale(1);
     };
   }, [on]);
   if (!on) return null;

@@ -327,6 +327,19 @@ const SYNTH: Record<SfxName, (t: number) => void> = {
 
 const timers = new Set<ReturnType<typeof setTimeout>>();
 
+/**
+ * สโลว์โมชัน (Life เป็น 0): เสียงไฟล์ที่กำลังเล่น และที่เริ่มเล่นระหว่างนี้ ช้าลงตามภาพ (ทุ้มต่ำลงเหมือนเทปยืด)
+ * ต่ำสุด SFX_MIN_RATE ไม่ให้เสียงทุ้มจนไม่ได้ยิน · เสียงสังเคราะห์ (ไม่มีไฟล์) และ BGM ไม่ช้าตาม
+ */
+const SFX_MIN_RATE = 0.25;
+const playing = new Set<AudioBufferSourceNode>();
+let timeScale = 1;
+export function setSfxTimeScale(rate: number) {
+  timeScale = Math.max(SFX_MIN_RATE, Math.min(1, rate));
+  if (!ctx) return;
+  for (const s of playing) s.playbackRate.setValueAtTime(timeScale, ctx.currentTime);
+}
+
 async function playFile(name: SfxName, url: string) {
   const c = audio();
   if (!c) return;
@@ -341,7 +354,10 @@ async function playFile(name: SfxName, url: string) {
   }
   const s = c.createBufferSource();
   s.buffer = buf;
+  s.playbackRate.value = timeScale;
   s.connect(master!);
+  playing.add(s);
+  s.onended = () => playing.delete(s);
   s.start();
 }
 

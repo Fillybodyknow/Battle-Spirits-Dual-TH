@@ -16,6 +16,11 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '14.6.0',
+    date: '2026-11-18',
+    items: ['จังหวะที่ Life เป็น 0: สโลว์โมชันนานขึ้น (ราว 3.7 วินาที) และเสียงเอฟเฟกต์ช้าลงตามภาพ (ทุ้มต่ำเหมือนเทปยืด) แล้วค่อย ๆ เร่งกลับพร้อมกัน'],
+  },
+  {
     version: '14.5.0',
     date: '2026-11-18',
     items: [
