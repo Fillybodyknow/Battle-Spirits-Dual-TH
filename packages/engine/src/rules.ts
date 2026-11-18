@@ -943,6 +943,27 @@ export function multiDrawPunished(state: GameState, db: CardDatabase): boolean {
 }
 
 /** ลองเคพ: ไลฟ์ของผู้เล่นนี้เสียหายจากสปิริตคู่แข่งได้ 1 เม็ดต่อตัวต่อเทิร์น */
+/**
+ * ความเสียหายต่อ Life ถ้าการโจมตีของ attackerId ไม่ถูกป้องกัน (คาดการณ์ ไม่แก้ state)
+ * สูตรเดียวกับตอนตัดสินการต่อสู้ใน game.ts (ใช้แสดงผล เช่น แถบ Final Blow ของหน้าเว็บ)
+ */
+export function attackLifeDamage(state: GameState, db: CardDatabase, attackerId: string): number {
+  const attacker = state.cards[attackerId];
+  if (!attacker) return 0;
+  const defender = attacker.owner === 'p1' ? 'p2' : 'p1';
+  const extra = Object.values(extraSymbols(state, db, attackerId)).reduce<number>((n, v) => n + (v ?? 0), 0);
+  const override = state.battle?.symbolOverride?.cardId === attackerId ? state.battle.symbolOverride.count : null;
+  const braves = attacker.braves.reduce((n, b) => n + symbolCount(db.get(state.cards[b]!.cardNo)), 0);
+  let dmg = override ?? symbolCount(db.get(attacker.cardNo)) + braves + extra;
+  if (state.symbolsZero?.turn === state.turn && dmg >= state.symbolsZero.minSymbols) dmg = 0;
+  if ((state.lifeShields ?? []).some((l) => l.player === defender && l.turn === state.turn && fieldCost(state, db, attackerId) >= l.minCost)) dmg = 0;
+  if (dmg > 0 && lifeDamageCapped(state, db, defender)) {
+    const rec = state.lifeDamageBy?.turn === state.turn && state.lifeDamageBy.player === defender ? state.lifeDamageBy : null;
+    dmg = rec?.ids.includes(attackerId) ? 0 : 1;
+  }
+  return dmg;
+}
+
 export function lifeDamageCapped(state: GameState, db: CardDatabase, player: PlayerId): boolean {
   return fieldHas(state, db, [player], 'lifeDamageCap');
 }

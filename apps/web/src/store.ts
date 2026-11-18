@@ -19,6 +19,7 @@ import {
   quickAnyCores,
   trashSummonRule,
   applyAction,
+  attackLifeDamage,
   blockersFor,
   magicUsedUp,
   cardLevel,
@@ -373,8 +374,26 @@ export type Fx =
   | { id: number; kind: 'result'; winner: PlayerId; reason: EndReason; delay: number }
   /** ฉากเปิดเกม: READY → VS → โยนเหรียญ (heads = ด้านทอง: คนที่ดูจอนี้เริ่มก่อน) → วาร์ป → DUEL */
   | { id: number; kind: 'intro'; heads: boolean; left: IntroSide; right: IntroSide }
-  /** FINAL BLOW: การโจมตีที่ทำให้ Life เป็น 0 (เวลาหยุดชั่วครู่ แสงวาบ ข้อความใหญ่ ฝั่งที่แพ้ร้าว) */
+  /** กดจั่วใน Draw Step: การ์ดที่ลอยกลางจอพลิกเปิดหน้า (ลีลาตามระดับความหายาก DRAW_TIER[tier]) ก่อนบินเข้ามือ */
+  | {
+      id: number;
+      kind: 'drawReveal';
+      cardId: string;
+      cardNo: string;
+      rect: Rect;
+      tier: number;
+      delay: number;
+      /** จั่วหลายใบใน Draw Step: ใบแรกถือพื้นมืดไว้ตลอดทั้งชุด (dimMs) · ใบถัดไปไม่วาดพื้นมืดซ้ำ (noDim) */
+      dimMs?: number;
+      noDim?: boolean;
+    }
+  /** FINAL BLOW: จังหวะที่ Life เป็น 0 (สโลว์โมชัน แสงวาบ รอยฟัน ฝั่งที่แพ้ร้าว) */
   | { id: number; kind: 'finalBlow'; loser: PlayerId; winner: PlayerId; delay: number }
+  /**
+   * แถบ "Final Blow !" สองข้างจอ: ประกาศโจมตีที่ถ้าไม่ถูกป้องกัน Life ของคู่แข่งจะเป็น 0 (นับเฉพาะความเสียหายจากการโจมตี)
+   * ค้างไว้จนการต่อสู้นี้จบ (ถูกป้องกัน / ชนเข้า Life / ฉาก FINAL BLOW เล่นจบ)
+   */
+  | { id: number; kind: 'finalBlowBanner'; attackerId: string; delay: number }
   | { id: number; kind: 'summon'; cardId: string; level: number; bp: number; delay: number; special?: boolean }
   | { id: number; kind: 'activate'; cardId: string; label: string; text: string; delay: number }
   /** การ์ดบนสนามที่เอฟเฟกต์ทำงาน: ยกขึ้น + เรืองแสง ก่อนผลของเอฟเฟกต์จะเกิด */
@@ -458,6 +477,8 @@ export type Fx =
       landSound?: SfxName;
       /** ออกจากสนามแบบหงาย แล้วค่อยพลิกคว่ำกลางทาง (กลับขึ้นมือที่อีกฝ่ายมองไม่เห็น) */
       revealFirst?: boolean;
+      /** (draw) ต่อจากการ์ดที่พลิกเปิดหน้ากลางจอ: เริ่มทึบเต็มที่ */
+      fromReveal?: boolean;
       /** faceDown: เริ่มหงาย (เฉพาะคนที่เห็นการ์ดใบนี้ในมือ) แล้วพลิกคว่ำกลางทาง (เซ็ท Burst) */
       flipMid?: boolean;
       delay: number;
@@ -580,6 +601,56 @@ export const CUTIN_SLAM = 0.17;
 export const CHARGE_MS = 1500;
 export const CHARGE_HIT = 0.45;
 
+/** กดจั่วใน Draw Step: เวลาพลิกเปิดหน้าการ์ด (ms) */
+export const DRAW_FLIP_MS = 420;
+/**
+ * ลีลาเปิดหน้าการ์ดที่จั่วตามระดับความหายาก (index = drawTier(rank))
+ * ms = เวลาทั้งหมดก่อนบินเข้ามือ · scale = ขยายจากการ์ดที่ลอยอยู่ · glow/rings = วงแสง · rays = รัศมีหมุน · sparkles = ประกาย
+ */
+export interface DrawTierFx {
+  ms: number;
+  scale: number;
+  glow?: string;
+  rings: number;
+  rays?: string;
+  sparkles: number;
+  rainbow?: boolean;
+  flash?: boolean;
+  sound?: SfxName;
+}
+export const DRAW_TIER: DrawTierFx[] = [
+  // C / U
+  { ms: 760, scale: 1.25, rings: 0, sparkles: 0 },
+  // R
+  { ms: 1000, scale: 1.3, glow: '#7dd3fc', rings: 1, sparkles: 0, sound: 'flash' },
+  // M
+  { ms: 1250, scale: 1.35, glow: '#fde047', rings: 2, rays: 'repeating-conic-gradient(from 0deg, rgba(253,224,71,0.55) 0deg 4deg, transparent 4deg 14deg)', sparkles: 10, sound: 'magic' },
+  // X ขึ้นไป
+  {
+    ms: 1600,
+    scale: 1.45,
+    glow: '#f0abfc',
+    rings: 3,
+    rays: 'repeating-conic-gradient(from 0deg, #f43f5e 0deg 3deg, transparent 3deg 9deg, #facc15 9deg 12deg, transparent 12deg 18deg, #22c55e 18deg 21deg, transparent 21deg 27deg, #38bdf8 27deg 30deg, transparent 30deg 36deg, #a855f7 36deg 39deg, transparent 39deg 45deg)',
+    sparkles: 16,
+    rainbow: true,
+    flash: true,
+    sound: 'xrare',
+  },
+];
+export const drawTier = (rank: number) => (rank >= 5 ? 3 : rank === 4 ? 2 : rank === 3 ? 1 : 0);
+
+/**
+ * สโลว์โมชันตอน Life เป็น 0: ทุกแอนิเมชันบนจอเล่นที่ความเร็ว rate ค้างไว้ hold ms แล้วค่อย ๆ เร่งกลับปกติใน ramp ms
+ * จอสั่น + เสียงระเบิดเกิดตอนปล่อย (RELEASE)
+ */
+export const LETHAL_SLOW = { rate: 0.12, hold: 1300, ramp: 900 };
+/** เวลาจริงที่ยืดออกเพราะสโลว์ (แอนิเมชันตามหลังเวลาจริงเท่านี้) */
+// ช่วงเร่งกลับใช้ความเร็ว rate + (1 - rate)·u² → เฉลี่ยเสียไป (1 - rate)·2/3 ของช่วงนั้น
+export const LETHAL_SLOW_EXTRA = Math.round(LETHAL_SLOW.hold * (1 - LETHAL_SLOW.rate) + LETHAL_SLOW.ramp * (1 - LETHAL_SLOW.rate) * (2 / 3));
+/** จังหวะ "ปล่อย" หลังสโลว์ (นับจากจังหวะที่ Life เป็น 0) */
+export const LETHAL_RELEASE = LETHAL_SLOW.hold + Math.round(LETHAL_SLOW.ramp * 0.4);
+
 const T = {
   /** ป้ายสเต็ปเล็ก (Start/Core/Draw/Refresh/Main/End) */
   miniBanner: 900,
@@ -619,7 +690,7 @@ const T = {
   chainLink: 2300,
   chainPer: 350,
   /** FINAL BLOW ก่อนประกาศผู้ชนะ */
-  finalBlow: 2600,
+  finalBlow: 2600 + LETHAL_SLOW_EXTRA,
   /** X-Rare cut-in ก่อนการ์ดบินลงสนาม (การ์ดเริ่มบินตอน cut-in กำลังจาง) */
   cutIn: CUTIN_MS.normal - 250,
   /** cut-in ระดับพิเศษ (XX/XV) ยาวกว่า X */
@@ -631,14 +702,14 @@ const T = {
  * engine ประมวลผลเสร็จในครั้งเดียว แต่ภาพจะเล่นตามลำดับ event: ลงการ์ด → เอฟเฟกต์ทำงาน (ยกขึ้นเรืองแสง) → ผลของเอฟเฟกต์
  * t = เวลาที่ขั้นถัดไปจะเริ่ม
  */
-/** ตัวเลือก cut-in อัญเชิญ: always = ทุกครั้ง, first = ครั้งแรกของการ์ดชนิดนั้นในเกม, off = ปิด (ลงหนักแทน) */
+/** ตัวเลือก cut-in อัญเชิญ: always = ทุกครั้ง (ค่าเริ่มต้น), first = ครั้งแรกของการ์ดชนิดนั้นในเกม, off = ปิด (ลงหนักแทน) */
 export type CutInMode = 'always' | 'first' | 'off';
 let cutInMode: CutInMode = (() => {
   try {
     const v = localStorage.getItem('bs-cutin');
-    return v === 'always' || v === 'off' || v === 'first' ? v : 'first';
+    return v === 'always' || v === 'off' || v === 'first' ? v : 'always';
   } catch {
-    return 'first';
+    return 'always';
   }
 })();
 
@@ -678,6 +749,10 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
   }
   const fromReveal = (id: string, fallback: string) => (revealed.has(id) ? `[data-reveal-card="${id}"]` : fallback);
   let draws = 0;
+  // กดจั่วใน Draw Step (จอของคนจั่ว): ทุกใบที่จั่วใน Draw Step นี้ (รวมใบที่เอฟเฟกต์ให้จั่วเพิ่ม) พลิกเปิดกลางจอทีละใบ
+  const drawPrompt = prev.awaitingDraw ? promptRect() : null;
+  let inDrawStep = !!drawPrompt;
+  let reveals = 0;
   const onAnyField = (id: string) => PLAYERS.some((p) => s.players[p].field.includes(id) || prev.players[p].field.includes(id));
   /** การ์ดที่นอนอยู่บนสนามก่อน action นี้ (เสื่อมสภาพ): ภาพบินเริ่มจากท่านอน */
   const lyingRot = (id: string) => (prev.players[prev.cards[id]?.owner ?? 'p1'].field.includes(id) && prev.cards[id]?.state === 'exhausted' ? 90 : 0);
@@ -788,6 +863,7 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         t += T.turnBannerFull;
         break;
       case 'phaseChanged': {
+        if (e.phase !== 'draw') inDrawStep = false;
         if (e.phase === 'attack' && !newTurn) out.push({ kind: 'banner', tone: 'step', title: 'ATTACK STEP', sub: 'เลือกสปิริตที่จะโจมตี' });
         // ป้ายเล็กของสเต็ปช่วงต้นเทิร์น (Start → Core → Draw → Refresh → Main) และ End
         const gotCore = events.some((x) => x.type === 'coreGained' && x.player === s.turnPlayer);
@@ -812,12 +888,26 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
       case 'coreGained':
         if (newTurn) t += T.miniBanner / 2;
         break;
-      case 'cardDrawn':
+      case 'cardDrawn': {
+        // กดจั่วใน Draw Step (จอของคนจั่ว): พลิกเปิดหน้ากลางจอก่อน แล้วค่อยบินเข้ามือ ทีละใบ
+        const pr = inDrawStep && prev.awaitingDraw === e.player ? drawPrompt : null;
+        if (pr) {
+          // ใบถัดไป: เว้นจังหวะให้ใบก่อนหน้าบินออกจากกลางจอก่อน
+          if (reveals++ > 0) t += 220;
+          const cardNo = s.cards[e.cardId]!.cardNo;
+          const tier = drawTier(rarityOf(db.get(cardNo).rarity)?.rank ?? 0);
+          const k = DRAW_TIER[tier]!.scale;
+          out.push({ kind: 'drawReveal', cardId: e.cardId, cardNo, rect: pr, tier, delay: t });
+          t += DRAW_TIER[tier]!.ms;
+          const big = { x: pr.x + pr.w / 2 - (pr.w * k) / 2, y: pr.y + pr.h / 2 - (pr.h * k) / 2, w: pr.w * k, h: pr.h * k };
+          out.push({ kind: 'fly', cardId: e.cardId, from: big, to: `[data-hand-card="${e.cardId}"]`, mode: 'draw', fromReveal: true, delay: t, hideTarget: true });
+          draws++;
+          break;
+        }
         out.push({
           kind: 'fly',
           cardId: e.cardId,
-          // กดจั่วใน Draw Step: ใบแรกบินออกจากการ์ดที่ลอยอยู่กลางจอ
-          from: (prev.awaitingDraw === e.player && draws === 0 && promptRect()) || `[data-deck="${e.player}"]`,
+          from: `[data-deck="${e.player}"]`,
           to: `[data-hand-card="${e.cardId}"]`,
           mode: 'draw',
           delay: t + draws * T.drawGap,
@@ -825,6 +915,7 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         });
         draws++;
         break;
+      }
       case 'summoned':
       case 'nexusDeployed': {
         const card = s.cards[e.cardId]!;
@@ -1037,6 +1128,13 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         t += T.activate;
         break;
       case 'attackDeclared': {
+        // การโจมตีที่ถ้าไม่ป้องกัน Life คู่แข่งจะเป็น 0: แถบ Final Blow ขึ้นตั้งแต่ประกาศโจมตี
+        {
+          const atkOwner = prev.cards[e.attackerId]?.owner ?? s.cards[e.attackerId]!.owner;
+          const lifeNow = prev.players[opponentOf(atkOwner)].life.length;
+          const at0 = s.battle?.attackerId === e.attackerId ? s : prev;
+          if (lifeNow > 0 && at0.cards[e.attackerId] && attackLifeDamage(at0, db, e.attackerId) >= lifeNow) out.push({ kind: 'finalBlowBanner', attackerId: e.attackerId, delay: t });
+        }
         // ตัดสินใน action เดียวกัน: แสดงแค่การวิ่งชน · ยกเว้นมีเอฟเฟกต์ทำงานก่อนผลการต่อสู้ (เช่น "เมื่อสปิริตนี้โจมตี")
         // ต้องให้การ์ดพุ่ง/นอนลงก่อน แล้วเอฟเฟกต์ค่อยทำงาน แล้วจึงวิ่งชน (เริ่มจากท่านอน)
         if (charge) {
@@ -1304,6 +1402,13 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
       }
     }
   }
+  // จั่วหลายใบใน Draw Step: พื้นมืดต่อเนื่องตั้งแต่ใบแรกจนใบสุดท้ายบินออก (ไม่ซ้อน ไม่กระพริบระหว่างใบ)
+  const revealFx = out.filter((f): f is Extract<FxInput, { kind: 'drawReveal' }> => f.kind === 'drawReveal');
+  if (revealFx.length > 1) {
+    const last = revealFx[revealFx.length - 1]!;
+    revealFx[0]!.dimMs = last.delay + DRAW_TIER[last.tier]!.ms - revealFx[0]!.delay;
+    revealFx.slice(1).forEach((f) => (f.noDim = true));
+  }
   // Spell Stage: การ์ดบนเวทีออกเมื่อผลทั้งหมดเล่นจบ: ลง Trash / ค้างไว้ (ยังร่ายไม่จบ รอผู้เล่นเลือก) · ที่ลงสนามตั้งไว้แล้วตอนอัญเชิญ
   if (casting.size > 0) {
     const endAll = Math.max(t, ghostsEnd, ...out.filter((f) => f.kind !== 'banner' && f.kind !== 'result' && f.kind !== 'finalBlow').map(fxEnd));
@@ -1356,6 +1461,8 @@ function fxEnd(f: FxInput): number {
       return d + f.duration;
     case 'charge':
       return d + T.chargeEnd;
+    case 'drawReveal':
+      return d + DRAW_TIER[f.tier]!.ms;
     case 'ghost':
       return d + (f.mode === 'destroy' ? GHOST_MS.destroy : GHOST_MS.deplete);
     case 'mill':
@@ -1507,6 +1614,7 @@ export function isFxBlocking(fx: Fx[]): boolean {
       (f.kind === 'banner' && f.tone === 'win' && (f.delay ?? 0) > 0) ||
       (f.kind === 'result' && f.delay > 0) ||
       f.kind === 'charge' ||
+      f.kind === 'drawReveal' ||
       f.kind === 'summon' ||
       f.kind === 'spell' ||
       (f.kind === 'fly' && f.mode !== 'draw'),
@@ -1676,11 +1784,22 @@ function computeHolds(prev: GameState, next: GameState, events: GameEvent[], del
 function playFxSounds(list: Fx[]) {
   for (const f of list) {
     switch (f.kind) {
+      case 'drawReveal': {
+        const snd = DRAW_TIER[f.tier]!.sound;
+        sfx('swish', f.delay + 60);
+        if (snd) sfx(snd, f.delay + Math.round(DRAW_FLIP_MS * 0.55));
+        break;
+      }
+      case 'finalBlowBanner':
+        sfx('whoosh', f.delay);
+        sfx('impact', f.delay + 120);
+        break;
       case 'finalBlow':
+        // กระแทกตอนเริ่มสโลว์ · แตก/ระเบิดตอนปล่อย
         sfx('impact', f.delay);
-        sfx('shatter', f.delay + 120);
-        sfx('bigdamage', f.delay + 380);
-        sfx('burst', f.delay + 420);
+        sfx('shatter', f.delay + LETHAL_RELEASE - 80);
+        sfx('bigdamage', f.delay + LETHAL_RELEASE);
+        sfx('burst', f.delay + LETHAL_RELEASE + 40);
         break;
       case 'summon': {
         // ชาร์จ → ทุบ (เสียงกระแทกหนัก ตรงจังหวะแสงวาบ)

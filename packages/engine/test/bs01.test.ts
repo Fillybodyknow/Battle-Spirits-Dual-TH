@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { loadAllCards, loadBS01Cards } from '@bs/cards';
-import { applyAction, cardLevel, createGame, currentBp, matchesFilter, payableCost, type Action, type GameState, type PlayerId } from '../src';
+import { applyAction, attackLifeDamage, cardLevel, createGame, currentBp, matchesFilter, payableCost, type Action, type GameState, type PlayerId } from '../src';
 
 const db = loadAllCards();
 const no = (name: string) => db.all().find((c) => c.name === name && c.cardNo.startsWith('BS01'))!.cardNo;
@@ -228,5 +228,28 @@ describe('Booster Set 01', () => {
     const base = currentBp(s, db, chip);
     s.battle = { attackerId: chip, blockers: [] } as unknown as GameState['battle'];
     expect(currentBp(s, db, chip)).toBe(base);
+  });
+});
+
+describe('attackLifeDamage (คาดการณ์ความเสียหายต่อ Life ของการโจมตี ใช้แสดงแถบ Final Blow)', () => {
+  it('ตรงกับ Life ที่เสียจริงเมื่อไม่ถูกป้องกัน: สปิริตธรรมดา และ เซ็นโงคุ ซีคฟรีด + Soul Core (เจ็มแดง +1)', () => {
+    for (const [cardNo, cores, soul] of [[DARIU, 3, false], [SIEG, db.get(SIEG).levels[1]!.cores, true]] as const) {
+      const s = setup();
+      const id = put(s, 'p1', cardNo, cores, soul);
+      const life = s.players.p2.life.length;
+      let x = attack(toAttack(s), id);
+      const predicted = attackLifeDamage(x, db, id);
+      x = act(passAll(x), { type: 'noBlock', player: 'p2' });
+      x = passAll(x);
+      expect(predicted).toBeGreaterThan(0);
+      expect(life - x.players.p2.life.length).toBe(predicted);
+    }
+  });
+
+  it('ลิมิเต็ดบาเรีย (lifeShields) ของคู่แข่ง = 0', () => {
+    const s = setup();
+    const id = put(s, 'p1', DARIU, 3);
+    s.lifeShields = [{ player: 'p2', turn: s.turn, minCost: 0 }];
+    expect(attackLifeDamage(s, db, id)).toBe(0);
   });
 });

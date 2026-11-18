@@ -91,7 +91,6 @@ body {
   86% { transform: translateY(-6px) scale(1.04); opacity: 1; filter: brightness(1.05); }
   100% { transform: translateY(0) scale(0.82); opacity: 0; filter: brightness(1.8); }
 }
-@keyframes fx-ci-stamp { 0% { transform: scale(3) rotate(-25deg); opacity: 0; } 60% { transform: scale(0.92) rotate(-8deg); opacity: 1; } 100% { transform: scale(1) rotate(-8deg); opacity: 1; } }
 @keyframes fx-ci-plate { from { transform: translateX(-40vw) skewX(-12deg); opacity: 0; } to { transform: translateX(0) skewX(-12deg); opacity: 1; } }
 @keyframes fx-ci-spark { 0% { transform: translate(0, 0) scale(1); opacity: 1; } 100% { transform: translate(var(--tx), var(--ty)) scale(0.3); opacity: 0; } }
 @keyframes fx-fade-in-out {
@@ -186,6 +185,8 @@ body {
 @keyframes fx-dmg-flash { 0% { opacity: 0; } 12% { opacity: 1; } 100% { opacity: 0; } }
 /* FINAL BLOW: แถบเหลืองแนวตั้งสองข้างจอ ข้อความวิ่ง */
 @keyframes fx-fb-banner-in { 0% { transform: translateX(var(--from)); } 12% { transform: translateX(0); } 88% { transform: translateX(0); opacity: 1; } 100% { transform: translateX(var(--from)); opacity: 0; } }
+@keyframes fx-fb-bar-in { from { transform: translateX(var(--from)); } to { transform: translateX(0); } }
+@keyframes fx-fb-bar-out { from { transform: translateX(0); opacity: 1; } to { transform: translateX(var(--from)); opacity: 0; } }
 @keyframes fx-fb-scroll { from { transform: translateY(0); } to { transform: translateY(var(--dist)); } }
 @keyframes fx-sunburst {
   0% { transform: translate(-50%, -50%) scale(0.3) rotate(0deg); opacity: 0; }
@@ -856,3 +857,27 @@ html.gfx-no-blur *::after {
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
 }
+
+/* Cut-in ธีมตามสี: ไฟ (แดง) / น้ำ (ฟ้า) */
+@keyframes ci-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ci-fire-in { from { opacity: 0; transform: scaleY(0.15); } to { opacity: 1; transform: scaleY(1); } }
+@keyframes ci-flame { from { transform: scaleY(0.82) scaleX(1.06) skewX(-5deg); } to { transform: scaleY(1.15) scaleX(0.9) skewX(5deg); } }
+@keyframes ci-blast { 0% { transform: scale(0.04); opacity: 1; } 55% { opacity: 0.95; } 100% { transform: scale(1); opacity: 0; } }
+@keyframes ci-ember { 0% { transform: translate(0, 0) scale(1); opacity: 0; } 10% { opacity: 1; } 100% { transform: translate(var(--sway), -75vh) scale(0.3); opacity: 0; } }
+@keyframes ci-swirl { 0% { transform: scale(1.6); opacity: 0; } 65% { opacity: 1; } 100% { transform: scale(0.15); opacity: 0; } }
+@keyframes ci-caustic { from { background-position: 0 0, 0 0, 0 0; } to { background-position: 90px 46px, -70px 60px, 0 0; } }
+@keyframes ci-wave { 0% { transform: translateX(-62%); opacity: 0; } 12% { opacity: 1; } 100% { transform: translateX(8%); opacity: 0; } }
+@keyframes ci-ripple { 0% { transform: scale(0.12); opacity: 0.95; } 100% { transform: scale(3.4); opacity: 0; } }
+@keyframes ci-drop { 0% { transform: translate(0, 0) scale(0.6); opacity: 0; } 8% { opacity: 1; } 55% { transform: translate(var(--tx), var(--ty)) scale(1); opacity: 1; } 100% { transform: translate(calc(var(--tx) * 1.2), calc(var(--ty) + 32vh)) scale(0.6); opacity: 0; } }
+@keyframes ci-bubble { 0% { transform: translate(0, 0); opacity: 0; } 10% { opacity: 0.9; } 100% { transform: translate(var(--sway), -118vh); opacity: 0; } }
+@keyframes ci-spiral-in { 0% { transform: rotate(var(--a)) translateX(var(--r)) scale(1); opacity: 0; } 15% { opacity: 1; } 100% { transform: rotate(calc(var(--a) + 300deg)) translateX(0) scale(0.3); opacity: 0.9; } }
+@keyframes ci-circle-in { 0% { transform: scale(0.1) rotate(-90deg); opacity: 0; } 100% { transform: scale(1) rotate(0deg); opacity: 0.9; } }
+@keyframes ci-slash { 0% { stroke-dashoffset: 1; opacity: 1; } 55% { stroke-dashoffset: 0; opacity: 1; } 100% { stroke-dashoffset: -1; opacity: 0; } }
+@keyframes ci-drift { 0% { transform: translate(0, 0) rotate(0deg); opacity: 0; } 10% { opacity: 1; } 100% { transform: translate(calc(100vw + 120px), var(--sway)) rotate(var(--rot)); opacity: 0.8; } }
+@keyframes ci-frost { from { transform: scale(0.2); opacity: 0; } to { transform: scale(1); opacity: 0.95; } }
+@keyframes ci-fall { 0% { transform: translate(0, 0) rotate(0deg); opacity: 0; } 10% { opacity: 1; } 100% { transform: translate(var(--sway), 115vh) rotate(var(--rot)); opacity: 0.7; } }
+@keyframes ci-beam { 0% { transform: scaleY(0); opacity: 0; } 70% { opacity: 1; } 100% { transform: scaleY(1); opacity: 1; } }
+@keyframes ci-cross { 0% { transform: scaleX(0.05); opacity: 1; } 40% { transform: scaleX(1); opacity: 1; } 100% { transform: scaleX(1.1) scaleY(0.2); opacity: 0; } }
+@keyframes ci-twinkle { 0%, 100% { transform: scale(0) rotate(0deg); opacity: 0; } 50% { transform: scale(1) rotate(45deg); opacity: 1; } }
+@keyframes draw-dim-out { 0%, 80% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes draw-gone { to { opacity: 0; visibility: hidden; } }

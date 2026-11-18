@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { opponentOf, type PlayerId } from '@bs/engine';
 import { cardArt } from '../assets';
-import { CAST_MS, CHARGE_HIT, CHARGE_MS, CUTIN_MS, CUTIN_SLAM, castCards, castHandSlots, castTone, controls, CHARGE_KNOCK, actingPlayer, chainEntries, viewPlayer, db, fieldScaleOf, GHOST_MS, isFxBlocking, layoutRect, MILL_MS, millBreakAt, millDuration, PLAY_HIT, useGame, type Fx, type Rect, hiddenFrom } from '../store';
+import { CAST_MS, CHARGE_HIT, CHARGE_MS, DRAW_FLIP_MS, DRAW_TIER, LETHAL_RELEASE, LETHAL_SLOW, LETHAL_SLOW_EXTRA, CUTIN_MS, CUTIN_SLAM, castCards, castHandSlots, castTone, controls, CHARGE_KNOCK, actingPlayer, chainEntries, viewPlayer, db, fieldScaleOf, GHOST_MS, isFxBlocking, layoutRect, MILL_MS, millBreakAt, millDuration, PLAY_HIT, useGame, type Fx, type Rect, hiddenFrom } from '../store';
 import { CardBack, CardFace } from './CardFace';
 import { sfx } from '../sfx';
 import { effects, flashScale, shakeScale } from '../gfx';
@@ -91,11 +91,567 @@ function Banner({ fx, onDone }: { fx: Extract<Fx, { kind: 'banner' }>; onDone: (
 
 // ---------------------------------------------------------------- summon cut-in
 
+/** ธีม Cut-in ตามสีหลักของการ์ด (สีที่ไม่มีธีม = แบบเดิม: แถบความเร็ว + สะเก็ดไฟ) */
+type CutInThemeName = 'fire' | 'water' | 'dark' | 'wind' | 'ice' | 'holy';
+const CUTIN_THEME: Partial<Record<string, CutInThemeName>> = { red: 'fire', blue: 'water', purple: 'dark', green: 'wind', white: 'ice', yellow: 'holy' };
+
+/** ค่าที่ทุกธีมใช้: ms(สัดส่วนเวลา) · at = จังหวะทุบ (ms) · n(เต็ม, ต่ำ) = จำนวนอนุภาคตามระดับกราฟิก */
+type ThemeArgs = { dur: number; at: number; special: boolean; n: (full: number, low: number) => number; ms: (k: number) => string };
+
+/** ม่วง = ความมืด: ความมืดคืบจากขอบจอ + วิญญาณหมุนวนเข้า → วงเวทย์อักขระกางออกใต้การ์ด → วงเวทย์หมุน + ควันมืดลอยขึ้น */
+function CutInDark({ dur, at, special, n }: ThemeArgs) {
+  const souls = n(special ? 26 : 18, 8);
+  const smoke = n(14, 6);
+  const runes = 'ᚠᚢᚦᚨᚱᚲᚷᚹᚺᚾᛁᛃᛇᛈᛉᛊᛏᛒᛖᛗᛚᛜᛞᛟ';
+  return (
+    <>
+      {/* ความมืดคืบเข้าจากขอบจอ */}
+      <div className="pointer-events-none absolute inset-0" style={{ background: 'radial-gradient(ellipse at center, transparent 22%, rgba(59,7,100,0.55) 55%, rgba(2,0,10,0.92) 85%)', animation: `ci-fade-in ${at}ms ease-in both` }} />
+      {/* วิญญาณหมุนวนเข้ากลางจอ */}
+      <div className="pointer-events-none absolute top-1/2 left-1/2" style={{ width: 0, height: 0 }}>
+        {Array.from({ length: souls }, (_, i) => {
+          const size = 6 + prand(i + 700) * 10;
+          return (
+            <span
+              key={i}
+              className="absolute rounded-full"
+              style={{
+                left: -size / 2,
+                top: -size / 2,
+                width: size,
+                height: size,
+                background: 'radial-gradient(circle, #fff 0%, #e9d5ff 30%, rgba(168,85,247,0.6) 60%, transparent 72%)',
+                boxShadow: '0 0 14px rgba(192,132,252,0.9)',
+                ['--a' as string]: `${prand(i + 710) * 360}deg`,
+                ['--r' as string]: `${32 + prand(i + 720) * 30}vmax`,
+                animation: `ci-spiral-in ${Math.round(at * (0.7 + prand(i + 730) * 0.3))}ms ${Math.round(prand(i + 740) * at * 0.25)}ms cubic-bezier(.5,0,.9,.6) both`,
+              }}
+            />
+          );
+        })}
+      </div>
+      {/* วงเวทย์กางออกใต้การ์ด แล้วหมุนช้า ๆ */}
+      <div className="pointer-events-none absolute top-1/2 left-1/2 h-[min(92vh,92vw)] w-[min(92vh,92vw)]" style={{ translate: '-50% -50%', animation: `ci-circle-in 600ms ${at}ms cubic-bezier(.2,.9,.3,1.2) both` }}>
+        <svg viewBox="-100 -100 200 200" className="h-full w-full" style={{ filter: 'drop-shadow(0 0 3px #e9d5ff) drop-shadow(0 0 10px #a855f7)', animation: 'fx-rays 14s linear infinite' }}>
+          <circle r="96" fill="none" stroke="#e9d5ff" strokeWidth="1.2" />
+          <circle r="88" fill="none" stroke="#c084fc" strokeWidth="0.6" />
+          <circle r="62" fill="none" stroke="#e9d5ff" strokeWidth="0.9" />
+          <circle r="40" fill="rgba(88,28,135,0.18)" stroke="#c084fc" strokeWidth="0.6" />
+          {/* ดาวหกแฉก */}
+          <polygon points="0,-62 53.7,31 -53.7,31" fill="none" stroke="#e9d5ff" strokeWidth="0.8" />
+          <polygon points="0,62 53.7,-31 -53.7,-31" fill="none" stroke="#e9d5ff" strokeWidth="0.8" />
+          {/* อักขระรอบวง (ลวดลาย ไม่มีความหมาย) */}
+          {Array.from({ length: 24 }, (_, i) => (
+            <text key={i} x="0" y="-90" fill="#f3e8ff" fontSize="7" textAnchor="middle" transform={`rotate(${i * 15})`}>
+              {runes[i % runes.length]}
+            </text>
+          ))}
+        </svg>
+      </div>
+      {/* ควันมืดลอยขึ้น */}
+      {Array.from({ length: smoke }, (_, i) => {
+        const size = 14 + prand(i + 760) * 22;
+        return (
+          <span
+            key={i}
+            className="pointer-events-none absolute rounded-full"
+            style={{
+              left: `${prand(i + 770) * 100}%`,
+              bottom: `${-10 + prand(i + 780) * 20}%`,
+              width: `${size}vmin`,
+              height: `${size}vmin`,
+              background: 'radial-gradient(circle, rgba(76,29,149,0.55), rgba(30,10,60,0.3) 45%, transparent 70%)',
+              ['--sway' as string]: `${(prand(i + 790) - 0.5) * 12}vw`,
+              animation: `ci-ember ${2000 + Math.round(prand(i + 800) * 1400)}ms ${at + Math.round(prand(i + 810) * dur * 0.3)}ms ease-out both`,
+            }}
+          />
+        );
+      })}
+    </>
+  );
+}
+
+/** เขียว = ลม: ใบไม้หมุนเป็นพายุเข้ากลางจอ → รอยฟันของลมโค้งหลายเส้น → ใบไม้ปลิวผ่านจอ */
+function CutInWind({ dur, at, special, n }: ThemeArgs) {
+  const leaves = n(special ? 30 : 22, 9);
+  const drift = n(special ? 22 : 16, 7);
+  const leafStyle = (i: number, size: number) => ({
+    width: size,
+    height: size * 0.55,
+    borderRadius: '0 100% 0 100%',
+    background: `linear-gradient(135deg, ${i % 3 === 0 ? '#bbf7d0' : '#4ade80'}, ${i % 2 ? '#15803d' : '#166534'})`,
+    boxShadow: '0 0 6px rgba(74,222,128,0.5)',
+  });
+  return (
+    <>
+      {/* พายุใบไม้หมุนเข้ากลางจอ (ชาร์จ) */}
+      <div className="pointer-events-none absolute top-1/2 left-1/2" style={{ width: 0, height: 0 }}>
+        {Array.from({ length: leaves }, (_, i) => {
+          const size = 16 + prand(i + 900) * 18;
+          return (
+            <span
+              key={i}
+              className="absolute"
+              style={{
+                ...leafStyle(i, size),
+                left: -size / 2,
+                top: -size / 4,
+                ['--a' as string]: `${prand(i + 910) * 360}deg`,
+                ['--r' as string]: `${30 + prand(i + 920) * 34}vmax`,
+                animation: `ci-spiral-in ${Math.round(at * (0.75 + prand(i + 930) * 0.25))}ms ${Math.round(prand(i + 940) * at * 0.2)}ms cubic-bezier(.4,0,.8,.6) both`,
+              }}
+            />
+          );
+        })}
+      </div>
+      {/* รอยฟันของลม: เส้นโค้งปาดผ่านจอตอนทุบ */}
+      <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 160 90" preserveAspectRatio="none" style={{ filter: 'drop-shadow(0 0 2px #fff) drop-shadow(0 0 6px #22c55e)' }}>
+        {[
+          'M -10 70 Q 80 -10 170 40',
+          'M -10 30 Q 70 100 170 55',
+          'M -10 85 Q 90 20 170 10',
+          'M -10 15 Q 85 70 170 80',
+          'M 20 95 Q 70 30 150 -5',
+        ]
+          .slice(0, special ? 5 : 4)
+          .map((d, i) => (
+            <path
+              key={i}
+              d={d}
+              fill="none"
+              stroke={i % 2 ? '#bbf7d0' : '#fff'}
+              strokeWidth={i === 0 ? 1.4 : 0.8}
+              strokeLinecap="round"
+              pathLength={1}
+              strokeDasharray="1"
+              style={{ animation: `ci-slash 650ms ${at + i * 70}ms cubic-bezier(.2,.8,.2,1) both` }}
+            />
+          ))}
+      </svg>
+      {/* ใบไม้ปลิวผ่านจอ (หลังทุบ) */}
+      {Array.from({ length: drift }, (_, i) => {
+        const size = 14 + prand(i + 960) * 16;
+        return (
+          <span
+            key={i}
+            className="pointer-events-none absolute"
+            style={{
+              ...leafStyle(i + 1, size),
+              left: -60,
+              top: `${prand(i + 970) * 100}%`,
+              ['--sway' as string]: `${(prand(i + 980) - 0.5) * 30}vh`,
+              ['--rot' as string]: `${(prand(i + 990) > 0.5 ? 1 : -1) * (540 + prand(i + 995) * 540)}deg`,
+              animation: `ci-drift ${1200 + Math.round(prand(i + 1000) * 900)}ms ${at + Math.round(prand(i + 1010) * dur * 0.4)}ms ease-in-out both`,
+            }}
+          />
+        );
+      })}
+    </>
+  );
+}
+
+/** ขาว = น้ำแข็ง/เหล็ก: น้ำแข็งเกาะลามจากขอบจอ → ผลึกน้ำแข็งแตกกระจาย + รอยร้าวสีน้ำแข็ง → เกล็ดน้ำแข็งร่วง */
+function CutInIce({ dur, at, special, n }: ThemeArgs) {
+  const shards = n(special ? 26 : 18, 8);
+  const flakes = n(special ? 40 : 28, 10);
+  return (
+    <>
+      {/* น้ำแข็งเกาะขอบจอ */}
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background: 'radial-gradient(ellipse at center, transparent 40%, rgba(186,230,253,0.18) 62%, rgba(224,242,254,0.55) 88%, rgba(255,255,255,0.75) 100%)',
+          animation: `ci-fade-in ${at}ms ease-in both`,
+        }}
+      />
+      {/* ผลึกน้ำแข็งที่มุมจอ (ลามเข้ามา) */}
+      {(
+        [
+          [0, 0, 0],
+          [1, 0, 90],
+          [1, 1, 180],
+          [0, 1, 270],
+        ] as const
+      ).map(([cx, cy, base], i) => (
+        // จุดมุมจอ = (0,0) ของ viewBox · กิ่งน้ำแข็งแผ่เข้าในจอ (มุม base ถึง base+90)
+        <svg
+          key={i}
+          viewBox={`${cx ? -100 : 0} ${cy ? -100 : 0} 100 100`}
+          className="pointer-events-none absolute h-[38vmin] w-[38vmin]"
+          style={{
+            ...(cx ? { right: 0 } : { left: 0 }),
+            ...(cy ? { bottom: 0 } : { top: 0 }),
+            transformOrigin: `${cx ? '100%' : '0'} ${cy ? '100%' : '0'}`,
+            filter: 'drop-shadow(0 0 4px #7dd3fc)',
+            animation: `ci-frost ${at}ms ease-out both`,
+          }}
+        >
+          {[0, 18, 36, 54, 72, 90].map((a, k) => (
+            <g key={k} transform={`rotate(${base + a})`}>
+              <line x1="0" y1="0" x2={70 - (k % 2) * 25} y2="0" stroke="#e0f2fe" strokeWidth="1.2" />
+              <line x1={22} y1="0" x2={32} y2="-8" stroke="#e0f2fe" strokeWidth="0.8" />
+              <line x1={22} y1="0" x2={32} y2="8" stroke="#e0f2fe" strokeWidth="0.8" />
+              <line x1={42} y1="0" x2={50} y2="-6" stroke="#e0f2fe" strokeWidth="0.7" />
+              <line x1={42} y1="0" x2={50} y2="6" stroke="#e0f2fe" strokeWidth="0.7" />
+            </g>
+          ))}
+        </svg>
+      ))}
+      {/* ผลึกน้ำแข็งแตกกระจายตอนทุบ */}
+      <div className="pointer-events-none absolute top-1/2 left-1/2" style={{ width: 0, height: 0 }}>
+        {Array.from({ length: shards }, (_, i) => {
+          const ang = (i / shards) * Math.PI * 2 + prand(i + 1100) * 0.4;
+          const dist = 240 + prand(i + 1110) * 300;
+          const w = 10 + prand(i + 1120) * 18;
+          // ชั้นนอกพุ่งออก (transform) · ชั้นในหมุนให้ปลายแหลมชี้ทิศที่พุ่ง (แยกกัน ไม่ให้การหมุนพาทิศพุ่งเพี้ยน)
+          return (
+            <span
+              key={i}
+              className="absolute"
+              style={{
+                left: -w / 2,
+                top: -w,
+                width: w,
+                height: w * 2.2,
+                ['--tx' as string]: `${Math.cos(ang) * dist}px`,
+                ['--ty' as string]: `${Math.sin(ang) * dist}px`,
+                animation: `fx-ci-spark 900ms ${at}ms cubic-bezier(.1,.8,.3,1) both`,
+              }}
+            >
+              <span
+                className="block h-full w-full"
+                style={{
+                  clipPath: 'polygon(50% 0, 100% 35%, 70% 100%, 20% 85%, 0 30%)',
+                  background: 'linear-gradient(160deg, #fff, #bae6fd 45%, #38bdf8 85%)',
+                  rotate: `${(ang * 180) / Math.PI + 90}deg`,
+                }}
+              />
+            </span>
+          );
+        })}
+      </div>
+      {/* เกล็ดน้ำแข็งร่วง */}
+      {Array.from({ length: flakes }, (_, i) => {
+        const size = 4 + prand(i + 1150) * 8;
+        return (
+          <span
+            key={i}
+            className="pointer-events-none absolute rounded-full"
+            style={{
+              left: `${prand(i + 1160) * 100}%`,
+              top: -20,
+              width: size,
+              height: size,
+              background: 'radial-gradient(circle, #fff 30%, rgba(224,242,254,0.6) 60%, transparent 72%)',
+              ['--sway' as string]: `${(prand(i + 1170) - 0.5) * 10}vw`,
+              ['--rot' as string]: '0deg',
+              animation: `ci-fall ${1800 + Math.round(prand(i + 1180) * 1400)}ms ${at + Math.round(prand(i + 1190) * dur * 0.4)}ms linear both`,
+            }}
+          />
+        );
+      })}
+    </>
+  );
+}
+
+/** เหลือง = แสงศักดิ์สิทธิ์: ลำแสงส่องลงจากด้านบน → แสงวาบรูปกากบาท + วงรัศมีซ้อนขยาย → ขนนกสีทองร่วง + ประกายระยิบ */
+function CutInHoly({ dur, at, special, n }: ThemeArgs) {
+  const feathers = n(special ? 18 : 12, 5);
+  const twinkles = n(special ? 30 : 20, 8);
+  return (
+    <>
+      {/* ลำแสงส่องลงจากด้านบน (ชาร์จ) */}
+      <div
+        className="pointer-events-none absolute top-0 left-1/2 h-full w-[34vw] origin-top"
+        style={{
+          translate: '-50% 0',
+          background: 'linear-gradient(to bottom, rgba(255,251,235,0.95), rgba(253,224,71,0.45) 55%, transparent)',
+          maskImage: 'linear-gradient(90deg, transparent, #000 30%, #000 70%, transparent)',
+          WebkitMaskImage: 'linear-gradient(90deg, transparent, #000 30%, #000 70%, transparent)',
+          animation: `ci-beam ${at}ms ease-in both`,
+        }}
+      />
+      <div className="pointer-events-none absolute top-1/2 left-1/2" style={{ width: 0, height: 0 }}>
+        {/* วงรัศมีสีทองซ้อนขยาย */}
+        {Array.from({ length: special ? 4 : 3 }, (_, i) => (
+          <div
+            key={i}
+            className="absolute rounded-full"
+            style={{
+              left: -130,
+              top: -130,
+              width: 260,
+              height: 260,
+              border: `${4 - Math.min(i, 2)}px solid #fde68a`,
+              boxShadow: '0 0 24px rgba(250,204,21,0.9), inset 0 0 18px rgba(255,251,235,0.7)',
+              opacity: 0,
+              animation: `ci-ripple 1.2s ${at + i * 150}ms ease-out both`,
+            }}
+          />
+        ))}
+        {/* แสงวาบรูปกากบาท */}
+        {[0, 90].map((rot) => (
+          <div
+            key={rot}
+            className="absolute rounded-full"
+            style={{
+              left: '-80vmax',
+              top: -6,
+              width: '160vmax',
+              height: 12,
+              rotate: `${rot}deg`,
+              background: 'linear-gradient(90deg, transparent, rgba(253,224,71,0.8) 30%, #fff 50%, rgba(253,224,71,0.8) 70%, transparent)',
+              boxShadow: '0 0 30px 8px rgba(253,224,71,0.7)',
+              opacity: 0,
+              animation: `ci-cross 800ms ${at}ms cubic-bezier(.1,.8,.3,1) both`,
+            }}
+          />
+        ))}
+      </div>
+      {/* ประกายระยิบ */}
+      {Array.from({ length: twinkles }, (_, i) => {
+        const size = 10 + prand(i + 1300) * 16;
+        return (
+          <span
+            key={i}
+            className="pointer-events-none absolute"
+            style={{
+              left: `${prand(i + 1310) * 100}%`,
+              top: `${prand(i + 1320) * 100}%`,
+              width: size,
+              height: size,
+              translate: '-50% -50%',
+              clipPath: 'polygon(50% 0, 60% 40%, 100% 50%, 60% 60%, 50% 100%, 40% 60%, 0 50%, 40% 40%)',
+              background: 'radial-gradient(circle, #fff, #fde047 60%)',
+              opacity: 0,
+              animation: `ci-twinkle 700ms ${at + Math.round(prand(i + 1330) * dur * 0.55)}ms ease-in-out both`,
+            }}
+          />
+        );
+      })}
+      {/* ขนนกสีทองร่วงช้า ๆ */}
+      {Array.from({ length: feathers }, (_, i) => {
+        const size = 26 + prand(i + 1350) * 20;
+        return (
+          <span
+            key={i}
+            className="pointer-events-none absolute"
+            style={{
+              left: `${prand(i + 1360) * 100}%`,
+              top: -60,
+              width: size * 0.38,
+              height: size,
+              borderRadius: '50% 50% 50% 50% / 80% 80% 20% 20%',
+              background: 'linear-gradient(90deg, #fffbeb 0 46%, #fcd34d 48% 52%, #fef3c7 54%)',
+              boxShadow: '0 0 10px rgba(253,224,71,0.7)',
+              ['--sway' as string]: `${(prand(i + 1370) - 0.5) * 16}vw`,
+              ['--rot' as string]: `${(prand(i + 1380) - 0.5) * 160}deg`,
+              animation: `ci-fall ${2200 + Math.round(prand(i + 1390) * 1200)}ms ${at + Math.round(prand(i + 1400) * dur * 0.35)}ms ease-in-out both`,
+            }}
+          />
+        );
+      })}
+    </>
+  );
+}
+
+
+
+/**
+ * ชั้นเอฟเฟกต์ประจำสีของ Cut-in (อยู่หลังการ์ด)
+ *  ไฟ (แดง): ขอบล่างร้อนแดงตอนชาร์จ → ระเบิดเพลิงตอนทุบ → เปลวไฟเลียขอบล่าง + ประกายไฟลอยขึ้น
+ *  น้ำ (ฟ้า): น้ำหมุนวนเข้ากลางจอ + ฟองอากาศ → คลื่นซัดผ่านจอ + วงน้ำกระเพื่อม + หยดน้ำกระเซ็น → แสงระลอกใต้น้ำ
+ *  ความมืด (ม่วง) / ลม (เขียว) / น้ำแข็ง (ขาว) / แสงศักดิ์สิทธิ์ (เหลือง): ดู CutInDark / CutInWind / CutInIce / CutInHoly
+ */
+function CutInTheme({ theme, dur, slam, special, rich }: { theme: CutInThemeName; dur: number; slam: number; special: boolean; rich: boolean }) {
+  const ms = (k: number) => `${Math.round(dur * k)}ms`;
+  const at = Math.round(dur * slam);
+  const n = (full: number, low: number) => (rich ? full : low);
+  const args: ThemeArgs = { dur, at, special, n, ms };
+  if (theme === 'dark') return <CutInDark {...args} />;
+  if (theme === 'wind') return <CutInWind {...args} />;
+  if (theme === 'ice') return <CutInIce {...args} />;
+  if (theme === 'holy') return <CutInHoly {...args} />;
+  if (theme === 'fire') {
+    const flames = n(12, 6);
+    const embers = n(special ? 48 : 34, 12);
+    return (
+      <>
+        {/* ความร้อนจากขอบล่าง (ตั้งแต่ชาร์จ) */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[50%]" style={{ background: 'linear-gradient(to top, rgba(234,88,12,0.6), rgba(220,38,38,0.25) 45%, transparent)', animation: `ci-fade-in ${ms(slam)} ease-in both` }} />
+        {/* เปลวไฟเลียขอบล่าง: ลุกขึ้นก่อนทุบเล็กน้อย แล้วไหวตลอด */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[40%] origin-bottom" style={{ animation: `ci-fire-in ${ms(0.14)} ${at - 160}ms ease-out both` }}>
+          {Array.from({ length: flames }, (_, i) => {
+            const x = ((i + 0.5) / flames) * 100 + (prand(i + 300) - 0.5) * 4;
+            return (
+              <span
+                key={i}
+                className="absolute bottom-[-10%] origin-bottom"
+                style={{
+                  left: `${x}%`,
+                  width: `${8 + prand(i + 310) * 9}vw`,
+                  height: `${60 + prand(i + 320) * 45}%`,
+                  translate: '-50% 0',
+                  borderRadius: '50% 50% 45% 45% / 70% 70% 30% 30%',
+                  // ขอบไล่โปร่งในตัว (ไม่ใช้ blur / blend: เปลวไฟหลายก้อนเต็มจอหนักเกินสำหรับเครื่องช้า)
+                  background: 'radial-gradient(ellipse at 50% 85%, rgba(255,247,174,0.95) 0%, rgba(253,224,71,0.9) 14%, rgba(249,115,22,0.75) 36%, rgba(220,38,38,0.45) 58%, rgba(220,38,38,0) 72%)',
+                  animation: `ci-flame ${380 + Math.round(prand(i + 330) * 320)}ms ${Math.round(prand(i + 340) * 300)}ms ease-in-out infinite alternate`,
+                }}
+              />
+            );
+          })}
+        </div>
+        {/* ระเบิดเพลิงตอนทุบ */}
+        <div
+          className="pointer-events-none absolute top-1/2 left-1/2 h-[120vmax] w-[120vmax] rounded-full"
+          style={{
+            translate: '-50% -50%',
+            background: 'radial-gradient(circle, rgba(255,255,255,0.95) 0%, rgba(253,224,71,0.9) 9%, rgba(249,115,22,0.75) 22%, rgba(220,38,38,0.5) 38%, rgba(127,29,29,0.3) 52%, transparent 64%)',
+            opacity: 0,
+            animation: `ci-blast ${special ? 950 : 750}ms ${at}ms cubic-bezier(.1,.8,.3,1) forwards`,
+          }}
+        />
+        {/* ประกายไฟลอยขึ้น */}
+        {Array.from({ length: embers }, (_, i) => {
+          const size = 2 + prand(i + 400) * 5;
+          return (
+            <span
+              key={i}
+              className="pointer-events-none absolute rounded-full"
+              style={{
+                left: `${prand(i + 410) * 100}%`,
+                bottom: `${prand(i + 420) * 35 - 5}%`,
+                width: size,
+                height: size,
+                background: i % 4 === 0 ? '#fff7ae' : '#fb923c',
+                boxShadow: `0 0 ${size * 3}px #f97316`,
+                ['--sway' as string]: `${(prand(i + 430) - 0.5) * 14}vw`,
+                animation: `ci-ember ${1300 + Math.round(prand(i + 440) * 1400)}ms ${at + Math.round(prand(i + 450) * dur * 0.45)}ms ease-out both`,
+              }}
+            />
+          );
+        })}
+      </>
+    );
+  }
+  // น้ำ
+  const bubbles = n(special ? 30 : 22, 9);
+  const drops = n(special ? 30 : 22, 10);
+  return (
+    <>
+      {/* น้ำหมุนวนเข้ากลางจอ (ชาร์จ) */}
+      <div className="pointer-events-none absolute top-1/2 left-1/2 h-[95vmin] w-[95vmin]" style={{ translate: '-50% -50%', animation: `ci-swirl ${ms(slam + 0.06)} ease-in both` }}>
+        <div
+          className="h-full w-full rounded-full"
+          style={{
+            background: 'conic-gradient(from 0deg, transparent, rgba(56,189,248,0.6), transparent 22%, rgba(14,165,233,0.5) 48%, transparent 60%, rgba(186,230,253,0.55) 80%, transparent)',
+            maskImage: 'radial-gradient(circle, transparent 16%, #000 30%, transparent 70%)',
+            WebkitMaskImage: 'radial-gradient(circle, transparent 16%, #000 30%, transparent 70%)',
+            animation: 'fx-rays 0.9s linear infinite',
+          }}
+        />
+      </div>
+      {/* แสงระลอกใต้น้ำ (หลังทุบ) */}
+      <div className="pointer-events-none absolute inset-0" style={{ opacity: 0, animation: `ci-fade-in 500ms ${at}ms ease-out forwards` }}>
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              'repeating-radial-gradient(ellipse at 30% 25%, rgba(186,230,253,0.16) 0 3px, transparent 3px 44px), repeating-radial-gradient(ellipse at 72% 78%, rgba(125,211,252,0.13) 0 4px, transparent 4px 60px), linear-gradient(to bottom, rgba(14,116,144,0.25), rgba(8,47,73,0.35))',
+            animation: 'ci-caustic 3.2s linear infinite alternate',
+          }}
+        />
+      </div>
+      {/* คลื่นซัดผ่านจอตอนทุบ */}
+      <svg
+        className="pointer-events-none absolute top-1/2 left-0 h-[75vh] w-[220%]"
+        viewBox="0 0 220 50"
+        preserveAspectRatio="none"
+        style={{ translate: '0 -50%', opacity: 0, animation: `ci-wave ${special ? 1000 : 800}ms ${at - 40}ms cubic-bezier(.25,.7,.3,1) both` }}
+      >
+        <defs>
+          <linearGradient id="ci-wave-g" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#e0f2fe" stopOpacity="0.95" />
+            <stop offset="0.25" stopColor="#38bdf8" stopOpacity="0.85" />
+            <stop offset="0.7" stopColor="#0369a1" stopOpacity="0.55" />
+            <stop offset="1" stopColor="#0c4a6e" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path d="M0 26 Q 13.75 12 27.5 26 T 55 26 T 82.5 26 T 110 26 T 137.5 26 T 165 26 T 192.5 26 T 220 26 V50 H0 Z" fill="url(#ci-wave-g)" />
+        <path d="M0 26 Q 13.75 12 27.5 26 T 55 26 T 82.5 26 T 110 26 T 137.5 26 T 165 26 T 192.5 26 T 220 26" fill="none" stroke="#fff" strokeWidth="0.7" strokeOpacity="0.9" />
+      </svg>
+      <div className="pointer-events-none absolute top-1/2 left-1/2" style={{ width: 0, height: 0 }}>
+        {/* วงน้ำกระเพื่อม (วงรีแบน = มองจากมุมเฉียง) */}
+        {Array.from({ length: special ? 5 : 4 }, (_, i) => (
+          <div
+            key={i}
+            className="absolute rounded-full"
+            style={{
+              left: -170,
+              top: -60,
+              width: 340,
+              height: 120,
+              border: `${3 - Math.min(i, 2)}px solid rgba(224,242,254,0.9)`,
+              boxShadow: '0 0 18px rgba(56,189,248,0.8), inset 0 0 12px rgba(186,230,253,0.6)',
+              opacity: 0,
+              animation: `ci-ripple 1.1s ${at + i * 130}ms ease-out both`,
+            }}
+          />
+        ))}
+        {/* หยดน้ำกระเซ็น (พุ่งออกแล้วตกลง) */}
+        {Array.from({ length: drops }, (_, i) => {
+          const ang = -Math.PI / 2 + (prand(i + 500) - 0.5) * Math.PI * 1.5;
+          const dist = 180 + prand(i + 510) * 280;
+          const size = 5 + prand(i + 520) * 8;
+          return (
+            <span
+              key={i}
+              className="absolute"
+              style={{
+                left: -size / 2,
+                top: -size / 2,
+                width: size,
+                height: size * 1.35,
+                borderRadius: '50% 50% 50% 50% / 60% 60% 40% 40%',
+                background: 'radial-gradient(circle at 35% 30%, #fff, #7dd3fc 45%, #0284c7)',
+                boxShadow: '0 0 8px rgba(56,189,248,0.8)',
+                ['--tx' as string]: `${Math.cos(ang) * dist}px`,
+                ['--ty' as string]: `${Math.sin(ang) * dist}px`,
+                animation: `ci-drop ${900 + Math.round(prand(i + 530) * 400)}ms ${at}ms cubic-bezier(.2,.7,.4,1) both`,
+              }}
+            />
+          );
+        })}
+      </div>
+      {/* ฟองอากาศลอยขึ้นตลอดฉาก */}
+      {Array.from({ length: bubbles }, (_, i) => {
+        const size = 6 + prand(i + 600) * 22;
+        return (
+          <span
+            key={i}
+            className="pointer-events-none absolute rounded-full"
+            style={{
+              left: `${prand(i + 610) * 100}%`,
+              bottom: -40,
+              width: size,
+              height: size,
+              border: '1.5px solid rgba(224,242,254,0.75)',
+              background: 'radial-gradient(circle at 32% 28%, rgba(255,255,255,0.85) 0 12%, rgba(125,211,252,0.15) 40%, transparent 70%)',
+              ['--sway' as string]: `${(prand(i + 620) - 0.5) * 10}vw`,
+              animation: `ci-bubble ${1700 + Math.round(prand(i + 630) * 1500)}ms ${Math.round(prand(i + 640) * dur * 0.7)}ms ease-in both`,
+            }}
+          />
+        );
+      })}
+    </>
+  );
+}
+
 /**
  * Cut-in อัญเชิญ X-Rare (special = XX/XV ยาวและอลังกว่า)
  *  แสงวาบ → แถบเฉียงสีของการ์ด 2 แถบปาดสวนกัน (เส้นความเร็ว) + แถบดำบน/ล่าง
  *  → การ์ดพุ่งเข้าจากด้านข้างแบบ 3 มิติ ทุบกลางจอ (จอสั่น + คลื่นกระแทก + สะเก็ดไฟ + แสงปาดหน้าการ์ด)
- *  → ชื่อการ์ดตัวยักษ์วิ่งอยู่ด้านหลัง · ตรา "X RARE" ประทับ · ป้ายชื่อ/เลเวล/BP เลื่อนเข้า
+ *  → ชื่อการ์ดตัวยักษ์วิ่งอยู่ด้านหลัง · ป้ายชื่อ/เลเวล/BP เลื่อนเข้า
  *  → การ์ดยุบลงกลางจอ (ภาพการ์ดบินลงสนามรับช่วงต่อจากกลางจอ)
  */
 function SummonCutIn({ fx, onDone }: { fx: Extract<Fx, { kind: 'summon' }>; onDone: () => void }) {
@@ -131,8 +687,10 @@ function SummonCutIn({ fx, onDone }: { fx: Extract<Fx, { kind: 'summon' }>; onDo
   const ray = COLOR_HEX[main] ?? '#ef4444';
   const rich = effects().matMotion;
   const ms = (k: number) => `${Math.round(dur * k)}ms`;
-  const sparks = rich ? (fx.special ? 28 : 18) : 0;
+  const sparks = rich && !CUTIN_THEME[main] ? (fx.special ? 28 : 18) : 0;
   const rarity = (def.rarity ?? 'X').toUpperCase();
+  // ธีมตามสีหลัก (แดง = ไฟ, ฟ้า = น้ำ) · สีอื่นใช้แถบความเร็ว + สะเก็ดไฟแบบเดิม
+  const theme = CUTIN_THEME[main] ?? null;
   // แถบความเร็ว: สีการ์ด + เส้นขาวบาง ๆ วิ่ง
   const band = (dir: 1 | -1, top: string, delay: number) => (
     <div
@@ -190,6 +748,7 @@ function SummonCutIn({ fx, onDone }: { fx: Extract<Fx, { kind: 'summon' }>; onDo
           animation: `fx-rays 10s linear infinite, fx-ci-after ${ms(0.1)} ${ms(SLAM)} ease-out both`,
         }}
       />
+      {theme && <CutInTheme theme={theme} dur={dur} slam={SLAM} special={!!fx.special} rich={rich} />}
       {/* ทุบ: เส้นความเร็วระเบิดออกจากกลางจอ */}
       <div
         className="pointer-events-none absolute top-1/2 left-1/2 h-[200vmax] w-[200vmax]"
@@ -202,7 +761,8 @@ function SummonCutIn({ fx, onDone }: { fx: Extract<Fx, { kind: 'summon' }>; onDo
         }}
       />
       {/* ทุบ: รอยร้าวแตกออกจากจุดกระแทก */}
-      <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="-50 -50 100 100" preserveAspectRatio="xMidYMid slice" style={{ filter: `drop-shadow(0 0 2px #fff) drop-shadow(0 0 6px ${ray})` }}>
+      {(!theme || theme === 'fire' || theme === 'ice') && (
+      <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="-50 -50 100 100" preserveAspectRatio="xMidYMid slice" style={{ filter: theme === 'fire' ? 'drop-shadow(0 0 2px #fde047) drop-shadow(0 0 8px #f97316) drop-shadow(0 0 14px #dc2626)' : theme === 'ice' ? 'drop-shadow(0 0 2px #fff) drop-shadow(0 0 8px #38bdf8)' : `drop-shadow(0 0 2px #fff) drop-shadow(0 0 6px ${ray})` }}>
         {Array.from({ length: fx.special ? 11 : 8 }, (_, i) => {
           const n = fx.special ? 11 : 8;
           const a = (i / n) * Math.PI * 2 + prand(i + 70) * 0.5;
@@ -217,8 +777,8 @@ function SummonCutIn({ fx, onDone }: { fx: Extract<Fx, { kind: 'summon' }>; onDo
               key={i}
               points={pts.join(' ')}
               fill="none"
-              stroke="#fff"
-              strokeWidth={i % 3 === 0 ? 0.6 : 0.35}
+              stroke={theme === 'fire' ? '#fed7aa' : theme === 'ice' ? '#e0f2fe' : '#fff'}
+              strokeWidth={(i % 3 === 0 ? 0.6 : 0.35) * (theme === 'fire' ? 1.4 : 1)}
               pathLength={1}
               strokeDasharray="1"
               style={{ animation: `fx-ci-crack 0.9s ${Math.round(dur * SLAM)}ms ease-out both` }}
@@ -226,6 +786,7 @@ function SummonCutIn({ fx, onDone }: { fx: Extract<Fx, { kind: 'summon' }>; onDo
           );
         })}
       </svg>
+      )}
       {fx.special && (
         <>
           <div
@@ -245,8 +806,8 @@ function SummonCutIn({ fx, onDone }: { fx: Extract<Fx, { kind: 'summon' }>; onDo
         </>
       )}
       {/* แถบเฉียงปาดสวนกัน */}
-      {band(1, '14%', 0)}
-      {band(-1, '62%', 0.02)}
+      {!theme && band(1, '14%', 0)}
+      {!theme && band(-1, '62%', 0.02)}
       {/* ชื่อการ์ดตัวยักษ์วิ่งอยู่ด้านหลัง */}
       <div className="pointer-events-none absolute top-1/2 left-0 flex -translate-y-1/2 whitespace-nowrap" style={{ animation: `fx-ci-marquee ${dur * 1.6}ms linear both` }}>
         {[0, 1].map((i) => (
@@ -264,7 +825,7 @@ function SummonCutIn({ fx, onDone }: { fx: Extract<Fx, { kind: 'summon' }>; onDo
       <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-black" style={{ animation: `fx-ci-bar ${ms(0.18)} ease-out both`, boxShadow: `0 -2px 0 ${ray}` }} />
       {/* คลื่นกระแทกตอนทุบ */}
       <div className="pointer-events-none absolute top-1/2 left-1/2" style={{ width: 0, height: 0 }}>
-        {[0, 1, 2].slice(0, fx.special ? 3 : 2).map((i) => (
+        {[0, 1, 2].slice(0, theme === 'water' || theme === 'dark' || theme === 'holy' ? 0 : fx.special ? 3 : 2).map((i) => (
           <div
             key={i}
             className="absolute rounded-full"
@@ -321,20 +882,6 @@ function SummonCutIn({ fx, onDone }: { fx: Extract<Fx, { kind: 'summon' }>; onDo
             />
           )}
         </div>
-        {/* ตราความหายาก ประทับมุมการ์ด */}
-        <div
-          className="pointer-events-none absolute -top-6 -right-10 rounded-md border-4 px-3 py-1 text-2xl font-black tracking-widest italic"
-          style={{
-            borderColor: fx.special ? '#fde047' : '#fff',
-            color: fx.special ? '#fde047' : '#fff',
-            background: 'rgba(2,6,23,0.85)',
-            textShadow: `0 0 12px ${ray}`,
-            boxShadow: `0 0 20px ${ray}`,
-            animation: `fx-ci-stamp 0.45s ${ms(SLAM + 0.08)} cubic-bezier(.2,.9,.3,1.4) both`,
-          }}
-        >
-          {rarity} RARE
-        </div>
       </div>
       {/* ป้ายชื่อ */}
       <div
@@ -362,6 +909,140 @@ function SummonCutIn({ fx, onDone }: { fx: Extract<Fx, { kind: 'summon' }>; onDo
         // forwards (ไม่ใช่ both): ก่อนถึงจังหวะทุบต้องมองไม่เห็น
         style={{ background: `radial-gradient(circle, #fff 0%, #fff 35%, ${ray} 80%)`, opacity: 0, animation: `fx-ci-flash ${Math.round(260 * flashScale())}ms ${ms(SLAM)} ease-out forwards` }}
       />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- draw reveal
+
+/**
+ * กดจั่วใน Draw Step: การ์ดที่ลอยอยู่กลางจอพลิกเปิดหน้าก่อนบินเข้ามือ (เฉพาะจอของคนจั่ว)
+ * แยกลีลาตามระดับความหายาก (DRAW_TIER ใน store): ปกติ = พลิกเฉย ๆ · R = แสงฟ้าวาบ + แสงปาดหน้าการ์ด
+ * M = รัศมีทองหมุน + ประกาย · X ขึ้นไป = รัศมีรุ้ง + แสงวาบ + ประกายมากกว่า และค้างนานที่สุด
+ */
+function DrawReveal({ fx, onDone }: { fx: Extract<Fx, { kind: 'drawReveal' }>; onDone: () => void }) {
+  const tier = DRAW_TIER[fx.tier] ?? DRAW_TIER[0]!;
+  const dimMs = fx.dimMs ?? tier.ms;
+  useAutoDismiss(onDone, fx.delay + Math.max(tier.ms, dimMs));
+  // แสดงเมื่อถึงคิวเท่านั้น (จั่วหลายใบ: ใบถัดไปไม่โผล่ทับใบที่กำลังเปิด)
+  const [shown, setShown] = useState(fx.delay <= 0);
+  useEffect(() => {
+    if (fx.delay <= 0) return;
+    const t = setTimeout(() => setShown(true), fx.delay);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const ref = useRef<HTMLDivElement>(null);
+  const def = db.get(fx.cardNo);
+  // ขนาดตอนเปิดหน้า: ใหญ่ขึ้นจากการ์ดที่ลอยอยู่ (ระดับสูงขยายมากกว่า) จุดกึ่งกลางเดิม
+  const k = tier.scale;
+  const cx = fx.rect.x + fx.rect.w / 2;
+  const cy = fx.rect.y + fx.rect.h / 2;
+  const w = fx.rect.w * k;
+  const h = fx.rect.h * k;
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || !shown) return;
+    const flipEnd = DRAW_FLIP_MS / tier.ms;
+    const anim = el.animate(
+      [
+        { transform: `scale(${1 / k}) rotateY(180deg)` },
+        { transform: `scale(${(1 + 1 / k) / 2}) rotateY(90deg)`, offset: flipEnd * 0.5 },
+        { transform: 'scale(1.06) rotateY(0deg)', offset: flipEnd, easing: 'ease-out' },
+        { transform: 'scale(1) rotateY(0deg)', offset: Math.min(0.95, flipEnd + 0.12) },
+        { transform: 'scale(1) rotateY(0deg)' },
+      ],
+      { duration: tier.ms, easing: 'cubic-bezier(.3,.7,.3,1)', fill: 'both' },
+    );
+    return () => anim.cancel();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shown]);
+  if (!shown) return null;
+  // จังหวะที่หน้าการ์ดหันมา (นับจากตอนแสดง · เอฟเฟกต์ตามระดับเริ่มตรงนี้)
+  const atMs = Math.round(DRAW_FLIP_MS * 0.55);
+  const at = `${atMs}ms`;
+  const glow = tier.glow;
+  return (
+    <div className="pointer-events-none fixed inset-0 z-[45]">
+      {/* พื้นมืด (ต่อจากหน้ากดจั่ว) แล้วจางออกตอนการ์ดบินเข้ามือ */}
+      {!fx.noDim && <div className="absolute inset-0 bg-black/40" style={{ animation: `draw-dim-out ${dimMs}ms linear both` }} />}
+      {/* การ์ด + เอฟเฟกต์ของใบนี้หายไปตอนบินเข้ามือ (ใบแรกที่ถือพื้นมืดไว้ต่อ ต้องไม่ค้างกลางจอ) */}
+      <div className="absolute" style={{ left: cx, top: cy, width: 0, height: 0, animation: `draw-gone 1ms ${tier.ms}ms forwards` }}>
+        {/* M ขึ้นไป: รัศมีหมุนหลังการ์ด (ทอง / รุ้ง) */}
+        {tier.rays && (
+          <div
+            className="absolute h-[70vmin] w-[70vmin] rounded-full"
+            style={{
+              left: '-35vmin',
+              top: '-35vmin',
+              background: tier.rays,
+              maskImage: 'radial-gradient(circle, #000 18%, transparent 68%)',
+              WebkitMaskImage: 'radial-gradient(circle, #000 18%, transparent 68%)',
+              opacity: 0,
+              animation: `ci-fade-in 300ms ${at} ease-out forwards, fx-rays 6s linear infinite`,
+            }}
+          />
+        )}
+        {/* R ขึ้นไป: วงแสงขยายออกตอนเปิดหน้า */}
+        {glow &&
+          Array.from({ length: tier.rings }, (_, i) => (
+            <div
+              key={i}
+              className="absolute rounded-full"
+              style={{
+                left: -w * 0.6,
+                top: -w * 0.6,
+                width: w * 1.2,
+                height: w * 1.2,
+                border: `3px solid ${glow}`,
+                boxShadow: `0 0 24px ${glow}`,
+                opacity: 0,
+                animation: `ci-ripple 900ms ${atMs + i * 140}ms ease-out both`,
+              }}
+            />
+          ))}
+        {/* M ขึ้นไป: ประกายรูปดาวกระจาย */}
+        {Array.from({ length: tier.sparkles }, (_, i) => {
+          const ang = (i / tier.sparkles) * Math.PI * 2 + prand(i + 1500) * 0.5;
+          const dist = w * (0.75 + prand(i + 1510) * 0.9);
+          const size = 10 + prand(i + 1520) * 14;
+          return (
+            <span
+              key={i}
+              className="absolute"
+              style={{
+                left: Math.cos(ang) * dist - size / 2,
+                top: Math.sin(ang) * dist - size / 2,
+                width: size,
+                height: size,
+                clipPath: 'polygon(50% 0, 60% 40%, 100% 50%, 60% 60%, 50% 100%, 40% 60%, 0 50%, 40% 40%)',
+                background: tier.rainbow ? `hsl(${(i * 47) % 360} 95% 75%)` : 'radial-gradient(circle, #fff, #fde047 60%)',
+                opacity: 0,
+                animation: `ci-twinkle 700ms ${atMs + Math.round(prand(i + 1530) * 500)}ms ease-in-out both`,
+              }}
+            />
+          );
+        })}
+        {/* การ์ด: หลังการ์ด → พลิกเปิดหน้า */}
+        <div className="absolute" style={{ left: -w / 2, top: -h / 2, width: w, height: h, perspective: 1000 }}>
+          <div ref={ref} className="relative h-full w-full" style={{ transformStyle: 'preserve-3d' }}>
+            <div className="absolute inset-0 overflow-hidden rounded-lg" style={{ backfaceVisibility: 'hidden', boxShadow: glow ? `0 0 0 2px ${glow}, 0 0 30px ${glow}, 0 20px 40px rgba(0,0,0,0.6)` : '0 0 0 2px rgba(186,230,253,0.9), 0 20px 40px rgba(0,0,0,0.6)' }}>
+              <CardFace def={def} />
+              {/* R ขึ้นไป: แสงปาดหน้าการ์ด */}
+              {glow && <div className="absolute -inset-y-[20%] left-0 w-1/3" style={{ background: 'linear-gradient(100deg, transparent, rgba(255,255,255,0.85), transparent)', animation: `fx-cl-sheen 0.7s ${at} ease-in-out both` }} />}
+            </div>
+            <div className="absolute inset-0 overflow-hidden rounded-lg" style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}>
+              <CardBack />
+            </div>
+          </div>
+        </div>
+      </div>
+      {/* X ขึ้นไป: แสงวาบทั้งจอตอนเปิดหน้า */}
+      {tier.flash && (
+        <div className="absolute inset-0" style={{ opacity: flashScale() }}>
+          <div className="absolute inset-0" style={{ background: 'radial-gradient(circle, #fff 0%, rgba(255,255,255,0.6) 30%, transparent 70%)', opacity: 0, animation: `fx-ci-flash 420ms ${at} ease-out forwards` }} />
+        </div>
+      )}
     </div>
   );
 }
@@ -453,6 +1134,10 @@ export function FxLayer() {
           <Ghost key={f.id} fx={f} onDone={() => dismiss(f.id)} />
         ) : f.kind === 'charge' ? (
           <Charge key={f.id} fx={f} onDone={() => dismiss(f.id)} />
+        ) : f.kind === 'drawReveal' ? (
+          <DrawReveal key={f.id} fx={f} onDone={() => dismiss(f.id)} />
+        ) : f.kind === 'finalBlowBanner' ? (
+          <FinalBlowBanner key={f.id} fx={f} onDone={() => dismiss(f.id)} />
         ) : f.kind === 'cardActivate' ? (
           <CardActivate key={f.id} fx={f} onDone={() => dismiss(f.id)} />
         ) : f.kind === 'spell' ? (
@@ -502,12 +1187,12 @@ const COLOR_HEX: Record<string, string> = { red: '#ef4444', purple: '#a855f7', g
 
 /** จอสั่นตามการตั้งค่า (ตั้งค่า → กราฟิก → จอสั่น): points = ระยะ px ของแต่ละจังหวะ ก่อนคูณความแรง */
 function shakeMain(points: [number, number][], duration: number) {
-  shakeEl(document.querySelector('main'), points, duration);
+  return shakeEl(document.querySelector('main'), points, duration);
 }
 function shakeEl(el: Element | null | undefined, points: [number, number][], duration: number) {
   const k = shakeScale();
   if (k === 0) return;
-  el?.animate(
+  return el?.animate(
     [{ transform: 'translate(0,0)' }, ...points.map(([x, y]) => ({ transform: `translate(${x * k}px,${y * k}px)` })), { transform: 'translate(0,0)' }],
     { duration, easing: 'ease-out' },
   );
@@ -780,7 +1465,7 @@ function FlyCard({ fx, onDone }: { fx: Extract<Fx, { kind: 'fly' }>; onDone: () 
       } else
       anim = el.animate(
         fx.mode === 'draw'
-          ? [frame(from, { opacity: 0.6 }), frame(to, { opacity: 1 })]
+          ? [frame(from, { opacity: fx.fromReveal ? 1 : 0.6 }), frame(to, { opacity: 1 })]
           : fx.mode === 'move'
             ? [
                 frame(from, { opacity: 1, transform: `rotate(${fx.fromRotate ?? 0}deg)`, filter: fx.fromRotate ? 'brightness(0.75)' : 'none' }),
@@ -1077,37 +1762,44 @@ function FinalBlow({ fx, onDone }: { fx: Extract<Fx, { kind: 'finalBlow' }>; onD
       setMat(layoutRect(document.querySelector(`[data-mat="${fx.loser}"]`)));
       setOn(true);
     }, fx.delay);
-    const b = setTimeout(onDone, fx.delay + 2600);
+    const b = setTimeout(onDone, fx.delay + 2600 + LETHAL_SLOW_EXTRA);
     return () => [a, b].forEach(clearTimeout);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useLayoutEffect(() => {
     if (!on) return;
-    // เวลาเกือบหยุด: แอนิเมชันอื่นบนจอเล่นช้าลงชั่วครู่
-    const slowed = document.getAnimations().filter((x) => {
-      const target = (x.effect as KeyframeEffect | null)?.target;
-      return !(target && ref.current?.contains(target));
-    });
-    slowed.forEach((x) => (x.playbackRate = 0.1));
-    const restore = setTimeout(() => slowed.forEach((x) => (x.playbackRate = 1)), 750);
-    // จอสั่นแรงหลังแสงวาบ
-    const shake = setTimeout(
-      () =>
-        shakeMain(
-          [
-            [-16, 9],
-            [14, -10],
-            [-10, 6],
-            [6, -4],
-          ],
-          450,
-        ),
-      420,
-    );
+    // สโลว์โมชันทั้งจอ: ทุกแอนิเมชัน (รวมระเบิด ตัวเลข การ์ดที่ชน และฉากนี้เอง) ช้าลง ค้างไว้ แล้วค่อย ๆ เร่งกลับปกติ
+    // ตั้งทุกเฟรม เพื่อให้แอนิเมชันที่เพิ่งเริ่มระหว่างนี้ช้าตามด้วย
+    const { rate, hold, ramp } = LETHAL_SLOW;
+    const t0 = performance.now();
+    let raf = 0;
+    const tick = () => {
+      const t = performance.now() - t0;
+      const u = t <= hold ? 0 : Math.min(1, (t - hold) / ramp);
+      const r = rate + (1 - rate) * u * u;
+      // จอสั่นตอนปล่อย: ไม่ทำให้ช้า
+      for (const x of document.getAnimations()) if (!(x as Animation & { _noSlow?: boolean })._noSlow) x.playbackRate = r;
+      if (u < 1) raf = requestAnimationFrame(tick);
+    };
+    tick();
+    // ปล่อย: จอสั่นแรง (ระเบิดถึงจุดพีค)
+    const shake = setTimeout(() => {
+      const a = shakeMain(
+        [
+          [-22, 12],
+          [18, -14],
+          [-14, 9],
+          [10, -6],
+          [-5, 3],
+        ],
+        650,
+      );
+      if (a) (a as Animation & { _noSlow?: boolean })._noSlow = true;
+    }, LETHAL_RELEASE);
     return () => {
-      clearTimeout(restore);
+      cancelAnimationFrame(raf);
       clearTimeout(shake);
-      slowed.forEach((x) => (x.playbackRate = 1));
+      document.getAnimations().forEach((x) => (x.playbackRate = 1));
     };
   }, [on]);
   if (!on) return null;
@@ -1158,12 +1850,45 @@ function FinalBlow({ fx, onDone }: { fx: Extract<Fx, { kind: 'finalBlow' }>; onD
           }}
         />
       ))}
-      {/* แถบเหลืองแนวตั้งสองข้างจอ: ข้อความ "Final Blow !" วิ่งสวนกัน */}
+      {/* แสงวาบ */}
+      <div className="absolute inset-0" style={{ opacity: flashScale() }}>
+        <div className="absolute inset-0 bg-white" style={{ animation: 'fx-fb-flash 0.55s ease-out both' }} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * แถบเหลืองแนวตั้งสองข้างจอ "Final Blow !" วิ่งสวนกัน
+ * ขึ้นตอนประกาศโจมตีที่ถ้าไม่ป้องกัน Life คู่แข่งจะเป็น 0 · ค้างไว้จนการต่อสู้นี้จบ แล้วเลื่อนออก
+ */
+function FinalBlowBanner({ fx, onDone }: { fx: Extract<Fx, { kind: 'finalBlowBanner' }>; onDone: () => void }) {
+  const [on, setOn] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  // ยังอยู่ในการต่อสู้นี้: การต่อสู้ยังไม่จบ / ภาพวิ่งชนยังเล่นอยู่ / ฉาก FINAL BLOW (Life เป็น 0) ยังเล่นอยู่
+  const active = useGame(
+    (s) => s.state.battle?.attackerId === fx.attackerId || s.fx.some((f) => (f.kind === 'charge' && f.cardId === fx.attackerId) || f.kind === 'finalBlow' || (f.kind === 'damage' && !!f.lethal)),
+  );
+  useEffect(() => {
+    const t = setTimeout(() => setOn(true), fx.delay);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (!on || active) return;
+    setLeaving(true);
+    const t = setTimeout(onDone, 450);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [on, active]);
+  if (!on) return null;
+  return (
+    <div className={`${BOARD} pointer-events-none z-[59] overflow-hidden`}>
       {(['left', 'right'] as const).map((side) => (
         <div
           key={side}
           className={`absolute inset-y-0 ${side === 'left' ? 'left-0' : 'right-0'} w-16 overflow-hidden bg-gradient-to-b from-lime-200 via-yellow-300 to-lime-200 shadow-[0_0_24px_rgba(190,242,100,0.8)]`}
-          style={{ '--from': side === 'left' ? '-110%' : '110%', animation: 'fx-fb-banner-in 2.6s cubic-bezier(.2,.9,.3,1) 0.25s both' } as React.CSSProperties}
+          style={{ '--from': side === 'left' ? '-110%' : '110%', animation: leaving ? 'fx-fb-bar-out 0.45s ease-in both' : 'fx-fb-bar-in 0.4s cubic-bezier(.2,.9,.3,1) both' } as React.CSSProperties}
         >
           <div
             className="absolute inset-x-0 top-0 flex flex-col items-center"
@@ -1181,10 +1906,6 @@ function FinalBlow({ fx, onDone }: { fx: Extract<Fx, { kind: 'finalBlow' }>; onD
           </div>
         </div>
       ))}
-      {/* แสงวาบ */}
-      <div className="absolute inset-0" style={{ opacity: flashScale() }}>
-        <div className="absolute inset-0 bg-white" style={{ animation: 'fx-fb-flash 0.55s ease-out both' }} />
-      </div>
     </div>
   );
 }
@@ -2395,18 +3116,8 @@ function Damage({ fx, onDone }: { fx: Extract<Fx, { kind: 'damage' }>; onDone: (
       if (!mat) return onDone();
       setPos({ x: mat.x + mat.w / 2, y: mat.y + mat.h / 2 });
       // ระเบิด: จอสั่น (ครั้งที่ Life หมด = แรงและนานกว่า)
-      if (fx.lethal)
-        shakeMain(
-          [
-            [-22, 12],
-            [18, -14],
-            [-14, 9],
-            [10, -6],
-            [-5, 3],
-          ],
-          650,
-        );
-      else if (fx.big)
+      // ครั้งที่ Life หมด: จอสั่นตอนปล่อยสโลว์ (อยู่ใน FinalBlow)
+      if (fx.big && !fx.lethal)
         shakeMain(
           [
             [-10, 6],
@@ -2420,7 +3131,7 @@ function Damage({ fx, onDone }: { fx: Extract<Fx, { kind: 'damage' }>; onDone: (
         { duration: 900, easing: 'ease-out' },
       );
     }, fx.delay);
-    const done = setTimeout(onDone, fx.delay + 1500);
+    const done = setTimeout(onDone, fx.delay + 1500 + (fx.lethal ? LETHAL_SLOW_EXTRA : 0));
     return () => {
       clearTimeout(t);
       clearTimeout(done);

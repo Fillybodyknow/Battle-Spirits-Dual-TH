@@ -131,8 +131,8 @@ function GraphicsTab() {
             value={cutIn}
             disabled={!animations}
             options={[
-              { v: 'first' as CutInMode, label: 'ครั้งแรก' },
               { v: 'always' as CutInMode, label: 'ทุกครั้ง' },
+              { v: 'first' as CutInMode, label: 'ครั้งแรก' },
               { v: 'off' as CutInMode, label: 'ปิด' },
             ]}
             onChange={setCutIn}
