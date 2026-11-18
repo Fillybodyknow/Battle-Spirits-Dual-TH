@@ -23,6 +23,30 @@ const COLORS: { id: Color; swatch: string }[] = [
 const MAX = DEFAULT_DECK_RULES.maxCopiesPerName;
 const MIN = DEFAULT_DECK_RULES.minCards;
 
+/** ช่วงคอสต์ (7 = 7 ขึ้นไป) */
+const COSTS = [0, 1, 2, 3, 4, 5, 6, 7];
+const costBucket = (c: CardDef) => Math.min(7, c.cost);
+/** ระดับความหายาก (X = X-Rare ขึ้นไป) */
+const RARITIES = ['C', 'U', 'R', 'M', 'X'];
+const rarityCode = (c: CardDef) => {
+  const r = rarityOf(c.rarity);
+  return !r ? '' : r.rank >= 5 ? 'X' : r.code;
+};
+/** ความสามารถ/คำสำคัญ (ค้นจากข้อความการ์ด) */
+const KEYWORDS: { id: string; label: string; test: (c: CardDef, text: string) => boolean }[] = [
+  { id: 'burst', label: 'Burst', test: (c) => !!c.burst },
+  { id: 'soul', label: 'Soul Burst', test: (_c, t) => t.includes('Soul Burst') },
+  { id: 'flash', label: 'Flash', test: (_c, t) => t.includes('Flash') },
+  { id: 'quick', label: 'Quick', test: (_c, t) => t.includes('Quick') },
+  { id: 'catalyze', label: 'Catalyze', test: (_c, t) => t.includes('Catalyze') },
+  { id: 'kagemusha', label: 'Kagemusha', test: (_c, t) => t.includes('Kagemusha') },
+  { id: 'evolution', label: 'Evolution', test: (_c, t) => t.includes('Evolution') },
+  { id: 'shield', label: 'Shield', test: (_c, t) => t.includes('Shield') },
+  { id: 'soulcore', label: 'ใช้ Soul Core', test: (_c, t) => t.includes('โซลคอร์') || t.includes('Soul Core') },
+];
+const cardText = (c: CardDef) =>
+  [...(c.effects as { text?: string }[]).map((e) => e.text ?? ''), typeof c.burst === 'string' ? c.burst : JSON.stringify(c.burst ?? '')].join(' ');
+
 /** ชุดการ์ดจากรหัส (BS01-SP-R001 → BS01) */
 const setOf = (cardNo: string) => cardNo.split('-')[0]!;
 /** เรียงการ์ด: ประเภท → คอสต์ → รหัส */
@@ -77,16 +101,38 @@ export function DeckBuilder() {
   const [colors, setColors] = useState<Color[]>([]);
   const [types, setTypes] = useState<CardType[]>([]);
   const [set, setSet] = useState<string>('all');
+  const [costs, setCosts] = useState<number[]>([]);
+  const [rarities, setRarities] = useState<string[]>([]);
+  const [family, setFamily] = useState<string>('all');
+  const [keywords, setKeywords] = useState<string[]>([]);
+  const [moreFilters, setMoreFilters] = useState(false);
+  const filterCount = costs.length + rarities.length + keywords.length + (family === 'all' ? 0 : 1);
+  const clearFilters = () => {
+    setColors([]);
+    setTypes([]);
+    setSet('all');
+    setCosts([]);
+    setRarities([]);
+    setFamily('all');
+    setKeywords([]);
+    setQuery('');
+  };
 
   const allCards = useMemo(() => db.all().filter((c) => !c.cardNo.startsWith('SMP')), []);
   const sets = useMemo(() => [...new Set(allCards.map((c) => setOf(c.cardNo)))].sort(), [allCards]);
+  const families = useMemo(() => [...new Set(allCards.flatMap((c) => c.family))].filter(Boolean).sort((a, b) => a.localeCompare(b, 'th')), [allCards]);
+  const texts = useMemo(() => new Map(allCards.map((c) => [c.cardNo, cardText(c)])), [allCards]);
   const pool = useMemo(() => {
     const q = query.trim().toLowerCase();
     return allCards
       .filter((c) => (set === 'all' || setOf(c.cardNo) === set) && (colors.length === 0 || c.colors.some((x) => colors.includes(x))) && (types.length === 0 || types.includes(c.type)))
       .filter((c) => !q || c.name.toLowerCase().includes(q) || c.family.some((f) => f.includes(q)) || c.cardNo.toLowerCase().includes(q))
+      .filter((c) => costs.length === 0 || costs.includes(costBucket(c)))
+      .filter((c) => rarities.length === 0 || rarities.includes(rarityCode(c)))
+      .filter((c) => family === 'all' || c.family.includes(family))
+      .filter((c) => keywords.every((k) => KEYWORDS.find((x) => x.id === k)!.test(c, texts.get(c.cardNo) ?? '')))
       .sort(byTypeCost);
-  }, [allCards, query, colors, types, set]);
+  }, [allCards, query, colors, types, set, costs, rarities, family, keywords, texts]);
 
   // ---------------- ลากการ์ด (เมาส์และนิ้ว: pointer events)
   // คลัง → เด็ค = ใส่, เด็ค → ออกนอกเด็ค = เอาออก · นิ้วต้องลากแนวนอน (แนวตั้ง = เลื่อนรายการ)
@@ -401,6 +447,70 @@ export function DeckBuilder() {
               ))}
             </select>
           </div>
+          {/* ตัวกรองเพิ่มเติม: คอสต์ / ความหายาก / เผ่า / ความสามารถ */}
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setMoreFilters((v) => !v)}
+              className={`rounded px-2 py-0.5 text-xs font-bold transition ${moreFilters || filterCount > 0 ? 'bg-sky-500/30 text-sky-100 ring-1 ring-sky-400/60' : 'bg-slate-800 text-slate-300 hover:text-white'}`}
+            >
+              ตัวกรองเพิ่มเติม{filterCount > 0 ? ` (${filterCount})` : ''} {moreFilters ? '▴' : '▾'}
+            </button>
+            <select value={family} onChange={(e) => setFamily(e.target.value)} className="min-w-0 flex-1 rounded bg-slate-800 px-2 py-0.5 text-xs text-slate-200">
+              <option value="all">ทุกเผ่า</option>
+              {families.map((f) => (
+                <option key={f} value={f}>
+                  {f}
+                </option>
+              ))}
+            </select>
+            <button type="button" onClick={clearFilters} className="rounded bg-slate-800 px-2 py-0.5 text-xs text-slate-300 hover:bg-rose-600 hover:text-white">
+              ล้างตัวกรอง
+            </button>
+          </div>
+          {moreFilters && (
+            <div className="flex flex-col gap-1.5 rounded-lg bg-black/25 p-2 text-xs">
+              <div className="flex flex-wrap items-center gap-1">
+                <span className="w-14 shrink-0 text-slate-400">คอสต์</span>
+                {COSTS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setCosts(toggle(costs, c))}
+                    className={`h-6 min-w-6 rounded-full px-1.5 font-black transition ${costs.includes(c) ? 'bg-yellow-300 text-slate-900' : 'bg-slate-800 text-slate-300 hover:text-white'}`}
+                  >
+                    {c === 7 ? '7+' : c}
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-1">
+                <span className="w-14 shrink-0 text-slate-400">ระดับ</span>
+                {RARITIES.map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setRarities(toggle(rarities, r))}
+                    className={`rounded px-2 py-0.5 font-black transition ${rarities.includes(r) ? 'bg-fuchsia-500 text-white' : 'bg-slate-800 text-slate-300 hover:text-white'}`}
+                  >
+                    {r === 'X' ? 'X ขึ้นไป' : r}
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-1">
+                <span className="w-14 shrink-0 text-slate-400">ความสามารถ</span>
+                {KEYWORDS.map((k) => (
+                  <button
+                    key={k.id}
+                    type="button"
+                    onClick={() => setKeywords(toggle(keywords, k.id))}
+                    className={`rounded px-2 py-0.5 font-bold transition ${keywords.includes(k.id) ? 'bg-emerald-500 text-white' : 'bg-slate-800 text-slate-300 hover:text-white'}`}
+                  >
+                    {k.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="text-xs text-slate-400">{pool.length} ใบ · ลากการ์ดเข้าเด็ค หรือกดการ์ดแล้วกด + (ชื่อเดียวกันไม่เกิน {MAX} ใบ)</div>
           <div className="min-h-0 flex-1 overflow-y-auto pr-1">
             <div className="grid grid-cols-4 gap-1.5">

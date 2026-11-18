@@ -898,8 +898,17 @@ function SummonCutIn({ fx, onDone }: { fx: Extract<Fx, { kind: 'summon' }>; onDo
             {def.name}
           </span>
           <span className="text-sm text-slate-200">
-            {def.type === 'nexus' ? 'วาง Nexus' : 'อัญเชิญ'} · Lv{fx.level}
-            {fx.bp > 0 && <span className="ml-2 font-bold text-yellow-300">BP {fx.bp.toLocaleString()}</span>}
+            {fx.braveOnto ? (
+              <>
+                อัญเชิญร่วมร่าง → {fx.braveOnto}
+                {fx.bp > 0 && <span className="ml-2 font-bold text-emerald-300">BP +{fx.bp.toLocaleString()}</span>}
+              </>
+            ) : (
+              <>
+                {def.type === 'nexus' ? 'วาง Nexus' : 'อัญเชิญ'} · Lv{fx.level}
+                {fx.bp > 0 && <span className="ml-2 font-bold text-yellow-300">BP {fx.bp.toLocaleString()}</span>}
+              </>
+            )}
           </span>
         </div>
       </div>

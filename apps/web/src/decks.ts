@@ -97,10 +97,17 @@ export function encodeDeck(name: string, entries: DeckEntry[]): string {
 export function decodeDeck(token: string): { label: string; entries: DeckEntry[] } | null {
   const bar = token.indexOf('|');
   if (!token.startsWith('c:') || bar < 0) return null;
-  const label = decodeURIComponent(token.slice(2, bar));
+  let label: string;
+  try {
+    label = decodeURIComponent(token.slice(2, bar));
+  } catch {
+    label = token.slice(2, bar);
+  }
   const entries: DeckEntry[] = [];
-  for (const part of token.slice(bar + 1).split(',').filter(Boolean)) {
-    const m = part.match(/^([A-Z0-9-]+)\*(\d+)(?:~([rw-]+))?$/i);
+  // ส่งผ่านแอปแชต: ช่องว่าง/ขึ้นบรรทัดแทรก · "*...*" / "~...~" ถูกตีความเป็นตัวหนา/ขีดฆ่าแล้วเครื่องหมายหาย
+  // (รหัสการ์ดลงท้ายด้วยเลข 3 หลักเสมอ: BS06-SP-U004 / SD01-009 จึงแยกจำนวนที่ตามมาติดกันได้)
+  for (const part of token.slice(bar + 1).replace(/\s+/g, '').split(',').filter(Boolean)) {
+    const m = part.match(/^([A-Z0-9-]+)\*(\d+)(?:~([rw-]+))?$/i) ?? part.match(/^((?:[A-Z0-9]+-)+[A-Z]*\d{3})\*?(\d+)~?([rw-]+)?$/i);
     if (!m) return null;
     const foils = m[3] ? [...m[3]].map((c) => (c === 'r' ? 'rainbow' : c === 'w' ? 'white' : null)) : undefined;
     entries.push({ cardNo: m[1]!, count: Number(m[2]), ...(foils ? { foils } : {}) });

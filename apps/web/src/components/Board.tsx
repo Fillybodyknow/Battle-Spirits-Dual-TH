@@ -329,8 +329,10 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
                 useGame.getState().choose(b);
                 return;
               }
-              if (!ownTurnMain || state.choice) return;
               e.stopPropagation();
+              // คลิกเบรฟ = เปิดรายละเอียดของเบรฟ (ไม่ใช่ผู้ร่วมร่าง) · เทิร์นเราใน Main Step เปิดเมนูแยกร่าง/ย้ายด้วย
+              useGame.setState({ pinned: b });
+              if (!ownTurnMain || state.choice) return;
               setBraveMenu(braveMenu ? null : b);
             }}
             draggable={ownTurnMain && !fxBlocking && !state.choice}
@@ -776,6 +778,7 @@ export function PlayerMat({ player, top }: { player: PlayerId; top?: boolean }) 
   const p = state.players[player];
   const acting = actingPlayer(state) === player;
   const myTurn = state.turnPlayer === player;
+  const fxBlocking = useGame((s) => isFxBlocking(s.fx));
   const depleting = useDepletingWhileDragging();
   const col = 'flex-col';
   const handDrag = useGame((s) => s.handDrag);
@@ -855,6 +858,17 @@ export function PlayerMat({ player, top }: { player: PlayerId; top?: boolean }) 
             />
             <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_55%,rgba(0,0,0,0.55)_100%)]" />
           </div>
+        )}
+        {/* แสงฝั่งที่ต้องตัดสินใจ (สีเดียวกับออร่าขอบจอ) ฉายจากขอบนอกเข้ามาบนพื้นสนาม: อยู่ใต้การ์ดทุกอย่าง */}
+        {acting && !fxBlocking && !state.winner && (
+          <div
+            className="absolute inset-0"
+            style={{
+              background: `linear-gradient(0deg, rgba(${top ? '244,63,94' : '56,189,248'},0.38), rgba(${top ? '244,63,94' : '56,189,248'},0.14) 45%, transparent 80%)`,
+              mixBlendMode: 'screen',
+              animation: 'aura-pulse 2.6s ease-in-out infinite',
+            }}
+          />
         )}
       </div>
       {/* รอยร้าวตาม Life ที่เสีย */}
@@ -1365,7 +1379,7 @@ export function HandFan({ player, top }: { player: PlayerId; top?: boolean }) {
       d.lastX = ev.clientX;
       d.lastY = ev.clientY;
       const dx = ev.clientX - d.x;
-      if (!d.moved && Math.abs(dx) > DRAG_START && Math.abs(dx) >= Math.abs(ev.clientY - d.y)) {
+      if (!d.moved && Math.abs(dx) > DRAG_START && Math.abs(dx) > Math.abs(ev.clientY - d.y) * 2) {
         d.moved = true;
         setVel(0);
       }
@@ -1394,7 +1408,8 @@ export function HandFan({ player, top }: { player: PlayerId; top?: boolean }) {
         if (!d) return false;
         const dx = Math.abs(d.lastX - d.x);
         const dy = Math.abs(d.lastY - d.y);
-        if (d.moved || dx >= dy) {
+        // เลื่อนมือเฉพาะเมื่อลากแนวนอนชัดเจน: ลากเฉียงขึ้น / ขยับนิดเดียว = หยิบการ์ดไปเล่น (เดิมเฉียงนิดเดียวก็กลายเป็นเลื่อนมือ)
+        if (d.moved || (dx > DRAG_START && dx > dy * 2)) {
           d.moved = true;
           return true;
         }

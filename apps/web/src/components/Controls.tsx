@@ -673,7 +673,13 @@ export function ChoiceDialog() {
   const blocking = useGame((s) => isFxBlocking(s.fx));
   const choice = state.choice;
   const mine = useGame((s) => controls(s, s.state.choice?.player));
-  if (!mine) return null;
+  if (!mine) {
+    // อีกฝ่ายกำลังเลือกจากการ์ดที่แสดงจากเด็ค (ข้อมูลเปิดเผย): ให้เห็นค้างไว้จนกว่าจะเลือกเสร็จ
+    if (blocking || !choice) return null;
+    const shown = choice.kind === 'card' ? choice.revealed : choice.kind === 'multiSummon' ? choice.revealed : undefined;
+    if (!shown?.length) return null;
+    return <RevealFan owner={choice.player} cardIds={shown} title={`${playerLabel(choice.player)} แสดงการ์ดจากเด็ค · กำลังเลือก…`} />;
+  }
   if (!blocking && choice?.kind === 'order') return <OrderPanel />;
   if (!blocking && choice?.kind === 'multiSummon') return <MultiPickFan />;
   if (blocking || !choice || choice.kind !== 'card' || isInlineChoice(state)) return null;

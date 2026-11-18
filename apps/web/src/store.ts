@@ -394,7 +394,7 @@ export type Fx =
    * ค้างไว้จนการต่อสู้นี้จบ (ถูกป้องกัน / ชนเข้า Life / ฉาก FINAL BLOW เล่นจบ)
    */
   | { id: number; kind: 'finalBlowBanner'; attackerId: string; delay: number }
-  | { id: number; kind: 'summon'; cardId: string; level: number; bp: number; delay: number; special?: boolean }
+  | { id: number; kind: 'summon'; cardId: string; level: number; bp: number; delay: number; special?: boolean; /** เบรฟที่อัญเชิญไปร่วมร่างทันที: ชื่อผู้ร่วมร่าง (bp = BP+ ที่ให้) */ braveOnto?: string }
   | { id: number; kind: 'activate'; cardId: string; label: string; text: string; delay: number }
   /** การ์ดบนสนามที่เอฟเฟกต์ทำงาน: ยกขึ้น + เรืองแสง ก่อนผลของเอฟเฟกต์จะเกิด */
   | {
@@ -747,7 +747,8 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
   if (pc?.kind === 'card' && typeof pick === 'string') {
     if (pc.revealed) {
       pc.revealed.forEach((id) => revealed.add(id));
-      out.push({ kind: 'reveal', owner: pc.player, cardIds: pc.revealed, chosen: pick, delay: 0, duration: 1250 });
+      // พัดหายพอดีตอนการ์ดเริ่มบินออก (ภาพบินจับตำแหน่งจากพัดตอนเริ่ม) ไม่ซ้อนกัน
+      out.push({ kind: 'reveal', owner: pc.player, cardIds: pc.revealed, chosen: pick, delay: 0, duration: 900 });
       t = 900;
     } else {
       out.push({ kind: 'target', sourceId: pc.sourceId, targetId: pick, delay: 0, duration: 1000 });
@@ -756,7 +757,7 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
   }
   if (pc?.kind === 'multiSummon' && typeof pick === 'object' && pick !== null && 'summons' in pick) {
     pc.revealed.forEach((id) => revealed.add(id));
-    out.push({ kind: 'reveal', owner: pc.player, cardIds: pc.revealed, chosen: null, delay: 0, duration: 900, title: 'อัญเชิญการ์ดที่เลือก · ที่เหลือไว้ใต้สุดเด็ค' });
+    out.push({ kind: 'reveal', owner: pc.player, cardIds: pc.revealed, chosen: null, delay: 0, duration: 650, title: 'อัญเชิญการ์ดที่เลือก · ที่เหลือไว้ใต้สุดเด็ค' });
     t = 650;
   }
   const fromReveal = (id: string, fallback: string) => (revealed.has(id) ? `[data-reveal-card="${id}"]` : fallback);
@@ -941,7 +942,7 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         // ระดับความหายาก: C/U ปกติ · R แสงฟ้าแวบ · M ลงหนัก · X cut-in · XX/XV cut-in พิเศษ
         const rank = rarityOf(db.get(card.cardNo).rarity)?.rank ?? 0;
         const host0 = Object.values(s.cards).find((c) => c.braves.includes(e.cardId));
-        if (rank >= 5 && !host0 && wantCutIn(s, events, e, card.cardNo)) {
+        if (rank >= 5 && wantCutIn(s, events, e, card.cardNo)) {
           // cut-in เล่นก่อน (การ์ดบนสนามซ่อนไว้) แล้วการ์ดใหญ่กลางจอค่อยทุบลงสนาม
           const onField = s.players[card.owner].field.includes(e.cardId);
           const special = rank >= 6;
@@ -949,13 +950,20 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
             kind: 'summon',
             cardId: e.cardId,
             level: onField ? cardLevel(s, db, e.cardId) : 0,
-            bp: onField ? currentBpSafe(s, e.cardId) : 0,
+            bp: onField ? currentBpSafe(s, e.cardId) : host0 ? (db.get(card.cardNo).braveCondition?.bp ?? 0) : 0,
+            ...(host0 ? { braveOnto: db.get(host0.cardNo).name } : {}),
             delay: t,
             special,
           });
           t += special ? T.cutInSpecial : T.cutIn;
-          out.push({ kind: 'fly', cardId: e.cardId, from: 'center', to, mode: 'play', heavy: true, delay: t, hideTarget: true });
-          t += T.landHeavy;
+          if (host0) {
+            // เบรฟ X-Rare ที่อัญเชิญไปร่วมร่างทันที: หลัง Cut-in ลอยจากกลางจอไปเหนือผู้ร่วมร่างแล้วหมุนเข้าช่องเบรฟ
+            out.push({ kind: 'fly', cardId: e.cardId, from: 'center', to: `[data-brave-card="${e.cardId}"]`, via: `[data-field-card="${host0.id}"] > div:first-child`, mode: 'brave', delay: t, hideTarget: true });
+            t += T.braveJoin;
+          } else {
+            out.push({ kind: 'fly', cardId: e.cardId, from: 'center', to, mode: 'play', heavy: true, delay: t, hideTarget: true });
+            t += T.landHeavy;
+          }
         } else {
           const heavy = rank >= 4 && !host0;
           const origin = e.type === 'summoned' ? e.from : undefined;

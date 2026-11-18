@@ -68,7 +68,8 @@ function inspectable(el: Element): string | null {
   const s = useGame.getState();
   const card = s.state.cards[id];
   if (!card) return null;
-  if (s.state.players[card.owner].hand.includes(id) && hiddenFrom(s, card.owner)) return null;
+  // การ์ดในมือที่คว่ำอยู่ดูไม่ได้ ยกเว้นใบที่วางแสดงนอกมือ (ทั้งสองฝ่ายเห็น)
+  if (s.state.players[card.owner].hand.includes(id) && hiddenFrom(s, card.owner) && !(s.state.shownCards ?? []).includes(id)) return null;
   return id;
 }
 

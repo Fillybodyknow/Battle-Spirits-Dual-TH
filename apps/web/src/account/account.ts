@@ -76,7 +76,24 @@ function readSettings(): Record<string, string> {
 
 /** เขียนการตั้งค่าจากเครื่องอื่นลงเครื่องนี้ แล้วให้แต่ละส่วนใช้ค่าใหม่ทันที */
 function applySettings(values: Record<string, string>) {
-  for (const k of SETTING_KEYS) if (typeof values[k] === 'string') store.set(k, values[k]);
+  for (const k of SETTING_KEYS) {
+    if (typeof values[k] !== 'string') continue;
+    if (k === 'bs-deck-acc') {
+      // ของตกแต่งเด็ค (ปลอกการ์ด/กล่องเด็ค) เก็บเป็นก้อนเดียวต่อเด็ค: รวมรายเด็ค ไม่ทับทั้งก้อน
+      // (เดิมล็อกอินอีกเครื่อง = ของตกแต่งของเด็คที่จัดในเครื่องนี้หายไปทั้งหมด) · เด็คเดียวกัน = ของเครื่องที่แก้ล่าสุดชนะ
+      const parse = (v: string | null) => {
+        try {
+          const o = v ? (JSON.parse(v) as unknown) : {};
+          return o && typeof o === 'object' ? (o as Record<string, unknown>) : {};
+        } catch {
+          return {};
+        }
+      };
+      store.set(k, JSON.stringify({ ...parse(store.get(k)), ...parse(values[k]!) }));
+      continue;
+    }
+    store.set(k, values[k]!);
+  }
   const json = <T>(k: string): T | null => {
     try {
       return values[k] ? (JSON.parse(values[k]) as T) : null;

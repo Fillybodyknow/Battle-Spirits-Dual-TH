@@ -122,7 +122,9 @@ export function CardInspector() {
 
   const place = whereIs(state, card.id);
   // ซ่อนมือ/Burst ของฝ่ายที่ไม่ได้ตัดสินใจ (กันการ์ดที่ปักไว้ตั้งแต่เทิร์นก่อนโผล่ให้อีกฝ่ายเห็น)
-  if ((place === 'hand' || place === 'burst') && hiddenFrom(useGame.getState(), card.owner)) {
+  // การ์ดที่วางแสดงนอกมือ = ทั้งสองฝ่ายเห็น
+  const shownOut = (state.shownCards ?? []).includes(card.id);
+  if ((place === 'hand' || place === 'burst') && !shownOut && hiddenFrom(useGame.getState(), card.owner)) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center text-sm text-slate-500">
         <span className="text-3xl">🂠</span>

@@ -19,7 +19,7 @@ function aceOnField(st: GameState): boolean {
 
 const inIntro = (s: Store) => s.fx.some((f) => f.kind === 'intro');
 
-/** pinch: เริ่มเมื่อ Life คู่แข่ง ≤ PINCH_IN · เริ่มแล้วเล่นต่อจนกว่า Life คู่แข่งกลับมา ≥ PINCH_OUT (หรือจบเกม) */
+/** pinch: เริ่มเมื่อ Life ฝ่ายใดฝ่ายหนึ่ง ≤ PINCH_IN · เริ่มแล้วเล่นต่อจนกว่า Life ทั้งสองฝ่ายกลับมา ≥ PINCH_OUT (หรือจบเกม) */
 const PINCH_IN = 2;
 const PINCH_OUT = 4;
 
@@ -27,8 +27,8 @@ function decide(s: Store, last: BgmTrack | null): BgmTrack | null {
   // หน้าอื่น / ฉากเปิดเกม (โยนเหรียญ ฯลฯ) / จบเกมแล้ว = ไม่มีเพลง
   if (s.screen !== 'game' || s.state.winner || inIntro(s) || (s.pregame && !s.pregame.chosen)) return null;
   const st = s.state;
-  // Life ของคู่แข่ง · เล่นเครื่องเดียว / ผู้ชม (ไม่มีฝั่ง "เรา") = ฝ่ายใดก็ได้
-  const rivals = s.online && !s.online.spectator ? [opponentOf(s.online.me)] : PLAYERS;
+  // Life ของผู้เล่นฝ่ายใดก็ได้ (ทั้งเราและคู่แข่งได้ยินเพลงเดียวกันเมื่อเกมเข้าช่วงตึงเครียด)
+  const rivals = PLAYERS;
   const limit = last === 'pinch' ? PINCH_OUT - 1 : PINCH_IN;
   if (rivals.some((p) => st.players[p].life.length <= limit)) return 'pinch';
   return aceOnField(st) ? 'ace' : 'duel';
