@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { opponentOf, type PlayerId } from '@bs/engine';
 import { cardArt } from '../assets';
-import { CAST_MS, CHARGE_HIT, CHARGE_MS, DRAW_FLIP_MS, DRAW_TIER, LETHAL_RELEASE, LETHAL_SLOW, LETHAL_SLOW_EXTRA, CUTIN_MS, CUTIN_SLAM, castCards, castHandSlots, castTone, controls, CHARGE_KNOCK, actingPlayer, chainEntries, viewPlayer, db, fieldScaleOf, GHOST_MS, isFxBlocking, layoutRect, MILL_MS, millBreakAt, millDuration, PLAY_HIT, useGame, type Fx, type Rect, hiddenFrom } from '../store';
+import { braveSlot, CAST_MS, CHARGE_HIT, CHARGE_MS, DRAW_FLIP_MS, DRAW_TIER, LETHAL_RELEASE, LETHAL_SLOW, LETHAL_SLOW_EXTRA, CUTIN_MS, CUTIN_SLAM, castCards, castHandSlots, castTone, controls, CHARGE_KNOCK, actingPlayer, chainEntries, viewPlayer, db, fieldScaleOf, GHOST_MS, isFxBlocking, layoutRect, MILL_MS, millBreakAt, millDuration, PLAY_HIT, useGame, type Fx, type Rect, hiddenFrom } from '../store';
 import { CardBack, CardFace } from './CardFace';
 import { setSfxTimeScale, sfx } from '../sfx';
 import { effects, flashScale, shakeScale } from '../gfx';
@@ -3558,8 +3558,12 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
           <div className="relative h-full w-full">
             <CardFace def={db.get(fx.cardNo)} />
             {/* Brave ที่ร่วมร่าง วิ่งไปพร้อมผู้ร่วมร่าง */}
-            {(card?.braves ?? []).map((b) => (
-              <div key={b} className="absolute top-6 -right-8 h-[4.6rem] w-[3.3rem] rotate-12 rounded shadow-[0_4px_10px_rgba(0,0,0,0.7)] ring-2 ring-emerald-300">
+            {(card?.braves ?? []).map((b, bi, all) => (
+              <div
+                key={b}
+                className={`absolute h-[4.6rem] w-[3.3rem] rounded shadow-[0_4px_10px_rgba(0,0,0,0.7)] ring-2 ring-emerald-300 ${braveSlot(bi, all.length).right ? '-right-8 rotate-12' : '-left-8 -rotate-12'}`}
+                style={{ top: braveSlot(bi, all.length).top }}
+              >
                 <CardFace def={db.get(useGame.getState().state.cards[b]!.cardNo)} size="xs" />
               </div>
             ))}
@@ -3649,12 +3653,25 @@ function Ghost({ fx, onDone }: { fx: Extract<Fx, { kind: 'ghost' }>; onDone: () 
   return (
     <div data-ghost-card={fx.cardId} className="pointer-events-none fixed z-[41]" style={{ left: fx.rect.x, top: fx.rect.y, width: fx.rect.w, height: fx.rect.h, ...vars }}>
       <div className="absolute inset-0 flex items-center justify-center">
-        <div className="relative shrink-0" style={{ width: cardW, height: cardH, transform: `${lying ? 'rotate(90deg)' : ''} ${!fx.upright && upsideFor(fx.owner) ? 'rotate(180deg)' : ''}`.trim() || undefined }}>
+        <div
+          className="relative shrink-0"
+          style={{
+            width: cardW,
+            height: cardH,
+            transform: `${lying ? 'rotate(90deg)' : ''} ${!fx.upright && upsideFor(fx.owner) ? 'rotate(180deg)' : ''}`.trim() || undefined,
+            // ฟื้นสภาพก่อนถูกทำลาย: ลุกจากท่านอนขึ้นตั้งตรง แล้วค่อยร้าว/แตก
+            ...(lying && fx.refreshAt !== undefined
+              ? { ['--fx-lie' as string]: upsideFor(fx.owner) && !fx.upright ? 'rotate(270deg)' : 'rotate(90deg)', ['--fx-up' as string]: upsideFor(fx.owner) && !fx.upright ? 'rotate(180deg)' : 'rotate(0deg)', animation: `ghost-refresh 380ms ${fx.refreshAt}ms cubic-bezier(.3,.7,.3,1) both` }
+              : {}),
+          }}
+        >
           {destroy ? (
             <>
               {/* การ์ดสั่น + รอยร้าว แล้วหายไปตอนแตก */}
               <div className="absolute inset-0" style={{ animation: `fx-g-crack-card ${GHOST_MS.destroyBreak}ms ${D}ms linear both` }}>
                 <CardFace def={def} />
+                {/* สีแดง + รอยร้าว: เริ่มตอนถึงคิวแตกเท่านั้น (ก่อนหน้านั้นการ์ดดูปกติ เช่น ระหว่างรอการ์ดต้นเหตุเรืองแสง) */}
+                <div className="absolute inset-0" style={{ opacity: 0, animation: `ci-fade-in 120ms ${D}ms ease-out forwards` }}>
                 <div className="absolute inset-0 rounded-lg bg-rose-500/30 mix-blend-screen" />
                 <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 h-full w-full" style={{ filter: 'drop-shadow(0 0 2px #fff) drop-shadow(0 0 4px #fb923c)' }}>
                   {SHARD_EDGE.map(([x, y], i) => {
@@ -3675,6 +3692,7 @@ function Ghost({ fx, onDone }: { fx: Extract<Fx, { kind: 'ghost' }>; onDone: () 
                     );
                   })}
                 </svg>
+                </div>
               </div>
               {/* เศษการ์ด */}
               {SHARD_EDGE.map(([x, y], i) => {

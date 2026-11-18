@@ -3,7 +3,7 @@ import { activatableAbilities, baseCost, braveToSwap, canAttackWith, cardLevel, 
 import { playerLabel } from '../format';
 import { IMG } from '../assets';
 import type { Fx } from '../store';
-import { blockCandidates, controls, hiddenFrom, mine, braveHostOf, braveHosts, canDropBurst, canQuickSummon, handFieldAction, separatePlacement } from '../store';
+import { blockCandidates, braveSlot, controls, hiddenFrom, mine, braveHostOf, braveHosts, canDropBurst, canQuickSummon, handFieldAction, separatePlacement } from '../store';
 import { usePrefs, type HandLayout } from '../prefs';
 import { castHandSlots, sortHand } from '../store';
 import { CastRestCard, pickingCores } from './Fx';
@@ -310,11 +310,12 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
         {card.braves.map((b, bi) => {
           // เป็นเป้าหมายให้เลือก (เช่น ทำลายเบรฟที่ร่วมร่างอยู่)
           const braveCandidate = !fxBlocking && isChoiceCandidate(state, b);
+          const slot = braveSlot(bi, card.braves.length);
           return (
           <div
             key={b}
             data-brave-card={b}
-            className={`absolute top-6 z-[5] h-[4.6rem] w-[3.3rem] rounded ${bi % 2 === 0 ? '-right-8 rotate-12' : '-left-8 -rotate-12'} ${flyingBraves.split(',').includes(b) ? 'invisible' : ''} shadow-[0_4px_10px_rgba(0,0,0,0.7)] ${
+            className={`absolute z-[5] h-[4.6rem] w-[3.3rem] rounded ${slot.right ? '-right-8 rotate-12' : '-left-8 -rotate-12'} ${flyingBraves.split(',').includes(b) ? 'invisible' : ''} shadow-[0_4px_10px_rgba(0,0,0,0.7)] ${
               braveCandidate ? 'cursor-pointer ring-4 ring-fuchsia-400' : 'ring-2 ring-emerald-300'
             }`}
             title={`Brave: ${db.get(state.cards[b]!.cardNo).name}${ownTurnMain ? ' · คลิกเพื่อแยกร่าง/ย้าย' : ''}`}
@@ -342,7 +343,7 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
               useGame.getState().startBraveDrag(b);
             }}
             onDragEnd={() => useGame.getState().endBraveDrag()}
-            style={braveCandidate ? { animation: 'fx-choice-glow 1.4s ease-in-out infinite' } : ownTurnMain ? { cursor: 'pointer' } : undefined}
+            style={{ top: slot.top, ...(braveCandidate ? { animation: 'fx-choice-glow 1.4s ease-in-out infinite' } : ownTurnMain ? { cursor: 'pointer' } : {}) }}
           >
             <CardFace def={db.get(state.cards[b]!.cardNo)} size="xs" />
           </div>

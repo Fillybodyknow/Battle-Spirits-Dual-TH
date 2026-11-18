@@ -520,6 +520,8 @@ export type Fx =
       hiddenUntilStart?: boolean;
       /** แสดงตั้งตรงเสมอ (ภาพการ์ดถูกทิ้งจากเด็ค: ให้อ่านง่ายไม่ว่าฝั่งไหน) */
       upright?: true;
+      /** การ์ดที่นอนอยู่ถูกฟื้นสภาพก่อนออกจากสนามใน action เดียวกัน (เช่น ประตูปราสาทบุปผาเหลือง): ลุกขึ้นตั้งตรงตอนนี้ (ms) แล้วค่อยแตก */
+      refreshAt?: number;
       delay: number;
     };
 type FxInput = Fx extends infer T ? (T extends Fx ? Omit<T, 'id'> : never) : never;
@@ -596,6 +598,16 @@ export const CAST_MS = { intro: 1150, lift: 420, arrive: 420, glow: 450, pulse: 
 export const CUTIN_MS = { normal: 2500, special: 3300 } as const;
 /** จังหวะที่การ์ดทุบกลางจอใน cut-in (สัดส่วนของความยาว): ก่อนหน้า = ชาร์จพลัง, ตรงนี้ = แสงวาบ/คลื่น/จอสั่น */
 export const CUTIN_SLAM = 0.17;
+
+/**
+ * ตำแหน่งเบรฟที่ร่วมร่าง (ใบที่ bi จากทั้งหมด n ใบ): สลับขวา/ซ้าย แล้วเรียงเป็นแถวลงมา
+ * (ชิซุรุร่วมร่างได้ 3 ใบขึ้นไป: ใบที่ 3 ไม่ซ้อนทับใบแรก) · top = ระยะจากขอบบนการ์ด (rem)
+ */
+export function braveSlot(bi: number, n: number): { right: boolean; top: string } {
+  const rows = Math.ceil(n / 2);
+  const step = rows > 1 ? Math.min(2.8, 4.6 / (rows - 1)) : 0;
+  return { right: bi % 2 === 0, top: `${(rows > 1 ? 0.6 : 1.5) + Math.floor(bi / 2) * step}rem` };
+}
 
 /** ระยะเวลาวิ่งชนทั้งหมด (ถอยตั้งหลัก → พุ่ง → ชน → กลับ) และสัดส่วนเวลาที่ชน */
 export const CHARGE_MS = 1500;
@@ -843,6 +855,8 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
     return ex;
   };
 
+  /** การ์ดที่ฟื้นสภาพด้วยเอฟเฟกต์ใน action นี้แล้วออกจากสนาม: เวลาที่ภาพลุกขึ้น */
+  const refreshedAt = new Map<string, number>();
   /** event ทิ้งจากมือที่รวมเข้าชุดก่อนหน้าแล้ว */
   const grouped = new Set<GameEvent>();
   for (const e of events) {
@@ -1101,6 +1115,26 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         t += T.cast;
         draws = 0;
         break;
+      case 'cardRefreshed': {
+        // ฟื้นสภาพแล้วออกจากสนามใน action เดียวกัน: ภาพการ์ดที่จะแตกลุกขึ้นก่อน (บนสนามจริงการ์ดหายไปแล้ว)
+        const leaves = PLAYERS.some((p) => prev.players[p].field.includes(e.cardId)) && !PLAYERS.some((p) => s.players[p].field.includes(e.cardId));
+        if (leaves && exhaustedAt(e.cardId, events.indexOf(e))) {
+          refreshedAt.set(e.cardId, t);
+          t += 450;
+        }
+        break;
+      }
+      case 'abilityTriggered': {
+        // "ดรอว์สเต็ปของเรา" (จำนวนจั่ว +N): ไม่ผ่านคิวเอฟเฟกต์ จึงไม่มี effectResolving · การ์ดต้นเหตุยกขึ้นเรืองแสง + ข้อความเอฟเฟกต์ ก่อนจั่ว
+        // (trigger อื่นมีแอนิเมชันตอน effectResolving อยู่แล้ว: ไม่ทำซ้ำ)
+        const c = s.cards[e.cardId];
+        if (!c || db.get(c.cardNo).abilities.find((ab) => ab.source === e.source)?.kind !== 'drawStep' || !onAnyField(e.cardId)) break;
+        out.push({ kind: 'cardActivate', cardId: e.cardId, delay: t, duration: T.activate, lying: exhaustedAt(e.cardId, events.indexOf(e)) });
+        out.push({ kind: 'activate', cardId: e.cardId, label: 'เอฟเฟกต์ทำงาน', text: effectText(c.cardNo, e.source), delay: t });
+        t += T.activate;
+        draws = 0;
+        break;
+      }
       case 'staticApplied': {
         // ความสามารถถาวรลงมือ (Shield กัน, ปิดเอฟเฟกต์, ส่งใต้เด็คแทนขึ้นมือ ฯลฯ): การ์ดต้นเหตุยกขึ้นเรืองแสง + ข้อความเอฟเฟกต์ ก่อนผลจะเกิด
         const onHost = !onAnyField(e.cardId) && [s, prev].some((st) => Object.values(st.cards).some((c) => c.braves.includes(e.cardId)));
@@ -1175,7 +1209,8 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
           const slot = prev.players[owner].field.filter((id) => db.get(prev.cards[id]!.cardNo).type !== 'nexus').indexOf(e.cardId);
           // ผู้โจมตีที่แพ้: แตกตรงจุดที่กระเด็นกลับมาหยุด (CHARGE_KNOCK = 0: ช่องเดิมบนสนาม แบบตั้งตรง)
           const knock = recoil && charge?.kind === 'charge' && typeof charge.target !== 'string' ? chargeKnockRect(rect, charge.fromExhausted, charge.target) : null;
-          out.push({ kind: 'ghost', cardId: e.cardId, owner, slot, cardNo: s.cards[e.cardId]!.cardNo, rect: knock ?? rect, mode: e.type === 'destroyed' ? 'destroy' : 'deplete', delay, hiddenUntilStart: recoil });
+          const refreshAt = refreshedAt.get(e.cardId);
+          out.push({ kind: 'ghost', cardId: e.cardId, owner, slot, cardNo: s.cards[e.cardId]!.cardNo, rect: knock ?? rect, mode: e.type === 'destroyed' ? 'destroy' : 'deplete', delay, hiddenUntilStart: recoil, ...(refreshAt !== undefined && !knock ? { refreshAt } : {}) });
           ghostsEnd = Math.max(ghostsEnd, delay + T.ghost);
         }
         break;
