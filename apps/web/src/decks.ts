@@ -66,6 +66,11 @@ function writeMyDecks(list: SavedDeck[]): void {
   }
 }
 
+/** แทนรายการเด็คทั้งหมด (ซิงก์บัญชี: ผลรวมกับคลาวด์) · ไม่แตะเวลาแก้ไขของแต่ละเด็ค */
+export function replaceMyDecks(list: SavedDeck[]): void {
+  writeMyDecks(list);
+}
+
 export function saveMyDeck(deck: SavedDeck): void {
   const list = loadMyDecks().filter((d) => d.id !== deck.id);
   writeMyDecks([{ ...deck, updated: Date.now() }, ...list]);

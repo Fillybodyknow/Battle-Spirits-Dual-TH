@@ -10,6 +10,7 @@ import { CASE_COLORS, DeckBox, autoKeyCards, keyCards } from '../components/Deck
 import { decodeDeck, deckInfo, deckSizeOf, deleteMyDeck, encodeDeck, loadDeckAcc, loadMyDecks, newDeckId, saveDeckAcc, saveMyDeck, STARTER_DECKS, type DeckId } from '../decks';
 import { sfx } from '../sfx';
 import { db, useGame } from '../store';
+import { useAccount } from '../account/account';
 import { BackButton, CardArt, deckColor } from './shared';
 
 type View = { kind: 'grid' } | { kind: 'detail'; deck: DeckId } | { kind: 'acc'; deck: DeckId };
@@ -83,6 +84,8 @@ function DeckTileBox({ id, onClick }: { id: DeckId; onClick: () => void }) {
 // ---------------------------------------------------------------- ตาราง + เมนู
 
 function Grid({ starters, onOpen, onCreate }: { starters: boolean; onOpen: (id: DeckId) => void; onCreate: () => void }) {
+  // วาดใหม่เมื่อซิงก์บัญชีดึงเด็คจากเครื่องอื่นลงมา
+  useAccount((s) => s.pulledAt);
   const mine = loadMyDecks().map((d) => `u:${d.id}`);
   const ids = starters ? Object.keys(STARTER_DECKS) : mine;
   return (

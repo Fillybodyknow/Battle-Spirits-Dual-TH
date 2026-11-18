@@ -21,10 +21,14 @@ export const firebaseConfigured = !!firebaseConfig.apiKey && !!firebaseConfig.da
 
 let app: FirebaseApp | null = null;
 let db: Database | null = null;
-function database(): Database {
+/** Firebase app ตัวเดียวของแอป (ห้องออนไลน์ + บัญชีผู้ใช้ใช้ร่วมกัน: uid เดียวกัน) */
+export function firebaseApp(): FirebaseApp {
   if (!firebaseConfigured) throw new Error('ยังไม่ได้ตั้งค่า Firebase (apps/web/.env.local)');
   app ??= initializeApp(firebaseConfig);
-  db ??= getDatabase(app);
+  return app;
+}
+export function database(): Database {
+  db ??= getDatabase(firebaseApp());
   return db;
 }
 

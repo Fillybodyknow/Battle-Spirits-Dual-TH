@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { opponentOf, type PlayerId } from '@bs/engine';
 import { cardArt } from '../assets';
-import { CAST_MS, CUTIN_MS, CUTIN_SLAM, castCards, castHandSlots, castTone, controls, CHARGE_KNOCK, actingPlayer, chainEntries, viewPlayer, db, fieldScaleOf, GHOST_MS, isFxBlocking, layoutRect, MILL_MS, millBreakAt, millDuration, PLAY_HIT, useGame, type Fx, type Rect, hiddenFrom } from '../store';
+import { CAST_MS, CHARGE_HIT, CHARGE_MS, CUTIN_MS, CUTIN_SLAM, castCards, castHandSlots, castTone, controls, CHARGE_KNOCK, actingPlayer, chainEntries, viewPlayer, db, fieldScaleOf, GHOST_MS, isFxBlocking, layoutRect, MILL_MS, millBreakAt, millDuration, PLAY_HIT, useGame, type Fx, type Rect, hiddenFrom } from '../store';
 import { CardBack, CardFace } from './CardFace';
 import { sfx } from '../sfx';
 import { effects, flashScale, shakeScale } from '../gfx';
@@ -1157,6 +1157,29 @@ function FinalBlow({ fx, onDone }: { fx: Extract<Fx, { kind: 'finalBlow' }>; onD
             animation: `fx-fb-slash 0.7s ${120 + i * 140}ms cubic-bezier(.2,.9,.2,1) both`,
           }}
         />
+      ))}
+      {/* แถบเหลืองแนวตั้งสองข้างจอ: ข้อความ "Final Blow !" วิ่งสวนกัน */}
+      {(['left', 'right'] as const).map((side) => (
+        <div
+          key={side}
+          className={`absolute inset-y-0 ${side === 'left' ? 'left-0' : 'right-0'} w-16 overflow-hidden bg-gradient-to-b from-lime-200 via-yellow-300 to-lime-200 shadow-[0_0_24px_rgba(190,242,100,0.8)]`}
+          style={{ '--from': side === 'left' ? '-110%' : '110%', animation: 'fx-fb-banner-in 2.6s cubic-bezier(.2,.9,.3,1) 0.25s both' } as React.CSSProperties}
+        >
+          <div
+            className="absolute inset-x-0 top-0 flex flex-col items-center"
+            style={{ '--dist': side === 'left' ? '-50%' : '50%', translate: side === 'left' ? undefined : '0 -50%', animation: 'fx-fb-scroll 2.4s linear infinite' } as React.CSSProperties}
+          >
+            {Array.from({ length: 16 }, (_, i) => (
+              <span
+                key={i}
+                className="mb-10 text-4xl font-black whitespace-nowrap text-slate-900 italic"
+                style={{ writingMode: 'vertical-rl', transform: side === 'left' ? 'rotate(180deg)' : undefined }}
+              >
+                Final Blow !
+              </span>
+            ))}
+          </div>
+        </div>
       ))}
       {/* แสงวาบ */}
       <div className="absolute inset-0" style={{ opacity: flashScale() }}>
@@ -2371,6 +2394,27 @@ function Damage({ fx, onDone }: { fx: Extract<Fx, { kind: 'damage' }>; onDone: (
       const mat = layoutRect(document.querySelector(`[data-mat="${fx.player}"]`));
       if (!mat) return onDone();
       setPos({ x: mat.x + mat.w / 2, y: mat.y + mat.h / 2 });
+      // ระเบิด: จอสั่น (ครั้งที่ Life หมด = แรงและนานกว่า)
+      if (fx.lethal)
+        shakeMain(
+          [
+            [-22, 12],
+            [18, -14],
+            [-14, 9],
+            [10, -6],
+            [-5, 3],
+          ],
+          650,
+        );
+      else if (fx.big)
+        shakeMain(
+          [
+            [-10, 6],
+            [9, -7],
+            [-5, 3],
+          ],
+          380,
+        );
       document.querySelector(`[data-life="${fx.player}"]`)?.animate(
         [{ boxShadow: '0 0 0 0 rgba(244,63,94,0)', filter: 'brightness(1)' }, { boxShadow: '0 0 24px 8px rgba(244,63,94,0.9)', filter: 'brightness(1.6)', offset: 0.3 }, { boxShadow: '0 0 0 0 rgba(244,63,94,0)', filter: 'brightness(1)' }],
         { duration: 900, easing: 'ease-out' },
@@ -2384,30 +2428,323 @@ function Damage({ fx, onDone }: { fx: Extract<Fx, { kind: 'damage' }>; onDone: (
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   if (!pos) return null;
+  // ขนาดระเบิด: โจมตีตรง (big) / ครั้งที่ Life หมด (lethal: ใหญ่เกือบเต็มจอ)
+  const boom = fx.lethal ? 72 : fx.big ? 34 : 0;
   return (
-    <div className="pointer-events-none fixed z-[45]" style={{ left: pos.x, top: pos.y }}>
-      {fx.big && (
-        <div
-          className="absolute h-[34rem] w-[34rem] rounded-full"
-          style={{
-            background: 'repeating-conic-gradient(from 0deg, rgba(254,226,226,0.95) 0deg 2.5deg, rgba(225,29,72,0.8) 2.5deg 6deg, transparent 6deg 13deg)',
-            maskImage: 'radial-gradient(circle, transparent 12%, black 22%, transparent 62%)',
-            animation: 'fx-sunburst 1s ease-out both',
-          }}
-        />
-      )}
-      <div className="absolute -translate-x-1/2 -translate-y-1/2 text-center" style={{ animation: 'fx-damage 1.5s cubic-bezier(.2,.9,.3,1) both' }}>
-        <div className="text-[110px] leading-none font-black text-rose-500 italic [-webkit-text-stroke:4px_#fff] [text-shadow:0_6px_0_#7f1d1d,0_0_30px_rgba(0,0,0,0.8)]">
-          −{fx.amount}
+    <>
+      {/* ครั้งที่ Life หมด: แสงขาวแดงวาบทั้งจอ */}
+      {fx.lethal && (
+        <div className="pointer-events-none fixed inset-0 z-[44]" style={{ opacity: flashScale() }}>
+          <div className="absolute inset-0" style={{ background: 'radial-gradient(circle, #fff 0%, rgba(254,205,211,0.9) 35%, rgba(190,18,60,0.55) 70%, rgba(127,29,29,0.35) 100%)', animation: 'fx-dmg-flash 0.9s ease-out both' }} />
         </div>
-        <div className="-mt-2 text-2xl font-black tracking-[0.3em] text-white [text-shadow:0_2px_0_#7f1d1d]">LIFE</div>
+      )}
+      <div className="pointer-events-none fixed z-[45]" style={{ left: pos.x, top: pos.y }}>
+        {boom > 0 && (
+          <>
+            {/* ลูกระเบิดขาว → ชมพู → แดง */}
+            <div
+              className="absolute rounded-full"
+              style={{
+                width: `${boom * 0.9}rem`,
+                height: `${boom * 0.9}rem`,
+                translate: '-50% -50%',
+                background:
+                  'radial-gradient(circle, #fff 0%, #fff 16%, rgba(255,228,230,0.95) 28%, rgba(251,113,133,0.85) 44%, rgba(225,29,72,0.7) 58%, rgba(136,19,55,0.35) 68%, transparent 74%)',
+                animation: `fx-dmg-sphere ${fx.lethal ? 1.3 : 0.9}s cubic-bezier(.15,.9,.3,1) both`,
+              }}
+            />
+            {/* วงแหวนแดงขยายออก */}
+            {(fx.lethal ? [0, 0.12, 0.24] : [0]).map((d) => (
+              <div
+                key={d}
+                className="absolute rounded-full border-[6px] border-rose-500/90"
+                style={{
+                  width: `${boom * 0.8}rem`,
+                  height: `${boom * 0.8}rem`,
+                  translate: '-50% -50%',
+                  boxShadow: '0 0 30px rgba(244,63,94,0.9), inset 0 0 30px rgba(255,255,255,0.6)',
+                  animation: `fx-dmg-ring ${fx.lethal ? 1.1 : 0.8}s ${d}s ease-out both`,
+                }}
+              />
+            ))}
+            {/* เส้นแสงพุ่งออกรอบด้าน */}
+            <div
+              className="absolute rounded-full"
+              style={{
+                // fx-sunburst จัดกึ่งกลางด้วย transform ในคีย์เฟรมเอง (ไม่ต้องใส่ translate ซ้ำ)
+                width: `${boom}rem`,
+                height: `${boom}rem`,
+                background: 'repeating-conic-gradient(from 0deg, rgba(254,226,226,0.95) 0deg 2.5deg, rgba(225,29,72,0.8) 2.5deg 6deg, transparent 6deg 13deg)',
+                maskImage: 'radial-gradient(circle, transparent 12%, black 22%, transparent 62%)',
+                WebkitMaskImage: 'radial-gradient(circle, transparent 12%, black 22%, transparent 62%)',
+                animation: `fx-sunburst ${fx.lethal ? 1.4 : 1}s ease-out both`,
+              }}
+            />
+          </>
+        )}
+        <div className="absolute -translate-x-1/2 -translate-y-1/2 text-center" style={{ animation: 'fx-damage 1.5s cubic-bezier(.2,.9,.3,1) both' }}>
+          <div
+            className={`${fx.lethal ? 'text-[150px]' : 'text-[110px]'} leading-none font-black text-rose-500 italic [-webkit-text-stroke:4px_#fff] [text-shadow:0_6px_0_#7f1d1d,0_0_30px_rgba(0,0,0,0.8)]`}
+          >
+            −{fx.amount}
+          </div>
+          <div className="-mt-2 text-2xl font-black tracking-[0.3em] text-white [text-shadow:0_2px_0_#7f1d1d]">LIFE</div>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
-const CHARGE_MS = 1000;
-const HIT_AT = 0.45; // สัดส่วนเวลาที่ชนเป้าหมาย (ต้องตรงกับ HIT ใน store)
+/** แปลงสี hex เป็น [r,g,b] */
+const rgbOf = (hex: string): [number, number, number] => {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+};
+
+/**
+ * ภาพเส้นควัน 1 เส้น (สร้างครั้งเดียวต่อสี): ริ้วยาวตามแนวนอนหลายเส้นซ้อนกัน เบลอเล็กน้อย
+ * แกนกลางเข้มทึบ ขอบเป็นสีการ์ดสว่างขึ้นนิดหน่อย → วาดหมุนตามทิศที่พุ่ง ได้สายควันที่มีลายตามแนวพุ่ง
+ */
+const streakCache = new Map<string, HTMLCanvasElement[]>();
+function streakSprites(hex: string): HTMLCanvasElement[] {
+  const hit = streakCache.get(hex);
+  if (hit) return hit;
+  const [r, g, b] = rgbOf(hex);
+  const mix = (t: number, to: number) => [Math.round(r + (to - r) * t), Math.round(g + (to - g) * t), Math.round(b + (to - b) * t)];
+  const deep = mix(0.7, 0);
+  const dark = mix(0.45, 0);
+  const base = [r, g, b];
+  const rim = mix(0.12, 255);
+  const out = Array.from({ length: 5 }, (_, k) => {
+    const W = 192;
+    const H = 64;
+    let seed = (k + 1) * 7919;
+    const rnd = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280);
+    const raw = document.createElement('canvas');
+    raw.width = W;
+    raw.height = H;
+    const rc = raw.getContext('2d')!;
+    const streak = (c: number[], al: number, spread: number, thick: number) => {
+      const y = H / 2 + (rnd() + rnd() - 1) * H * spread;
+      const x = W * (0.25 + rnd() * 0.5);
+      const rx = W * (0.15 + rnd() * 0.3);
+      const ry = H * thick * (0.5 + rnd());
+      rc.save();
+      rc.translate(x, y);
+      rc.scale(1, ry / rx);
+      const grd = rc.createRadialGradient(0, 0, 0, 0, 0, rx);
+      grd.addColorStop(0, `rgba(${c[0]},${c[1]},${c[2]},${al})`);
+      grd.addColorStop(0.6, `rgba(${c[0]},${c[1]},${c[2]},${al * 0.5})`);
+      grd.addColorStop(1, `rgba(${c[0]},${c[1]},${c[2]},0)`);
+      rc.fillStyle = grd;
+      rc.beginPath();
+      rc.arc(0, 0, rx, 0, Math.PI * 2);
+      rc.fill();
+      rc.restore();
+    };
+    // ขอบสว่าง (กว้าง จาง) → ตัวควันสีการ์ด → แกนเข้มทึบตรงกลาง
+    for (let i = 0; i < 6; i++) streak(rim, 0.16 + rnd() * 0.12, 0.32, 0.1);
+    for (let i = 0; i < 14; i++) streak(base, 0.3 + rnd() * 0.25, 0.26, 0.08);
+    for (let i = 0; i < 20; i++) streak(dark, 0.45 + rnd() * 0.3, 0.18, 0.07);
+    for (let i = 0; i < 14; i++) streak(deep, 0.5 + rnd() * 0.3, 0.1, 0.05);
+    const c = document.createElement('canvas');
+    c.width = W;
+    c.height = H;
+    const ctx = c.getContext('2d')!;
+    ctx.filter = 'blur(2px)';
+    ctx.drawImage(raw, 0, 0);
+    ctx.filter = 'none';
+    // ขอบจางเป็นวงรี (ไม่มีขอบตัดของภาพ)
+    ctx.globalCompositeOperation = 'destination-in';
+    ctx.save();
+    ctx.translate(W / 2, H / 2);
+    ctx.scale(1, H / W);
+    const mask = ctx.createRadialGradient(0, 0, W * 0.2, 0, 0, W / 2);
+    mask.addColorStop(0, 'rgba(0,0,0,1)');
+    mask.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = mask;
+    ctx.fillRect(-W / 2, -W / 2, W, W);
+    ctx.restore();
+    ctx.globalCompositeOperation = 'source-over';
+    return c;
+  });
+  streakCache.set(hex, out);
+  return out;
+}
+
+/**
+ * หางควันตามการ์ดที่พุ่ง (canvas): ทุกเฟรมปล่อยเส้นควันตลอดทางที่การ์ดผ่าน หมุนตามทิศที่พุ่ง
+ * ใกล้การ์ดหนาทึบ ยิ่งเก่ายิ่งเรียวและจาง → ได้สายควันข้นที่เรียวไปทางท้าย · มีเส้นควันบาง ๆ แตกออกที่ขอบ
+ * สีตามสีการ์ด · กราฟิกต่ำ = เส้นน้อยลง
+ */
+function SmokeTrail({ follow, hex, from, until, size }: { follow: React.RefObject<HTMLDivElement | null>; hex: string; from: number; until: number; size: number }) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const frontCanvas = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const cv = canvas.current;
+    const cv2 = frontCanvas.current;
+    const ctx = cv?.getContext('2d');
+    const ctx2 = cv2?.getContext('2d');
+    if (!cv || !ctx || !cv2 || !ctx2) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const sprites = streakSprites(hex);
+    const full = effects().blur;
+    /**
+     * helix = ควันสองเส้นพันกันเป็นเกลียวตามทางที่พุ่ง (ยิ่งเก่า เกลียวยิ่งแคบ → หางเรียวลง)
+     * wrap = ควันชั้นหน้าที่ห่อตัวการ์ด: เกาะไปกับการ์ด ไหลจากหัวไปท้ายพร้อมวนเป็นเกลียวรอบตัวการ์ด
+     */
+    type P = {
+      kind: 'helix' | 'wrap';
+      x: number;
+      y: number;
+      nx: number;
+      ny: number;
+      lat: number;
+      slope: number;
+      ang: number;
+      born: number;
+      life: number;
+      len: number;
+      thick: number;
+      a: number;
+      img: HTMLCanvasElement;
+      phase: number;
+    };
+    const parts: P[] = [];
+    const t0 = performance.now();
+    let raf = 0;
+    let prev: [number, number] | null = null;
+    /** ระยะทางที่พุ่งไปแล้ว (ใช้หมุนเกลียวตามระยะ) */
+    let travelled = 0;
+    /** ตำแหน่ง/ทิศของการ์ดล่าสุด: ควันชั้นหน้าเกาะไปกับการ์ด */
+    let head = { x: 0, y: 0, ux: 0, uy: -1, w: 0 };
+    const rand = (a: number, b: number) => a + Math.random() * (b - a);
+    const pick = () => sprites[(Math.random() * sprites.length) | 0]!;
+    /** รอบเกลียว: ระยะทางต่อ 1 รอบ (เท่าความกว้างการ์ด × PERIOD) และความกว้างเกลียว */
+    const PERIOD = 1.5;
+    const AMP = 0.3;
+    const step = (now: number) => {
+      const box = cv.getBoundingClientRect();
+      if (cv.width !== Math.round(box.width * dpr)) {
+        cv.width = Math.round(box.width * dpr);
+        cv.height = Math.round(box.height * dpr);
+        cv2.width = cv.width;
+        cv2.height = cv.height;
+      }
+      // ตำแหน่งจริงของการ์ด → พิกัดบน canvas (รองรับหน้าเว็บที่ถูกย่อทั้งหน้า)
+      const k = cv.width / (box.width || 1);
+      const el = follow.current;
+      const elapsed = now - t0;
+      if (el && elapsed >= from && elapsed <= until) {
+        const r = el.getBoundingClientRect();
+        const cx = (r.left + r.width / 2 - box.left) * k;
+        const cy = (r.top + r.height / 2 - box.top) * k;
+        const w = size * k;
+        const [px, py] = prev ?? [cx, cy];
+        const dx = cx - px;
+        const dy = cy - py;
+        const dist = Math.hypot(dx, dy);
+        // ปล่อยเฉพาะตอนพุ่งจริง (เร็ว) · ช่วงถอยตั้งหลัก/หมุนตั้งตรงขยับช้า = ไม่ปล่อยควัน
+        if (dist > w * 0.06) {
+          const ux = dx / dist;
+          const uy = dy / dist;
+          const ang = Math.atan2(uy, ux);
+          head = { x: cx, y: cy, ux, uy, w };
+          const n = Math.min(full ? 16 : 5, Math.max(1, Math.round(dist / (w * (full ? 0.06 : 0.2)))));
+          for (let i = 0; i < n; i++) {
+            const f = (i + Math.random()) / n;
+            const bx = px + dx * f;
+            const by = py + dy * f;
+            const born = now - (1 - f) * 16;
+            const at = travelled + dist * f;
+            // เกลียวเล็กที่ต้นทาง (ท้ายหาง) แล้วค่อย ๆ กว้างขึ้นจนเท่าตัวการ์ด → มองจากการ์ดลงไป เกลียวเล็กลงเรื่อย ๆ
+            const grow = Math.min(1, at / (w * 3.5));
+            const amp = AMP * (0.2 + 0.8 * grow);
+            // รอบถี่ขึ้นเมื่อเกลียวแคบ (เหมือนน้ำวน)
+            const theta = (at / (w * PERIOD)) * Math.PI * 2 * (1.35 - 0.35 * grow);
+            // เกลียวสองเส้น (ห่างกันครึ่งรอบ) · ด้านที่หันเข้าหาจอ (cos > 0) ทึบกว่า · สุ่มเหลื่อมเล็กน้อยให้ขอบไม่เรียบ
+            for (const off of [0, Math.PI]) {
+              const th = theta + off + rand(-0.25, 0.25);
+              parts.push({
+                kind: 'helix',
+                x: bx,
+                y: by,
+                nx: -uy,
+                ny: ux,
+                lat: (Math.sin(th) * amp + rand(-0.06, 0.06)) * w,
+                slope: Math.atan(Math.cos(th) * amp * ((Math.PI * 2) / PERIOD)) + rand(-0.15, 0.15),
+                ang,
+                born,
+                life: rand(560, 820),
+                len: w * rand(0.85, 1.15) * (0.6 + 0.4 * grow),
+                thick: w * rand(0.6, 0.85) * (0.55 + 0.45 * grow),
+                a: (0.5 + 0.5 * ((Math.cos(th) + 1) / 2)) * rand(0.8, 1),
+                img: pick(),
+                phase: 0,
+              });
+            }
+          }
+          // ชั้นหน้า: ควันห่อทั้งตัวการ์ด วนเป็นเกลียวรอบการ์ด (ต่อเนื่องกับเกลียวของหาง)
+          const m = full ? 7 : 3;
+          for (let i = 0; i < m; i++) {
+            parts.push({ kind: 'wrap', x: 0, y: 0, nx: 0, ny: 0, lat: 0, slope: 0, ang: 0, born: now, life: rand(320, 480), len: w * rand(0.85, 1.25), thick: w * rand(0.45, 0.7), a: rand(0.7, 0.95), img: pick(), phase: Math.random() * Math.PI * 2 });
+          }
+          travelled += dist;
+        }
+        prev = [cx, cy];
+      } else prev = null;
+      ctx.clearRect(0, 0, cv.width, cv.height);
+      ctx2.clearRect(0, 0, cv2.width, cv2.height);
+      // วาดเก่าก่อน ใหม่ทับ → ส่วนที่อยู่ใกล้การ์ดทึบสุด
+      for (let i = 0; i < parts.length; i++) {
+        const p = parts[i]!;
+        const u = (now - p.born) / p.life;
+        if (u >= 1) {
+          parts.splice(i--, 1);
+          continue;
+        }
+        const c = p.kind === 'wrap' ? ctx2 : ctx;
+        c.save();
+        c.globalAlpha = p.a * (u < 0.06 ? u / 0.06 : Math.pow(1 - (u - 0.06) / 0.94, 1.3));
+        let thick = p.thick * (1 - 0.6 * u);
+        const len = p.len * (1 + 0.3 * u);
+        if (p.kind === 'wrap') {
+          // พิกัดตามตัวการ์ด: ไหลจากหัว (+0.8) ไปท้าย (-1.0) × ความกว้างการ์ด · ด้านข้างวนเป็นเกลียว
+          const hw = head.w;
+          const th = p.phase + u * Math.PI * 2;
+          const along = (0.8 - 1.8 * u) * hw;
+          const lat = Math.sin(th) * hw * 0.38;
+          c.translate(head.x + head.ux * along - head.uy * lat, head.y + head.uy * along + head.ux * lat);
+          c.rotate(Math.atan2(head.uy, head.ux) + Math.atan(Math.cos(th) * 1.6));
+          c.globalAlpha *= 0.6 + 0.4 * ((Math.cos(th) + 1) / 2);
+        } else {
+          // เกลียวแคบลงตามอายุ (ส่วนท้ายของหางเล็กลง) + ลอยถอยหลังเล็กน้อย
+          const shrink = 1 - 0.75 * u;
+          const back = (now - p.born) * 0.015 * k;
+          const lat = p.lat * shrink;
+          c.translate(p.x + p.nx * lat - p.ny * back, p.y + p.ny * lat + p.nx * back);
+          c.rotate(p.ang + p.slope * shrink);
+          if (p.kind === 'helix') thick *= 0.7 + 0.3 * shrink;
+        }
+        c.drawImage(p.img, -len / 2, -thick / 2, len, thick);
+        c.restore();
+      }
+      if (parts.length > 0 || elapsed < until) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // ชั้นหลังอยู่ใต้การ์ด (z 41) · ชั้นหน้าอยู่เหนือการ์ด (z 42) แต่ใต้แสงกระแทก (z 43)
+  return (
+    <>
+      <canvas ref={canvas} className="pointer-events-none fixed inset-0 z-[41] h-full w-full" />
+      <canvas ref={frontCanvas} className="pointer-events-none fixed inset-0 z-[42] h-full w-full" />
+    </>
+  );
+}
+
+const HIT_AT = CHARGE_HIT; // สัดส่วนเวลาที่ชนเป้าหมาย (ค่าเดียวกับ store)
 
 /**
  * ผู้โจมตีวิ่งชนเป้าหมาย: ลุกตั้งตรง → ถอยตั้งหลัก → พุ่งชน (จอสั่น + แสงกระแทก) → วิ่งกลับ / แตกสลายตรงจุดชน
@@ -2438,7 +2775,7 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
     const stop = Math.max(0, len - cardH * 0.45);
     const hx = (tx / len) * stop;
     const hy = (ty / len) * stop;
-    const rot = fx.fromExhausted ? 'rotate(90deg)' : 'rotate(0deg)';
+    const rot = fx.fromExhausted || fx.startLying ? 'rotate(90deg)' : 'rotate(0deg)';
     const rotEnd = fx.toExhausted ? 'rotate(90deg)' : 'rotate(0deg)';
     // แพ้: ถูกกระแทกกระเด็นกลับ (ตามสัดส่วน CHARGE_KNOCK: 0 = ถึงช่องเดิม) เซ แล้วหยุดตั้งตรงตรงนั้น ภาพร้าว/แตกเล่นต่อที่จุดนี้
     const K = CHARGE_KNOCK;
@@ -2515,6 +2852,14 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
           </div>
         </Upside>
       </div>
+      {/* หางควันสีตามการ์ด: ปล่อยตั้งแต่เริ่มพุ่ง (หลังถอยตั้งหลัก) จนชนเป้าหมาย · วางหลังการ์ดใน DOM: ชั้นหน้า (z 42 เท่าการ์ด) จึงทับการ์ด */}
+      <SmokeTrail
+        follow={ref}
+        hex={COLOR_HEX[db.get(fx.cardNo).colors[0] ?? 'red'] ?? '#a855f7'}
+        from={fx.delay + CHARGE_MS * 0.2}
+        until={fx.delay + CHARGE_MS * (HIT_AT + 0.04)}
+        size={cardW}
+      />
       {impact && (
         <div className="pointer-events-none fixed z-[43]" style={{ left: impact.x, top: impact.y }}>
           <div className="absolute h-56 w-56 rounded-full" style={{ animation: 'fx-impact 0.5s ease-out both', background: 'radial-gradient(circle, rgba(255,255,255,0.95) 0%, rgba(253,224,71,0.7) 25%, rgba(244,63,94,0.4) 50%, transparent 70%)' }} />

@@ -367,10 +367,32 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
         {candidate && (
           <div className="absolute inset-x-1 bottom-1 rounded bg-fuchsia-500 py-0.5 text-center text-xs font-bold text-white shadow">คลิกเพื่อเลือก</div>
         )}
-        {canAttack && (
-          <div className={`absolute inset-x-1 bottom-1 rounded py-0.5 text-center text-xs font-bold ${confirming ? 'bg-rose-500 text-white' : 'bg-amber-400 text-slate-900'}`}>
-            {confirming ? 'คลิกอีกครั้งเพื่อยืนยัน' : 'คลิกเพื่อโจมตี'}
-          </div>
+        {canAttack && !confirming && (
+          <div className="absolute inset-x-1 bottom-1 rounded bg-amber-400 py-0.5 text-center text-xs font-bold text-slate-900">คลิกเพื่อโจมตี</div>
+        )}
+        {/* ยืนยันโจมตี: ปุ่มวงกลมรูปดาบลอยเหนือการ์ด (กดปุ่ม หรือคลิกการ์ดซ้ำ = โจมตี) */}
+        {canAttack && confirming && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              useGame.getState().confirmAttack(true);
+            }}
+            className="absolute -top-7 left-1/2 z-20 flex -translate-x-1/2 flex-col items-center"
+            style={{ animation: 'attack-btn-in 0.25s cubic-bezier(.2,1.4,.4,1) both' }}
+            title="โจมตี"
+          >
+            <span className="relative flex h-14 w-14 items-center justify-center rounded-full border-2 border-sky-100 bg-gradient-to-b from-sky-400 to-blue-700 text-white shadow-[0_0_18px_rgba(56,189,248,0.9),inset_0_2px_6px_rgba(255,255,255,0.45)] transition hover:scale-110">
+              <span className="absolute inset-0 rounded-full border-2 border-sky-200/70" style={{ animation: 'login-ring 1.6s ease-out infinite' }} />
+              <svg viewBox="0 0 24 24" className="h-7 w-7 drop-shadow" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M14.5 17.5 3 6V3h3l11.5 11.5" />
+                <path d="m13 19 6-6" />
+                <path d="m16 16 4 4" />
+                <path d="m19 21 2-2" />
+              </svg>
+            </span>
+            <span className="-mt-1 rounded bg-black/60 px-1.5 text-sm font-black text-white [text-shadow:0_0_6px_rgba(56,189,248,0.9)]">Attack</span>
+          </button>
         )}
         {canBlock && (
           <div className="absolute inset-x-1 bottom-1 rounded bg-sky-400 py-0.5 text-center text-xs font-bold text-slate-900">คลิกเพื่อป้องกัน</div>

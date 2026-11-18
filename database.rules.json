@@ -12,6 +12,27 @@
         ".write": "auth != null",
         ".validate": "newData.hasChildren(['name', 'host', 'createdAt', 'version'])"
       }
+    },
+    "profiles": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && auth.uid === $uid",
+        ".validate": "newData.hasChildren(['name', 'avatar', 'updated']) && newData.child('name').isString() && newData.child('name').val().length <= 16 && newData.child('avatar').isString() && newData.child('avatar').val().length <= 40 && newData.child('updated').isNumber()"
+      }
+    },
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
+        "decks": {
+          "$id": {
+            ".validate": "newData.child('updated').isNumber() && (newData.child('deleted').val() === true || (newData.child('code').isString() && newData.child('code').val().length <= 8000))"
+          }
+        },
+        "settings": {
+          ".validate": "newData.child('updated').isNumber()"
+        }
+      }
     }
   }
 }

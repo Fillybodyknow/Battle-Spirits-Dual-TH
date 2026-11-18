@@ -9,12 +9,14 @@ import { installTouch } from './touch';
 import { startUpdateCheck } from './version';
 import { installGfx } from './gfx';
 import { installDragCleanup } from './components/DragGhost';
+import { installAccount } from './account/account';
 
 registerPwa();
 installTouch();
 startUpdateCheck();
 installGfx();
 installDragCleanup();
+installAccount();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -180,6 +180,13 @@ body {
   100% { transform: translate(-50%, -50%) scale(1.4); opacity: 0; }
 }
 /* แสงระเบิดหลังการ์ด / รัศมีดาเมจ */
+/* ระเบิดตอนเสีย Life (Fx.tsx Damage): ลูกระเบิด / วงแหวน / แสงวาบทั้งจอ (ใช้ translate แยก จึง transform ได้แค่ scale) */
+@keyframes fx-dmg-sphere { 0% { transform: scale(0.15); opacity: 1; } 35% { transform: scale(1); opacity: 1; } 100% { transform: scale(1.15); opacity: 0; } }
+@keyframes fx-dmg-ring { 0% { transform: scale(0.2); opacity: 0; } 15% { opacity: 1; } 100% { transform: scale(1.45); opacity: 0; } }
+@keyframes fx-dmg-flash { 0% { opacity: 0; } 12% { opacity: 1; } 100% { opacity: 0; } }
+/* FINAL BLOW: แถบเหลืองแนวตั้งสองข้างจอ ข้อความวิ่ง */
+@keyframes fx-fb-banner-in { 0% { transform: translateX(var(--from)); } 12% { transform: translateX(0); } 88% { transform: translateX(0); opacity: 1; } 100% { transform: translateX(var(--from)); opacity: 0; } }
+@keyframes fx-fb-scroll { from { transform: translateY(0); } to { transform: translateY(var(--dist)); } }
 @keyframes fx-sunburst {
   0% { transform: translate(-50%, -50%) scale(0.3) rotate(0deg); opacity: 0; }
   25% { opacity: 1; }
@@ -467,6 +474,38 @@ body {
 
 /* ---------------------------------------------------------------- หน้าหลัก / Lobby */
 @keyframes home-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-14px); } }
+/* ช่องที่เบราว์เซอร์กรอกให้อัตโนมัติ (อีเมล/รหัสผ่าน): ไม่ให้เป็นพื้นขาวตัดกับธีมมืด */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #f8fafc;
+  caret-color: #f8fafc;
+  -webkit-box-shadow: 0 0 0 1000px #1e293b inset;
+  transition: background-color 9999s ease-out 0s;
+}
+/* หน้าไตเติล / เข้าสู่ระบบ (screens/Login.tsx) */
+@keyframes login-logo-in { 0% { transform: scale(1.35); opacity: 0; filter: blur(8px); } 60% { opacity: 1; filter: blur(0); } 100% { transform: scale(1); opacity: 1; } }
+@keyframes login-tap { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+@keyframes login-mote { 0% { transform: translateY(0); opacity: 0; } 10% { opacity: 1; } 90% { opacity: 0.8; } 100% { transform: translateY(-105vh); opacity: 0; } }
+@keyframes login-breathe { 0%, 100% { transform: scale(1); opacity: 0.8; } 50% { transform: scale(1.15); opacity: 1; } }
+@keyframes login-card-in { from { opacity: 0; filter: blur(6px); } to { opacity: 1; filter: blur(0); } }
+@keyframes login-panel-in { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes login-flash { 0% { opacity: 0; } 35% { opacity: 1; } 100% { opacity: 1; } }
+@keyframes login-flash-out { from { opacity: 1; } to { opacity: 0; visibility: hidden; } }
+/* ฉากเข้าเกม: การ์ดพุ่งออกจากอุโมงค์ (Login.tsx WarpOut) */
+@keyframes login-warp-bg { from { opacity: 0; } to { opacity: 1; } }
+@keyframes login-vortex { from { transform: translate(-50%, -50%) rotate(0deg) scale(0.6); } to { transform: translate(-50%, -50%) rotate(-220deg) scale(1.25); } }
+@keyframes login-streak { 0% { transform: translateX(4vmax) scaleX(0.05); opacity: 0; } 30% { opacity: 1; } 100% { transform: translateX(30vmax) scaleX(1); opacity: 0; } }
+@keyframes login-warp-card {
+  0% { transform: translate(-50%, -50%) translate3d(0, 0, -2000px) rotateZ(0deg); opacity: 0; }
+  12% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { transform: translate(-50%, -50%) translate3d(var(--dx), var(--dy), 650px) rotateX(var(--rx)) rotateY(var(--ry)) rotateZ(var(--rz)); opacity: 0; }
+}
+@keyframes login-hero-in { from { opacity: 0; transform: translateX(6vw) scale(1.04); filter: blur(6px); } to { opacity: 1; transform: none; filter: blur(0); } }
+@keyframes login-band { from { translate: -4vw 0; opacity: 0.75; } to { translate: 4vw 0; opacity: 1; } }
+@keyframes login-ring { 0% { transform: scale(1); opacity: 0.9; } 100% { transform: scale(1.7); opacity: 0; } }
+@keyframes login-core { 0%, 100% { transform: scale(0.92); filter: brightness(1); } 50% { transform: scale(1.06); filter: brightness(1.35); } }
 @keyframes home-sheen { 0%, 55% { left: -50%; } 100% { left: 150%; } }
 @keyframes lobby-in-left { from { transform: translateX(-60px); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes lobby-in-right { from { transform: translateX(60px); opacity: 0; } to { transform: none; opacity: 1; } }

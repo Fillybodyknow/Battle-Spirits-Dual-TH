@@ -154,6 +154,14 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
 - ไอคอนใช้ SVG ใน `components/Icon.tsx` (อีโมจิ/สัญลักษณ์พิเศษเป็นกล่องว่างบน Windows 7)
 - สี Tailwind v4 เป็น `oklch()`: ถ้าอัปเดต Tailwind ให้รัน `npm run legacy-colors`
 - โหมดออนไลน์: `?online=local` ใช้ transport ในเครื่อง (ทดสอบสองแท็บได้โดยไม่ต้องมี Firebase)
+- **บัญชีผู้ใช้ (`src/account/`)**: Firebase Auth (Google / Email) ผูกกับ uid ไม่ระบุตัวเดิม (`linkWithPopup` / `linkWithCredential`) · ซิงก์ชื่อ รูปโปรไฟล์ (`bs-avatar`) เด็ค และการตั้งค่า
+  - **ต้องล็อกอินก่อนเข้าเกม** (เจ้าของโปรเจกต์กำหนด): `App` แสดง `screens/Login.tsx` (หน้าไตเติล + แผงเข้าสู่ระบบ) จนกว่าจะล็อกอินและแตะเริ่ม · ออกจากระบบ = กลับหน้าไตเติล
+    ทดสอบ UI ด้วย `?online=local` (บัญชีจำลอง) หรือเรียก `account.signUpEmail(...)` จาก `/src/account/account.ts` ก่อนเรียก `__game`
+  - ข้อมูลอยู่ที่ `profiles/<uid>` (คนล็อกอินอ่านได้) และ `users/<uid>` (เจ้าของเท่านั้น) · เด็คเก็บเป็นรหัส `c:...` (RTDB ตัด null ใน array ทิ้ง ห้ามเก็บ `foils` ตรง ๆ)
+  - เก็บในเครื่องก่อนเสมอ แล้ว `account.ts` เช็กการเปลี่ยนแปลงทุก 2.5 วิส่งขึ้น · ดึง+รวมตอนล็อกอิน/เปิดแอป/กลับมาที่แท็บ (`merge.ts` ฟังก์ชันล้วน มีเทสต์ `merge.test.ts`)
+  - การตั้งค่าที่ซิงก์ = รายชื่อคีย์ localStorage `SETTING_KEYS` ใน account.ts: เพิ่มการตั้งค่าใหม่ที่อยากให้ตามบัญชี ให้ใส่คีย์ที่นี่ + วิธีใช้ค่าใหม่ใน `applySettings`
+  - `?online=local` หรือไม่มีค่า Firebase = บัญชี/คลาวด์จำลองใน localStorage (`localCloud.ts`) ทดสอบซิงก์ได้โดยไม่ต้องมีเน็ต
+  - หน้าต่างที่เปิดจาก element ที่มี `backdrop-blur` ต้อง `createPortal` ไป body ไม่งั้น `position: fixed` ถูกจำกัดอยู่ในกรอบนั้น
 - หน้า DUEL (`screens/Lobby.tsx`, screen `'lobby'`): เมนูการดวล → Room Match → สร้างห้อง / รายการห้อง → หน้าห้อง
   ห้องดวล (`store.duel`, ฟังก์ชัน `duel*` ใน store) อยู่ที่ `rooms/<code>` = `DuelRoom`: สมาชิก ≤6 (`members`, ลบเองเมื่อหลุด), โต๊ะ (`tables/<n>`: seats / ready / game)
   ทั้งสองที่นั่งกดพร้อม → เครื่องที่นั่ง p1 สร้างห้องเกม `rooms/<code>-<id>` (โครงสร้างห้องเกม 2 คนเดิม: setup/actions) แล้วตั้ง `tables/<n>/game`

@@ -426,7 +426,8 @@ export type Fx =
   /** เส้นเล็งจากการ์ดต้นเอฟเฟกต์ไปยังเป้าหมายที่เลือก */
   | { id: number; kind: 'target'; sourceId: string; targetId: string; delay: number; duration: number }
   /** ตัวเลขดาเมจใหญ่กลางฝั่งที่เสียไลฟ์ (big = โดนโจมตีตรง มีรัศมีแตกกระจาย) */
-  | { id: number; kind: 'damage'; player: PlayerId; amount: number; big: boolean; delay: number }
+  /** big = โจมตีตรงเข้า Life (ระเบิด) · lethal = ครั้งที่ทำให้ Life หมด (ระเบิดใหญ่มาก ไม่ว่าจากการโจมตีหรือเอฟเฟกต์) */
+  | { id: number; kind: 'damage'; player: PlayerId; amount: number; big: boolean; lethal?: boolean; delay: number }
   | { id: number; kind: 'float'; anchor: string; text: string; tone: 'bad' | 'good'; delay?: number; /** เสียงแทนเสียงประจำ tone */ sound?: SfxName }
   /**
    * การ์ดบินจากจุดหนึ่งไปอีกจุด: from = ตำแหน่งที่จับไว้ก่อน action (หรือ selector), to = selector ปลายทาง หรือ 'center'
@@ -477,6 +478,8 @@ export type Fx =
       target: Rect | string;
       /** ท่าของการ์ดก่อนวิ่ง / หลังกลับ (นอน = เสื่อมสภาพ) */
       fromExhausted: boolean;
+      /** เริ่มจากท่านอนแต่กรอบ from เป็นกรอบตั้งตรง (นอนลงไปแล้วตอนประกาศโจมตีใน action เดียวกัน) */
+      startLying?: boolean;
       toExhausted: boolean;
       dies: boolean;
       delay: number;
@@ -573,6 +576,10 @@ export const CUTIN_MS = { normal: 2500, special: 3300 } as const;
 /** จังหวะที่การ์ดทุบกลางจอใน cut-in (สัดส่วนของความยาว): ก่อนหน้า = ชาร์จพลัง, ตรงนี้ = แสงวาบ/คลื่น/จอสั่น */
 export const CUTIN_SLAM = 0.17;
 
+/** ระยะเวลาวิ่งชนทั้งหมด (ถอยตั้งหลัก → พุ่ง → ชน → กลับ) และสัดส่วนเวลาที่ชน */
+export const CHARGE_MS = 1500;
+export const CHARGE_HIT = 0.45;
+
 const T = {
   /** ป้ายสเต็ปเล็ก (Start/Core/Draw/Refresh/Main/End) */
   miniBanner: 900,
@@ -599,9 +606,9 @@ const T = {
   /** ลงจากเวทีเข้า Trash */
   castExit: CAST_MS.exit,
   /** ผู้โจมตีวิ่งถึงเป้าหมาย */
-  hit: 450,
+  hit: CHARGE_MS * CHARGE_HIT,
   /** ผู้โจมตีวิ่งชนแล้ววิ่งกลับถึงที่เดิม */
-  chargeEnd: 1000,
+  chargeEnd: CHARGE_MS,
   /** ห่างระหว่างการ์ดที่จั่วต่อเนื่อง */
   drawGap: 160,
   /** ภาพการ์ดแตก/สูญสลาย (ก่อนขั้นถัดไปเริ่ม) */
@@ -1030,7 +1037,15 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         t += T.activate;
         break;
       case 'attackDeclared': {
-        if (charge) break; // ตัดสินใน action เดียวกัน: แสดงแค่การวิ่งชน
+        // ตัดสินใน action เดียวกัน: แสดงแค่การวิ่งชน · ยกเว้นมีเอฟเฟกต์ทำงานก่อนผลการต่อสู้ (เช่น "เมื่อสปิริตนี้โจมตี")
+        // ต้องให้การ์ดพุ่ง/นอนลงก่อน แล้วเอฟเฟกต์ค่อยทำงาน แล้วจึงวิ่งชน (เริ่มจากท่านอน)
+        if (charge) {
+          const i0 = events.indexOf(e);
+          const iHit = events.findIndex((x, i) => i > i0 && ((x.type === 'destroyed' && (x.cardId === attackerId || blockers.includes(x.cardId))) || (x.type === 'lifeLost' && x.player === defender)));
+          const effectFirst = events.some((x, i) => i > i0 && (iHit < 0 || i < iHit) && x.type === 'effectResolving');
+          if (!effectFirst) break;
+          if (charge.kind === 'charge' && !charge.fromExhausted) charge.startLying = true;
+        }
         const target = opponentOf(s.cards[e.attackerId]!.owner);
         out.push({ kind: 'lunge', cardId: e.attackerId, target: `[data-player-target="${target}"]`, delay: t, max: 36 });
         // เอฟเฟกต์ "เมื่อสปิริตนี้โจมตี" เริ่มหลังพุ่งเสร็จ (การ์ดนอนลงแล้ว)
@@ -1280,6 +1295,7 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
           const loser = opponentOf(e.winner);
           const hit = [...out].reverse().find((f): f is Extract<FxInput, { kind: 'damage' }> => f.kind === 'damage' && f.player === loser);
           const fb = hit?.delay ?? end;
+          if (hit) hit.lethal = true;
           out.push({ kind: 'finalBlow', loser, winner: e.winner, delay: fb });
           at = Math.max(end + 300, fb + T.finalBlow);
         }
@@ -1734,8 +1750,8 @@ function playFxSounds(list: Fx[]) {
         else f.cardIds.forEach((_, i) => sfx('draw', f.delay + i * 90));
         break;
       case 'charge':
-        sfx('whoosh', f.delay + 150);
-        sfx('attackHit', f.delay + 450);
+        sfx('whoosh', f.delay + CHARGE_MS * 0.15);
+        sfx('attackHit', f.delay + T.hit);
         break;
       case 'mill':
         f.cardIds.forEach((_, i) => {

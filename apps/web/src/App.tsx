@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { Login } from './screens/Login';
+import { useAccount } from './account/account';
 import { PLAYERS, opponentOf } from '@bs/engine';
 import { playerLabel } from './format';
 import { onlineAvailable, onlineVia, playableDecks, useGame, viewPlayer, type DeckId } from './store';
@@ -236,14 +238,32 @@ function Settings() {
 export function App() {
   const screen = useGame((s) => s.screen);
   useBgmDirector();
+  // ต้องล็อกอินก่อนเข้าเกม: เปิดแอปเริ่มที่หน้าไตเติลเสมอ · ออกจากระบบ = กลับหน้าไตเติล
+  const user = useAccount((s) => s.user);
+  const [entered, setEntered] = useState(false);
+  useEffect(() => {
+    if (!user) setEntered(false);
+  }, [user]);
+  const gated = !entered || !user;
   // มือถือแนวนอน: กระดานเกมต้องการความสูง 860 ส่วนหน้าเมนูใช้น้อยกว่า (ย่อน้อยลง ปุ่ม/ตัวหนังสือใหญ่ขึ้น)
   useEffect(() => {
     const w = window as unknown as { __fitH?: number; __refit?: () => void };
-    w.__fitH = screen === 'game' ? 860 : 640;
+    w.__fitH = screen === 'game' && !gated ? 860 : 640;
     w.__refit?.();
-  }, [screen]);
+  }, [screen, gated]);
+  if (gated) {
+    return (
+      <>
+        <Login onEnter={() => setEntered(true)} />
+        <UpdateNotice />
+        <RotateHint />
+      </>
+    );
+  }
   return (
     <>
+      {/* เพิ่งเข้าจากหน้าไตเติล: แสงวาบจางออก */}
+      <div className="pointer-events-none fixed inset-0 z-[150] bg-white" style={{ animation: 'login-flash-out 0.6s ease-out both' }} />
       {screen === 'home' ? <Home /> : screen === 'lobby' ? <Lobby /> : screen === 'decks' ? <DeckViewer /> : screen === 'mydeck' ? <MyDeck /> : screen === 'builder' ? <DeckBuilder /> : <GameScreen />}
       {screen !== 'game' && <ErrorToast />}
       {/* อัปเดตแอป: แจ้งเวอร์ชันใหม่ / มีอะไรใหม่หลังอัปเดต */}

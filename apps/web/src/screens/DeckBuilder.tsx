@@ -4,6 +4,7 @@ import { COLOR_LABEL, RARITY_BADGE, TYPE_LABEL } from '../format';
 import { db, useGame } from '../store';
 import { deckInfo, deckSizeOf, deleteMyDeck, loadMyDecks, newDeckId, saveMyDeck, STARTER_DECKS, type SavedDeck } from '../decks';
 import { BTN } from '../components/Modal';
+import { useAccount } from '../account/account';
 import { CardDetail } from '../components/CardDetail';
 import { BackButton, CardArt } from './shared';
 
@@ -54,6 +55,11 @@ export function DeckBuilder() {
   const setScreen = useGame((s) => s.setScreen);
   const deckView = useGame((s) => s.deckView);
   const [myDecks, setMyDecks] = useState<SavedDeck[]>(loadMyDecks);
+  // ซิงก์บัญชีดึงเด็คจากเครื่องอื่นลงมา: โหลดรายการใหม่ (เด็คที่กำลังแก้อยู่ไม่ถูกแตะ)
+  const pulledAt = useAccount((s) => s.pulledAt);
+  useEffect(() => {
+    if (pulledAt) setMyDecks(loadMyDecks());
+  }, [pulledAt]);
   const [draft, setDraft] = useState<Draft>(() => {
     // เปิดจากหน้าดูเด็ค: เด็คที่จัดเอง = แก้ไข, Starter Deck = เริ่มจากสำเนา
     const saved = deckView.startsWith('u:') ? loadMyDecks().find((d) => d.id === deckView.slice(2)) : undefined;

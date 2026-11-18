@@ -131,6 +131,12 @@ export function resetGfx() {
   save({ ...DEFAULTS });
 }
 
+/** อ่านการตั้งค่ากราฟิกจาก localStorage ใหม่ (ซิงก์บัญชีเขียนค่าจากเครื่องอื่นลงมา) */
+export function reloadGfx() {
+  settings = load();
+  apply();
+}
+
 /** เรียกครั้งเดียวตอนเปิดแอป */
 export function installGfx() {
   apply();

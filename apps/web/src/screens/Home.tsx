@@ -10,6 +10,8 @@ import { BTN } from '../components/Modal';
 import { setSfx, sfx, sfxSettings } from '../sfx';
 import { DECKS, db, onlineAvailable, useGame, type DeckId, playableDecks } from '../store';
 import { deckInfo } from '../decks';
+import { playerId, useAccount } from '../account/account';
+import { AccountDialog, AvatarImg } from '../components/AccountDialog';
 import { CardArt, DeckTile, GLOW, deckColor, deckCover, deckSize } from './shared';
 
 /** คู่การ์ด X-Rare ที่หมุนแสดงทางขวาของหน้าหลัก */
@@ -62,48 +64,29 @@ function Showcase() {
   );
 }
 
-/** ป้ายโปรไฟล์มุมซ้ายบน (คลิกชื่อเพื่อแก้) */
+/** ป้ายโปรไฟล์มุมซ้ายบน: ทั้งป้ายเป็นปุ่มเดียว เปิดหน้าบัญชี (แก้ชื่อ / รูป / ออกจากระบบ ที่นั่นที่เดียว) */
 function ProfilePlate() {
   const name = useGame((s) => s.playerName);
-  const setName = useGame((s) => s.setPlayerName);
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(name);
-  const avatar = deckCover('sd02');
+  const [accountOpen, setAccountOpen] = useState(false);
+  const { user, avatar: picked } = useAccount();
+  const fallback = deckCover('sd02');
+  const avatar = picked || fallback;
   return (
-    <div className="flex items-center gap-3 self-start rounded-r-2xl border border-l-0 border-sky-300/30 bg-gradient-to-r from-slate-950/95 to-slate-900/70 py-2 pr-6 pl-5 shadow-[0_0_24px_rgba(56,189,248,0.15)] backdrop-blur">
-      <div className="relative h-14 w-14 overflow-hidden rounded-xl ring-2 ring-yellow-300/80 shadow-[0_0_14px_rgba(250,204,21,0.4)]">
-        {cardArt(avatar) ? <img src={cardArt(avatar)} alt="" className="absolute top-[-18%] left-[-30%] w-[160%] max-w-none" /> : <div className="h-full w-full bg-slate-700" />}
-      </div>
-      <div className="min-w-0">
-        {editing ? (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              setName(draft);
-              setEditing(false);
-            }}
-          >
-            <input
-              autoFocus
-              value={draft}
-              maxLength={16}
-              onChange={(e) => setDraft(e.target.value)}
-              onBlur={() => {
-                setName(draft);
-                setEditing(false);
-              }}
-              className="w-44 rounded bg-slate-800 px-2 py-0.5 text-lg font-black text-white ring-1 ring-yellow-300 outline-none"
-            />
-          </form>
-        ) : (
-          <button type="button" onClick={() => (setDraft(name), setEditing(true))} className="group flex items-center gap-2 text-lg font-black text-white" title="แก้ชื่อ">
-            {name}
-            <span className="text-xs text-slate-500 group-hover:text-yellow-300">✎</span>
-          </button>
-        )}
-        <div className="text-xs tracking-wider text-sky-200/70">นักดวล · Battle Spirits Dual TH</div>
-      </div>
-    </div>
+    <>
+      {accountOpen && <AccountDialog onClose={() => setAccountOpen(false)} fallbackAvatar={fallback} />}
+      <button
+        type="button"
+        onClick={() => (sfx('click'), setAccountOpen(true))}
+        title="บัญชีของฉัน"
+        className="group flex items-center gap-3 self-start rounded-r-2xl border border-l-0 border-sky-300/30 bg-gradient-to-r from-slate-950/95 to-slate-900/70 py-2 pr-6 pl-5 text-left shadow-[0_0_24px_rgba(56,189,248,0.15)] backdrop-blur transition hover:border-sky-300/60 hover:shadow-[0_0_28px_rgba(56,189,248,0.3)]"
+      >
+        <AvatarImg cardNo={avatar} className="h-14 w-14 shrink-0 rounded-xl ring-2 ring-yellow-300/80 shadow-[0_0_14px_rgba(250,204,21,0.4)] transition group-hover:brightness-110" />
+        <span className="min-w-0">
+          <span className="block max-w-56 truncate text-lg font-black text-white">{name}</span>
+          <span className="block text-xs tracking-wider text-sky-200/70">Player ID: {user ? playerId(user.uid) : '---'}</span>
+        </span>
+      </button>
+    </>
   );
 }
 
