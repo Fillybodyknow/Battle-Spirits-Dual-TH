@@ -421,4 +421,36 @@ describe('Booster Set 06', () => {
     expect(blockers).toContain(big);
     expect(currentBp(s, db, servant)).toBe(5000);
   });
+
+  describe('No.25 โกรวซเลเบรชั่น: แอทแท็คสเต็ป เมื่อสปิริตเราถูกอัญเชิญ → คอร์วอยด์ 1 เม็ดวางรีเสิร์ฟ', () => {
+    const HAWK = no('เหยี่ยวชุดเกราะ ชุยรัน-ฮอว์ค'); // Brave คอสต์ 1 Flash [Quick], ร่วมร่างคอสต์ 6+
+    const OGUMA = no('นักพรตชั่วร้าย โอกุมะ'); // คอสต์ 6
+    /** p1 โจมตีด้วยโอกุมะ แล้วอยู่ใน Flash ที่ p1 ถือ priority */
+    const inFlash = () => {
+      let s = setup();
+      put(s, 'p1', no('No.25 โกรวซเลเบรชั่น'), 0);
+      const host = put(s, 'p1', OGUMA, 1);
+      const hawk = inHand(s, 'p1', HAWK);
+      s = attack(s, host);
+      s = act(s, { type: 'passFlash', player: 'p2' });
+      return { s, host, hawk };
+    };
+
+    it('เบรฟที่อัญเชิญมาร่วมร่างทันที = เบรฟ ไม่ใช่สปิริต (กติกา 04): ไม่ทำงาน', () => {
+      let { s, host, hawk } = inFlash();
+      const before = s.players.p1.reserve.length;
+      s = act(s, { type: 'summon', player: 'p1', cardId: hawk, payment: normalCores(s).slice(0, 1), placement: [], braveOnto: host });
+      expect(s.cards[host]!.braves).toEqual([hawk]);
+      expect(s.players.p1.reserve.length).toBe(before - 1); // จ่าย 1 · ไม่ได้คอร์วอยด์
+    });
+
+    it('เบรฟที่อัญเชิญลงมายืนเดี่ยว = สปิริต (กติกา 04): ทำงาน', () => {
+      let { s, hawk } = inFlash();
+      const before = s.players.p1.reserve.length;
+      const [pay, place] = normalCores(s);
+      s = act(s, { type: 'summon', player: 'p1', cardId: hawk, payment: [pay!], placement: [place!] });
+      expect(s.players.p1.field).toContain(hawk);
+      expect(s.players.p1.reserve.length).toBe(before - 2 + 1); // จ่าย 1 วาง 1 · ได้คอร์วอยด์ 1
+    });
+  });
 });

@@ -38,6 +38,7 @@ import {
   isSpiritLike,
   matchesFilter,
   minCores,
+  summonMinCores,
   nameHas,
   payableCost,
   removeCore,
@@ -467,6 +468,9 @@ export function queueSummonTriggers(
       ...(opts.from ? { summonFrom: opts.from } : {}),
       ...(opts.level !== undefined ? { level: opts.level } : {}),
     });
+  // เบรฟที่อัญเชิญมาร่วมร่างทันทีอยู่ในสถานะเบรฟ ไม่ใช่สปิริต (กติกา 04: เป็นสปิริตด้วยเฉพาะตอนยืนเดี่ยวบนสนาม)
+  // → ไม่ปลุก "เมื่อสปิริตของเรา...ถูกอัญเชิญ" (ส่วน "เมื่อเบรฟนี้ถูกอัญเชิญ" ของตัวเองยังทำงานตามข้างบน)
+  if (braveHostOf(ctx.s, cardId)) return;
   for (const id of [...ctx.s.players[owner].field])
     queueTriggers(ctx, id, 'allySummoned', batch, { subject: cardId, subjectPaidSoul: !!opts.paidWithSoul, subjectFromTrash: !!opts.fromTrash });
 }
@@ -1037,11 +1041,19 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       }
       // อัญเชิญด้วยเอฟเฟกต์: ใช้ Core จากรีเสิร์ฟและบนการ์ดในสนามของเราได้
       const available = usableCores(ctx, me).length;
+      const need = summonMinCores(s, db, step.cardId); // รวม Lv คอสต์ +N
+      if (!step.noSummon && available < need) {
+        // วาง Core กำหนด Lv1 ไม่ได้ = อัญเชิญไม่ได้ (เจ้าของโปรเจกต์กำหนด) การ์ดอยู่ที่เดิม
+        // การ์ดที่กำลังใช้อยู่เอง (เบิร์ส/เมจิค "อัญเชิญการ์ดนี้") ไม่ได้อยู่ในโซนไหน → ลงแทรชตามปกติของการ์ดที่ใช้แล้ว
+        if (step.cardId === item.sourceId && !inAnyZone(ctx, me, step.cardId)) item.trashWhenDone = true;
+        return;
+      }
+      // เบรฟที่คงอยู่หลังผู้ร่วมร่างออกจากสนาม: ไม่มี Core ให้วาง = สูญสลาย (กติกา 04 ข้อ 2.2)
       if (available === 0) {
         putOnField(ctx, item, step, []);
         return;
       }
-      const min = Math.min(minCores(def), available);
+      const min = Math.min(need, available);
       ask(ctx, item, {
         kind: 'placeCores',
         prompt: `วาง Core บน ${def.name} (อย่างน้อย ${min} ดวง จากรีเสิร์ฟหรือการ์ดบนสนาม)`,
@@ -1646,6 +1658,8 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
         item.steps.unshift({ do: 'placeCores', cardId: step.cardId });
         return;
       }
+      // จ่ายคอสต์แล้วต้องเหลือ Core วางให้ถึง Lv1 ไม่งั้นไม่ถาม (จ่ายไปเปล่า ๆ แล้วอัญเชิญไม่ได้)
+      if (usableCores(ctx, me).length < step.cost + summonMinCores(s, db, step.cardId)) return;
       const name = db.get(s.cards[step.cardId]!.cardNo).name;
       ask(ctx, item, { kind: 'payCost', prompt: `จ่ายคอสต์ ${step.cost} เพื่ออัญเชิญ ${name}?`, cost: step.cost, step });
       return;
@@ -2060,6 +2074,12 @@ function toBottom(ctx: Ctx, player: PlayerId, cardId: string): void {
 }
 
 /** นำการ์ดออกจากที่อยู่เดิม (เด็ค/มือ/แทรช/ช่อง Burst) ถ้ามี */
+/** การ์ดอยู่ในโซนใดโซนหนึ่งของผู้เล่น (เด็ค/มือ/แทรช/เบิร์ส/สนาม/ร่วมร่าง) */
+function inAnyZone(ctx: Ctx, player: PlayerId, cardId: string): boolean {
+  const p = ctx.s.players[player];
+  return p.deck.includes(cardId) || p.hand.includes(cardId) || p.trashCards.includes(cardId) || p.burst === cardId || onField(ctx, cardId);
+}
+
 function detach(ctx: Ctx, player: PlayerId, cardId: string): 'deck' | 'hand' | 'burst' | 'trash' | 'other' {
   const p = ctx.s.players[player];
   if (p.deck.includes(cardId)) {
@@ -2137,7 +2157,8 @@ function multiSummon(ctx: Ctx, player: PlayerId, choice: Extract<PendingChoice, 
       assertUsableCore(ctx, player, id);
       usedCores.add(id);
     }
-    if (cores.length < minCores(def)) fail('NOT_ENOUGH_CORES', `${def.name} ต้องวาง Core อย่างน้อย ${minCores(def)} ดวง`);
+    const need = summonMinCores(s, db, pk.cardId);
+    if (cores.length < need) fail('NOT_ENOUGH_CORES', `${def.name} ต้องวาง Core อย่างน้อย ${need} ดวง`);
   }
 
   const summoned: string[] = [];
@@ -2592,14 +2613,14 @@ function kagemusha(ctx: Ctx, cur: QueuedEffect, step: Step, pick: string): boole
   const { s, db } = ctx;
   const owner = s.cards[pick]!.owner;
   const free = kagemushaFreeNexus(s, db, owner);
-  const usable = kagemushaOptions(s, db, pick).filter((o) => o.payable || free);
+  const usable = kagemushaOptions(s, db, pick).filter((o) => o.payable || (free && o.placeable));
   if (usable.length === 0) return false;
   const name = (id: string) => db.get(s.cards[id]!.cardNo).name;
   const options = usable.flatMap((o) => [
     ...(o.payable
       ? [{ label: `Kagemusha: อัญเชิญ ${name(o.cardId)} (จ่ายคอสต์ ${o.cost})`, steps: [{ do: 'payForSummon', cardId: o.cardId, cost: o.cost }, { do: 'kageSet', cardId: o.cardId }] as Step[] }]
       : []),
-    ...(free
+    ...(free && o.placeable
       ? [{ label: `Kagemusha: เสื่อมสภาพ ${name(free)} เพื่ออัญเชิญ ${name(o.cardId)} ไม่จ่ายคอสต์`, steps: [{ do: 'exhaustCard', cardId: free }, { do: 'placeCores', cardId: o.cardId }, { do: 'kageSet', cardId: o.cardId }] as Step[] }]
       : []),
   ]);

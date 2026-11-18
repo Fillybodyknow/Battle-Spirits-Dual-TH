@@ -24,6 +24,7 @@ import {
   cardLevel,
   currentBp,
   minCores,
+  summonMinCores,
   payableCost,
   createGame,
   isSpiritLike,
@@ -130,10 +131,10 @@ export function canQuickSummon(s: GameState, cardId: string): boolean {
   if (!quick) return false;
   const reserve = s.players[card.owner].reserve;
   const normal = reserve.filter((id) => !s.cores[id]!.isSoul).length;
-  if (quick.soul) return normal + 0 >= minCores(def) && reserve.some((id) => s.cores[id]!.isSoul);
+  if (quick.soul) return normal >= summonMinCores(s, db, cardId) && reserve.some((id) => s.cores[id]!.isSoul);
   // ไซเลนท์ฮิล: ใช้คอร์บนการ์ดในสนามได้ด้วย
   const extra = quickAnyCores(s, db, card.owner) ? s.players[card.owner].field.reduce((n, id) => n + s.cards[id]!.cores.length, 0) : 0;
-  return reserve.length + extra >= payableCost(s, db, card.owner, def, baseCost(s, db, cardId)) + minCores(def);
+  return reserve.length + extra >= payableCost(s, db, card.owner, def, baseCost(s, db, cardId)) + summonMinCores(s, db, cardId);
 }
 
 /** ผู้ร่วมร่างปัจจุบันของ Brave (null = ไม่ได้ร่วมร่าง) */
@@ -171,7 +172,7 @@ export function braveHosts(s: GameState, cardId: string): string[] {
 /** Core ที่จะวางบน Brave ตอนแยกร่าง (จากรีเสิร์ฟ: Core ธรรมดาก่อน) null = ไม่พอ */
 export function separatePlacement(s: GameState, braveId: string): string[] | null {
   const card = s.cards[braveId]!;
-  const need = minCores(db.get(card.cardNo));
+  const need = summonMinCores(s, db, braveId);
   const reserve = [...s.players[card.owner].reserve].sort((a, b) => Number(s.cores[a]!.isSoul) - Number(s.cores[b]!.isSoul));
   return reserve.length >= need ? reserve.slice(0, need) : null;
 }
@@ -3045,7 +3046,7 @@ export const useGame = create<Store>((set, get) => {
           ? []
           : prev && 'cores' in prev
             ? prev.cores
-            : autoCores(state, c.player, minCores(db.get(state.cards[id]!.cardNo)), used);
+            : autoCores(state, c.player, summonMinCores(state, db, id), used);
         set({ multi: at, selectedCores: cores });
       };
       if (m.phase === 'pick') {
@@ -3089,7 +3090,7 @@ export const useGame = create<Store>((set, get) => {
       delete plans[cur];
       set({
         multi: { ...m, plans, asSpirit: [...m.asSpirit, cur] },
-        selectedCores: autoCores(state, state.choice!.player, minCores(db.get(state.cards[cur]!.cardNo)), used),
+        selectedCores: autoCores(state, state.choice!.player, summonMinCores(state, db, cur), used),
       });
     },
     autoSelectCores(n) {

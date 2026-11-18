@@ -191,7 +191,7 @@ export function payCost(
   def: CardDef,
   payment: string[],
   placement: string[],
-  opts: { noPlacement?: boolean; reserveOnly?: boolean; /** คอสต์ก่อนลด (การ์ดในแทรช) */ baseCost?: number } = {},
+  opts: { noPlacement?: boolean; reserveOnly?: boolean; /** คอสต์ก่อนลด (การ์ดในแทรช) */ baseCost?: number; /** Core ขั้นต่ำที่ต้องวาง (รวม Lv คอสต์ +N) */ minPlacement?: number } = {},
 ): { paid: number; placed: string[] } {
   const cost = payableCost(ctx.s, ctx.db, player, def, opts.baseCost ?? def.cost);
   if (payment.length !== cost) {
@@ -205,8 +205,9 @@ export function payCost(
   }
   if (opts.noPlacement) {
     if (placement.length > 0) fail('NO_PLACEMENT', 'Brave ที่ร่วมร่างไม่ต้องวาง Core');
-  } else if (placement.length < minCores(def)) {
-    fail('NOT_ENOUGH_CORES', `ต้องวาง Core อย่างน้อย ${minCores(def)} ดวง`);
+  } else {
+    const min = opts.minPlacement ?? minCores(def);
+    if (placement.length < min) fail('NOT_ENOUGH_CORES', `ต้องวาง Core อย่างน้อย ${min} ดวง`);
   }
 
   const p = ctx.s.players[player];

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { baseCost, bpOf, levelOf, minCores, payableCost, quickAbility, quickAnyCores, trashSummonRule } from '@bs/engine';
+import { baseCost, bpOf, levelOf, minCores, payableCost, quickAbility, quickAnyCores, summonLevelCostBoost, trashSummonRule } from '@bs/engine';
 import { cardName, playerLabel } from '../format';
 import { db, flashPlayer, layoutRect, useGame, type MagicTiming, type PlayKind } from '../store';
 import { CardFace } from './CardFace';
@@ -96,8 +96,10 @@ function PlayDialogInner({ cardId, kind, timing, braveOnto }: { cardId: string; 
   const normal = [...p.reserve, ...fieldPool].filter((id) => !state.cores[id]!.isSoul);
   const soul = soulQuick ? undefined : reserveSoul;
 
+  // "Lv คอสต์ +N" จากเอฟเฟกต์คู่แข่ง (อาเมะโอชิโนะมิโคโตะ): ต้องวาง Core เพิ่มต่อเลเวล ไม่งั้นลงมาแล้วสูญสลาย
+  const boost = allowPlace ? summonLevelCostBoost(state, db, cardId) : 0;
   // ตัวเลือกเลเวลที่จะวาง (จำนวน Core บนการ์ด)
-  const levelChoices = allowPlace ? def.levels.map((l) => ({ level: l.level, need: l.cores, bp: l.bp })) : [{ level: 0, need: 0, bp: undefined }];
+  const levelChoices = allowPlace ? def.levels.map((l) => ({ level: l.level, need: l.cores + boost, bp: l.bp })) : [{ level: 0, need: 0, bp: undefined }];
   const affordable = (need: number) => normal.length + (soul ? 1 : 0) >= cost + need;
   const firstOk = levelChoices.findIndex((l) => affordable(l.need));
 
@@ -118,11 +120,14 @@ function PlayDialogInner({ cardId, kind, timing, braveOnto }: { cardId: string; 
   const manualPay = Object.keys(marks).filter((id) => marks[id] === 'pay');
   const manualPlace = Object.keys(marks).filter((id) => marks[id] === 'place');
   const min = allowPlace ? minCores(def) : 0;
+  // Core ที่ต้องวางให้ถึง Lv1 จริง (รวม Lv คอสต์ +N)
+  const needLv1 = min + boost;
   const payment = manual ? manualPay : auto.pay;
   const placement = manual ? manualPlace : auto.place;
   const soulPaid = payment.some((id) => state.cores[id]!.isSoul);
-  const ok = (manual ? manualPay.length === cost && manualPlace.length >= min : auto.ok) && (!mustSoul || soulPaid);
-  const level = allowPlace ? levelOf(def, placement.length) : undefined;
+  // วาง Core ไม่ถึง Lv1 จริง (รวม Lv คอสต์ +N) = กดอัญเชิญไม่ได้ (engine ก็ไม่รับ)
+  const ok = (manual ? manualPay.length === cost && manualPlace.length >= needLv1 : auto.ok) && (!mustSoul || soulPaid);
+  const level = allowPlace ? levelOf(def, placement.length - boost) : undefined;
 
   // Core ที่คลิกปรับได้: Reserve + Core บนการ์ดในสนาม ([Quick] ใช้ได้แค่ Reserve เว้นแต่มีเอฟเฟกต์ให้ใช้ Core บนสนาม)
   const pool = quickAb && fieldPool.length === 0 ? p.reserve : [...p.reserve, ...p.field.flatMap((id) => state.cards[id]!.cores)];
@@ -142,7 +147,7 @@ function PlayDialogInner({ cardId, kind, timing, braveOnto }: { cardId: string; 
   const depletingNow = p.field.filter((id) => {
     const c = state.cards[id]!;
     const d = db.get(c.cardNo);
-    return d.type !== 'nexus' && c.cores.some((core) => used.has(core)) && levelOf(d, c.cores.filter((core) => !used.has(core)).length) === 0;
+    return d.type !== 'nexus' && c.cores.some((core) => used.has(core)) && levelOf(d, c.cores.filter((core) => !used.has(core)).length - summonLevelCostBoost(state, db, id)) === 0;
   });
 
   const confirm = () => {
@@ -161,7 +166,7 @@ function PlayDialogInner({ cardId, kind, timing, braveOnto }: { cardId: string; 
   // มุมขวาของสนามผู้เล่น (เหมือนแผงอัญเชิญด้วยเอฟเฟกต์): ไม่บังกระดาน และไม่โดนหน้าต่างรายละเอียดการ์ด (มุมซ้าย) บังบนจอเล็ก
   const style = panelStyle(player, PANEL_W, 210);
   const after =
-    allowPlace && level !== undefined && level > 0 ? (def.type === 'nexus' ? `Lv${level}` : `Lv${level} · BP ${bpOf(def, placement.length).toLocaleString()}`) : null;
+    allowPlace && level !== undefined && level > 0 ? (def.type === 'nexus' ? `Lv${level}` : `Lv${level} · BP ${bpOf(def, placement.length - boost).toLocaleString()}`) : null;
 
   return (
     <div className="pointer-events-none fixed inset-y-0 left-0 right-[var(--sidebar)] z-[38]">
@@ -239,14 +244,15 @@ function PlayDialogInner({ cardId, kind, timing, braveOnto }: { cardId: string; 
                 จ่าย {manualPay.length}/{cost}
               </span>
               {allowPlace && (
-                <span className={`ml-2 ${manualPlace.length >= min ? 'font-bold text-emerald-300' : 'text-emerald-500'}`}>
-                  วาง {manualPlace.length} (ขั้นต่ำ {min})
+                <span className={`ml-2 ${manualPlace.length >= needLv1 ? 'font-bold text-emerald-300' : 'text-emerald-500'}`}>
+                  วาง {manualPlace.length} (Lv1 ต้อง {needLv1})
                 </span>
               )}
             </div>
           ) : (
             !auto.ok && <div className="font-bold text-rose-300">Core ใน Reserve ไม่พอ: เลือก Lv ต่ำลง หรือคลิก Core บนการ์ดในสนามเพื่อดึงมาใช้</div>
           )}
+          {boost > 0 && <div className="font-bold text-amber-300">Lv คอสต์ +{boost} จากเอฟเฟกต์คู่แข่ง: ต้องวาง Core อย่างน้อย {needLv1} ดวงถึงจะเป็น Lv1</div>}
           {depletingNow.length > 0 && <div className="font-bold text-rose-300">{depletingNow.map((id) => cardName(state, id)).join(', ')} จะสูญสลาย</div>}
           <div className="text-slate-400">
             คลิก Core บนกระดานเพื่อปรับ: ว่าง → <span className="text-rose-300">จ่าย</span>

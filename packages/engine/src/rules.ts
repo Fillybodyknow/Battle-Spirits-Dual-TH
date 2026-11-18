@@ -97,8 +97,22 @@ export function cardLevel(state: GameState, db: CardDatabase, cardId: string): n
 /** "Lv คอสต์ +N" ที่การ์ดของคู่แข่งให้การ์ดนี้ (เทียบจำนวน Core ที่ต้องมีต่อเลเวล) */
 function levelCostBoost(state: GameState, db: CardDatabase, cardId: string): number {
   const card = state.cards[cardId]!;
-  const opp = state.players[card.owner === 'p1' ? 'p2' : 'p1'];
   if (!state.players[card.owner].field.includes(cardId)) return 0;
+  return summonLevelCostBoost(state, db, cardId);
+}
+
+/**
+ * "Lv คอสต์ +N" ที่การ์ดนี้จะได้เมื่ออยู่บนสนาม (ใช้ได้กับการ์ดที่กำลังจะอัญเชิญจากมือ/แทรช/เด็คด้วย)
+ * หน้าเว็บใช้แสดง Core ที่ต้องวางต่อ Lv และเตือนสูญสลาย (อาเมะโอชิโนะมิโคโตะ: Lv คอสต์ +3)
+ */
+/** Core ขั้นต่ำที่ต้องวางตอนการ์ดนี้ลงสนาม = Lv1 ที่พิมพ์ + "Lv คอสต์ +N" (วางไม่ถึง = ไม่ยอมให้อัญเชิญ เจ้าของโปรเจกต์กำหนด) */
+export function summonMinCores(state: GameState, db: CardDatabase, cardId: string): number {
+  return minCores(db.get(state.cards[cardId]!.cardNo)) + summonLevelCostBoost(state, db, cardId);
+}
+
+export function summonLevelCostBoost(state: GameState, db: CardDatabase, cardId: string): number {
+  const card = state.cards[cardId]!;
+  const opp = state.players[card.owner === 'p1' ? 'p2' : 'p1'];
   // กันวนไม่จบ: เลเวลของการ์ดนี้ → ชีลด์ของการ์ดที่มีเลเวล → เลเวลคอสต์ของการ์ดนี้อีก (ระหว่างคำนวณถือว่าไม่มี +N)
   if (boostingLevel.has(cardId)) return 0;
   boostingLevel.add(cardId);
@@ -850,7 +864,7 @@ export function quickAbility(state: GameState, db: CardDatabase, cardId: string)
  * Kagemusha: การ์ดในมือของ owner ที่อัญเชิญได้เมื่อ targetId (สปิริตของ owner) ตกเป็นเป้าเอฟเฟกต์ของคู่แข่ง
  * free = มีเน็กซัส (อู่พิทักษ์สวรรค์) ที่ฟื้นสภาพอยู่ให้เสื่อมสภาพเพื่ออัญเชิญฟรี
  */
-export function kagemushaOptions(state: GameState, db: CardDatabase, targetId: string): { cardId: string; cost: number; payable: boolean }[] {
+export function kagemushaOptions(state: GameState, db: CardDatabase, targetId: string): { cardId: string; cost: number; payable: boolean; placeable: boolean }[] {
   const target = state.cards[targetId];
   if (!target) return [];
   const owner = target.owner;
@@ -872,7 +886,9 @@ export function kagemushaOptions(state: GameState, db: CardDatabase, targetId: s
     .map((id) => {
       const def = db.get(state.cards[id]!.cardNo);
       const cost = payableCost(state, db, owner, def);
-      return { cardId: id, cost, payable: cores >= cost + minCores(def) };
+      const need = summonMinCores(state, db, id);
+      // payable = จ่ายคอสต์แล้วยังวาง Core ถึง Lv1 · placeable = อัญเชิญไม่จ่ายคอสต์แล้ววาง Core ถึง Lv1
+      return { cardId: id, cost, payable: cores >= cost + need, placeable: cores >= need };
     });
 }
 

@@ -26,6 +26,7 @@ import {
   isSpiritLike,
   locateCore,
   minCores,
+  summonMinCores,
   payableCost,
   removeCore,
   removeFrom,
@@ -388,7 +389,8 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
       if (new Set(placement).size !== placement.length || placement.includes(soul) || placement.some((id) => !p.reserve.includes(id))) {
         fail('RESERVE_ONLY', '[Soul Quick] วางได้เฉพาะ Core จากรีเสิร์ฟ');
       }
-      if (placement.length < minCores(def)) fail('NOT_ENOUGH_CORES', `ต้องวาง Core อย่างน้อย ${minCores(def)} ดวง`);
+      const need = summonMinCores(s, db, cardId);
+      if (placement.length < need) fail('NOT_ENOUGH_CORES', `ต้องวาง Core อย่างน้อย ${need} ดวง`);
       removeCore(s, soul);
       p.trashCores.push(soul);
       for (const id of placement) removeCore(s, id);
@@ -398,6 +400,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
       ({ paid, placed } = payCost(ctx, player, def, payment, placement, {
         reserveOnly: !!flash && !trashRule && !quickAnyCores(s, db, player),
         baseCost: baseCost(s, db, cardId),
+        minPlacement: summonMinCores(s, db, cardId),
       }));
     }
     removeFrom(inTrash ? p.trashCards : p.hand, cardId);
@@ -774,7 +777,8 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
       if (!from) fail('NOT_BRAVED', 'Brave นี้ไม่ได้ร่วมร่างอยู่');
       if (new Set(placement).size !== placement.length) fail('DUPLICATE_CORE', 'ใช้ Core ดวงเดียวกันซ้ำ');
       for (const id of placement) assertUsableCore(ctx, player, id);
-      if (placement.length < minCores(def)) fail('NOT_ENOUGH_CORES', `ต้องวาง Core อย่างน้อย ${minCores(def)} ดวง`);
+      const need = summonMinCores(s, db, braveId);
+      if (placement.length < need) fail('NOT_ENOUGH_CORES', `ต้องวาง Core อย่างน้อย ${need} ดวง`);
       const host = s.cards[from]!;
       removeFrom(host.braves, braveId);
       for (const id of placement) removeCore(s, id);

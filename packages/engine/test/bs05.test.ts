@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { loadAllCards } from '@bs/cards';
-import { applyAction, blockersFor, canAttackWith, cardLevel, createGame, currentBp, effectsNegated, payableCost, type Action, type GameState, type PlayerId } from '../src';
+import { applyAction, blockersFor, canAttackWith, cardLevel, createGame, currentBp, effectsNegated, payableCost, summonLevelCostBoost, summonMinCores, type Action, type GameState, type PlayerId } from '../src';
 
 const db = loadAllCards();
 const no = (name: string) => db.all().find((c) => c.name === name)!.cardNo;
@@ -77,6 +77,22 @@ describe('Booster Set 05', () => {
     const yakshi = put(s, 'p2', no('ยักษ์วิญญาณ'), 3); // คอสต์ 0: 3 Core - 3 = Lv0 (ต้องการ 1)
     expect(cardLevel(s, db, dariu)).toBe(2);
     expect(cardLevel(s, db, yakshi)).toBe(0);
+  });
+
+  it('อาเมะโอชิโนะมิโคโตะ: อัญเชิญการ์ดที่โดน Lv คอสต์ +3 ต้องวาง Core ให้ถึง Lv1 จริง (วางไม่พอ = อัญเชิญไม่ได้)', () => {
+    let s = setup();
+    put(s, 'p2', no('ราชาวิญญาณเทพ อาเมะโอชิโนะมิโคโตะ'), 1, true);
+    const yakshi = inHand(s, 'p1', no('ยักษ์วิญญาณ')); // คอสต์ 0: โดน
+    const dariu = inHand(s, 'p1', DARIU); // คอสต์ 1: ไม่โดน
+    expect(summonLevelCostBoost(s, db, yakshi)).toBe(3);
+    expect(summonMinCores(s, db, yakshi)).toBe(4);
+    expect(summonMinCores(s, db, dariu)).toBe(1);
+    // วาง 1 ดวงตามที่พิมพ์บนการ์ด = ไม่ยอมให้อัญเชิญ (การ์ดยังอยู่ในมือ)
+    expect(fails(s, { type: 'summon', player: 'p1', cardId: yakshi, payment: [], placement: normalCores(s).slice(0, 3) })).toBe('NOT_ENOUGH_CORES');
+    expect(s.players.p1.hand).toContain(yakshi);
+    // วาง 4 ดวง = Lv1
+    s = act(s, { type: 'summon', player: 'p1', cardId: yakshi, payment: [], placement: normalCores(s).slice(0, 4) });
+    expect(cardLevel(s, db, yakshi)).toBe(1);
   });
 
   it('อาเมะโอชิโนะมิโคโตะ Lv2 โจมตี: นำการ์ดม่วงในแทรชขึ้นมือ · ถ้าเป็นข้ารับใช้ คู่แข่งเลือกทำลายสปิริตตนเอง', () => {
@@ -276,6 +292,35 @@ describe('Booster Set 05', () => {
     s = choose(s, 0); // เปิด Burst
     expect(s.players.p2.life.length).toBe(life + 1);
     expect(s.choice?.kind).toBe('placeCores');
+  });
+
+  describe('คุองอัญเชิญตัวเองตอนคู่แข่งมีอาเมะโอชิโนะมิโคโตะ (คอสต์ 7 = Lv คอสต์ +3 → Lv1 ต้องวาง 4)', () => {
+    const burstWithReserve = (n: number) => {
+      let s = setup();
+      put(s, 'p1', no('ราชาวิญญาณเทพ อาเมะโอชิโนะมิโคโตะ'), 1, true);
+      const kuon = inHand(s, 'p2', no('เซ็นโงคุฮิเมะ คุอง'));
+      s.players.p2.hand = s.players.p2.hand.filter((id) => id !== kuon);
+      s.players.p2.burst = kuon;
+      s.players.p2.reserve = s.players.p2.reserve.slice(0, n);
+      const atk = put(s, 'p1', DARIU, 1);
+      s = attack(s, atk);
+      s = choose(s, 0); // เปิด Burst
+      return { s, kuon };
+    };
+
+    it('Core ที่ใช้ได้ 3 ดวง (ไม่ถึง 4): อัญเชิญไม่ได้ การ์ดลงแทรช ไม่สูญสลาย', () => {
+      const { s, kuon } = burstWithReserve(3);
+      expect(s.choice?.kind).not.toBe('placeCores');
+      expect(s.players.p2.field).not.toContain(kuon);
+      expect(s.players.p2.trashCards).toContain(kuon);
+      expect(s.log.some((e) => (e.type === 'summoned' || e.type === 'depleted') && e.cardId === kuon)).toBe(false);
+      expect(s.players.p2.reserve).toHaveLength(3); // ไม่เสีย Core
+    });
+
+    it('Core ที่ใช้ได้ 4 ดวง: ให้วาง Core โดยขั้นต่ำ 4', () => {
+      const { s } = burstWithReserve(4);
+      expect(s.choice).toMatchObject({ kind: 'placeCores', min: 4 });
+    });
   });
 
   it('ดาร์คอินิทิเอชัน: ทำลายสปิริตเรากี่ตัวก็ได้ → นำการ์ดสปิริตในแทรชขึ้นมือตามจำนวน', () => {

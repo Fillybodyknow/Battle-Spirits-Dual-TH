@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { bpOf, cardLevel, currentBp, isSpiritLike, levelOf, minCores, opponentOf, PLAYERS, trashSummonRule, type GameState, type PlayerId } from '@bs/engine';
+import { bpOf, cardLevel, currentBp, isSpiritLike, levelOf, minCores, opponentOf, PLAYERS, summonLevelCostBoost, summonMinCores, trashSummonRule, type GameState, type PlayerId } from '@bs/engine';
 import { cardName, formatEvent, playerLabel } from '../format';
 import {
   actingPlayer,
@@ -236,7 +236,7 @@ export function PromptBar() {
           detail = `${src} · หรือกด "ลงเป็นสปิริต" เพื่อวาง Core เอง`;
           add('spirit', 'ลงเป็นสปิริต', multiAsSpirit, 'primary');
         } else {
-          const min = minCores(db.get(state.cards[cur]!.cardNo));
+          const min = summonMinCores(state, db, cur);
           tag = 'core';
           title = `อัญเชิญ: วาง Core (${step})`;
           detail = `${src} · เลือก ${selectedCores.length} ดวง (ขั้นต่ำ ${min}) · ปรับ Lv ได้ที่แผงมุมสนาม`;
@@ -778,7 +778,7 @@ export function SummonPanel() {
     pay = c.cost;
   } else if (c.kind === 'multiSummon' && multi?.phase === 'place' && !multiNeedsHost(state, multi)) {
     cardId = multi.picks[multi.index] ?? null;
-    if (cardId) min = minCores(db.get(state.cards[cardId]!.cardNo));
+    if (cardId) min = summonMinCores(state, db, cardId);
   }
   if (!cardId) return null;
   // มุมขวาของสนามผู้เลือก (ตำแหน่งเดียวกับแผงลงการ์ดจากมือ): ไม่บังแถบกลาง และไม่โดนหน้าต่างรายละเอียดการ์ดมุมซ้ายบัง
@@ -797,14 +797,17 @@ function SummonCoreDetail({ state, cardId, selected, min, pay }: { state: GameSt
   const hover = useGame((s) => s.hover);
   const def = db.get(state.cards[cardId]!.cardNo);
   const owner = state.cards[cardId]!.owner;
-  const lv = levelOf(def, selected.length);
-  const bp = bpOf(def, selected.length);
+  // "Lv คอสต์ +N" จากเอฟเฟกต์คู่แข่ง (อาเมะโอชิโนะมิโคโตะ): ต้องวาง Core เพิ่มต่อเลเวล ไม่งั้นลงมาแล้วสูญสลาย
+  const boost = summonLevelCostBoost(state, db, cardId);
+  const needLv1 = minCores(def) + boost;
+  const lv = levelOf(def, selected.length - boost);
+  const bp = bpOf(def, selected.length - boost);
   // Core ที่ดึงจากการ์ดบนสนาม: การ์ดที่ Core เหลือไม่ถึง Lv1 จะสูญสลาย
   const depleting = state.players[owner].field.filter((id) => {
     const c = state.cards[id]!;
     const d = db.get(c.cardNo);
     if (!isSpiritLike(d) || !c.cores.some((x) => selected.includes(x))) return false;
-    return levelOf(d, c.cores.filter((x) => !selected.includes(x)).length) === 0;
+    return levelOf(d, c.cores.filter((x) => !selected.includes(x)).length - summonLevelCostBoost(state, db, id)) === 0;
   });
   return (
     <>
@@ -826,14 +829,15 @@ function SummonCoreDetail({ state, cardId, selected, min, pay }: { state: GameSt
                 <button
                   key={l.level}
                   type="button"
-                  onClick={() => autoSelectCores(l.cores)}
+                  onClick={() => autoSelectCores(l.cores + boost)}
                   className={`rounded px-1.5 py-0.5 text-[11px] font-black ${lv === l.level ? 'bg-emerald-400 text-slate-950' : 'bg-slate-700 text-slate-200 hover:bg-slate-600'}`}
-                  title={`วาง Core ${l.cores} ดวงจาก Reserve`}
+                  title={`วาง Core ${l.cores + boost} ดวงจาก Reserve`}
                 >
-                  Lv{l.level} · {l.cores}
+                  Lv{l.level} · {l.cores + boost}
                 </button>
               ))}
             </div>
+            {boost > 0 && <div className="font-bold text-amber-300">Lv คอสต์ +{boost} จากเอฟเฟกต์คู่แข่ง: Lv1 ต้องวาง {needLv1} ดวง</div>}
             <div>
               เลือก <b>{selected.length}</b> ดวง (ขั้นต่ำ {min})
               {lv > 0 ? (
@@ -843,7 +847,7 @@ function SummonCoreDetail({ state, cardId, selected, min, pay }: { state: GameSt
                   {bp ? ` · BP ${bp.toLocaleString()}` : ''}
                 </b>
               ) : (
-                <b className="text-rose-300"> · ยังไม่ถึง Lv1</b>
+                <b className="text-rose-300"> · ยังไม่ถึง Lv1{boost > 0 && selected.length >= min ? ' (จะสูญสลายทันที)' : ''}</b>
               )}
             </div>
             {depleting.length > 0 && <div className="font-bold text-rose-300">{depleting.map((id) => cardName(state, id)).join(', ')} จะสูญสลาย</div>}
