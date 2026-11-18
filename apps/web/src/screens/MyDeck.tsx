@@ -101,7 +101,7 @@ function Grid({ starters, onOpen, onCreate, selected }: { starters: boolean; onO
         </button>
       )}
       {ids.map((id) => (
-        <div key={id} className={id === selected ? 'rounded-xl ring-4 ring-lime-300 shadow-[0_0_24px_rgba(190,242,100,0.5)]' : undefined}>
+        <div key={id} className={`grid ${id === selected ? 'rounded-xl ring-4 ring-lime-300 shadow-[0_0_24px_rgba(190,242,100,0.5)]' : ''}`}>
           <DeckTileBox id={id} onClick={() => onOpen(id)} />
         </div>
       ))}

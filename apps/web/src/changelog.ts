@@ -16,6 +16,11 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '14.8.1',
+    date: '2026-11-18',
+    items: ['แก้หน้าเด็คของฉัน: กล่องเด็คแคบกว่าช่อง + (กว้างเท่ากันแล้ว)'],
+  },
+  {
     version: '14.8.0',
     date: '2026-11-18',
     items: [
