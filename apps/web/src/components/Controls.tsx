@@ -136,7 +136,8 @@ export function PromptBar() {
   const attackConfirm = useGame((s) => s.attackConfirm);
   const alloc = useGame(allocOf);
   const picked = useGame(pickedOf);
-  const { confirmAttack } = useGame.getState();
+  const { confirmAttack, confirmBlock } = useGame.getState();
+  const blockConfirm = useGame((s) => s.blockConfirm);
   const { dispatch, clearCores, choose, confirmEvolve, closeEvolve, confirmCores, cancelCores, multiNext, multiBack, multiAsSpirit } = useGame.getState();
   const actor = actingPlayer(state);
   const { battle, choice } = state;
@@ -178,7 +179,7 @@ export function PromptBar() {
     tag = 'attack';
     source = attackConfirm;
     title = `โจมตีด้วย ${cardName(state, attackConfirm)}?`;
-    detail = `BP ${currentBp(state, db, attackConfirm).toLocaleString()} · กด "โจมตี" หรือคลิกสปิริตตัวเดิมอีกครั้ง`;
+    detail = `BP ${currentBp(state, db, attackConfirm).toLocaleString()} · กดปุ่ม "โจมตี" เพื่อยืนยัน · คลิกสปิริตตัวเดิมอีกครั้งเพื่อยกเลิก`;
     add('cancel', 'ยกเลิก', () => confirmAttack(false), 'secondary');
     // On Stage (BS07): ทางเลือกแทนการโจมตี
     for (const ab of onStageAbilities(state, db, state.cards[attackConfirm]!.owner, attackConfirm)) {
@@ -188,6 +189,15 @@ export function PromptBar() {
       }, 'secondary');
     }
     add('attack', 'โจมตี', () => confirmAttack(true), 'primary');
+  } else if (blockConfirm && battle?.step === 'declareBlock') {
+    // ยืนยันก่อนป้องกัน (ตั้งค่าเดียวกับยืนยันโจมตี)
+    highlight = true;
+    tag = 'block';
+    source = blockConfirm;
+    title = `ป้องกันด้วย ${cardName(state, blockConfirm)}?`;
+    detail = `BP ${currentBp(state, db, blockConfirm).toLocaleString()} · กดปุ่ม "ป้องกัน" เพื่อยืนยัน · คลิกสปิริตตัวเดิมอีกครั้งเพื่อยกเลิก`;
+    add('cancel', 'ยกเลิก', () => confirmBlock(false), 'secondary');
+    add('block', 'ป้องกัน', () => confirmBlock(true), 'primary');
   } else if (evolveCard) {
     // [Evolution]: เลือก Core บนสปิริตอื่นของเรา
     const after = simulateEvolve(state, evolveCard, selectedCores);

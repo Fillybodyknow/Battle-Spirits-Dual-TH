@@ -300,6 +300,7 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
   const ready = own && spirit && !exhausted && !state.winner && !state.choice;
   const canAttack = ready && state.phase === 'attack' && !battle && card.owner === state.turnPlayer && canAttackWith(state, db, cardId);
   const confirming = useGame((s) => s.attackConfirm === cardId);
+  const blockConfirming = useGame((s) => s.blockConfirm === cardId);
   /** On Stage (BS07) ที่ทำได้ตอนนี้: ทางเลือกแทนการโจมตี */
   const stageAbs = own && mine(card.owner) ? onStageAbilities(state, db, card.owner, cardId) : [];
   // ป้องกัน: ใช้รายชื่อจาก engine (รวมตัวที่ป้องกันได้แม้เสื่อมสภาพ / กฎป้องกันพิเศษ)
@@ -627,8 +628,31 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
             <span className="-mt-1 rounded bg-black/60 px-1.5 text-sm font-black text-white [text-shadow:0_0_6px_rgba(56,189,248,0.9)]">Attack</span>
           </button>
         )}
-        {canBlock && (
+        {canBlock && !blockConfirming && (
           <div className="absolute inset-x-1 bottom-1 rounded bg-sky-400 py-0.5 text-center text-xs font-bold text-slate-900">คลิกเพื่อป้องกัน</div>
+        )}
+        {/* ยืนยันป้องกัน: ปุ่มวงกลมรูปโล่ลอยเหนือการ์ด (กดปุ่ม = ป้องกัน · คลิกการ์ดซ้ำ = พับปุ่ม) */}
+        {canBlock && blockConfirming && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              useGame.getState().confirmBlock(true);
+            }}
+            // แผ่นสนามฝั่งบน (หมุน 180°): วางไว้ขอบล่างของการ์ด = ด้านบนบนจอ และหมุนกลับให้อ่านตรง
+            className={`absolute left-1/2 z-20 flex -translate-x-1/2 flex-col items-center ${matTop ? '-bottom-7 rotate-180' : '-top-7'}`}
+            style={{ animation: 'attack-btn-in 0.25s cubic-bezier(.2,1.4,.4,1) both' }}
+            title="ป้องกัน"
+          >
+            <span className="relative flex h-14 w-14 items-center justify-center rounded-full border-2 border-emerald-100 bg-gradient-to-b from-emerald-400 to-teal-700 text-white shadow-[0_0_18px_rgba(52,211,153,0.9),inset_0_2px_6px_rgba(255,255,255,0.45)] transition hover:scale-110">
+              <span className="absolute inset-0 rounded-full border-2 border-emerald-200/70" style={{ animation: 'login-ring 1.6s ease-out infinite' }} />
+              <svg viewBox="0 0 24 24" className="h-7 w-7 drop-shadow" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z" />
+                <path d="m9 12 2 2 4-4" />
+              </svg>
+            </span>
+            <span className="-mt-1 rounded bg-black/60 px-1.5 text-sm font-black text-white [text-shadow:0_0_6px_rgba(52,211,153,0.9)]">Block</span>
+          </button>
         )}
         {previewText && (
           <div

@@ -554,6 +554,8 @@ export type Fx =
       landSound?: SfxName;
       /** ออกจากสนามแบบหงาย แล้วค่อยพลิกคว่ำกลางทาง (กลับขึ้นมือที่อีกฝ่ายมองไม่เห็น) */
       revealFirst?: boolean;
+      /** revealFirst: หงายเกือบตลอดทาง พลิกคว่ำตอนใกล้ถึงมือ (การ์ดจากแทรช = ข้อมูลเปิด) */
+      revealLate?: boolean;
       /** (draw) ต่อจากการ์ดที่พลิกเปิดหน้ากลางจอ: เริ่มทึบเต็มที่ */
       fromReveal?: boolean;
       /** faceDown: เริ่มหงาย (เฉพาะคนที่เห็นการ์ดใบนี้ในมือ) แล้วพลิกคว่ำกลางทาง (เซ็ท Burst) */
@@ -833,6 +835,13 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
       pc.revealed.forEach((id) => revealed.add(id));
       // พัดหายพอดีตอนการ์ดเริ่มบินออก (ภาพบินจับตำแหน่งจากพัดตอนเริ่ม) ไม่ซ้อนกัน
       out.push({ kind: 'reveal', owner: pc.player, cardIds: pc.revealed, chosen: pick, delay: 0, duration: 900 });
+      t = 900;
+    } else if (PLAYERS.some((p) => prev.players[p].trashCards.includes(pick) || (prev.players[p].songs ?? []).includes(pick))) {
+      // เลือกจากแทรช / เพลงบนฟิลด์ (ข้อมูลเปิด): ทั้งสองฝ่ายเห็นพัดการ์ดที่เลือกได้ ใบที่เลือกยกขึ้น แล้วค่อยบินไปปลายทาง
+      // (ไม่เล็งที่ปลายทาง: การ์ดย้ายเข้ามือไปแล้ว ฝั่งที่มองไม่เห็นมือจะเห็นแค่หลังการ์ด)
+      const ids = pc.candidates.includes(pick) ? pc.candidates : [pick];
+      ids.forEach((id) => revealed.add(id));
+      out.push({ kind: 'reveal', owner: pc.player, cardIds: ids, chosen: pick, delay: 0, duration: 900, title: pc.prompt });
       t = 900;
     } else {
       out.push({ kind: 'target', sourceId: pc.sourceId, targetId: pick, delay: 0, duration: 1000 });
@@ -1529,11 +1538,13 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         out.push({
           kind: 'fly',
           cardId: e.cardId,
-          from: e.from === 'deck' ? fromReveal(e.cardId, `[data-deck="${e.player}"]`) : `[data-trash="${e.player}"]`,
+          from: fromReveal(e.cardId, e.from === 'deck' ? `[data-deck="${e.player}"]` : `[data-trash="${e.player}"]`),
           to: `[data-hand-card="${e.cardId}"]`,
           mode: 'move',
           delay: t,
           hideTarget: true,
+          // การ์ดในแทรชเป็นข้อมูลเปิด: บินแบบหงายให้ทั้งสองฝ่ายเห็น แล้วค่อยพลิกคว่ำตอนเข้ามือที่อีกฝ่ายมองไม่เห็น
+          ...(e.from === 'trash' ? { revealFirst: true, revealLate: true } : {}),
         });
         break;
       case 'burstDiscarded': {
@@ -2253,6 +2264,9 @@ interface Store {
   /** สปิริตที่กดโจมตีแล้ว รอยืนยัน */
   attackConfirm: string | null;
   confirmAttack(ok: boolean): void;
+  /** สปิริตที่กดป้องกันแล้ว รอยืนยัน */
+  blockConfirm: string | null;
+  confirmBlock(ok: boolean): void;
   /** สปิริตที่กำลังเลือก Core สำหรับ [Evolution] */
   evolveCard: string | null;
   /** แผงรายละเอียด: การ์ดที่ชี้อยู่ และการ์ดที่คลิกปักไว้ */
@@ -3010,7 +3024,7 @@ function coinWinner(seed: number): PlayerId {
 const randomSeed = () => Math.floor(Math.random() * 2 ** 31);
 
 /** ล้างสิ่งที่ผู้เล่นเลือกค้างไว้ทุกครั้งที่ state เปลี่ยน */
-const resetUi: Pick<Store, 'selectedHandCard' | 'selectedCores' | 'dragging' | 'play' | 'playCores' | 'attackConfirm' | 'evolveCard' | 'multi'> = {
+const resetUi: Pick<Store, 'selectedHandCard' | 'selectedCores' | 'dragging' | 'play' | 'playCores' | 'attackConfirm' | 'blockConfirm' | 'evolveCard' | 'multi'> = {
   selectedHandCard: null,
   selectedCores: [],
   multi: null,
@@ -3018,6 +3032,7 @@ const resetUi: Pick<Store, 'selectedHandCard' | 'selectedCores' | 'dragging' | '
   play: null,
   playCores: null,
   attackConfirm: null,
+  blockConfirm: null,
   evolveCard: null,
 };
 
@@ -3175,6 +3190,7 @@ export const useGame = create<Store>((set, get) => {
     play: null,
     playCores: null,
     attackConfirm: null,
+    blockConfirm: null,
     alloc: null,
     allocAdd(cardId, delta) {
       const { state } = get();
@@ -3488,6 +3504,16 @@ export const useGame = create<Store>((set, get) => {
         dispatch({ type: 'declareAttack', player: card.owner, attackerId: id });
       }
     },
+    confirmBlock(ok) {
+      const id = get().blockConfirm;
+      set({ blockConfirm: null });
+      if (!ok || !id) return;
+      const { state, dispatch } = get();
+      const card = state.cards[id];
+      if (card && state.battle?.step === 'declareBlock' && card.owner !== state.turnPlayer && blockCandidates(state).includes(id)) {
+        dispatch({ type: 'declareBlock', player: card.owner, blockerId: id });
+      }
+    },
     openEvolve: (cardId) => set({ evolveCard: cardId, selectedHandCard: null, selectedCores: [] }),
     closeEvolve: () => set({ evolveCard: null, selectedCores: [] }),
     confirmEvolve() {
@@ -3644,17 +3670,24 @@ export const useGame = create<Store>((set, get) => {
       if (state.choice || !isSpiritLike(def)) return;
       // ป้องกัน: ตามรายชื่อจาก engine (บางตัวป้องกันได้แม้เสื่อมสภาพ เช่น ชิงุเระ / ชิรานุอิ / ราดัน)
       if (state.battle?.step === 'declareBlock' && card.owner !== state.turnPlayer) {
-        if (blockCandidates(state).includes(cardId)) dispatch({ type: 'declareBlock', player: card.owner, blockerId: cardId });
+        if (!blockCandidates(state).includes(cardId)) return;
+        // ยืนยันก่อนป้องกัน (ตั้งค่าเดียวกับยืนยันโจมตี): กดปุ่มโล่เพื่อป้องกัน · คลิกการ์ดเดิมอีกครั้ง = พับปุ่ม
+        if (prefs().confirmAttack) {
+          sfx('click');
+          set({ blockConfirm: get().blockConfirm === cardId ? null : cardId });
+          return;
+        }
+        dispatch({ type: 'declareBlock', player: card.owner, blockerId: cardId });
         return;
       }
       if (card.state !== 'refresh') return;
       if (state.phase === 'attack' && !state.battle && card.owner === state.turnPlayer) {
-        // ยืนยันก่อนโจมตี (ตั้งค่าได้) · คลิกสปิริตเดิมซ้ำ = ยืนยัน
+        // ยืนยันก่อนโจมตี (ตั้งค่าได้): กดปุ่มโจมตีเพื่อยืนยัน · คลิกสปิริตเดิมอีกครั้ง = พับปุ่ม
         // ทำ On Stage ได้ (BS07): ต้องผ่านขั้นยืนยันเสมอ (ปุ่ม On Stage อยู่ข้างปุ่มโจมตี)
         const stage = onStageAbilities(state, db, card.owner, cardId).length > 0;
-        if ((prefs().confirmAttack || stage) && get().attackConfirm !== cardId) {
+        if (prefs().confirmAttack || stage) {
           sfx('click');
-          set({ attackConfirm: cardId });
+          set({ attackConfirm: get().attackConfirm === cardId ? null : cardId });
           return;
         }
         set({ attackConfirm: null });

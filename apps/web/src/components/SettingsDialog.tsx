@@ -246,7 +246,7 @@ function PlayTab({ extra }: { extra?: React.ReactNode }) {
         </Section>
       )}
       <Section title="การโจมตี">
-        <Row title="ยืนยันก่อนโจมตี" hint='กดสปิริตแล้วถามก่อน · กด "โจมตี" หรือคลิกสปิริตตัวเดิมอีกครั้งเพื่อยืนยัน'>
+        <Row title="ยืนยันก่อนโจมตี/ป้องกัน" hint='กดสปิริตแล้วขึ้นปุ่มให้ยืนยัน · กดปุ่ม "โจมตี" / "ป้องกัน" เพื่อยืนยัน · คลิกสปิริตตัวเดิมอีกครั้งเพื่อยกเลิก'>
           <Segmented value={p.confirmAttack ? 'on' : 'off'} options={[...onOff]} onChange={(v) => setPrefs({ confirmAttack: v === 'on' })} />
         </Row>
       </Section>

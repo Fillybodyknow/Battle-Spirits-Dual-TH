@@ -1518,7 +1518,7 @@ function FlyCard({ fx, onDone }: { fx: Extract<Fx, { kind: 'fly' }>; onDone: () 
         // ย้ายโซน: ค้างที่จุดเริ่มระหว่างรอคิว (การ์ดออกจากโซนเดิมใน state ไปแล้ว ไม่ให้หายวับ)
         { duration: fx.mode === 'draw' ? 420 : fx.mode === 'move' ? 480 : 520, delay: fx.delay, easing: 'cubic-bezier(.3,.7,.3,1)', fill: fx.mode === 'move' ? 'both' : 'forwards' },
       );
-      if (fx.revealFirst || fx.flipMid) setTimeout(() => setRevealed(false), fx.delay + 240);
+      if (fx.revealFirst || fx.flipMid) setTimeout(() => setRevealed(false), fx.delay + (fx.revealLate ? 420 : 240));
     }
     anim.onfinish = () => {
       if (fx.mode === 'brave' && fx.via) {
