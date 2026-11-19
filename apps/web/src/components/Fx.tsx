@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { opponentOf, type PlayerId } from '@bs/engine';
 import { cardArt, GEM_IMG } from '../assets';
-import { braveSlot, CAST_MS, CHARGE_HIT, CHARGE_MS, DRAW_FLIP_MS, DRAW_TIER, LETHAL_RELEASE, LETHAL_SLOW, LETHAL_SLOW_EXTRA, CUTIN_MS, CUTIN_SLAM, castCards, castHandSlots, castTone, controls, CHARGE_KNOCK, actingPlayer, chainEntries, viewPlayer, db, fieldScaleOf, GHOST_MS, isFxBlocking, layoutRect, MILL_MS, millBreakAt, millDuration, PLAY_HIT, useGame, type Fx, type Rect, hiddenFrom } from '../store';
+import { braveSlot, CAST_MS, CHARGE_HIT, CHARGE_MS, CHARGE_WIND, DRAW_FLIP_MS, DRAW_TIER, LETHAL_RELEASE, LETHAL_SLOW, LETHAL_SLOW_EXTRA, CUTIN_MS, CUTIN_SLAM, castCards, castHandSlots, castTone, controls, CHARGE_KNOCK, actingPlayer, chainEntries, viewPlayer, db, fieldScaleOf, GHOST_MS, isFxBlocking, layoutRect, MILL_MS, millBreakAt, millDuration, PLAY_HIT, useGame, type Fx, type Rect, hiddenFrom } from '../store';
 import { CardBack, CardFace } from './CardFace';
 import { setSfxTimeScale, sfx } from '../sfx';
 import { effects, flashScale, shakeScale } from '../gfx';
@@ -3550,41 +3550,61 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
     const hy = (ty / len) * stop;
     const rot = fx.fromExhausted || fx.startLying ? 'rotate(90deg)' : 'rotate(0deg)';
     const rotEnd = fx.toExhausted ? 'rotate(90deg)' : 'rotate(0deg)';
+    // ---- ไทม์ไลน์ (เวลาจริงเป็นเส้นตรง แต่ละช่วงมี easing ของตัวเอง ของที่พุ่งไปด้วยใช้ offset + easing ชุดเดียวกันจึงไปพร้อมกันพอดี) ----
+    //  0 → LIFT: ลุกขึ้น/ตั้งตรง ขยายเล็กน้อย · LIFT → WIND: ค่อย ๆ ถอยหลังชาร์จพลัง (ช้า) · WIND → HIT: พุ่งเร่งความเร็วเข้าชน
+    //  HIT → BACK: เด้งค้างหน้าเป้า · BACK → จบ: กลับที่เดิม
+    const LIFT = 0.12;
+    const WIND = CHARGE_WIND;
+    const BACK = 0.68;
+    const E = {
+      lift: 'cubic-bezier(.3,0,.3,1)',
+      wind: 'cubic-bezier(.35,0,.25,1)',
+      dash: 'cubic-bezier(.65,0,.95,.55)',
+      recoil: 'cubic-bezier(.15,.7,.35,1)',
+      home: 'cubic-bezier(.5,0,.25,1)',
+    };
     // แพ้: ถูกกระแทกกระเด็นกลับ (ตามสัดส่วน CHARGE_KNOCK: 0 = ถึงช่องเดิม) เซ แล้วหยุดตั้งตรงตรงนั้น ภาพร้าว/แตกเล่นต่อที่จุดนี้
     const K = CHARGE_KNOCK;
     const end: Keyframe[] = fx.dies
       ? [
-          { transform: `translate(${hx * (K + 0.12)}px,${hy * (K + 0.12)}px) rotate(-14deg) scale(1.08)`, filter: 'brightness(2.4) saturate(0.6)', offset: 0.6 },
-          { transform: `translate(${hx * (K - 0.04)}px,${hy * (K - 0.04)}px) rotate(7deg) scale(1.02)`, filter: 'brightness(1.4) saturate(0.4)', offset: 0.76 },
-          { transform: `translate(${hx * K}px,${hy * K}px) rotate(-2deg) scale(1)`, filter: 'brightness(1.1) saturate(0.3)', offset: 0.88 },
+          { transform: `translate(${hx * (K + 0.12)}px,${hy * (K + 0.12)}px) rotate(-14deg) scale(1.08)`, filter: 'brightness(2.4) saturate(0.6)', offset: BACK, easing: E.recoil },
+          { transform: `translate(${hx * (K - 0.04)}px,${hy * (K - 0.04)}px) rotate(7deg) scale(1.02)`, filter: 'brightness(1.4) saturate(0.4)', offset: 0.8 },
+          { transform: `translate(${hx * K}px,${hy * K}px) rotate(-2deg) scale(1)`, filter: 'brightness(1.1) saturate(0.3)', offset: 0.9 },
           { transform: `translate(${hx * K}px,${hy * K}px) rotate(0deg) scale(1)`, filter: 'brightness(1) saturate(0.3)' },
         ]
       : [
-          { transform: `translate(${hx * 0.9}px,${hy * 0.9}px) rotate(0deg) scale(1.08)`, offset: 0.58 },
+          { transform: `translate(${hx * 0.9}px,${hy * 0.9}px) rotate(0deg) scale(1.08)`, offset: BACK, easing: E.home },
           { transform: `translate(0,0) ${rotEnd} scale(1)` },
         ];
     const anim = el.animate(
       // ทึบตลอดทาง: ตัวการ์ดตั้ง opacity 0 ไว้ (ซ่อนก่อนถึงคิว) ถ้าคีย์เฟรมท้าย ๆ ไม่ระบุ
       // เบราว์เซอร์จะไล่ความทึบกลับไปหา 0 ทำให้การ์ดจางลงตอนวิ่งกลับ
       [
-        { transform: `translate(0,0) ${rot} scale(1)` },
-        { transform: `translate(${-hx * 0.08}px,${-hy * 0.08}px) rotate(0deg) scale(1.12)`, offset: 0.2 },
-        { transform: `translate(${hx}px,${hy}px) rotate(0deg) scale(1.18)`, offset: HIT_AT, easing: 'ease-out' },
+        { transform: `translate(0,0) ${rot} scale(1)`, easing: E.lift },
+        { transform: `translate(${hx * 0.04}px,${hy * 0.04}px) rotate(0deg) scale(1.1)`, offset: LIFT, easing: E.wind },
+        { transform: `translate(${-hx * 0.09}px,${-hy * 0.09}px) rotate(0deg) scale(1.18)`, offset: WIND, easing: E.dash },
+        { transform: `translate(${hx}px,${hy}px) rotate(0deg) scale(1.2)`, offset: HIT_AT, easing: E.recoil },
         ...end,
       ].map((k) => ({ ...k, opacity: 1 })),
       // ผู้โจมตีที่ยังอยู่บนสนาม: ก่อนถึงคิวแสดงการ์ดตัวจริง (มี Core / BP / Brave) แล้วค่อยสลับเป็นภาพที่วิ่ง
       // ผู้โจมตีที่แพ้ (ออกจากสนามแล้ว): ภาพนี้ยืนแทนที่ช่องเดิมไปจนวิ่ง
-      { duration: CHARGE_MS, delay: fx.delay, easing: 'cubic-bezier(.5,0,.3,1)', fill: onBoard ? 'forwards' : 'both' },
+      { duration: CHARGE_MS, delay: fx.delay, easing: 'linear', fill: onBoard ? 'forwards' : 'both' },
     );
-    // ---- ของที่พุ่งไปพร้อมกัน (Brave ที่ร่วมร่าง / Gem Symbol): จังหวะเดียวกับการ์ด (offset 0 / 0.2 / HIT_AT ตรงกัน) ----
+    // ---- ของที่พุ่งไปพร้อมกัน (Brave ที่ร่วมร่าง / Gem Symbol): offset + easing ตรงกับการ์ดทุกช่วง ----
     const ux = tx / len;
     const uy = ty / len;
     const nx = -uy;
     const ny = ux;
-    const timing: KeyframeAnimationOptions = { duration: CHARGE_MS, delay: fx.delay, easing: 'cubic-bezier(.5,0,.3,1)', fill: onBoard ? 'forwards' : 'both' };
+    const timing: KeyframeAnimationOptions = { duration: CHARGE_MS, delay: fx.delay, easing: 'linear', fill: onBoard ? 'forwards' : 'both' };
     const extra: Animation[] = [];
     /** ตำแหน่งกลางการ์ดที่วิ่ง (เทียบจุดเริ่ม) ตามคีย์เฟรมของการ์ด */
-    const P = { wind: [-hx * 0.08, -hy * 0.08], hit: [hx, hy], back: fx.dies ? [hx * K, hy * K] : [hx * 0.9, hy * 0.9], end: fx.dies ? [hx * K, hy * K] : [0, 0] };
+    const P = {
+      lift: [hx * 0.04, hy * 0.04],
+      wind: [-hx * 0.09, -hy * 0.09],
+      hit: [hx, hy],
+      back: fx.dies ? [hx * (K + 0.12), hy * (K + 0.12)] : [hx * 0.9, hy * 0.9],
+      end: fx.dies ? [hx * K, hy * K] : [0, 0],
+    };
     const tr = (x: number, y: number, rot: number, sc: number) => `translate(${x}px,${y}px) rotate(${rot}deg) scale(${sc})`;
     if (detached) {
       braves.forEach((b, j) => {
@@ -3597,18 +3617,20 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
         const d = cardW * (1.22 + 0.8 * Math.floor(j / 2));
         const slotRot = b.right ? 12 : -12;
         const at = (px: number, py: number, lat: number, fwd: number) => [px + nx * side * lat + ux * fwd - sx, py + ny * side * lat + uy * fwd - sy] as const;
+        // ลอยออกจากช่อง (LIFT) → ถอยชาร์จพร้อมกันเป็นแถวข้างตัว (WIND) → พุ่งหุบเข้าชน (HIT) → กลับเข้าช่อง
+        const lift = at(P.lift[0]!, P.lift[1]!, d * 0.75, -cardH * 0.08);
         const form = at(P.wind[0]!, P.wind[1]!, d, -cardH * 0.22);
         const hit = at(P.hit[0]!, P.hit[1]!, d * 0.55, -cardH * 0.02);
         const back = at(P.back[0]!, P.back[1]!, d * 0.7, 0);
-        const end = [P.end[0]! , P.end[1]!] as const;
+        const end = [P.end[0]!, P.end[1]!] as const;
         extra.push(
           el.animate(
             [
-              { transform: tr(0, 0, slotRot, 1) },
-              { transform: tr((form[0] + 0) * 0.5, (form[1] + 0) * 0.5 - 18, slotRot * 0.3, 1.3), offset: 0.1 },
-              { transform: tr(form[0], form[1], -side * 4, 1.5), offset: 0.2 },
-              { transform: tr(hit[0], hit[1], 0, 1.62), offset: HIT_AT, easing: 'ease-out' },
-              { transform: tr(back[0], back[1], side * 3, 1.4), offset: fx.dies ? 0.6 : 0.58 },
+              { transform: tr(0, 0, slotRot, 1), easing: E.lift },
+              { transform: tr(lift[0], lift[1], slotRot * 0.3, 1.35), offset: LIFT, easing: E.wind },
+              { transform: tr(form[0], form[1], -side * 4, 1.5), offset: WIND, easing: E.dash },
+              { transform: tr(hit[0], hit[1], 0, 1.62), offset: HIT_AT, easing: fx.dies ? E.recoil : E.recoil },
+              { transform: tr(back[0], back[1], side * 3, 1.4), offset: BACK, easing: E.home },
               { transform: tr(end[0], end[1], slotRot, 1) },
             ].map((k) => ({ ...k, opacity: 1 })),
             timing,
@@ -3620,30 +3642,25 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
       const el = gemRefs.current[i];
       if (!el) return;
       const m = gems.length;
-      // ลอยออกรอบการ์ด (วงรอบทั้งใบ) → เรียงเป็นวงโค้งด้านหลังการ์ด → พุ่งเข้าเป้าพร้อมการ์ด → แตกเป็นแสงตอนชน
+      // ลอยออกรอบการ์ด (LIFT) → เรียงวงโค้งรอบการ์ด หมุนวนระหว่างถอยชาร์จ (WIND) → พุ่งไปพร้อมการ์ด → แตกเป็นแสงตอนชน
       const ring = (i / m) * Math.PI * 2 - Math.PI / 2;
-      const pop = [Math.cos(ring) * cardW * 0.62, Math.sin(ring) * cardH * 0.5];
-      // วงโค้งรอบการ์ด: ข้างซ้าย → หลัง → ข้างขวา (เกาะตามการ์ดตลอดทางพุ่ง แล้วค่อยพุ่งนำเข้าเป้าตอนท้าย)
+      const pop = [P.lift[0]! + Math.cos(ring) * cardW * 0.62, P.lift[1]! + Math.sin(ring) * cardH * 0.5];
+      // วงโค้งรอบการ์ด: ข้างซ้าย → หลัง → ข้างขวา (เกาะตามการ์ดตลอดทางพุ่ง)
       const th = m === 1 ? Math.PI * 0.62 : Math.PI / 2 + 0.3 + (i / (m - 1)) * (Math.PI - 0.6);
       const R = cardH * 0.72;
       const off = [R * (Math.cos(th) * ux + Math.sin(th) * nx), R * (Math.cos(th) * uy + Math.sin(th) * ny)];
       const form = [P.wind[0]! + off[0]!, P.wind[1]! + off[1]!];
-      // จุดก่อนชนเล็กน้อย: ตำแหน่งการ์ดตอนนั้น + วงที่หดเข้า
-      const PRE = HIT_AT - 0.07;
-      const f = (PRE - 0.2) / (HIT_AT - 0.2);
-      const pre = [P.wind[0]! + (P.hit[0]! - P.wind[0]!) * f + off[0]! * 0.6, P.wind[1]! + (P.hit[1]! - P.wind[1]!) * f + off[1]! * 0.6];
-      const spread = (i - (m - 1) / 2) * 10;
-      const hit = [tx + nx * spread, ty + ny * spread];
+      // ตอนชน: วงหดเข้าหน้าการ์ด แล้วแตกออก
+      const hit = [P.hit[0]! + off[0]! * 0.35 + ux * cardH * 0.25, P.hit[1]! + off[1]! * 0.35 + uy * cardH * 0.25];
       extra.push(
         el.animate(
           [
-            // หมุนออกจากการ์ด → ตั้งตรงตอนเรียงวง → หมุน 1 รอบระหว่างพุ่ง กลับมาตั้งตรงตอนชน
-            { transform: tr(0, 0, -200, 0), opacity: 0 },
-            { transform: tr(pop[0]!, pop[1]!, -20, 1.35), opacity: 1, offset: 0.1 },
-            { transform: tr(form[0]!, form[1]!, 0, 1), opacity: 1, offset: 0.2 },
-            { transform: tr(pre[0]!, pre[1]!, 300, 1.1), opacity: 1, offset: PRE },
+            // หมุนออกจากการ์ด → หมุนช้า ๆ ระหว่างถอยชาร์จ → หมุนอีกรอบตอนพุ่ง กลับมาตั้งตรงตอนชน
+            { transform: tr(0, 0, -200, 0), opacity: 0, easing: E.lift },
+            { transform: tr(pop[0]!, pop[1]!, -20, 1.35), opacity: 1, offset: LIFT, easing: E.wind },
+            { transform: tr(form[0]!, form[1]!, 0, 1.05), opacity: 1, offset: WIND, easing: E.dash },
             { transform: tr(hit[0]!, hit[1]!, 360, 1.45), opacity: 1, offset: HIT_AT, easing: 'ease-out' },
-            { transform: tr(hit[0]!, hit[1]!, 380, 2.6), opacity: 0, offset: Math.min(0.99, HIT_AT + 0.07) },
+            { transform: tr(hit[0]!, hit[1]!, 380, 2.6), opacity: 0, offset: Math.min(0.99, HIT_AT + 0.05) },
             { transform: tr(hit[0]!, hit[1]!, 380, 2.6), opacity: 0 },
           ],
           { ...timing, fill: 'both' },
@@ -3747,8 +3764,8 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
       <SmokeTrail
         follow={ref}
         hex={COLOR_HEX[db.get(fx.cardNo).colors[0] ?? 'red'] ?? '#a855f7'}
-        from={fx.delay + CHARGE_MS * 0.2}
-        until={fx.delay + CHARGE_MS * (HIT_AT + 0.04)}
+        from={fx.delay + CHARGE_MS * (CHARGE_WIND - 0.04)}
+        until={fx.delay + CHARGE_MS * (HIT_AT + 0.03)}
         size={cardW}
       />
       {impact && (

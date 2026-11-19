@@ -686,9 +686,13 @@ export function braveSlot(bi: number, n: number): { right: boolean; top: string 
   return { right: bi % 2 === 0, top: `${(rows > 1 ? 0.6 : 1.5) + Math.floor(bi / 2) * step}rem` };
 }
 
-/** ระยะเวลาวิ่งชนทั้งหมด (ถอยตั้งหลัก → พุ่ง → ชน → กลับ) และสัดส่วนเวลาที่ชน */
-export const CHARGE_MS = 1500;
-export const CHARGE_HIT = 0.45;
+/**
+ * ระยะเวลาวิ่งชนทั้งหมด (ลุกขึ้น → ค่อย ๆ ถอยชาร์จพลัง → พุ่งเร็ว → ชน → กลับ)
+ * CHARGE_WIND = สัดส่วนเวลาที่ถอยสุดแล้วเริ่มพุ่ง · CHARGE_HIT = สัดส่วนเวลาที่ชน (เวลาจริง: ไทม์ไลน์ของการ์ดเป็นเส้นตรง แต่ละช่วงมี easing ของตัวเอง)
+ */
+export const CHARGE_MS = 2300;
+export const CHARGE_WIND = 0.42;
+export const CHARGE_HIT = 0.55;
 
 /** กดจั่วใน Draw Step: เวลาพลิกเปิดหน้าการ์ด (ms) */
 export const DRAW_FLIP_MS = 420;
@@ -2051,7 +2055,7 @@ function playFxSounds(list: Fx[]) {
         else f.cardIds.forEach((_, i) => sfx('draw', f.delay + i * 90));
         break;
       case 'charge':
-        sfx('whoosh', f.delay + CHARGE_MS * 0.15);
+        sfx('whoosh', f.delay + CHARGE_MS * CHARGE_WIND - 40);
         sfx('attackHit', f.delay + T.hit);
         break;
       case 'mill':
