@@ -328,11 +328,11 @@ export const BS08_SCRIPTS: Record<string, CardScript> = {
       ],
     },
   ],
-  'แปดอัศวินเท็นจิ โอโมดากะ-เดอะ-บูชิโด': [
+  'แปดอัศวินเก็นจิ โอโมดากะ-เดอะ-บูชิโด': [
     {
       kind: 'trigger',
       on: 'allyAttack',
-      subject: { nameIncludes: ['เท็นจิ'] },
+      subject: { nameIncludes: ['เก็นจิ'] },
       levels: ALL3,
       steps: [
         may(
@@ -399,15 +399,15 @@ export const BS08_SCRIPTS: Record<string, CardScript> = {
     { kind: 'blockWhileExhausted', levels: [1, 2] },
     { kind: 'trigger', on: ['destroyedByOpponent', 'depletedByOpponent'], levels: [1, 2], if: { oppTurn: true }, steps: [{ do: 'endAttackStepAfterBattle' }] },
   ],
-  'แปดอัศวินเท็นจิ ทาเคะนาชิ ฟอร์เทรส': [
+  'แปดอัศวินเก็นจิ ทาเคะนาชิ ฟอร์เทรส': [
     { kind: 'burst', soul: true, on: 'afterOpponentAttack', steps: [{ do: 'summonThisFree' }] },
-    { kind: 'effectImmune', levels: ALL3, scope: 'self', exceptNamed: ['เท็นจิ'] },
+    { kind: 'effectImmune', levels: ALL3, scope: 'self', exceptNamed: ['เก็นจิ'] },
     {
       kind: 'trigger',
       on: 'oppEndStep',
       levels: [2, 3],
       if: { noLifeDamageThisTurn: true },
-      steps: [{ do: 'summonFromHandFree', filter: { types: SPIRIT, nameIncludes: ['เท็นจิ'] } }],
+      steps: [{ do: 'summonFromHandFree', filter: { types: SPIRIT, nameIncludes: ['เก็นจิ'] } }],
     },
   ],
   'ภูตสถิตเกราะ ดีส': [
