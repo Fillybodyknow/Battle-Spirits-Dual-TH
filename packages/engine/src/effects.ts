@@ -561,6 +561,12 @@ export function queueSummonTriggers(
     queueTriggers(ctx, id, 'allySummoned', batch, { subject: cardId, subjectPaidSoul: !!opts.paidWithSoul, subjectFromTrash: !!opts.fromTrash, byOnStage: !!opts.byOnStage });
 }
 
+/** เลเวลที่ใช้ตรวจ trigger อัญเชิญของเบรฟที่ลงไปร่วมร่างทันที (ไม่มี Core): เลเวลต่ำสุดของการ์ด (แบบเดียวกับอัญเชิญเบรฟจากมือ) */
+function braveSummonLevel(ctx: Ctx, cardId: string): number {
+  const lowest = Math.min(...ctx.db.get(ctx.s.cards[cardId]!.cardNo).levels.map((l) => l.level));
+  return Number.isFinite(lowest) ? lowest : 1;
+}
+
 /** ผู้เล่นเสียไลฟ์: trigger "เมื่อเราเสียไลฟ์" ของการ์ดบนสนามของผู้เล่นนั้น */
 export function queueLifeLostTriggers(ctx: Ctx, player: PlayerId, amount = 1): void {
   if (ctx.s.winner) return;
@@ -2706,6 +2712,10 @@ function putOnField(ctx: Ctx, item: QueuedEffect, step: Extract<Step, { do: 'pla
     return;
   }
   emit(ctx, { type: 'summoned', player: me, cardId: step.cardId, paid: 0, from: from === 'other' && item.sourceId === step.cardId ? 'burst' : from });
+  // กติกา 03: ดึงคอร์จากสปิริตบนสนามมาวาง = สปิริตนั้นสูญสลายทันที (เป็นส่วนของการอัญเชิญ ก่อน "เมื่อสปิริตนี้ถูกอัญเชิญ" ทำงาน)
+  // กติกา 04 ข้อ 2: ร่างต้นที่สูญสลาย → ถามเรื่องเบรฟที่ร่วมร่างก่อน (แบบเดียวกับการอัญเชิญจากมือใน game.ts)
+  checkDepletion(ctx);
+  if (!s.players[me].field.includes(step.cardId)) return;
   // trigger ของการ์ดที่ลงสนามทำงานหลังเอฟเฟกต์นี้จบ
   queueSummonTriggers(ctx, step.cardId, newBatch(ctx), { fromTrash: from === 'trash', from, byOnStage: !!item.onStage, bySource: item.sourceId });
 }
@@ -2757,6 +2767,7 @@ function multiSummon(ctx: Ctx, player: PlayerId, choice: Extract<PendingChoice, 
       card.state = host.state;
       emit(ctx, { type: 'summoned', player, cardId: pk.cardId, paid: 0, from });
       emit(ctx, { type: 'braved', cardId: pk.cardId, hostId: pk.braveOnto });
+      summoned.push(pk.cardId);
       continue;
     }
     for (const id of pk.cores ?? []) removeCore(s, id);
@@ -2768,7 +2779,8 @@ function multiSummon(ctx: Ctx, player: PlayerId, choice: Extract<PendingChoice, 
   }
   const batch = newBatch(ctx);
   const cur = s.queue[0];
-  for (const id of summoned) queueSummonTriggers(ctx, id, batch, { from, byOnStage: !!cur?.onStage, ...(cur ? { bySource: cur.sourceId } : {}) });
+  for (const id of summoned)
+    queueSummonTriggers(ctx, id, batch, { from, byOnStage: !!cur?.onStage, ...(cur ? { bySource: cur.sourceId } : {}), ...(braveHostOf(s, id) ? { level: braveSummonLevel(ctx, id) } : {}) });
   if (fromHand) return;
   const rest = choice.revealed.filter((id) => !usedCards.has(id));
   const restStep = choice.step.do === 'revealSummon' ? choice.step.rest : undefined;
@@ -3114,7 +3126,7 @@ function applyCardPick(ctx: Ctx, cur: QueuedEffect, choice: Extract<PendingChoic
       addVoidCores(ctx, player, pick, step.count);
       break;
     case 'braveOrSpirit': {
-      // ร่วมร่างทันที: ไม่วาง Core และ "เมื่อเบรฟนี้ถูกอัญเชิญ" ไม่ทำงาน
+      // ร่วมร่างทันที: ไม่วาง Core · กติกา 04: อัญเชิญแบบร่วมร่างโดยตรง "เมื่อเบรฟนี้ถูกอัญเชิญ" ก็ทำงานตามปกติ
       const from = detach(ctx, player, step.cardId);
       const host = s.cards[pick]!;
       const brave = s.cards[step.cardId]!;
@@ -3123,6 +3135,7 @@ function applyCardPick(ctx: Ctx, cur: QueuedEffect, choice: Extract<PendingChoic
       brave.state = host.state;
       emit(ctx, { type: 'summoned', player, cardId: step.cardId, paid: 0, from });
       emit(ctx, { type: 'braved', cardId: step.cardId, hostId: pick });
+      queueSummonTriggers(ctx, step.cardId, newBatch(ctx), { from, bySource: cur.sourceId, level: braveSummonLevel(ctx, step.cardId) });
       break;
     }
     case 'toDeckTop': {

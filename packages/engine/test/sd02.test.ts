@@ -298,13 +298,28 @@ describe('Brave ที่อัญเชิญด้วยเอฟเฟกต�
     return { s, kuwaga, teppo: s.players.p1.deck[0]! };
   }
 
-  it('เลือกร่วมร่าง: ไม่วาง Core และ "เมื่อเบรฟนี้ถูกอัญเชิญ" ไม่ทำงาน (ผู้ร่วมร่างที่เสื่อมสภาพ → เบรฟเสื่อมสภาพด้วย)', () => {
+  it('เลือกร่วมร่าง: ไม่วาง Core แต่ "เมื่อเบรฟนี้ถูกอัญเชิญ" ทำงานตามปกติ (กติกา 04) · ผู้ร่วมร่างที่เสื่อมสภาพ → เบรฟเสื่อมสภาพด้วย', () => {
     let { s, kuwaga, teppo } = revealTeppo();
     s = choose(s, { summons: [{ cardId: teppo, braveOnto: kuwaga }] });
     expect(s.cards[kuwaga]!.braves).toEqual([teppo]);
     expect(s.cards[teppo]!.state).toBe('exhausted');
     expect(s.players.p1.deck).not.toContain(teppo);
-    expect(s.choice).toBeNull(); // ไม่ถามเอฟเฟกต์ของเท็ปโป (ใบที่เหลือเป็นการ์ดเดียวกัน: วางใต้เด็คโดยไม่ถามลำดับ)
+    // กติกา 04: อัญเชิญแบบร่วมร่างโดยตรง ความสามารถเมื่อเบรฟนี้ถูกอัญเชิญทำงานตามปกติ
+    expect(s.choice).toMatchObject({ kind: 'option', options: ['ทิ้งการ์ดบนมือทั้งหมด แล้วจั่วเท่าการ์ดบนมือคู่แข่ง', 'ไม่ใช้'] });
+  });
+
+  it('เบรฟที่อัญเชิญด้วยเอฟเฟกต์ทีละใบ (เบิร์ส/ไม่จ่ายคอสต์) แล้วเลือกร่วมร่าง: "เมื่อเบรฟนี้ถูกอัญเชิญ" ทำงาน (กติกา 04)', () => {
+    let s = setup();
+    const kuwaga = put(s, 'p1', KUWAGA, 2);
+    const teppo = put(s, 'p1', TEPPO, 0);
+    s.players.p1.field = s.players.p1.field.filter((x) => x !== teppo);
+    s.players.p1.hand.push(teppo);
+    s.queue.push({ controller: 'p1', sourceId: teppo, steps: [{ do: 'placeCores', cardId: teppo }], paidWithSoul: false, trashWhenDone: false });
+    s = act(s, { type: 'moveCores', player: 'p1', moves: [] });
+    expect(s.choice).toMatchObject({ kind: 'card', candidates: [kuwaga] });
+    s = choose(s, kuwaga);
+    expect(s.cards[kuwaga]!.braves).toEqual([teppo]);
+    expect(s.choice).toMatchObject({ kind: 'option', options: ['ทิ้งการ์ดบนมือทั้งหมด แล้วจั่วเท่าการ์ดบนมือคู่แข่ง', 'ไม่ใช้'] });
   });
 
   it('เลือกลงเป็นสปิริต: วาง Core แล้ว "เมื่อเบรฟนี้ถูกอัญเชิญ" ทำงาน', () => {

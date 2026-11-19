@@ -406,6 +406,29 @@ describe('Booster Set 05', () => {
     expect(s.players.p2.life.length).toBe(life);
   });
 
+  it('อัญเชิญด้วยเอฟเฟกต์ ดึงคอร์จากร่างที่ร่วมร่างไลท์นิ่ง-ชิออนจนสูญสลาย: ถามเรื่องเบรฟก่อน แล้วเทพยักษ์บาซาระนับคอร์ 3 = ส่ง 3 (ไม่ได้ Charge +1) · กติกา 03 / 04', () => {
+    for (const keep of [false, true]) {
+      let s = setup();
+      const host = put(s, 'p1', no('แม่ทัพโยวไค คาฉะเนโกะ-อิคุสะ'), 3); // คอสต์ 5
+      const shion = brave(s, host, 'ดาบวิญญาณประกายม่วง ไลท์นิ่ง-ชิออน');
+      put(s, 'p2', DARIU, 3);
+      put(s, 'p2', DARIU, 3);
+      const basara = inHand(s, 'p1', no('เทพยักษ์บาซาระ'));
+      s.queue.push({ controller: 'p1', sourceId: basara, steps: [{ do: 'placeCores', cardId: basara }], paidWithSoul: false, trashWhenDone: false });
+      s = act(s, { type: 'moveCores', player: 'p1', moves: [] });
+      expect(s.choice).toMatchObject({ kind: 'placeCores' });
+      // วางคอร์ทั้ง 3 เม็ดของร่างที่ร่วมร่าง → ร่างนั้นสูญสลายทันที
+      s = choose(s, { pay: [...s.cards[host]!.cores] });
+      expect(s.players.p1.field).not.toContain(host);
+      expect(s.choice).toMatchObject({ kind: 'option', player: 'p1' });
+      s = choose(s, keep ? 0 : 1);
+      if (keep) s = choose(s, { pay: normalCores(s).slice(0, 1) });
+      // เอฟเฟกต์บาซาระ: คอร์บนบาซาระ 3 เม็ด = ส่ง 3 (ไลท์นิ่ง-ชิออนไม่ได้ร่วมร่างแล้ว)
+      expect(s.choice).toMatchObject({ kind: 'distribute', total: 3 });
+      expect(s.players.p1.field.includes(shion)).toBe(keep);
+    }
+  });
+
   it('ดาบชีพอัสนี มิคาซึกิ [ร่วมร่าง]: จบการต่อสู้ เซ็ทเบิร์สจากในมือ (ไม่รวมนอกมือ) เพื่อฟื้นสภาพ · ไม่ใช้ = ไม่ฟื้นสภาพ', () => {
     const run = (use: boolean) => {
       let s = setup();
