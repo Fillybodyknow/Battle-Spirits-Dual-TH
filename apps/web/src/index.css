@@ -180,6 +180,26 @@ body {
   30% { transform: translate(-50%, -50%) scale(1) rotate(0deg); opacity: 1; }
   100% { transform: translate(-50%, -50%) scale(0.6) rotate(15deg); opacity: 0; }
 }
+/* ลูกแสงชาร์จพลัง: โตขึ้นเรื่อย ๆ จนสว่างสุดตอนพุ่ง แล้วดับ */
+@keyframes fx-charge-orb {
+  0% { transform: translate(-50%, -50%) scale(0.15); opacity: 0; }
+  25% { transform: translate(-50%, -50%) scale(0.7); opacity: 0.85; }
+  88% { transform: translate(-50%, -50%) scale(1.05); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1.25); opacity: 0; }
+}
+@keyframes fx-charge-ring {
+  0% { transform: translate(-50%, -50%) scale(1.4) rotate(0deg); opacity: 0; }
+  30% { opacity: 0.9; }
+  90% { transform: translate(-50%, -50%) scale(0.55) rotate(240deg); opacity: 0.9; }
+  100% { transform: translate(-50%, -50%) scale(0.4) rotate(270deg); opacity: 0; }
+}
+/* ลำแสงพุ่ง: ยืดจากจุดเริ่มถึงเป้า สว่างแล้วจาง */
+@keyframes fx-charge-beam {
+  0% { transform: scaleX(0.15) scaleY(1.4); opacity: 1; }
+  14% { transform: scaleX(1) scaleY(1.2); opacity: 1; }
+  60% { transform: scaleX(1) scaleY(0.8); opacity: 0.75; }
+  100% { transform: scaleX(1) scaleY(0.2); opacity: 0; }
+}
 @keyframes fx-impact-ring {
   0% { transform: translate(-50%, -50%) scale(0.3); opacity: 0.9; }
   100% { transform: translate(-50%, -50%) scale(1.4); opacity: 0; }
