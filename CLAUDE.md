@@ -100,6 +100,9 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
 - **เบรฟ (กติกา 03/04)**: สีของการ์ดบนสนามรวมสีเบรฟที่ร่วมร่าง = `cardColors` (ใช้แทน `def.colors` ทุกจุดที่เช็กสีการ์ดบนสนาม) ·
   ร่างต้นออกจากสนาม → step ภายใน `braveFate` แทรกต่อจากเอฟเฟกต์ปัจจุบัน (รีเสิร์ฟไม่พอ Lv1 = ลงแทรชไม่ถาม, คงอยู่ = `placeCores.noSummon` วางจากรีเสิร์ฟเท่านั้น) ·
   "เมื่อเบรฟนี้ถูกอัญเชิญ" ทำงานทั้งลงเป็นสปิริตและร่วมร่างทุกทาง (ตรวจที่ Lv ต่ำสุด `braveSummonLevel`) · ดึงคอร์จากสนามมาวางตอนอัญเชิญด้วยเอฟเฟกต์ = `checkDepletion` ก่อน trigger อัญเชิญ
+- **เบิร์สที่ถูกสั่งใช้แบบไม่สนเงื่อนไข** (Catalyze = โซลเบิร์ส, ยูสึกิ = เบิร์สที่ถูกทิ้ง ทุกแบบ): ไม่มี "การ์ดต้นเหตุ" ของเงื่อนไขเบิร์ส (`item.subjectId` ว่าง, `item.catalyzed`)
+  สคริปต์เบิร์สห้ามผูกเป้ากับการ์ดต้นเหตุ (ตัวที่ถูกอัญเชิญ/ทำลาย/โจมตี/เมจิคที่ใช้) เว้นแต่ข้อความการ์ดเจาะจงจริง ๆ — ข้อความทั่วไป "สปิริต 1 ตัว" = ให้ผู้เล่นเลือกเป้าเอง
+  (บทเรียน: มาคินะเคยผูกกับตัวที่เพิ่งอัญเชิญ → Catalyze แล้วไม่ทำอะไร) · ข้อความที่แยกกรณี Catalyze ไว้ (ฟอร์ซโคล์ท) ใช้เงื่อนไข `catalyzed`
 - **BS05**: `alsoMagic` / `grantMagic` (สปิริตใช้เป็นเมจิคได้ = `handMagic` ใน rules.ts, ใน store ใช้ `handMagicTimings`), `cannotAttack`, `voidFromLife`,
   Charge (`charged` + `bpMinusBoost` / `coreRemovalBoost` = `chargeBonus`), ล็อกโจมตี/ป้องกัน `disableChosenOpponent` (`state.turnLocks`), `negateOpponentsThisTurn` (`effectsLost`),
   `battleExhaustedBlock`, `blockTax`, `battleColorless`, `symbolsZeroThisTurn`, เบิร์ส `afterOpponentAttack`, trigger `unblocked` / `oppAttack` / `startStep` / `milledAny`,
