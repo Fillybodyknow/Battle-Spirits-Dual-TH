@@ -3589,26 +3589,37 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
     //  HIT → BACK: เด้งค้างหน้าเป้า · BACK → จบ: กลับที่เดิม
     //  0 → LIFT: บิดตัวง้าง (หมุนในระนาบ + หันข้างแบบ 3 มิติ ถอยเล็กน้อย) · LIFT → WIND: กลายเป็นลูกแสงชาร์จพลัง (การ์ดขาวจ้า)
     //  WIND → HIT: พุ่งแทบทันที (ลำแสงจากจุดเริ่มถึงเป้า) · HIT → BACK: ค้างที่เป้า (จอซูมเข้าค้าง) · BACK → HOME: ตกกลับที่เดิมเร็ว · HOME → จบ: อยู่ที่เดิม
-    const LIFT = 0.16;
+    const LIFT = 0.14;
     const WIND = CHARGE_WIND;
-    const BACK = 0.66;
+    const BACK = 0.69;
     const HOME = 0.9;
     const E = {
       lift: 'cubic-bezier(.3,0,.2,1)',
-      wind: 'cubic-bezier(.5,0,.5,1)',
+      wind: 'cubic-bezier(.4,0,.6,1)',
       dash: 'cubic-bezier(.6,0,1,.7)',
       recoil: 'linear',
       home: 'cubic-bezier(.45,0,.3,1)',
     };
-    // แกนหมุน 3 มิติ = ทิศที่พุ่ง (หัว-ท้ายการ์ด): การ์ดหันข้าง (แคบลงตามแนวนอน) ตอนบิดตัว
-    const ax = tx / len;
-    const ay = ty / len;
-    const tilt = (deg: number) => `perspective(900px) rotate3d(${ax},${ay},0,${deg}deg)`;
+    // ---- ท่าง้างตามทิศของเป้า (มองจากฝั่งผู้โจมตี: "ตรง" = ตั้งฉากกับแถวการ์ด) ----
+    const fx0 = tx / len;
+    const fy0 = ty / len;
+    /** มุมจากแนวตรงไปหาเป้า (องศา, + = ตามเข็มบนจอ): การ์ดเอียงหันหัวไปหาเป้าตอนพุ่ง */
+    const aim = (Math.atan2(-Math.sign(fy0 || -1) * fx0, Math.abs(fy0)) * 180) / Math.PI;
+    /** ตรง (เอียงไม่ถึง 8°) = เอนหลัง · เป้าอยู่ซ้าย = บิดตัวง้างขวา · เป้าอยู่ขวา = บิดตัวง้างซ้าย (บิดสวนทางกับทิศที่จะพุ่ง) */
+    const side = Math.abs(aim) < 8 ? 0 : -Math.sign(aim);
+    const twist = side * Math.min(30, 14 + Math.abs(aim) * 0.5);
+    /** เอนหลัง (หัวการ์ดเชิดขึ้น): เต็มที่ตอนตีตรง ลดลงตอนบิดตัว */
+    const lean = side === 0 ? -34 : -12;
+    /** หันข้างแบบ 3 มิติตอนบิดตัว (การ์ดแคบลงตามแนวนอน) */
+    const yaw = side * 42;
+    // แกนเอนหลัง = ตั้งฉากกับทิศที่พุ่ง · แกนหันข้าง = ทิศที่พุ่ง
+    const tilt = (leanDeg: number, yawDeg: number) => `perspective(900px) rotate3d(${-fy0},${fx0},0,${leanDeg}deg) rotate3d(${fx0},${fy0},0,${yawDeg}deg)`;
     const glow = (b: number, r: number, a: number) => `brightness(${b}) saturate(1) drop-shadow(0 0 ${r}px rgba(255,244,190,${a}))`;
     // แพ้: ถูกกระแทกกระเด็นกลับ (ตามสัดส่วน CHARGE_KNOCK: 0 = ถึงช่องเดิม) เซ แล้วหยุดตั้งตรงตรงนั้น ภาพร้าว/แตกเล่นต่อที่จุดนี้
     const K = CHARGE_KNOCK;
     // ทุกคีย์เฟรมใช้ลำดับฟังก์ชันเดียวกัน (translate · tilt · rotate · scale / filter ชุดเดียวกัน) เบราว์เซอร์จึงไล่ค่าได้ลื่น
-    const T = (x: number, y: number, deg: number, rotZ: string, sc: number) => `translate(${x}px,${y}px) ${tilt(deg)} ${rotZ} scale(${sc})`;
+    const T = (x: number, y: number, deg: number, rotZ: string, sc: number, leanDeg = 0) => `translate(${x}px,${y}px) ${tilt(leanDeg, deg)} ${rotZ} scale(${sc})`;
+    const aimRot = `rotate(${aim.toFixed(1)}deg)`;
     const end: Keyframe[] = fx.dies
       ? [
           { transform: T(hx * (K + 0.12), hy * (K + 0.12), 0, 'rotate(-14deg)', 1.08), filter: 'brightness(2.4) saturate(0.6) drop-shadow(0 0 0px rgba(255,244,190,0))', offset: BACK, easing: E.recoil },
@@ -3617,7 +3628,7 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
           { transform: T(hx * K, hy * K, 0, 'rotate(0deg)', 1), filter: 'brightness(1) saturate(0.3) drop-shadow(0 0 0px rgba(255,244,190,0))' },
         ]
       : [
-          { transform: T(hx * 0.97, hy * 0.97, 0, 'rotate(0deg)', 1.1), filter: glow(1.15, 8, 0.4), offset: BACK, easing: E.home },
+          { transform: T(hx * 0.97, hy * 0.97, 0, aimRot, 1.1), filter: glow(1.15, 8, 0.4), offset: BACK, easing: E.home },
           { transform: T(0, 0, 0, rotEnd, 1), filter: glow(1, 0, 0), offset: HOME },
           { transform: T(0, 0, 0, rotEnd, 1), filter: glow(1, 0, 0) },
         ];
@@ -3626,11 +3637,12 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
       // เบราว์เซอร์จะไล่ความทึบกลับไปหา 0 ทำให้การ์ดจางลงตอนวิ่งกลับ
       [
         { transform: T(0, 0, 0, rot, 1), filter: glow(1, 0, 0), easing: E.lift },
-        // บิดตัวง้าง: หมุนตามเข็ม + หันข้าง ถอยเล็กน้อย
-        { transform: T(-hx * 0.04, -hy * 0.04, 48, 'rotate(18deg)', 1.06), filter: glow(1.3, 10, 0.6), offset: LIFT, easing: E.wind },
-        // ลูกแสง: กลับมาตั้งตรง ขาวจ้า (มีลูกแสง/ประกายซ้อนทับ)
-        { transform: T(-hx * 0.06, -hy * 0.06, 0, 'rotate(0deg)', 1.12), filter: glow(4, 40, 1), offset: WIND, easing: E.dash },
-        { transform: T(hx, hy, 0, 'rotate(0deg)', 1.16), filter: glow(1.7, 20, 0.9), offset: HIT_AT, easing: E.recoil },
+        // ง้าง: ตีตรง = เอนหลัง · ตีซ้าย = บิดตัวขวา · ตีขวา = บิดตัวซ้าย (หมุนในระนาบ + หันข้าง) ถอยเล็กน้อย
+        { transform: T(-hx * 0.03, -hy * 0.03, yaw, `rotate(${twist}deg)`, 1.06, lean), filter: glow(1.3, 10, 0.6), offset: LIFT, easing: E.wind },
+        // ชาร์จ (ลูกแสง): ค่อย ๆ ถอยหลังตามแนวเป้า พร้อมค่อย ๆ คลายตัวหันหัวไปหาเป้าเต็มที่ ขาวจ้า
+        { transform: T(-hx * 0.22, -hy * 0.22, 0, aimRot, 1.12, lean * 0.25), filter: glow(4, 40, 1), offset: WIND, easing: E.dash },
+        // พุ่ง/ชน: หัวการ์ดนำเข้าเป้า เอียงเลยไปนิดตอนกระแทก
+        { transform: T(hx, hy, 0, `rotate(${(aim * 1.15).toFixed(1)}deg)`, 1.16), filter: glow(1.7, 20, 0.9), offset: HIT_AT, easing: E.recoil },
         ...end,
       ].map((k) => ({ ...k, opacity: 1 })),
       // ผู้โจมตีที่ยังอยู่บนสนาม: ก่อนถึงคิวแสดงการ์ดตัวจริง (มี Core / BP / Brave) แล้วค่อยสลับเป็นภาพที่วิ่ง
@@ -3646,8 +3658,8 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
     const extra: Animation[] = [];
     /** ตำแหน่งกลางการ์ดที่วิ่ง (เทียบจุดเริ่ม) ตามคีย์เฟรมของการ์ด */
     const P = {
-      lift: [-hx * 0.04, -hy * 0.04],
-      wind: [-hx * 0.06, -hy * 0.06],
+      lift: [-hx * 0.03, -hy * 0.03],
+      wind: [-hx * 0.22, -hy * 0.22],
       hit: [hx, hy],
       back: fx.dies ? [hx * (K + 0.12), hy * (K + 0.12)] : [hx * 0.97, hy * 0.97],
       end: fx.dies ? [hx * K, hy * K] : [0, 0],
