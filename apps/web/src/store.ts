@@ -22,6 +22,7 @@ import {
   applyAction,
   attackLifeDamage,
   extraSymbols,
+  onStageAbilities,
   blockersFor,
   magicUsedUp,
   cardLevel,
@@ -2257,6 +2258,8 @@ interface Store {
   pinned: string | null;
   /** ดู Trash ของผู้เล่น */
   trashView: PlayerId | null;
+  /** พัดการ์ดใน Trash ที่อัญเชิญได้ตอนนี้ (แตะช่อง Trash ตอนมีใบที่อัญเชิญได้) */
+  trashFan: PlayerId | null;
 
   newGame(): void;
   setDeck(player: PlayerId, deck: DeckId): void;
@@ -3203,6 +3206,7 @@ export const useGame = create<Store>((set, get) => {
     hovered: null,
     pinned: null,
     trashView: null,
+    trashFan: null,
     truth: null,
     handDrag: null,
     handOrder: {},
@@ -3641,7 +3645,9 @@ export const useGame = create<Store>((set, get) => {
       if (card.state !== 'refresh') return;
       if (state.phase === 'attack' && !state.battle && card.owner === state.turnPlayer) {
         // ยืนยันก่อนโจมตี (ตั้งค่าได้) · คลิกสปิริตเดิมซ้ำ = ยืนยัน
-        if (prefs().confirmAttack && get().attackConfirm !== cardId) {
+        // ทำ On Stage ได้ (BS07): ต้องผ่านขั้นยืนยันเสมอ (ปุ่ม On Stage อยู่ข้างปุ่มโจมตี)
+        const stage = onStageAbilities(state, db, card.owner, cardId).length > 0;
+        if ((prefs().confirmAttack || stage) && get().attackConfirm !== cardId) {
           sfx('click');
           set({ attackConfirm: cardId });
           return;

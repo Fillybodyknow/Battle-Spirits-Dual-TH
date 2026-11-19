@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { bpOf, cardLevel, currentBp, isSpiritLike, levelOf, minCores, opponentOf, PLAYERS, levelBoostSources, summonLevelCostBoost, summonMinCores, trashSummonRule, type GameState, type PlayerId } from '@bs/engine';
+import { bpOf, cardLevel, currentBp, isSpiritLike, levelOf, minCores, onStageAbilities, opponentOf, PLAYERS, levelBoostSources, summonLevelCostBoost, summonMinCores, trashSummonRule, type GameState, type PlayerId } from '@bs/engine';
 import { cardName, formatEvent, playerLabel } from '../format';
 import {
   actingPlayer,
@@ -176,6 +176,13 @@ export function PromptBar() {
     title = `โจมตีด้วย ${cardName(state, attackConfirm)}?`;
     detail = `BP ${currentBp(state, db, attackConfirm).toLocaleString()} · กด "โจมตี" หรือคลิกสปิริตตัวเดิมอีกครั้ง`;
     add('cancel', 'ยกเลิก', () => confirmAttack(false), 'secondary');
+    // On Stage (BS07): ทางเลือกแทนการโจมตี
+    for (const ab of onStageAbilities(state, db, state.cards[attackConfirm]!.owner, attackConfirm)) {
+      add(`stage${ab.source}`, ab.keyword ? 'On Stage' : 'กลับใต้เด็คแทนโจมตี', () => {
+        useGame.setState({ attackConfirm: null });
+        dispatch({ type: 'onStage', player: state.cards[attackConfirm]!.owner, cardId: attackConfirm, source: ab.source });
+      }, 'secondary');
+    }
     add('attack', 'โจมตี', () => confirmAttack(true), 'primary');
   } else if (evolveCard) {
     // [Evolution]: เลือก Core บนสปิริตอื่นของเรา
@@ -1009,6 +1016,46 @@ function OrderPanel() {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * อัญเชิญจาก Trash (ร็อคแฮนด์ / มุเมอิ ฯลฯ): แตะช่อง Trash ตอนมีใบที่อัญเชิญได้ → พัดการ์ดบนกระดานเฉพาะใบนั้น (ไม่ใช้ Modal)
+ * แตะใบ = แผงอัญเชิญที่มุมสนาม · "ดูทั้งกอง" = หน้าต่าง Trash เดิม
+ */
+export function TrashSummonFan() {
+  const player = useGame((s) => s.trashFan);
+  const state = useGame((s) => s.state);
+  const busy = useGame((s) => !!s.state.choice || isFxBlocking(s.fx) || !!s.play);
+  const ids = player ? state.players[player].trashCards.filter((id) => !!trashSummonRule(state, db, player, id)) : [];
+  const close = () => useGame.setState({ trashFan: null });
+  useEffect(() => {
+    // ใช้ได้หมด / หมดจังหวะ: ปิดเอง
+    if (player && (ids.length === 0 || state.winner)) close();
+  });
+  if (!player || busy || ids.length === 0) return null;
+  return (
+    <RevealFan
+      owner={player}
+      cardIds={[...ids].reverse()}
+      candidates={ids}
+      onPick={(id) => {
+        close();
+        useGame.getState().openPlay(id, 'summon');
+      }}
+      pickLabel="แตะเพื่ออัญเชิญ"
+      title={`อัญเชิญจาก Trash ได้ ${ids.length} ใบ`}
+      onSkip={close}
+      skipLabel="ปิด"
+      onConfirm={{
+        label: 'ดูทั้งกอง',
+        disabled: false,
+        run: () => {
+          close();
+          useGame.getState().openTrash(player);
+        },
+      }}
+    />
   );
 }
 

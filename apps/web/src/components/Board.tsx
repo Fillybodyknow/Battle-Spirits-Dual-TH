@@ -130,6 +130,8 @@ function FlashMenu({ cardId, anchor, onClose }: { cardId: string; anchor: React.
   const hover = useGame((s) => s.hover);
   const card = state.cards[cardId]!;
   const opts = activatableOptions(state, db, card.owner, cardId);
+  const evo = canEvolve(state, cardId);
+  const count = opts.length + (evo ? 1 : 0);
   const menuRef = useRef<HTMLDivElement>(null);
   const [rect, setRect] = useState<DOMRect | null>(() => anchor.current?.getBoundingClientRect() ?? null);
 
@@ -176,9 +178,34 @@ function FlashMenu({ cardId, anchor, onClose }: { cardId: string; anchor: React.
     >
       <div className="flex items-center gap-1 px-1 text-[11px] font-black text-cyan-300">
         <Bolt />
-        เลือกเอฟเฟกต์ Flash{opts.length > 1 ? ` (${opts.length})` : ''}
+        {flashPlayer(state) ? 'เลือกเอฟเฟกต์ Flash' : 'เลือกเอฟเฟกต์'}
+        {count > 1 ? ` (${count})` : ''}
       </div>
       <div className="flex max-h-[16rem] flex-col gap-1 overflow-y-auto">
+        {evo && (
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              hover(null);
+              useGame.getState().openEvolve(cardId);
+            }}
+            onMouseEnter={() => hover(cardId)}
+            onMouseLeave={() => hover(null)}
+            className="flex items-start gap-1.5 rounded-lg bg-emerald-400 p-1 pr-1.5 text-left text-slate-900 shadow hover:bg-emerald-200"
+          >
+            <div className="h-10 w-7 shrink-0 overflow-hidden rounded">
+              <CardFace def={db.get(card.cardNo)} size="xs" />
+            </div>
+            <span className="flex min-w-0 flex-col gap-0.5">
+              <span className="flex min-w-0 items-center gap-1 text-xs font-black">
+                <span className="truncate">{db.get(card.cardNo).name}</span>
+                <span className="shrink-0 rounded bg-emerald-800 px-1 text-[9px] text-white">Evolution</span>
+              </span>
+              <span className="line-clamp-2 text-[10px] leading-tight font-semibold text-slate-800">ดึง Core จากสปิริตอื่นของเรามาวางบนสปิริตนี้ (เลือก Core บนกระดาน)</span>
+            </span>
+          </button>
+        )}
         {opts.map(({ ability: ab, from }) => {
           const def = db.get(state.cards[from]!.cardNo);
           const text = ab.label.startsWith('[') ? ab.label.slice(ab.label.indexOf(']') + 1).trim() : ab.label;
@@ -273,14 +300,19 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
   const ready = own && spirit && !exhausted && !state.winner && !state.choice;
   const canAttack = ready && state.phase === 'attack' && !battle && card.owner === state.turnPlayer && canAttackWith(state, db, cardId);
   const confirming = useGame((s) => s.attackConfirm === cardId);
+  /** On Stage (BS07) ที่ทำได้ตอนนี้: ทางเลือกแทนการโจมตี */
+  const stageAbs = own && mine(card.owner) ? onStageAbilities(state, db, card.owner, cardId) : [];
   // ป้องกัน: ใช้รายชื่อจาก engine (รวมตัวที่ป้องกันได้แม้เสื่อมสภาพ / กฎป้องกันพิเศษ)
   const canBlock = own && !state.winner && !state.choice && battle?.step === 'declareBlock' && card.owner !== state.turnPlayer && blockCandidates(state).includes(cardId);
   const ownTurnMain = own && inMain(state) && card.owner === state.turnPlayer;
   const flashOpts = own && !evolveMode && !fxBlocking ? activatableOptions(state, db, card.owner, cardId) : [];
-  // ใช้ได้หมด / หมดจังหวะ Flash: ปิดเมนู
+  /** [Evolution] ใช้ได้ตอนนี้ (Main Step ของเรา / Flash timing): อยู่ในเมนูเดียวกับเอฟเฟกต์ Flash */
+  const evo = own && !evolveMode && !fxBlocking && canEvolve(state, cardId);
+  const menuCount = flashOpts.length + (evo ? 1 : 0);
+  // ใช้ได้หมด / หมดจังหวะ: ปิดเมนู
   useEffect(() => {
-    if (flashOpen && flashOpts.length === 0) setFlashOpen(false);
-  }, [flashOpen, flashOpts.length]);
+    if (flashOpen && menuCount === 0) setFlashOpen(false);
+  }, [flashOpen, menuCount]);
   const dropTarget = ownTurnMain && (!!dragging || hasSelection);
 
   const target = useMemo<CoreTarget>(() => ({ cardId }), [cardId]);
@@ -397,8 +429,8 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
             setBraveMenu(braveMenu ? null : cardId);
             return;
           }
-          // มีเอฟเฟกต์ Flash ที่กดใช้ได้: เปิด/ปิดเมนูเหนือการ์ด
-          if (flashOpts.length > 0 && !st.state.choice && !isChoiceCandidate(st.state, cardId)) {
+          // มีเอฟเฟกต์ Flash / [Evolution] ที่กดใช้ได้: เปิด/ปิดเมนูเหนือการ์ด (เลือก Core ไว้ = ย้าย Core มาวางตามปกติ)
+          if (menuCount > 0 && !st.state.choice && !isChoiceCandidate(st.state, cardId) && st.selectedCores.length === 0) {
             setFlashOpen(!flashOpen);
             return;
           }
@@ -454,14 +486,14 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
             <span className="rounded-md bg-fuchsia-500 px-2 py-0.5 text-sm font-black whitespace-nowrap text-white shadow-lg">ส่ง {allocN}</span>
           </div>
         )}
-        {/* มีเอฟเฟกต์ Flash ที่กดใช้ได้: ป้ายบอกให้คลิกการ์ด */}
-        {flashOpts.length > 0 && (
+        {/* มีเอฟเฟกต์ Flash / [Evolution] ที่กดใช้ได้: ป้ายบอกให้คลิกการ์ด (Main Step มีแค่ Evolution = ป้าย Evolution สีเขียว) */}
+        {menuCount > 0 && !flashOpen && (
           <div
-            className="pointer-events-none absolute top-6 left-1/2 z-[6] flex -translate-x-1/2 items-center gap-0.5 rounded-md bg-cyan-300 px-1.5 py-0.5 text-[10px] font-black whitespace-nowrap text-slate-900 shadow"
-            style={{ animation: 'fx-flash-glow 1.2s ease-in-out infinite' }}
+            className={`pointer-events-none absolute top-6 left-1/2 z-[6] flex -translate-x-1/2 items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[10px] font-black whitespace-nowrap text-slate-900 shadow ${flashPlayer(state) ? 'bg-cyan-300' : 'bg-emerald-400'}`}
+            style={flashPlayer(state) ? { animation: 'fx-flash-glow 1.2s ease-in-out infinite' } : undefined}
           >
             <Bolt />
-            Flash{flashOpts.length > 1 ? ` ×${flashOpts.length}` : ''}
+            {flashPlayer(state) ? `Flash${menuCount > 1 ? ` ×${menuCount}` : ''}` : 'Evolution'}
           </div>
         )}
         {/* Brave ที่ร่วมร่าง: ซ้อนมุมบนขวาของผู้ร่วมร่าง */}
@@ -535,6 +567,41 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
         {canAttack && !confirming && (
           <div className="absolute inset-x-1 bottom-1 rounded bg-amber-400 py-0.5 text-center text-xs font-bold text-slate-900">คลิกเพื่อโจมตี</div>
         )}
+        {/* On Stage (BS07): ทำได้แทนการโจมตี · ก่อนกด = ป้ายบนการ์ด · กดการ์ดแล้ว = ปุ่มข้างปุ่มดาบ */}
+        {canAttack && stageAbs.length > 0 && !confirming && (
+          <div className="pointer-events-none absolute top-6 left-1/2 z-[6] -translate-x-1/2 rounded-md bg-pink-400 px-1.5 py-0.5 text-[10px] font-black whitespace-nowrap text-slate-900 shadow">On Stage</div>
+        )}
+        {/* On Stage: ปุ่มวงกลมแบบเดียวกับปุ่มดาบ วางคู่กัน (ดาบซ้าย · On Stage ขวา) */}
+        {canAttack &&
+          confirming &&
+          stageAbs.map((ab, i) => (
+            <button
+              key={ab.source}
+              type="button"
+              title={ab.label}
+              onClick={(e) => {
+                e.stopPropagation();
+                useGame.setState({ attackConfirm: null });
+                useGame.getState().dispatch({ type: 'onStage', player: card.owner, cardId, source: ab.source });
+              }}
+              className="absolute -top-7 z-20 flex -translate-x-1/2 flex-col items-center"
+              style={{ left: `calc(50% + ${38 + i * 76}px)`, animation: 'attack-btn-in 0.25s 0.05s cubic-bezier(.2,1.4,.4,1) both' }}
+            >
+              <span className="relative flex h-14 w-14 items-center justify-center rounded-full border-2 border-pink-100 bg-gradient-to-b from-pink-400 to-fuchsia-700 text-white shadow-[0_0_18px_rgba(244,114,182,0.9),inset_0_2px_6px_rgba(255,255,255,0.45)] transition hover:scale-110">
+                <span className="absolute inset-0 rounded-full border-2 border-pink-200/70" style={{ animation: 'login-ring 1.6s ease-out infinite' }} />
+                {/* ไมโครโฟน (ธีมไอดอลของ On Stage) */}
+                <svg viewBox="0 0 24 24" className="h-7 w-7 drop-shadow" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <rect x="9" y="2" width="6" height="12" rx="3" />
+                  <path d="M5 10a7 7 0 0 0 14 0" />
+                  <path d="M12 17v5" />
+                  <path d="M8 22h8" />
+                </svg>
+              </span>
+              <span className="-mt-1 rounded bg-black/60 px-1.5 text-sm font-black whitespace-nowrap text-white [text-shadow:0_0_6px_rgba(244,114,182,0.9)]">
+                {ab.keyword ? 'On Stage' : 'กลับใต้เด็ค'}
+              </span>
+            </button>
+          ))}
         {/* ยืนยันโจมตี: ปุ่มวงกลมรูปดาบลอยเหนือการ์ด (กดปุ่ม หรือคลิกการ์ดซ้ำ = โจมตี) */}
         {canAttack && confirming && (
           <button
@@ -543,8 +610,9 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
               e.stopPropagation();
               useGame.getState().confirmAttack(true);
             }}
-            className="absolute -top-7 left-1/2 z-20 flex -translate-x-1/2 flex-col items-center"
-            style={{ animation: 'attack-btn-in 0.25s cubic-bezier(.2,1.4,.4,1) both' }}
+            className="absolute -top-7 z-20 flex -translate-x-1/2 flex-col items-center"
+            // มีปุ่ม On Stage: ดาบขยับไปซ้าย วางคู่กัน
+            style={{ left: stageAbs.length > 0 ? 'calc(50% - 38px)' : '50%', animation: 'attack-btn-in 0.25s cubic-bezier(.2,1.4,.4,1) both' }}
             title="โจมตี"
           >
             <span className="relative flex h-14 w-14 items-center justify-center rounded-full border-2 border-sky-100 bg-gradient-to-b from-sky-400 to-blue-700 text-white shadow-[0_0_18px_rgba(56,189,248,0.9),inset_0_2px_6px_rgba(255,255,255,0.45)] transition hover:scale-110">
@@ -596,42 +664,13 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
           <span className="text-[11px] text-slate-500">ไม่มี Core</span>
         )}
       </div>
-      {evolving ? (
+      {evolving && (
         <button type="button" onClick={closeEvolve} className="w-full rounded-md bg-slate-700 py-1 text-xs font-bold text-emerald-300 shadow">
           กำลังเลือก Core… (ยกเลิก)
         </button>
-      ) : (
-        !evolveMode &&
-        own && canEvolve(state, cardId) && (
-          <button
-            type="button"
-            onClick={() => openEvolve(cardId)}
-            className="w-full rounded-md bg-emerald-500 py-1 text-xs font-bold text-slate-900 shadow hover:bg-emerald-400"
-            style={flashPlayer(state) ? { animation: 'fx-flash-glow 1.2s ease-in-out infinite' } : undefined}
-          >
-            [Evolution] ดึง Core มาวาง
-          </button>
-        )
       )}
-      {/* เอฟเฟกต์ Flash ที่กดใช้เอง (โซอุม / โอกุมะ / Assault / ที่ Brave ให้): คลิกการ์ด → เมนูลอยเหนือการ์ด */}
-      {flashOpen && flashOpts.length > 0 && <FlashMenu cardId={cardId} anchor={boxRef} onClose={() => setFlashOpen(false)} />}
-      {/* On Stage (BS07): แอทแท็คสเต็ปของเรา กลับไปใต้เด็คแทนการโจมตี */}
-      {own &&
-        !evolveMode &&
-        mine(card.owner) &&
-        onStageAbilities(state, db, card.owner, cardId).map((ab) => (
-          <button
-            key={`stage-${ab.source}`}
-            type="button"
-            onClick={() => useGame.getState().dispatch({ type: 'onStage', player: card.owner, cardId, source: ab.source })}
-            onMouseEnter={() => hover(cardId)}
-            onMouseLeave={() => hover(null)}
-            title={ab.label}
-            className="w-full rounded-md bg-pink-400 py-1 text-xs font-bold text-slate-900 shadow hover:bg-pink-300"
-          >
-            {ab.keyword ? 'On Stage' : 'กลับใต้เด็คแทนโจมตี'}
-          </button>
-        ))}
+      {/* เอฟเฟกต์ Flash ที่กดใช้เอง (โซอุม / โอกุมะ / Assault / ที่ Brave ให้) + [Evolution]: คลิกการ์ด → เมนูลอยเหนือการ์ด */}
+      {flashOpen && menuCount > 0 && <FlashMenu cardId={cardId} anchor={boxRef} onClose={() => setFlashOpen(false)} />}
     </div>
   );
 }
@@ -881,8 +920,9 @@ function TrashSlot({ player }: { player: PlayerId }) {
       className={`min-h-20 flex-1 cursor-pointer hover:border-slate-200/50 ${
         burstDrop ? (over ? 'border-rose-300 bg-rose-500/30' : 'border-dashed border-rose-300') : summonable > 0 ? (inFlash ? 'border-cyan-300 bg-cyan-400/10' : 'border-yellow-300 bg-yellow-300/10') : ''
       }`}
-      onClick={() => openTrash(player)}
-      title={summonable > 0 ? `อัญเชิญจาก Trash ได้ ${summonable} ใบ · คลิกเพื่อเปิด` : 'คลิกดูการ์ดใน Trash'}
+      // มีใบที่อัญเชิญได้: เปิดพัดการ์ดบนกระดาน (เฉพาะใบที่อัญเชิญได้) · ไม่มี = ดูทั้งกอง
+      onClick={() => (summonable > 0 ? useGame.setState({ trashFan: player }) : openTrash(player))}
+      title={summonable > 0 ? `อัญเชิญจาก Trash ได้ ${summonable} ใบ · คลิกเพื่อเลือก` : 'คลิกดูการ์ดใน Trash'}
       {...dropHandlers(burstDrop, () => {
         useGame.setState({ burstDrag: null });
         useGame.getState().dispatch({ type: 'discardBurst', player });

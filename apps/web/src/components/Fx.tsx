@@ -2911,6 +2911,8 @@ export function RevealFan({
   chosenLabels,
   onConfirm,
   flatChosen,
+  skipLabel,
+  pickLabel,
 }: {
   owner: string;
   cardIds: string[];
@@ -2930,6 +2932,9 @@ export function RevealFan({
   onConfirm?: { label: string; disabled: boolean; run: () => void };
   /** ใบที่เลือกแล้วไม่ยกขึ้น (เรียงลำดับ: ไม่บังแถบชื่อ/ปุ่มยืนยัน) */
   flatChosen?: boolean;
+  /** ข้อความปุ่ม onSkip (ไม่ระบุ = ไม่เลือก) · ป้ายใต้ใบที่เลือกได้ (ไม่ระบุ = คลิกเพื่อเลือก) */
+  skipLabel?: string;
+  pickLabel?: string;
 }) {
   const cards = useGame((s) => s.state.cards);
   const hover = useGame((s) => s.hover);
@@ -2952,7 +2957,7 @@ export function RevealFan({
         {title}
         {onSkip && (
           <button type="button" onClick={onSkip} className="pointer-events-auto ml-3 rounded-full bg-slate-200 px-3 py-0.5 text-xs font-black text-slate-900 hover:bg-white">
-            ไม่เลือก
+            {skipLabel ?? 'ไม่เลือก'}
           </button>
         )}
         {onConfirm && (
@@ -3000,7 +3005,7 @@ export function RevealFan({
               {dim && <div className="absolute inset-0 rounded-lg bg-slate-950/65" />}
             </div>
             </div>
-            {can && !isChosen && <div className="absolute inset-x-2 -bottom-3 rounded bg-fuchsia-500 py-0.5 text-center text-xs font-bold text-white shadow">คลิกเพื่อเลือก</div>}
+            {can && !isChosen && <div className="absolute inset-x-2 -bottom-3 rounded bg-fuchsia-500 py-0.5 text-center text-xs font-bold text-white shadow">{pickLabel ?? 'คลิกเพื่อเลือก'}</div>}
             {isChosen && <div className="absolute inset-x-2 -bottom-3 rounded bg-yellow-300 py-0.5 text-center text-xs font-black text-slate-900 shadow">{chosenLabels?.[id] ?? chosenLabel ?? 'เลือก ✓ ขึ้นมือ'}</div>}
           </div>
         );
