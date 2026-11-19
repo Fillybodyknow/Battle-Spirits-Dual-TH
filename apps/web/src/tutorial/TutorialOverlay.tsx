@@ -62,7 +62,8 @@ export function TutorialOverlay() {
     const loop = () => {
       const tt = useTutorial.getState();
       const s = currentStep(tt);
-      const next = tt.phase === 'show' && !s?.free && s?.focus ? rectsOf(s.focus(tt.ids)) : [];
+      // ส่องไฟทั้งจุดหลัก (focus) และสิ่งที่เปิดตามมา (allow: เมนูการ์ด / แผงยืนยัน) ให้เห็นว่าต้องกดต่อตรงไหน
+      const next = tt.phase === 'show' && !s?.free && s?.focus ? rectsOf([...s.focus(tt.ids), ...(s.allow?.(tt.ids) ?? [])]) : [];
       setHoles((prev) => (same(prev, next) ? prev : next));
       raf = requestAnimationFrame(loop);
     };
@@ -87,17 +88,25 @@ export function TutorialOverlay() {
   const free = !!st?.free && t.phase !== 'done';
   const dim = t.phase === 'show' && !free;
 
-  // กล่องข้อความ: อยู่ฝั่งตรงข้ามจุดที่ส่องไฟ (ไม่บัง)
+  // กล่องข้อความ: เลือกตำแหน่ง (บน / ล่าง / กลาง) ที่ทับจุดส่องไฟน้อยที่สุด
   const vh = typeof window !== 'undefined' ? window.innerHeight : 860;
-  const cy = holes.length ? holes.reduce((n, r) => n + r.y + r.h / 2, 0) / holes.length : null;
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 1280;
+  const BOX_W = Math.min(600, vw * 0.92);
+  const BOX_H = 190;
+  const spots = [
+    { y: 76, pos: { top: 76, transform: 'translateX(-50%)' } },
+    { y: vh - 130 - BOX_H, pos: { bottom: 130, transform: 'translateX(-50%)' } },
+    { y: (vh - BOX_H) / 2, pos: { top: '50%', transform: 'translate(-50%, -50%)' } },
+  ];
+  const overlap = (y: number) =>
+    holes.reduce((n, r) => {
+      const w = Math.max(0, Math.min(r.x + r.w, vw / 2 + BOX_W / 2) - Math.max(r.x, vw / 2 - BOX_W / 2));
+      const h = Math.max(0, Math.min(r.y + r.h, y + BOX_H) - Math.max(r.y, y));
+      return n + w * h;
+    }, 0);
+  const best = holes.length ? spots.reduce((a, b) => (overlap(b.y) < overlap(a.y) ? b : a)) : spots[2]!;
   // เล่นอิสระ: กล่องย่อไว้ด้านบน ไม่บังกระดาน
-  const boxPos = free
-    ? { top: 58, transform: 'translateX(-50%)' }
-    : cy === null
-      ? { top: '50%', transform: 'translate(-50%, -50%)' }
-      : cy > vh * 0.5
-        ? { top: 76, transform: 'translateX(-50%)' }
-        : { bottom: 130, transform: 'translateX(-50%)' };
+  const boxPos = free ? { top: 58, transform: 'translateX(-50%)' } : best.pos;
 
   return createPortal(
     <>

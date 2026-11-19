@@ -16,6 +16,11 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '15.2.1',
+    date: '2026-11-19',
+    items: ['บทเรียน: กรอบเหลืองตามไปที่เมนูของการ์ด (ใช้ [Main] / อัญเชิญ / วาง Nexus) และแผงยืนยันที่เปิดขึ้นมา · กล่องข้อความย้ายไปจุดที่ไม่บังกรอบเอง'],
+  },
+  {
     version: '15.2.0',
     date: '2026-11-19',
     items: [
