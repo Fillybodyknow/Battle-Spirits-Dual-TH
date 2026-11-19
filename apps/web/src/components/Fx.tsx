@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { opponentOf, type PlayerId } from '@bs/engine';
-import { cardArt } from '../assets';
+import { cardArt, GEM_IMG } from '../assets';
 import { braveSlot, CAST_MS, CHARGE_HIT, CHARGE_MS, DRAW_FLIP_MS, DRAW_TIER, LETHAL_RELEASE, LETHAL_SLOW, LETHAL_SLOW_EXTRA, CUTIN_MS, CUTIN_SLAM, castCards, castHandSlots, castTone, controls, CHARGE_KNOCK, actingPlayer, chainEntries, viewPlayer, db, fieldScaleOf, GHOST_MS, isFxBlocking, layoutRect, MILL_MS, millBreakAt, millDuration, PLAY_HIT, useGame, type Fx, type Rect, hiddenFrom } from '../store';
 import { CardBack, CardFace } from './CardFace';
 import { setSfxTimeScale, sfx } from '../sfx';
@@ -3637,13 +3637,14 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
       extra.push(
         el.animate(
           [
-            { transform: tr(0, 0, 45, 0), opacity: 0 },
-            { transform: tr(pop[0]!, pop[1]!, 45 + 90, 1.35), opacity: 1, offset: 0.1 },
-            { transform: tr(form[0]!, form[1]!, 45 + 180, 1), opacity: 1, offset: 0.2 },
-            { transform: tr(pre[0]!, pre[1]!, 45 + 420, 1.15), opacity: 1, offset: PRE },
-            { transform: tr(hit[0]!, hit[1]!, 45 + 540, 1.5), opacity: 1, offset: HIT_AT, easing: 'ease-out' },
-            { transform: tr(hit[0]!, hit[1]!, 45 + 600, 2.8), opacity: 0, offset: Math.min(0.99, HIT_AT + 0.07) },
-            { transform: tr(hit[0]!, hit[1]!, 45 + 600, 2.8), opacity: 0 },
+            // หมุนออกจากการ์ด → ตั้งตรงตอนเรียงวง → หมุน 1 รอบระหว่างพุ่ง กลับมาตั้งตรงตอนชน
+            { transform: tr(0, 0, -200, 0), opacity: 0 },
+            { transform: tr(pop[0]!, pop[1]!, -20, 1.35), opacity: 1, offset: 0.1 },
+            { transform: tr(form[0]!, form[1]!, 0, 1), opacity: 1, offset: 0.2 },
+            { transform: tr(pre[0]!, pre[1]!, 300, 1.1), opacity: 1, offset: PRE },
+            { transform: tr(hit[0]!, hit[1]!, 360, 1.45), opacity: 1, offset: HIT_AT, easing: 'ease-out' },
+            { transform: tr(hit[0]!, hit[1]!, 380, 2.6), opacity: 0, offset: Math.min(0.99, HIT_AT + 0.07) },
+            { transform: tr(hit[0]!, hit[1]!, 380, 2.6), opacity: 0 },
           ],
           { ...timing, fill: 'both' },
         ),
@@ -3730,15 +3731,16 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
             ref={(el) => {
               gemRefs.current[i] = el;
             }}
-            className="pointer-events-none fixed z-[43] h-8 w-8 rounded-md border-2 border-white/90"
-            style={{
-              left: cx - 16,
-              top: cy - 16,
-              opacity: 0,
-              background: `linear-gradient(135deg, #ffffff 0%, ${hex} 42%, ${hex} 70%, rgba(15,23,42,0.85) 100%)`,
-              boxShadow: `0 0 12px ${hex}, 0 0 34px ${hex}, 0 0 60px ${hex}88, inset 0 0 8px rgba(255,255,255,0.85)`,
-            }}
-          />
+            className="pointer-events-none fixed z-[43] flex h-11 w-11 items-center justify-center"
+            style={{ left: cx - 22, top: cy - 22, opacity: 0 }}
+          >
+            {GEM_IMG[color] ? (
+              // ภาพ Gem Symbol ของสีนั้น (assets/images/app/gem_symbol) + แสงเรืองสีเดียวกัน
+              <img src={GEM_IMG[color]} alt="" draggable={false} className="h-full w-full object-contain" style={{ filter: `drop-shadow(0 0 6px ${hex}) drop-shadow(0 0 16px ${hex})` }} />
+            ) : (
+              <div className="h-7 w-7 rotate-45 rounded-md border-2 border-white/90" style={{ background: hex, boxShadow: `0 0 12px ${hex}, 0 0 34px ${hex}` }} />
+            )}
+          </div>
         );
       })}
       {/* หางควันสีตามการ์ด: ปล่อยตั้งแต่เริ่มพุ่ง (หลังถอยตั้งหลัก) จนชนเป้าหมาย · วางหลังการ์ดใน DOM: ชั้นหน้า (z 42 เท่าการ์ด) จึงทับการ์ด */}

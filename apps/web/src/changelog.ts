@@ -16,6 +16,11 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '16.0.1',
+    date: '2026-11-19',
+    items: ['แอนิเมชันโจมตีเข้า Life: Gem Symbol ที่พุ่งไปพร้อมสปิริตใช้ภาพอัญมณีตามสี (แดง ม่วง เขียว ขาว เหลือง ฟ้า) เรืองแสงสีเดียวกัน'],
+  },
+  {
     version: '16.0.0',
     date: '2026-11-19',
     items: [

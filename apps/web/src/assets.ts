@@ -13,6 +13,16 @@ const playmat: string | undefined = Object.values(playmatFiles)[0];
 
 export const IMG = { cardBack, core, soulCore, playmat };
 
+/** ภาพ Gem Symbol ตามสี: assets/images/app/gem_symbol/<สี>_gem_symbol.webp (red/purple/green/white/yellow/blue) */
+const gemFiles = import.meta.glob('../../../assets/images/app/gem_symbol/*_gem_symbol.{webp,png}', {
+  eager: true,
+  query: '?url',
+  import: 'default',
+}) as Record<string, string>;
+export const GEM_IMG: Record<string, string> = Object.fromEntries(
+  Object.entries(gemFiles).map(([path, url]) => [path.split('/').pop()!.replace(/_gem_symbol\.[^.]+$/, ''), url]),
+);
+
 /**
  * ภาพการ์ด: assets/images/cards/<ชุด>/<cardNo>.webp|png|jpg (เช่น SD01/SD01-001.webp)
  * โหลดอัตโนมัติทุกไฟล์ในโฟลเดอร์ ชื่อไฟล์ (ไม่รวมนามสกุล) = cardNo
