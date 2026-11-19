@@ -1014,7 +1014,8 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
 
     case 'exhaustOpponentTotalBp': {
       const candidates = s.players[opp].field.filter(
-        (id) => spiritLike(id) && s.cards[id]!.state === 'refresh' && currentBp(s, db, id) <= step.maxTotal,
+        // ตัวที่ไม่รับผลเอฟเฟกต์ของการ์ดนี้ (ชิโมะคาเสะ ฯลฯ) เลือกไม่ได้
+        (id) => spiritLike(id) && s.cards[id]!.state === 'refresh' && currentBp(s, db, id) <= step.maxTotal && hits(id),
       );
       if (candidates.length === 0) return;
       ask(ctx, item, {
@@ -1990,7 +1991,7 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
     case 'opponentNexusCoresToTrash':
       for (const id of s.players[opp].field) {
         const card = s.cards[id]!;
-        if (db.get(card.cardNo).type !== 'nexus' || card.cores.length === 0) continue;
+        if (db.get(card.cardNo).type !== 'nexus' || card.cores.length === 0 || !hits(id)) continue;
         const n = card.cores.length;
         s.players[opp].trashCores.push(...card.cores);
         card.cores = [];

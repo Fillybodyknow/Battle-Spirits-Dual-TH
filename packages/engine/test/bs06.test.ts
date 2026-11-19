@@ -574,3 +574,16 @@ describe('Booster Set 06', () => {
     });
   });
 });
+
+describe('ชีลด์กันเอฟเฟกต์ (แก้บั๊ก)', () => {
+  it('ชิโมะคาเสะ (ไม่รับผลเอฟเฟกต์สปิริตของคู่แข่ง): ฟง-นี้ด เสื่อมสภาพ BP รวมไม่เกิน 10000 เลือกไม่ได้', () => {
+    let s = setup();
+    const fong = put(s, 'p1', no('ราชาผึ้ง ฟง-นี้ด'), 1);
+    const shimo = put(s, 'p2', no('เสนาธิการเครื่องกล ชิโมะคาเสะ'), 1);
+    const plain = put(s, 'p2', DARIU, 1);
+    s = attack(s, fong);
+    expect(s.choice).toMatchObject({ kind: 'card', candidates: [plain] });
+    s = choose(s, plain);
+    expect(s.cards[shimo]!.state).toBe('refresh');
+  });
+});
