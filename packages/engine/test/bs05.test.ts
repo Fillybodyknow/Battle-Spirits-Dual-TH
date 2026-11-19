@@ -406,6 +406,33 @@ describe('Booster Set 05', () => {
     expect(s.players.p2.life.length).toBe(life);
   });
 
+  it('ดาบชีพอัสนี มิคาซึกิ [ร่วมร่าง]: จบการต่อสู้ เซ็ทเบิร์สจากในมือ (ไม่รวมนอกมือ) เพื่อฟื้นสภาพ · ไม่ใช้ = ไม่ฟื้นสภาพ', () => {
+    const run = (use: boolean) => {
+      let s = setup();
+      const host = put(s, 'p1', no('แม่ทัพโยวไค คาฉะเนโกะ-อิคุสะ'), 1); // คอสต์ 5
+      brave(s, host, 'ดาบชีพอัสนี มิคาซึกิ');
+      const inside = inHand(s, 'p1', no('ไยมายากระชากวิญญาณ'));
+      const shown = inHand(s, 'p1', no('ไยมายากระชากวิญญาณ'));
+      s.shownCards = [shown];
+      s = passFlashes(attack(s, host));
+      s = act(s, { type: 'noBlock', player: 'p2' });
+      s = passFlashes(s);
+      expect(s.choice).toMatchObject({ kind: 'option', player: 'p1' });
+      if (!use) return { s: choose(s, (s.choice as { options: string[] }).options.length - 1), host, inside, shown };
+      s = choose(s, 0);
+      // ต้องเลือก 1 ใบ (ไม่มีปุ่มไม่เลือก) และเลือกได้เฉพาะในมือ
+      expect(s.choice).toMatchObject({ kind: 'card', candidates: [inside] });
+      expect((s.choice as { optional?: boolean }).optional).toBeFalsy();
+      return { s: choose(s, inside), host, inside, shown };
+    };
+    const used = run(true);
+    expect(used.s.players.p1.burst).toBe(used.inside);
+    expect(used.s.cards[used.host]!.state).toBe('refresh');
+    const skipped = run(false);
+    expect(skipped.s.players.p1.burst).toBeNull();
+    expect(skipped.s.cards[skipped.host]!.state).toBe('exhausted');
+  });
+
   it('ดาบชีพอัสนี มิคาซึกิ (Soul Burst): สปิริตคู่แข่งทั้งหมดสูญเสียเอฟเฟกต์ในเทิร์นนี้', () => {
     let s = setup();
     const mika = inHand(s, 'p2', no('ดาบชีพอัสนี มิคาซึกิ'));

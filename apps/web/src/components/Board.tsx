@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { activatableOptions, onStageAbilities, baseCost, braveToSwap, canAttackWith, cardLevel, currentBp, isSpiritLike, payableCost, trashSummonRule, type CoreTarget, type PlayerId } from '@bs/engine';
+import { activatableOptions, onStageAbilities, baseCost, braveToSwap, canAttackWith, cardLevel, currentBp, isSpiritLike, payableCost, trashSummonRule, type CoreTarget, type GameState, type PlayerId } from '@bs/engine';
 import { playerLabel } from '../format';
 import { IMG } from '../assets';
 import type { Fx } from '../store';
@@ -981,7 +981,9 @@ function SongZone({ player }: { player: PlayerId }) {
   // การ์ดที่ยังเล่นแอนิเมชันอยู่ (บินจากเวที/มือ): ซ่อนตัวจริงไว้จนภาพมาถึง
   const busy = useGame((s) => s.fx.flatMap((f) => ((f.kind === 'spell' && f.exit === 'song') || (f.kind === 'fly' && f.hideTarget) ? [f.cardId] : [])).join('|')).split('|');
   return (
-    <div className="flex w-36 shrink-0 justify-end">
+    <div className="flex w-36 shrink-0 flex-col items-end gap-1">
+      {/* นอกมือ (กติกา 14) อยู่เหนือโซนเพลง · กำหนดโซนแยกกันชัดเจน */}
+      <OutsideZone player={player} />
       {songs.length > 0 && (
         <div data-song-zone={player} className="flex flex-col items-end gap-0.5" title="เมจิคไทป์ [เพลง] บนฟิลด์ (วางแสดง ใช้งานไม่ได้)">
           <span className="relative flex items-center gap-1 rounded bg-fuchsia-600/80 px-1.5 text-[10px] font-black tracking-wide text-white shadow">
@@ -1251,8 +1253,168 @@ function useShownHand(player: PlayerId, hidden: boolean): string[] {
   const state = useGame((s) => s.state);
   const manual = useGame((s) => s.handOrder[player]);
   const sort = usePrefs((p) => p.handSort);
-  const hand = state.players[player].hand;
+  const all = state.players[player].hand;
+  // การ์ดที่วางแสดงนอกมืออยู่ในโซน "นอกมือ" บนสนาม (OutsideZone) ไม่อยู่ในพัดการ์ดในมือ
+  const shownKey = (state.shownCards ?? []).join(',');
+  const hand = useMemo(() => (shownKey ? all.filter((id) => !shownKey.split(',').includes(id)) : all), [all, shownKey]);
   return useMemo(() => (hidden ? hand : sortHand(state, hand, sort, manual)), [state, hand, sort, manual, hidden]);
+}
+
+/** ทางเล่นการ์ดใบนี้ตอนนี้ (การ์ดในมือ / การ์ดที่วางแสดงนอกมือ ที่ใช้ได้เสมือนอยู่ในมือ) */
+function playOptions(state: GameState, cardId: string): { label: string; run: () => void }[] {
+  const { openPlay, dispatch } = useGame.getState();
+  const card = state.cards[cardId]!;
+  const def = db.get(card.cardNo);
+  const main = mine(card.owner) && inMain(state) && card.owner === state.turnPlayer;
+  const flash = mine(card.owner) && flashPlayer(state) === card.owner;
+  const timings = handMagicTimings(state, cardId);
+  const quick = canQuickSummon(state, cardId);
+  /** วางแสดงนอกมือ: เซ็ทเป็น Burst ไม่ได้ (กติกา 06 Q5) */
+  const shownOut = (state.shownCards ?? []).includes(cardId);
+  const options: { label: string; run: () => void }[] = [];
+  if (main && (def.type === 'spirit' || def.type === 'brave' || def.type === 'ultimate')) {
+    options.push({ label: 'อัญเชิญ', run: () => openPlay(cardId, 'summon') });
+  }
+  for (const host of braveHosts(state, cardId)) {
+    options.push({ label: `ร่วมร่างกับ ${db.get(state.cards[host]!.cardNo).name}`, run: () => openPlay(cardId, 'summon', undefined, host) });
+  }
+  if (quick) options.push({ label: 'อัญเชิญ [Quick]', run: () => openPlay(cardId, 'summon') });
+  if (main && def.type === 'nexus') options.push({ label: 'วาง Nexus', run: () => openPlay(cardId, 'deployNexus') });
+  if (def.type === 'magic') {
+    if (main && timings.length === 0) options.push({ label: 'ใช้ Magic', run: () => openPlay(cardId, 'useMagic') });
+    if (main && timings.includes('main')) options.push({ label: 'ใช้ [Main]', run: () => openPlay(cardId, 'useMagic', 'main') });
+    if ((main || flash) && timings.includes('flash')) options.push({ label: 'ใช้ [Flash]', run: () => openPlay(cardId, 'useMagic', 'flash') });
+  } else if ((main || flash) && timings.includes('flash')) {
+    // การ์ดสปิริตที่ใช้เป็นเมจิคได้ (ยูคิเกิร์ล / ได้รับจากคาฉะเนโกะ-อิคุสะ)
+    options.push({ label: 'ใช้เป็นเมจิค [Flash]', run: () => openPlay(cardId, 'useMagic', 'flash') });
+  }
+  if (main && def.burst && !shownOut) options.push({ label: 'เซ็ทเป็น Burst', run: () => dispatch({ type: 'setBurst', player: card.owner, cardId }) });
+  return options;
+}
+
+/**
+ * โซน "นอกมือ" (กติกา 14 ข้อ 1): การ์ดที่วางแสดงนอกมือ อยู่ข้างสนาม ทั้งสองฝ่ายเห็น ไม่อยู่ในพัดการ์ดในมือ
+ * ใช้งานได้เสมือนอยู่ในมือ: แตะการ์ด = เมนูเล่นการ์ด (ลอยเหนือการ์ด) · เป็นตัวเลือกของเอฟเฟกต์ = แตะเพื่อเลือก
+ */
+function OutsideZone({ player }: { player: PlayerId }) {
+  const state = useGame((s) => s.state);
+  const hover = useGame((s) => s.hover);
+  const blocking = useGame((s) => isFxBlocking(s.fx));
+  const [menu, setMenu] = useState<string | null>(null);
+  const ids = (state.shownCards ?? []).filter((id) => state.players[player].hand.includes(id));
+  if (ids.length === 0) return null;
+  return (
+    <div data-outside-zone={player} className="flex flex-col items-end gap-0.5" title="นอกมือ: การ์ดที่วางแสดง ใช้งานได้เสมือนอยู่ในมือ (ทั้งสองฝ่ายเห็น)">
+      <span className="rounded bg-amber-400 px-1.5 text-[10px] font-black tracking-wide text-slate-900 shadow">นอกมือ {ids.length}</span>
+      <div className="flex">
+        {ids.map((id, i) => {
+          const options = blocking ? [] : playOptions(state, id);
+          const candidate = !blocking && (isChoiceCandidate(state, id) || isMultiCardCandidate(state, id));
+          const flash = options.length > 0 && !!flashPlayer(state);
+          return (
+            <OutsideCard
+              key={id}
+              cardId={id}
+              index={i}
+              total={ids.length}
+              ring={candidate ? 'ring-4 ring-fuchsia-400' : flash ? 'ring-4 ring-cyan-300' : options.length > 0 ? 'ring-2 ring-yellow-300/80' : 'ring-1 ring-amber-300/60'}
+              onClick={() => {
+                if (candidate) return useGame.getState().clickHandCard(id);
+                if (options.length > 0) setMenu(menu === id ? null : id);
+              }}
+              hover={hover}
+              menu={menu === id && options.length > 0 ? options : null}
+              onCloseMenu={() => setMenu(null)}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function OutsideCard({
+  cardId,
+  index,
+  total,
+  ring,
+  onClick,
+  hover,
+  menu,
+  onCloseMenu,
+}: {
+  cardId: string;
+  index: number;
+  total: number;
+  ring: string;
+  onClick: () => void;
+  hover: (id: string | null) => void;
+  menu: { label: string; run: () => void }[] | null;
+  onCloseMenu: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const flying = useFlying(cardId);
+  const cardNo = useGame((s) => s.state.cards[cardId]!.cardNo);
+  return (
+    <>
+      <div
+        ref={ref}
+        data-hand-card={cardId}
+        className={`relative h-16 w-11 shrink-0 cursor-pointer rounded shadow-[0_2px_8px_rgba(0,0,0,0.6)] transition hover:-translate-y-1 ${ring} ${flying ? 'invisible' : ''}`}
+        style={{ marginLeft: index === 0 ? 0 : total > 3 ? -30 : -14, zIndex: index }}
+        onMouseEnter={() => hover(cardId)}
+        onMouseLeave={() => hover(null)}
+        onClick={() => {
+          useGame.setState({ pinned: cardId });
+          onClick();
+        }}
+      >
+        <CardFace def={db.get(cardNo)} size="xs" />
+      </div>
+      {menu && <OutsideMenu anchor={ref} options={menu} onClose={onCloseMenu} />}
+    </>
+  );
+}
+
+/** เมนูเล่นการ์ดนอกมือ: ลอยเหนือการ์ด (portal: ไม่ถูกกรอบสนามตัด) */
+function OutsideMenu({ anchor, options, onClose }: { anchor: React.RefObject<HTMLDivElement | null>; options: { label: string; run: () => void }[]; onClose: () => void }) {
+  const menuRef = useRef<HTMLDivElement>(null);
+  const r = anchor.current?.getBoundingClientRect();
+  useEffect(() => {
+    const down = (e: PointerEvent) => {
+      const t = e.target as Node;
+      if (menuRef.current?.contains(t) || anchor.current?.contains(t)) return;
+      onClose();
+    };
+    document.addEventListener('pointerdown', down, true);
+    return () => document.removeEventListener('pointerdown', down, true);
+  }, [anchor, onClose]);
+  if (!r) return null;
+  const below = r.top + r.height / 2 < window.innerHeight / 2;
+  return createPortal(
+    <div
+      ref={menuRef}
+      data-tutorial="hand-menu"
+      className="fixed z-[65] flex w-44 -translate-x-1/2 flex-col gap-1 rounded-lg border border-yellow-300/60 bg-slate-900 p-1.5 shadow-xl"
+      style={{ left: Math.min(Math.max(r.left + r.width / 2, 92), window.innerWidth - 92), ...(below ? { top: r.bottom + 8 } : { bottom: window.innerHeight - r.top + 8 }), animation: 'fx-fade-in 0.15s ease-out both' }}
+    >
+      <span className="px-1 text-[10px] font-black text-amber-300">นอกมือ</span>
+      {options.map((o) => (
+        <button
+          key={o.label}
+          type="button"
+          className="rounded bg-yellow-300/90 px-2 py-1 text-left text-xs font-bold text-slate-900 hover:bg-yellow-200"
+          onClick={() => {
+            onClose();
+            o.run();
+          }}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>,
+    document.body,
+  );
 }
 
 function HandCard({ cardId, hidden, small, fan, shown: order }: { cardId: string; hidden: boolean; small?: boolean; fan?: FanPos; shown?: string[] }) {
@@ -1301,24 +1463,7 @@ function HandCard({ cardId, hidden, small, fan, shown: order }: { cardId: string
   const quick = canQuickSummon(state, cardId);
   const playable = ((main || (flash && timings.includes('flash'))) && affordable) || quick;
 
-  const options: { label: string; run: () => void }[] = [];
-  if (main && (def.type === 'spirit' || def.type === 'brave' || def.type === 'ultimate')) {
-    options.push({ label: 'อัญเชิญ', run: () => openPlay(cardId, 'summon') });
-  }
-  for (const host of braveHosts(state, cardId)) {
-    options.push({ label: `ร่วมร่างกับ ${db.get(state.cards[host]!.cardNo).name}`, run: () => openPlay(cardId, 'summon', undefined, host) });
-  }
-  if (quick) options.push({ label: 'อัญเชิญ [Quick]', run: () => openPlay(cardId, 'summon') });
-  if (main && def.type === 'nexus') options.push({ label: 'วาง Nexus', run: () => openPlay(cardId, 'deployNexus') });
-  if (def.type === 'magic') {
-    if (main && timings.length === 0) options.push({ label: 'ใช้ Magic', run: () => openPlay(cardId, 'useMagic') });
-    if (main && timings.includes('main')) options.push({ label: 'ใช้ [Main]', run: () => openPlay(cardId, 'useMagic', 'main') });
-    if ((main || flash) && timings.includes('flash')) options.push({ label: 'ใช้ [Flash]', run: () => openPlay(cardId, 'useMagic', 'flash') });
-  } else if ((main || flash) && timings.includes('flash')) {
-    // การ์ดสปิริตที่ใช้เป็นเมจิคได้ (ยูคิเกิร์ล / ได้รับจากคาฉะเนโกะ-อิคุสะ)
-    options.push({ label: 'ใช้เป็นเมจิค [Flash]', run: () => openPlay(cardId, 'useMagic', 'flash') });
-  }
-  if (main && def.burst) options.push({ label: 'เซ็ทเป็น Burst', run: () => dispatch({ type: 'setBurst', player: card.owner, cardId }) });
+  const options = playOptions(state, cardId);
 
   return (
     <div

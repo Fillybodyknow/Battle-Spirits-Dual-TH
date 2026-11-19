@@ -21,7 +21,8 @@ function useSeatName(p: PlayerId): string {
 /** ป้ายผู้เล่น: ฝั่งเรามุมซ้ายล่าง ฝั่งคู่แข่งมุมขวาบน (ชื่อ + Life + จำนวนการ์ดบนมือ) */
 export function PlayerPlate({ player, corner }: { player: PlayerId; corner: 'bottom-left' | 'top-right' }) {
   const life = useGame((s) => s.state.players[player].life.length);
-  const hand = useGame((s) => s.state.players[player].hand.length);
+  // จำนวนการ์ดในมือ (ไม่นับการ์ดที่วางแสดงนอกมือ: อยู่ในโซนนอกมือบนสนาม)
+  const hand = useGame((s) => s.state.players[player].hand.filter((id) => !(s.state.shownCards ?? []).includes(id)).length);
   const turn = useGame((s) => s.state.turnPlayer === player && !s.state.winner);
   const name = useSeatName(player);
   const avatar = useSeatAvatar(player);

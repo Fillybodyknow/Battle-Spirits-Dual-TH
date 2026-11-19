@@ -94,6 +94,9 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
   ทุก step ที่เลือก/ทำกับการ์ดคู่แข่งต้องกรองด้วย `hits`), `bounceOpponent` (`to`: มือ/บนสุด/ใต้สุดเด็ค, `anySide`, `costFrom`) / `bounceAllOpponent` / `bounceToBottom`,
   `blockWhileExhausted`, `battleUnblockable` / `unblockableThisTurn`, `battleNoHandFlash`, `battleStaysOnDestroy`, `useMagicFromHandFree`, `handCostDelta`,
   `negateOpponentNexus`, trigger `oppEndStep` / `oppHandIncreased` / `oncePerTurnByName`, เงื่อนไข `noLifeDamageThisTurn` / `oppTurn` / `selfInBattle` / `attackerFamily`
+- **นอกมือ** (กติกา 14 ข้อ 1): การ์ดยังอยู่ใน `hand` + อยู่ใน `state.shownCards` · step ที่เลือกจาก "ในมือ" (summonFromHand / summonFromHandFree / useMagicFromHandFree / setBurstFromHand / ทิ้งการ์ด)
+  ใช้ `handCards` = ไม่รวมนอกมือ · การ์ดที่เขียน "ในมือ/นอกมือ" ใส่ `withShown: true` ในตัวกรอง · หน้าเว็บแสดงในโซน `OutsideZone` บนสนาม (ไม่อยู่ในพัดการ์ดในมือ)
+- "เมื่อสปิริตของเราถูกอัญเชิญ" (`allySummoned`) อัญเชิญหลายตัวพร้อมกันในครั้งเดียว = ทำงานครั้งเดียว (กติกาทั่วไป เจ้าของโปรเจกต์กำหนด) · trigger อื่นที่อยากได้แบบเดียวกันใส่ `oncePerBatch`
 - **BS05**: `alsoMagic` / `grantMagic` (สปิริตใช้เป็นเมจิคได้ = `handMagic` ใน rules.ts, ใน store ใช้ `handMagicTimings`), `cannotAttack`, `voidFromLife`,
   Charge (`charged` + `bpMinusBoost` / `coreRemovalBoost` = `chargeBonus`), ล็อกโจมตี/ป้องกัน `disableChosenOpponent` (`state.turnLocks`), `negateOpponentsThisTurn` (`effectsLost`),
   `battleExhaustedBlock`, `blockTax`, `battleColorless`, `symbolsZeroThisTurn`, เบิร์ส `afterOpponentAttack`, trigger `unblocked` / `oppAttack` / `startStep` / `milledAny`,

@@ -691,9 +691,9 @@ export function braveSlot(bi: number, n: number): { right: boolean; top: string 
  * ระยะเวลาวิ่งชนทั้งหมด (ลุกขึ้น → ค่อย ๆ ถอยชาร์จพลัง → พุ่งเร็ว → ชน → กลับ)
  * CHARGE_WIND = สัดส่วนเวลาที่ถอยสุดแล้วเริ่มพุ่ง · CHARGE_HIT = สัดส่วนเวลาที่ชน (เวลาจริง: ไทม์ไลน์ของการ์ดเป็นเส้นตรง แต่ละช่วงมี easing ของตัวเอง)
  */
-export const CHARGE_MS = 2300;
-export const CHARGE_WIND = 0.42;
-export const CHARGE_HIT = 0.55;
+export const CHARGE_MS = 2000;
+export const CHARGE_WIND = 0.3;
+export const CHARGE_HIT = 0.4;
 
 /** กดจั่วใน Draw Step: เวลาพลิกเปิดหน้าการ์ด (ms) */
 export const DRAW_FLIP_MS = 420;

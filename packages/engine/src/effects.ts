@@ -181,6 +181,8 @@ export function queueTriggers(
       emitStatic(ctx, negatedBy(s, db, cardId));
       continue;
     }
+    // "เมื่อสปิริตของเราถูกอัญเชิญ" (allySummoned ทุกใบ) / oncePerBatch: ต้นเหตุหลายใบพร้อมกันในครั้งเดียว (เช่น อัญเชิญหลายตัวพร้อมกัน) ทำงานครั้งเดียว (เจ้าของโปรเจกต์กำหนด)
+    if ((ab.oncePerBatch || on === 'allySummoned') && s.queue.some((q) => !q.started && q.sourceId === src && q.source === ab.source && q.batch === batch)) continue;
     if (ab.oncePerTurnByName) {
       const key = `${card.owner}:${db.get(s.cards[src]!.cardNo).name}:${ab.source}`;
       if ((s.usedOncePerTurn ?? []).includes(key)) continue;
@@ -827,6 +829,9 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
     return true;
   };
 
+  /** การ์ดที่เลือกได้จาก "ในมือ": ไม่รวมการ์ดนอกมือ เว้นแต่ตัวกรองระบุ withShown ("ในมือ/นอกมือ") */
+  const handPool = (p: PlayerId, st: Step): string[] => ('filter' in st && st.filter && (st.filter as CardFilter).withShown ? s.players[p].hand : handCards(s, p));
+
   // BS07 "ต่อจำนวน ...": คูณจำนวน/ค่าก่อนทำ (ได้ 0 = ไม่ทำ)
   if ('per' in step && step.per) {
     const k = countPer(ctx, item, step.per);
@@ -1062,7 +1067,7 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       return;
 
     case 'useMagicFromHandFree': {
-      const candidates = s.players[me].hand.filter((id) => {
+      const candidates = handPool(me, step).filter((id) => {
         const d = db.get(s.cards[id]!.cardNo);
         return d.type === 'magic' && d.abilities.some((a) => a.kind === 'magic' && a.timing === 'flash');
       });
@@ -1446,9 +1451,10 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       return;
 
     case 'setBurstFromHand': {
-      const candidates = s.players[me].hand.filter((id) => db.get(s.cards[id]!.cardNo).burst);
+      // กติกา 06 Q5: การ์ดที่วางนอกมือนำมาเซ็ทเบิร์สไม่ได้
+      const candidates = handCards(s, me).filter((id) => db.get(s.cards[id]!.cardNo).burst);
       if (candidates.length === 0) return;
-      ask(ctx, item, { kind: 'card', prompt: 'เลือกการ์ดที่มีเอฟเฟกต์ Burst บนมือไปเซ็ท (ไม่เลือกก็ได้)', candidates, optional: true, step });
+      ask(ctx, item, step.then ? { kind: 'card', prompt: 'เลือกการ์ดที่มีเอฟเฟกต์ Burst บนมือไปเซ็ท', candidates, step } : { kind: 'card', prompt: 'เลือกการ์ดที่มีเอฟเฟกต์ Burst บนมือไปเซ็ท (ไม่เลือกก็ได้)', candidates, optional: true, step });
       return;
     }
 
@@ -1783,7 +1789,7 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
 
     case 'summonFromHandFree': {
       if (!holds(step.if)) return;
-      const candidates = s.players[me].hand.filter((id) => matchesFilter(s, db, id, step.filter));
+      const candidates = handPool(me, step).filter((id) => matchesFilter(s, db, id, step.filter));
       if (candidates.length === 0) return;
       if ((step.max ?? 1) > 1) {
         // อัญเชิญได้หลายใบ: เลือกทีเดียว ลงสนามพร้อมกัน
@@ -1885,7 +1891,7 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
     }
 
     case 'summonFromHand': {
-      const candidates = s.players[me].hand.filter((id) => matchesFilter(s, db, id, step.filter));
+      const candidates = handPool(me, step).filter((id) => matchesFilter(s, db, id, step.filter));
       if (candidates.length === 0) return;
       ask(ctx, item, { kind: 'card', prompt: 'เลือกการ์ดบนมือที่จะอัญเชิญ (จ่ายคอสต์)', candidates, optional: true, skipLabel: 'ไม่อัญเชิญ', step });
       return;
@@ -3151,6 +3157,7 @@ function applyCardPick(ctx: Ctx, cur: QueuedEffect, choice: Extract<PendingChoic
       removeFrom(p.hand, pick);
       p.burst = pick;
       emit(ctx, { type: 'burstSet', player, replacedCardId: replaced });
+      if (step.then) cur.steps.unshift(...step.then);
       break;
     }
     case 'opponentDiscards':

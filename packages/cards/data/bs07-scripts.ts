@@ -48,7 +48,7 @@ const soloPart = (levels: number[], name: string): ScriptAbility => ({ kind: 'de
  * เพื่ออัญเชิญไม่จ่ายคอสต์ "<ชื่อ>" เผ่า [สเตจสไตล์] จากในมือ/นอกมือของเรา 1 ใบ และจั่วการ์ด 1 ใบ
  */
 const onStage = (levels: number[], name: string): ScriptAbility => {
-  const target: CardFilter = { types: ['spirit'], nameIncludes: [name], family: STAGE };
+  const target: CardFilter = { types: ['spirit'], nameIncludes: [name], family: STAGE, withShown: true };
   return {
     kind: 'onStage',
     keyword: true,
@@ -146,7 +146,7 @@ export const BS07_SCRIPTS: Record<string, CardScript> = {
       timing: 'attackFlash',
       label: 'ทำลายสปิริตนี้: อัญเชิญ "เลยา-ควาโทร" [สเตจสไตล์] จากมือ/นอกมือ 1 ใบ',
       if: { handHas: { types: ['spirit'], nameIncludes: ['เลยา-ควาโทร'], family: STAGE, withShown: true } },
-      steps: [{ do: 'destroySelf' }, { do: 'summonFromHandFree', filter: { types: ['spirit'], nameIncludes: ['เลยา-ควาโทร'], family: STAGE } }],
+      steps: [{ do: 'destroySelf' }, { do: 'summonFromHandFree', filter: { types: ['spirit'], nameIncludes: ['เลยา-ควาโทร'], family: STAGE, withShown: true } }],
     },
     {
       kind: 'activated',
@@ -154,7 +154,7 @@ export const BS07_SCRIPTS: Record<string, CardScript> = {
       timing: 'attackFlash',
       label: 'ทำลายสปิริตนี้: อัญเชิญ "เลยา-ควาโทร" [สเตจสไตล์] จากมือ/นอกมือ (ไม่เกิน 3 ใบ)',
       if: { handHas: { types: ['spirit'], nameIncludes: ['เลยา-ควาโทร'], family: STAGE, withShown: true } },
-      steps: [{ do: 'destroySelf' }, { do: 'summonFromHandFree', max: 3, filter: { types: ['spirit'], nameIncludes: ['เลยา-ควาโทร'], family: STAGE } }],
+      steps: [{ do: 'destroySelf' }, { do: 'summonFromHandFree', max: 3, filter: { types: ['spirit'], nameIncludes: ['เลยา-ควาโทร'], family: STAGE, withShown: true } }],
     },
   ],
   มุโดเนีย: [

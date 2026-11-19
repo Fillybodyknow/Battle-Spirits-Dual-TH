@@ -1213,6 +1213,28 @@ function shakeEl(el: Element | null | undefined, points: [number, number][], dur
   );
 }
 
+/** จอซูมเข้าหาจุดชนแบบกระแทกแล้วคืน + สั่นเล็กน้อย (ทั้งกระดาน) */
+function zoomPunch(x: number, y: number) {
+  const k = shakeScale();
+  const main = document.querySelector<HTMLElement>('main');
+  if (!main || k === 0) return;
+  const r = main.getBoundingClientRect();
+  const prev = main.style.transformOrigin;
+  main.style.transformOrigin = `${x - r.left}px ${y - r.top}px`;
+  const z = 1 + 0.06 * k;
+  const a = main.animate(
+    [
+      { transform: 'translate(0,0) scale(1)' },
+      { transform: `translate(${-6 * k}px,${4 * k}px) scale(${z})`, offset: 0.18 },
+      { transform: `translate(${5 * k}px,${-3 * k}px) scale(${1 + 0.045 * k})`, offset: 0.36 },
+      { transform: `translate(${-2 * k}px,${2 * k}px) scale(${1 + 0.02 * k})`, offset: 0.6 },
+      { transform: 'translate(0,0) scale(1)' },
+    ],
+    { duration: 520, easing: 'cubic-bezier(.2,.8,.3,1)' },
+  );
+  a.onfinish = a.oncancel = () => (main.style.transformOrigin = prev);
+}
+
 /** สร้าง element ชั่วคราวบน body แล้วลบทิ้งเมื่อแอนิเมชันจบ */
 function spawnFx(style: Partial<CSSStyleDeclaration>, keyframes: Keyframe[], opts: KeyframeAnimationOptions) {
   const el = document.createElement('div');
@@ -3525,6 +3547,7 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
   });
   const ref = useRef<HTMLDivElement>(null);
   const [impact, setImpact] = useState<{ x: number; y: number } | null>(null);
+  const [chargeFlash, setChargeFlash] = useState<{ x: number; y: number } | null>(null);
   // ขนาดการ์ดตั้งตรง (กล่องนอกของการ์ดที่นอนอยู่จะกว้างกว่าสูง)
   const cardW = fx.fromExhausted ? fx.from.h : fx.from.w;
   const cardH = fx.fromExhausted ? fx.from.w : fx.from.h;
@@ -3558,37 +3581,50 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
     // ---- ไทม์ไลน์ (เวลาจริงเป็นเส้นตรง แต่ละช่วงมี easing ของตัวเอง ของที่พุ่งไปด้วยใช้ offset + easing ชุดเดียวกันจึงไปพร้อมกันพอดี) ----
     //  0 → LIFT: ลุกขึ้น/ตั้งตรง ขยายเล็กน้อย · LIFT → WIND: ค่อย ๆ ถอยหลังชาร์จพลัง (ช้า) · WIND → HIT: พุ่งเร่งความเร็วเข้าชน
     //  HIT → BACK: เด้งค้างหน้าเป้า · BACK → จบ: กลับที่เดิม
+    //  0 → LIFT: ลุกขึ้นเอนหลัง (เอียงแบบ 3 มิติ หัวการ์ดเชิดขึ้น) · LIFT → WIND: ชาร์จพลัง (การ์ดสว่างจ้า + แสงวาบ) · WIND → HIT: พุ่งตรงเร็วมาก
+    //  HIT → BACK: ค้างหน้าเป้า (จอซูมกระแทก) · BACK → HOME: บินกลับที่เดิมเร็ว · HOME → จบ: อยู่ที่เดิม (ให้ภาพการ์ดจริงต่อได้เนียน)
     const LIFT = 0.12;
     const WIND = CHARGE_WIND;
-    const BACK = 0.68;
+    const BACK = 0.56;
+    const HOME = 0.82;
     const E = {
-      lift: 'cubic-bezier(.3,0,.3,1)',
-      wind: 'cubic-bezier(.35,0,.25,1)',
-      dash: 'cubic-bezier(.65,0,.95,.55)',
+      lift: 'cubic-bezier(.2,.8,.3,1)',
+      wind: 'cubic-bezier(.4,0,.6,1)',
+      dash: 'cubic-bezier(.7,0,1,.6)',
       recoil: 'cubic-bezier(.15,.7,.35,1)',
-      home: 'cubic-bezier(.5,0,.25,1)',
+      home: 'cubic-bezier(.55,0,.35,1)',
     };
+    // แกนเอียง 3 มิติ: ตั้งฉากกับทิศที่พุ่ง (หัวการ์ดด้านที่หันเข้าเป้าเชิดขึ้นหาผู้ดู)
+    const ax = -(ty / len);
+    const ay = tx / len;
+    const tilt = (deg: number) => `perspective(900px) rotate3d(${ax},${ay},0,${deg}deg)`;
+    const glow = (b: number, r: number, a: number) => `brightness(${b}) saturate(1) drop-shadow(0 0 ${r}px rgba(255,244,190,${a}))`;
     // แพ้: ถูกกระแทกกระเด็นกลับ (ตามสัดส่วน CHARGE_KNOCK: 0 = ถึงช่องเดิม) เซ แล้วหยุดตั้งตรงตรงนั้น ภาพร้าว/แตกเล่นต่อที่จุดนี้
     const K = CHARGE_KNOCK;
+    // ทุกคีย์เฟรมใช้ลำดับฟังก์ชันเดียวกัน (translate · tilt · rotate · scale / filter ชุดเดียวกัน) เบราว์เซอร์จึงไล่ค่าได้ลื่น
+    const T = (x: number, y: number, deg: number, rotZ: string, sc: number) => `translate(${x}px,${y}px) ${tilt(deg)} ${rotZ} scale(${sc})`;
     const end: Keyframe[] = fx.dies
       ? [
-          { transform: `translate(${hx * (K + 0.12)}px,${hy * (K + 0.12)}px) rotate(-14deg) scale(1.08)`, filter: 'brightness(2.4) saturate(0.6)', offset: BACK, easing: E.recoil },
-          { transform: `translate(${hx * (K - 0.04)}px,${hy * (K - 0.04)}px) rotate(7deg) scale(1.02)`, filter: 'brightness(1.4) saturate(0.4)', offset: 0.8 },
-          { transform: `translate(${hx * K}px,${hy * K}px) rotate(-2deg) scale(1)`, filter: 'brightness(1.1) saturate(0.3)', offset: 0.9 },
-          { transform: `translate(${hx * K}px,${hy * K}px) rotate(0deg) scale(1)`, filter: 'brightness(1) saturate(0.3)' },
+          { transform: T(hx * (K + 0.12), hy * (K + 0.12), 0, 'rotate(-14deg)', 1.08), filter: 'brightness(2.4) saturate(0.6) drop-shadow(0 0 0px rgba(255,244,190,0))', offset: BACK, easing: E.recoil },
+          { transform: T(hx * (K - 0.04), hy * (K - 0.04), 0, 'rotate(7deg)', 1.02), filter: 'brightness(1.4) saturate(0.4) drop-shadow(0 0 0px rgba(255,244,190,0))', offset: 0.7 },
+          { transform: T(hx * K, hy * K, 0, 'rotate(-2deg)', 1), filter: 'brightness(1.1) saturate(0.3) drop-shadow(0 0 0px rgba(255,244,190,0))', offset: HOME },
+          { transform: T(hx * K, hy * K, 0, 'rotate(0deg)', 1), filter: 'brightness(1) saturate(0.3) drop-shadow(0 0 0px rgba(255,244,190,0))' },
         ]
       : [
-          { transform: `translate(${hx * 0.9}px,${hy * 0.9}px) rotate(0deg) scale(1.08)`, offset: BACK, easing: E.home },
-          { transform: `translate(0,0) ${rotEnd} scale(1)` },
+          { transform: T(hx * 0.92, hy * 0.92, 0, 'rotate(0deg)', 1.1), filter: glow(1.25, 10, 0.5), offset: BACK, easing: E.home },
+          { transform: T(0, 0, 0, rotEnd, 1), filter: glow(1, 0, 0), offset: HOME },
+          { transform: T(0, 0, 0, rotEnd, 1), filter: glow(1, 0, 0) },
         ];
     const anim = el.animate(
       // ทึบตลอดทาง: ตัวการ์ดตั้ง opacity 0 ไว้ (ซ่อนก่อนถึงคิว) ถ้าคีย์เฟรมท้าย ๆ ไม่ระบุ
       // เบราว์เซอร์จะไล่ความทึบกลับไปหา 0 ทำให้การ์ดจางลงตอนวิ่งกลับ
       [
-        { transform: `translate(0,0) ${rot} scale(1)`, easing: E.lift },
-        { transform: `translate(${hx * 0.04}px,${hy * 0.04}px) rotate(0deg) scale(1.1)`, offset: LIFT, easing: E.wind },
-        { transform: `translate(${-hx * 0.09}px,${-hy * 0.09}px) rotate(0deg) scale(1.18)`, offset: WIND, easing: E.dash },
-        { transform: `translate(${hx}px,${hy}px) rotate(0deg) scale(1.2)`, offset: HIT_AT, easing: E.recoil },
+        { transform: T(0, 0, 0, rot, 1), filter: glow(1, 0, 0), easing: E.lift },
+        // เอนหลัง: ถอยเล็กน้อย หัวการ์ดเชิดขึ้น
+        { transform: T(-hx * 0.05, -hy * 0.05, -32, 'rotate(0deg)', 1.12), filter: glow(1.15, 6, 0.4), offset: LIFT, easing: E.wind },
+        // ชาร์จสุด: สว่างจ้า เรืองแสง ก่อนพุ่ง
+        { transform: T(-hx * 0.08, -hy * 0.08, -38, 'rotate(0deg)', 1.16), filter: glow(2.1, 22, 0.95), offset: WIND, easing: E.dash },
+        { transform: T(hx, hy, 0, 'rotate(0deg)', 1.22), filter: glow(1.6, 16, 0.8), offset: HIT_AT, easing: E.recoil },
         ...end,
       ].map((k) => ({ ...k, opacity: 1 })),
       // ผู้โจมตีที่ยังอยู่บนสนาม: ก่อนถึงคิวแสดงการ์ดตัวจริง (มี Core / BP / Brave) แล้วค่อยสลับเป็นภาพที่วิ่ง
@@ -3604,10 +3640,10 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
     const extra: Animation[] = [];
     /** ตำแหน่งกลางการ์ดที่วิ่ง (เทียบจุดเริ่ม) ตามคีย์เฟรมของการ์ด */
     const P = {
-      lift: [hx * 0.04, hy * 0.04],
-      wind: [-hx * 0.09, -hy * 0.09],
+      lift: [-hx * 0.05, -hy * 0.05],
+      wind: [-hx * 0.08, -hy * 0.08],
       hit: [hx, hy],
-      back: fx.dies ? [hx * (K + 0.12), hy * (K + 0.12)] : [hx * 0.9, hy * 0.9],
+      back: fx.dies ? [hx * (K + 0.12), hy * (K + 0.12)] : [hx * 0.92, hy * 0.92],
       end: fx.dies ? [hx * K, hy * K] : [0, 0],
     };
     const tr = (x: number, y: number, rot: number, sc: number) => `translate(${x}px,${y}px) rotate(${rot}deg) scale(${sc})`;
@@ -3636,6 +3672,7 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
               { transform: tr(form[0], form[1], -side * 4, 1.5), offset: WIND, easing: E.dash },
               { transform: tr(hit[0], hit[1], 0, 1.62), offset: HIT_AT, easing: fx.dies ? E.recoil : E.recoil },
               { transform: tr(back[0], back[1], side * 3, 1.4), offset: BACK, easing: E.home },
+              { transform: tr(end[0], end[1], slotRot, 1), offset: HOME },
               { transform: tr(end[0], end[1], slotRot, 1) },
             ].map((k) => ({ ...k, opacity: 1 })),
             timing,
@@ -3672,19 +3709,14 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
         ),
       );
     });
+    // แสงวาบรูปดาวที่ตัวการ์ดตอนชาร์จสุด (ก่อนพุ่ง)
+    const flashAt = setTimeout(() => setChargeFlash({ x: cx + P.wind[0]!, y: cy + P.wind[1]! }), fx.delay + CHARGE_MS * (WIND - 0.07));
     const real = onBoard ? document.querySelector<HTMLElement>(`[data-field-card="${fx.cardId}"]`) : null;
     const swap = setTimeout(() => real && (real.style.visibility = 'hidden'), fx.delay);
     const hit = setTimeout(() => {
       setImpact({ x: cx + hx, y: cy + hy });
-      // จอสั่น + เป้าหมายสั่น
-      shakeMain(
-        [
-          [-8, 4],
-          [7, -5],
-          [-4, 3],
-        ],
-        320,
-      );
+      // จอซูมเข้าหาจุดชนแบบกระแทก + สั่น (ทั้งกระดาน) · เป้าหมายสว่างวาบ
+      zoomPunch(cx + hx, cy + hy);
       if (typeof fx.target === 'string') {
         document.querySelector(fx.target)?.animate([{ filter: 'brightness(2.5)' }, { filter: 'brightness(1)' }], { duration: 400 });
       }
@@ -3696,6 +3728,7 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
     return () => {
       clearTimeout(hit);
       clearTimeout(swap);
+      clearTimeout(flashAt);
       if (real) real.style.visibility = '';
       anim.cancel();
       for (const a of extra) a.cancel();
@@ -3769,10 +3802,21 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
       <SmokeTrail
         follow={ref}
         hex={COLOR_HEX[db.get(fx.cardNo).colors[0] ?? 'red'] ?? '#a855f7'}
-        from={fx.delay + CHARGE_MS * (CHARGE_WIND - 0.04)}
-        until={fx.delay + CHARGE_MS * (HIT_AT + 0.03)}
+        from={fx.delay + CHARGE_MS * (CHARGE_WIND - 0.02)}
+        until={fx.delay + CHARGE_MS * (HIT_AT + 0.02)}
         size={cardW}
       />
+      {chargeFlash && (
+        <div className="pointer-events-none fixed z-[43]" style={{ left: chargeFlash.x, top: chargeFlash.y }}>
+          <div
+            className="absolute h-40 w-40 rounded-full"
+            style={{ animation: 'fx-charge-flash 0.32s ease-out both', background: 'radial-gradient(circle, rgba(255,255,255,1) 0%, rgba(255,247,200,0.85) 22%, rgba(253,224,71,0.35) 45%, transparent 68%)' }}
+          />
+          {/* ประกายรูปดาว 4 แฉก */}
+          <div className="absolute h-1.5 w-56 rounded-full bg-white" style={{ animation: 'fx-charge-flash 0.3s ease-out both', boxShadow: '0 0 14px 4px rgba(255,244,190,0.9)' }} />
+          <div className="absolute h-56 w-1.5 rounded-full bg-white" style={{ animation: 'fx-charge-flash 0.3s ease-out both', boxShadow: '0 0 14px 4px rgba(255,244,190,0.9)' }} />
+        </div>
+      )}
       {impact && (
         <div className="pointer-events-none fixed z-[43]" style={{ left: impact.x, top: impact.y }}>
           <div className="absolute h-56 w-56 rounded-full" style={{ animation: 'fx-impact 0.5s ease-out both', background: 'radial-gradient(circle, rgba(255,255,255,0.95) 0%, rgba(253,224,71,0.7) 25%, rgba(244,63,94,0.4) 50%, transparent 70%)' }} />

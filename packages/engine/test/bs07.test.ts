@@ -359,6 +359,28 @@ describe('Booster Set 07', () => {
     expect(s.players.p1.trashCards).toContain(reya);
   });
 
+  it('เลยา-ควาโทร Lv2 + การ์ดนอกมือ ("ในมือ/นอกมือ") · No.25 โกรวซเลเบรชั่น: อัญเชิญหลายตัวพร้อมกัน = คอร์วอยด์ 1 เม็ด', () => {
+    let s = setup();
+    put(s, 'p1', no('No.25 โกรวซเลเบรชั่น'), 1);
+    const reya = put(s, 'p1', no('เลยา-ควาโทร'), 2);
+    const big = put(s, 'p1', DARIU, 1);
+    const a = inHand(s, 'p1', no('[กุลสตรีแห่งสนธยา] เลยา-ควาโทร'));
+    const b = inHand(s, 'p1', no('[กุลสตรีแห่งสนธยา] เลยา-ควาโทร'));
+    s.shownCards = [b]; // ใบที่ 2 วางแสดงนอกมือ
+    s = toAttack(s);
+    s = act(s, { type: 'declareAttack', player: 'p1', attackerId: big });
+    const lv2 = db.get(s.cards[reya]!.cardNo).abilities.find((x) => x.kind === 'activated' && x.levels.includes(2))!.source;
+    s = act(s, { type: 'passFlash', player: 'p2' });
+    s = act(s, { type: 'activate', player: 'p1', cardId: reya, source: lv2 });
+    expect(s.choice).toMatchObject({ kind: 'multiSummon', candidates: [a, b] });
+    const cores = normalCores(s);
+    const reserve = s.players.p1.reserve.length;
+    s = choose(s, { summons: [{ cardId: a, cores: [cores[0]!] }, { cardId: b, cores: [cores[1]!] }] });
+    expect(s.players.p1.field).toEqual(expect.arrayContaining([a, b]));
+    // คอร์ 2 เม็ดออกจากรีเสิร์ฟไปวางบนการ์ด + คอร์วอยด์ 1 เม็ด (ไม่ใช่ตัวละเม็ด)
+    expect(s.players.p1.reserve.length).toBe(reserve - 2 + 1);
+  });
+
   it('แอปโซลูทสเตอ: ที่เหลือนำกลับบนสุดเด็คโดยเรียงลำดับได้', () => {
     let s = setup();
     const top = [inHand(s, 'p1', no('มู')), inHand(s, 'p1', no('อัน'))];

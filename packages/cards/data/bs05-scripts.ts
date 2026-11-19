@@ -326,7 +326,7 @@ export const BS05_SCRIPTS: Record<string, CardScript> = {
       steps: [
         {
           do: 'atBattleEnd',
-          steps: [may('เซ็ทการ์ดที่มีเอฟเฟกต์ Burst ในมือ: สปิริตนี้ฟื้นสภาพ', [{ do: 'setBurstFromHand' }, { do: 'refreshSelf' }], { handHas: { hasBurst: true } })],
+          steps: [may('เซ็ทการ์ดที่มีเอฟเฟกต์ Burst ในมือ: สปิริตนี้ฟื้นสภาพ', [{ do: 'setBurstFromHand', then: [{ do: 'refreshSelf' }] }], { handHas: { hasBurst: true } })],
         },
       ],
     },
