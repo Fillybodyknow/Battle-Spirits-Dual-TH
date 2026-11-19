@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { activatableAbilities, onStageAbilities, baseCost, braveToSwap, canAttackWith, cardLevel, currentBp, isSpiritLike, payableCost, trashSummonRule, type CoreTarget, type PlayerId } from '@bs/engine';
+import { createPortal } from 'react-dom';
+import { activatableOptions, onStageAbilities, baseCost, braveToSwap, canAttackWith, cardLevel, currentBp, isSpiritLike, payableCost, trashSummonRule, type CoreTarget, type PlayerId } from '@bs/engine';
 import { playerLabel } from '../format';
 import { IMG } from '../assets';
 import type { Fx } from '../store';
@@ -7,6 +8,7 @@ import { blockCandidates, braveSlot, controls, hiddenFrom, mine, braveHostOf, br
 import { usePrefs, type HandLayout } from '../prefs';
 import { castHandSlots, sortHand } from '../store';
 import { CastRestCard, pickingCores } from './Fx';
+import { allocOf, isDistributeCandidate, isMultiCardCandidate, pickedOf } from '../store';
 import { actingPlayer, canEvolve, db, isMultiHostCandidate, flashPlayer, inMain, isChoiceCandidate, isFxBlocking, handMagicTimings, responseOptions, simulateEvolve, simulateMove, useGame } from '../store';
 import { useFlashUsable } from './Controls';
 import { useHeld } from './useHeld';
@@ -106,13 +108,126 @@ function BraveMenu({ braveId, onClose }: { braveId: string; onClose: () => void 
   );
 }
 
+/** การ์ดอยู่บนแผ่นฝั่งตรงข้ามที่หมุน 180° (ป้ายที่ต้องอ่านได้ หมุนกลับ) */
+const MatTopCtx = createContext(false);
+
+/** สายฟ้า (สัญลักษณ์ Flash) เป็น SVG: อีโมจิเป็นกล่องว่างบน Windows 7 */
+function Bolt({ className = 'h-3 w-3' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={`shrink-0 ${className}`} aria-hidden>
+      <path d="M13.5 2 4 13.5h6.5L9 22l11-12.5h-6.8L13.5 2Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+/**
+ * เมนูเอฟเฟกต์ Flash ของการ์ดบนสนาม: ลอยเหนือการ์ด (portal ไป body: ไม่ถูกกรอบสนามตัด / มือไม่บัง)
+ * แยกแถวตามการ์ดเจ้าของเอฟเฟกต์ (ตัวเอง / Brave ที่ร่วมร่าง) พร้อมข้อความย่อ · ชี้แถว = แผงข้อมูลของการ์ดใบนั้น
+ * การ์ดอยู่ครึ่งบนของจอ (ฝั่งที่หมุนกลับ): เปิดลงด้านล่างแทน
+ */
+function FlashMenu({ cardId, anchor, onClose }: { cardId: string; anchor: React.RefObject<HTMLDivElement | null>; onClose: () => void }) {
+  const state = useGame((s) => s.state);
+  const hover = useGame((s) => s.hover);
+  const card = state.cards[cardId]!;
+  const opts = activatableOptions(state, db, card.owner, cardId);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [rect, setRect] = useState<DOMRect | null>(() => anchor.current?.getBoundingClientRect() ?? null);
+
+  // ตามตำแหน่งการ์ด (เสื่อมสภาพ/ขยับ/ย่อหน้าจอ)
+  useEffect(() => {
+    let raf = 0;
+    const loop = () => {
+      const r = anchor.current?.getBoundingClientRect();
+      if (r) setRect((p) => (p && Math.abs(p.left - r.left) < 0.5 && Math.abs(p.top - r.top) < 0.5 && Math.abs(p.width - r.width) < 0.5 ? p : r));
+      raf = requestAnimationFrame(loop);
+    };
+    loop();
+    return () => cancelAnimationFrame(raf);
+  }, [anchor]);
+
+  // คลิกที่อื่น (นอกเมนูและนอกการ์ด) = ปิด
+  useEffect(() => {
+    const down = (e: PointerEvent) => {
+      const t = e.target as Node;
+      if (menuRef.current?.contains(t) || anchor.current?.contains(t)) return;
+      onClose();
+    };
+    document.addEventListener('pointerdown', down, true);
+    return () => document.removeEventListener('pointerdown', down, true);
+  }, [anchor, onClose]);
+
+  if (!rect) return null;
+  // ไม่ให้ล้นขอบจอซ้าย/ขวา (กว้าง 17rem = 272px)
+  const cx = Math.min(Math.max(rect.left + rect.width / 2, 144), window.innerWidth - 144);
+  const below = rect.top + rect.height / 2 < window.innerHeight / 2;
+  const pos: React.CSSProperties = below ? { top: rect.bottom + 10 } : { bottom: window.innerHeight - rect.top + 10 };
+  const run = (source: number, from: string) => {
+    onClose();
+    hover(null);
+    useGame.getState().dispatch({ type: 'activate', player: card.owner, cardId, source, ...(from !== cardId ? { from } : {}) });
+  };
+
+  return createPortal(
+    <div
+      ref={menuRef}
+      data-flash-menu={cardId}
+      className="fixed z-[65] flex w-[17rem] -translate-x-1/2 flex-col gap-1 rounded-xl border border-cyan-300/70 bg-slate-900/95 p-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.7)]"
+      style={{ left: cx, ...pos, animation: 'fx-fade-in 0.15s ease-out both' }}
+    >
+      <div className="flex items-center gap-1 px-1 text-[11px] font-black text-cyan-300">
+        <Bolt />
+        เลือกเอฟเฟกต์ Flash{opts.length > 1 ? ` (${opts.length})` : ''}
+      </div>
+      <div className="flex max-h-[16rem] flex-col gap-1 overflow-y-auto">
+        {opts.map(({ ability: ab, from }) => {
+          const def = db.get(state.cards[from]!.cardNo);
+          const text = ab.label.startsWith('[') ? ab.label.slice(ab.label.indexOf(']') + 1).trim() : ab.label;
+          return (
+            <button
+              key={`${from}-${ab.source}`}
+              type="button"
+              onClick={() => run(ab.source, from)}
+              onMouseEnter={() => hover(from)}
+              onMouseLeave={() => hover(null)}
+              title={ab.label}
+              className="flex items-start gap-1.5 rounded-lg bg-cyan-300 p-1 pr-1.5 text-left text-slate-900 shadow hover:bg-cyan-100"
+            >
+              <div className="h-10 w-7 shrink-0 overflow-hidden rounded">
+                <CardFace def={def} size="xs" />
+              </div>
+              <span className="flex min-w-0 flex-col gap-0.5">
+                <span className="flex min-w-0 items-center gap-1 text-xs font-black">
+                  <span className="truncate">{def.name}</span>
+                  {from !== cardId && <span className="shrink-0 rounded bg-emerald-700 px-1 text-[9px] text-white">Brave</span>}
+                </span>
+                <span className="line-clamp-2 text-[10px] leading-tight font-semibold text-slate-800">{text}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {/* หัวลูกศรชี้ไปที่การ์ด */}
+      <span
+        className={`absolute h-3 w-3 -translate-x-1/2 rotate-45 bg-slate-900 ${below ? '-top-[7px] border-t border-l' : '-bottom-[7px] border-r border-b'} border-cyan-300/70`}
+        style={{ left: `calc(50% + ${rect.left + rect.width / 2 - cx}px)` }}
+      />
+    </div>,
+    document.body,
+  );
+}
+
 function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }) {
   const state = useGame((s) => s.state);
   const dragging = useGame((s) => s.dragging);
   const hasSelection = useGame((s) => s.selectedCores.length > 0);
   const pinned = useGame((s) => s.pinned === cardId);
   /** เป็นตัวเลือกของเอฟเฟกต์ที่รออยู่ (คลิกเพื่อเลือก) · อัญเชิญหลายใบ: ผู้ร่วมร่างของ Brave ที่กำลังจัด */
-  const candidate = useGame((s) => (isChoiceCandidate(s.state, cardId) || isMultiHostCandidate(s, cardId)) && !isFxBlocking(s.fx));
+  const candidate = useGame((s) => (isChoiceCandidate(s.state, cardId) || isMultiHostCandidate(s, cardId) || isDistributeCandidate(s.state, cardId) || isMultiCardCandidate(s.state, cardId)) && !isFxBlocking(s.fx));
+  /** เลือกหลายใบทีเดียว: ตัวนี้ถูกเลือกไว้ */
+  const picked = useGame((s) => pickedOf(s).includes(cardId));
+  /** แบ่งคอร์ที่จะส่งออก: จำนวนที่เลือกจากการ์ดนี้ */
+  const allocN = useGame((s) => allocOf(s)[cardId] ?? 0);
+  const matTop = useContext(MatTopCtx);
   /** กำลังเลือก Core สำหรับ [Evolution] ของการ์ดนี้ */
   const evolving = useGame((s) => s.evolveCard === cardId);
   const evolveMode = useGame((s) => !!s.evolveCard);
@@ -137,6 +252,9 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
   });
   /** เมนู Brave ที่เปิดอยู่ (Brave เดี่ยวตัวนี้ หรือ Brave ที่ร่วมร่างกับตัวนี้) */
   const [braveMenu, setBraveMenu] = useState<string | null>(null);
+  /** เมนูเอฟเฟกต์ Flash ที่กดใช้เอง (เปิดเมื่อคลิกการ์ด) */
+  const [flashOpen, setFlashOpen] = useState(false);
+  const boxRef = useRef<HTMLDivElement>(null);
 
   const card = state.cards[cardId]!;
   const def = db.get(card.cardNo);
@@ -158,6 +276,11 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
   // ป้องกัน: ใช้รายชื่อจาก engine (รวมตัวที่ป้องกันได้แม้เสื่อมสภาพ / กฎป้องกันพิเศษ)
   const canBlock = own && !state.winner && !state.choice && battle?.step === 'declareBlock' && card.owner !== state.turnPlayer && blockCandidates(state).includes(cardId);
   const ownTurnMain = own && inMain(state) && card.owner === state.turnPlayer;
+  const flashOpts = own && !evolveMode && !fxBlocking ? activatableOptions(state, db, card.owner, cardId) : [];
+  // ใช้ได้หมด / หมดจังหวะ Flash: ปิดเมนู
+  useEffect(() => {
+    if (flashOpen && flashOpts.length === 0) setFlashOpen(false);
+  }, [flashOpen, flashOpts.length]);
   const dropTarget = ownTurnMain && (!!dragging || hasSelection);
 
   const target = useMemo<CoreTarget>(() => ({ cardId }), [cardId]);
@@ -177,6 +300,7 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
   const ring =
     (
       [
+        [picked, 'ring-4 ring-yellow-300 cursor-pointer'],
         [candidate, 'ring-4 ring-fuchsia-400 cursor-pointer'],
         [flashReady, 'ring-4 ring-cyan-300'],
         [evolving || over, 'ring-4 ring-emerald-400'],
@@ -273,8 +397,14 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
             setBraveMenu(braveMenu ? null : cardId);
             return;
           }
+          // มีเอฟเฟกต์ Flash ที่กดใช้ได้: เปิด/ปิดเมนูเหนือการ์ด
+          if (flashOpts.length > 0 && !st.state.choice && !isChoiceCandidate(st.state, cardId)) {
+            setFlashOpen(!flashOpen);
+            return;
+          }
           clickFieldCard(cardId);
         }}
+        ref={boxRef}
         className={`relative flex items-center justify-center transition-[height,width] duration-300 ${exhausted ? 'h-28 w-40' : 'h-40 w-28'} ${draggingThis ? 'opacity-40' : ''}`}
         draggable={def.type === 'brave' && ownTurnMain && !fxBlocking && !state.choice}
         onDragStart={(e) => {
@@ -305,6 +435,33 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
             }`}
           >
             {bp.toLocaleString()}
+          </div>
+        )}
+        {/* แบ่งคอร์ที่จะส่งออก: จำนวนที่เลือกจากตัวนี้ + ปุ่มลด */}
+        {allocN > 0 && (
+          <div className={`absolute inset-x-0 z-[7] flex items-center justify-center gap-1 ${matTop ? 'top-2 rotate-180' : 'bottom-2'}`}>
+            <button
+              type="button"
+              aria-label="ลด 1 เม็ด"
+              onClick={(e) => {
+                e.stopPropagation();
+                useGame.getState().allocAdd(cardId, -1);
+              }}
+              className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-900/90 text-lg font-black text-white shadow ring-2 ring-fuchsia-300 hover:bg-slate-700"
+            >
+              −
+            </button>
+            <span className="rounded-md bg-fuchsia-500 px-2 py-0.5 text-sm font-black whitespace-nowrap text-white shadow-lg">ส่ง {allocN}</span>
+          </div>
+        )}
+        {/* มีเอฟเฟกต์ Flash ที่กดใช้ได้: ป้ายบอกให้คลิกการ์ด */}
+        {flashOpts.length > 0 && (
+          <div
+            className="pointer-events-none absolute top-6 left-1/2 z-[6] flex -translate-x-1/2 items-center gap-0.5 rounded-md bg-cyan-300 px-1.5 py-0.5 text-[10px] font-black whitespace-nowrap text-slate-900 shadow"
+            style={{ animation: 'fx-flash-glow 1.2s ease-in-out infinite' }}
+          >
+            <Bolt />
+            Flash{flashOpts.length > 1 ? ` ×${flashOpts.length}` : ''}
           </div>
         )}
         {/* Brave ที่ร่วมร่าง: ซ้อนมุมบนขวาของผู้ร่วมร่าง */}
@@ -368,8 +525,12 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
             {isAttacker ? 'โจมตี' : 'ป้องกัน'}
           </div>
         )}
-        {candidate && (
-          <div className="absolute inset-x-1 bottom-1 rounded bg-fuchsia-500 py-0.5 text-center text-xs font-bold text-white shadow">คลิกเพื่อเลือก</div>
+        {candidate && allocN === 0 && (
+          <div
+            className={`absolute inset-x-1 rounded py-0.5 text-center text-xs font-bold shadow ${matTop ? 'top-1 rotate-180' : 'bottom-1'} ${picked ? 'bg-yellow-300 text-slate-900' : 'bg-fuchsia-500 text-white'}`}
+          >
+            {picked ? 'เลือกแล้ว ✓' : 'คลิกเพื่อเลือก'}
+          </div>
         )}
         {canAttack && !confirming && (
           <div className="absolute inset-x-1 bottom-1 rounded bg-amber-400 py-0.5 text-center text-xs font-bold text-slate-900">คลิกเพื่อโจมตี</div>
@@ -452,24 +613,8 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
           </button>
         )
       )}
-      {/* เอฟเฟกต์ Flash ที่กดใช้เอง (โซอุม / โอกุมะ / Assault) */}
-      {own &&
-        !evolveMode &&
-        activatableAbilities(state, db, card.owner, cardId).map((ab) => (
-          <button
-            key={ab.source}
-            type="button"
-            onClick={() => useGame.getState().dispatch({ type: 'activate', player: card.owner, cardId, source: ab.source })}
-            onMouseEnter={() => hover(cardId)}
-            onMouseLeave={() => hover(null)}
-            title={ab.label}
-            className="w-full rounded-md bg-cyan-300 py-1 text-xs font-bold text-slate-900 shadow hover:bg-cyan-200"
-            style={{ animation: 'fx-flash-glow 1.2s ease-in-out infinite' }}
-          >
-            {/* ชื่อสั้นบนปุ่ม (รายละเอียดอยู่ใน title และแผงข้อมูลการ์ด) */}
-            {ab.label.startsWith('[') ? ab.label.slice(0, ab.label.indexOf(']') + 1) : '[Flash]'} ใช้เอฟเฟกต์
-          </button>
-        ))}
+      {/* เอฟเฟกต์ Flash ที่กดใช้เอง (โซอุม / โอกุมะ / Assault / ที่ Brave ให้): คลิกการ์ด → เมนูลอยเหนือการ์ด */}
+      {flashOpen && flashOpts.length > 0 && <FlashMenu cardId={cardId} anchor={boxRef} onClose={() => setFlashOpen(false)} />}
       {/* On Stage (BS07): แอทแท็คสเต็ปของเรา กลับไปใต้เด็คแทนการโจมตี */}
       {own &&
         !evolveMode &&
@@ -883,6 +1028,7 @@ export function PlayerMat({ player, top }: { player: PlayerId; top?: boolean }) 
   }, []);
 
   return (
+    <MatTopCtx.Provider value={!!top}>
     <section
       data-mat={player}
       className={`mat-sheen relative isolate flex min-h-fit flex-1 gap-2 overflow-hidden rounded-xl border-2 p-2 shadow-[0_10px_30px_rgba(0,0,0,0.55)] flex-row ${top ? 'rotate-180' : ''} ${
@@ -1019,6 +1165,7 @@ export function PlayerMat({ player, top }: { player: PlayerId; top?: boolean }) 
         <TrashSlot player={player} />
       </div>
     </section>
+    </MatTopCtx.Provider>
   );
 }
 
@@ -1073,7 +1220,9 @@ function HandCard({ cardId, hidden, small, fan, shown: order }: { cardId: string
   const selected = useGame((s) => s.selectedHandCard === cardId);
   const { clickHandCard, openPlay, dispatch, hover } = useGame.getState();
   const [hovering, setHovering] = useState(false);
-  const candidate = useGame((s) => isChoiceCandidate(s.state, cardId) && !isFxBlocking(s.fx));
+  const candidate = useGame((s) => (isChoiceCandidate(s.state, cardId) || isMultiCardCandidate(s.state, cardId)) && !isFxBlocking(s.fx));
+  /** เลือกหลายใบทีเดียว: ใบนี้ถูกเลือกไว้ */
+  const picked = useGame((s) => pickedOf(s).includes(cardId));
   const flashUsable = useFlashUsable(cardId);
   const flying = useFlying(cardId);
   const dragged = useGame((s) => s.handDrag === cardId);
@@ -1202,14 +1351,14 @@ function HandCard({ cardId, hidden, small, fan, shown: order }: { cardId: string
                 : main
                   ? 'brightness-75'
                   : ''
-        } ${selected ? `ring-4 ring-yellow-300 ${fan ? '' : '-translate-y-3'}` : ''} ${candidate ? 'cursor-pointer ring-4 ring-fuchsia-400' : ''}`}
+        } ${selected || picked ? `ring-4 ring-yellow-300 ${fan ? '' : '-translate-y-3'}` : ''} ${candidate && !picked ? 'cursor-pointer ring-4 ring-fuchsia-400' : ''}`}
         style={candidate ? { animation: 'fx-choice-glow 1.4s ease-in-out infinite' } : flashUsable ? { animation: 'fx-flash-glow 1.2s ease-in-out infinite' } : undefined}
       >
         <div className={`h-full w-full ${fan?.top && !(hovering || selected) ? 'rotate-180' : ''}`}>
           <CardFace def={def} size={small || fan?.top ? 'xs' : 'md'} payCost={pay} />
         </div>
         {candidate && (
-          <div className="absolute inset-x-1 top-1 rounded bg-fuchsia-500 py-0.5 text-center text-xs font-bold text-white shadow">คลิกเพื่อเลือก</div>
+          <div className={`absolute inset-x-1 top-1 rounded py-0.5 text-center text-xs font-bold shadow ${picked ? 'bg-yellow-300 text-slate-900' : 'bg-fuchsia-500 text-white'}`}>{picked ? 'เลือกแล้ว ✓' : 'คลิกเพื่อเลือก'}</div>
         )}
         {shown && !candidate && (
           <div

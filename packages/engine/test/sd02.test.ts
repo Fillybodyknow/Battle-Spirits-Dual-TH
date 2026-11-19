@@ -507,8 +507,7 @@ describe('Soul Burst', () => {
     s = attack(toAttack(s), kiri);
     expect(s.choice).toMatchObject({ kind: 'option' });
     s = choose(s, 0);
-    s = choose(s, a);
-    s = choose(s, b);
+    s = choose(s, { cards: [a, b] });
     expect(s.choice).toMatchObject({ kind: 'payCost', player: 'p1' });
     s = choose(s, null);
     expect(s.players.p1.burst).toBeNull();
@@ -548,8 +547,7 @@ describe('ชูริเคนพันเล่ม (Burst)', () => {
     s = act(s, { type: 'useMagic', player: 'p1', cardId: handId(s, 'p1', KABURYU), payment: pay(s, 'p1', KABURYU) });
     expect(s.choice).toMatchObject({ kind: 'option', player: 'p2' });
     s = choose(s, 0);
-    s = choose(s, a);
-    s = choose(s, b);
+    s = choose(s, { cards: [a, b] });
     expect(s.players.p2.reserve).toHaveLength(reserve + 2);
     expect(s.choice).toMatchObject({ kind: 'payCost', player: 'p2' });
     s = choose(s, null);

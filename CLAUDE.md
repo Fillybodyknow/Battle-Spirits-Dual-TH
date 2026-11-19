@@ -140,6 +140,9 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
 - trigger ที่เกิดจากเอฟเฟกต์ที่กำลังทำงานเข้าคิวต่อจากเอฟเฟกต์นั้นทันที · เอฟเฟกต์ที่เกิดพร้อมกันของผู้ควบคุมเดียวกัน = ถามลำดับ (choice kind `order`)
 - เอฟเฟกต์ที่ผู้เล่นกดใช้เอง: [Evolution] = action `evolve`, เอฟเฟกต์ Flash ของการ์ดบนสนาม (ability `activated`) = action `activate`,
   อัญเชิญจากแทรช (ability `trashSummon`) = action `summon` ที่ cardId อยู่ในแทรช · ของใหม่แบบนี้ต้องเพิ่มใน `responseOptions` (store) ด้วย ไม่งั้น AUTO จะ pass Flash ข้ามไป
+- **เล็งหลายเป้า = เลือกทีเดียว** (เจ้าของโปรเจกต์กำหนด): `ask()` แปลง choice `card` ของ step ใน `MULTI_STEPS` ที่ count > 1 เป็น `multiCard` (pick `{ cards }`)
+  → step ภายใน `applyPicks` (ถาม Kagemusha ทุกเป้าก่อน แล้วเรียก `applyCardPick` ทีละใบต่อกัน) · ส่งคอร์หลายเม็ด = choice `distribute` (pick `{ alloc }`) → `coresOffBatch`
+  · Kagemusha ที่ใช้แล้ว = เป้าทั้งหมดย้ายไปที่การ์ด Kagemusha (กติกา 14) · step ใหม่ที่เล็งหลายตัวด้วย count: เพิ่มใน `MULTI_STEPS`
 - `config.manualDraw` (หน้าเว็บเปิดไว้): Draw Step หยุดรอ action `drawStep` · เทสต์ใช้ค่าเริ่มต้น (จั่วเอง)
 - เปลี่ยนลำดับ action ที่ engine คาดหวัง = ห้องออนไลน์ที่เล่นค้างอยู่จะเล่นต่อไม่ได้ (บอกเจ้าของโปรเจกต์ด้วย)
 - ความสามารถถาวร (ไม่ผ่านคิว) ไม่มี `effectResolving` → ตรงจุดที่มัน "ลงมือจริง" ให้เรียก `emitStatic(ctx, { cardId, source })` (event `staticApplied`)

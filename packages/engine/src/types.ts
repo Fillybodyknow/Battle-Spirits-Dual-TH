@@ -265,6 +265,26 @@ export type PendingChoice =
    * order[0] = ใบที่อยู่บนสุดของกลุ่ม · ใบสุดท้าย = ล่างสุดของกลุ่ม (ใต้สุดเด็ค = ใบสุดท้ายอยู่ล่างสุดของเด็ค)
    */
   | { kind: 'arrange'; player: PlayerId; sourceId: string; prompt: string; cardIds: string[]; where: 'top' | 'bottom'; step: Step }
+  /**
+   * เลือกการ์ดหลายใบทีเดียว (เอฟเฟกต์ที่เล็งหลายเป้า เช่น ทำลาย/เสื่อมสภาพ/BP- 2 ตัว): ตอบด้วย pick: { cards: [...] }
+   * ต้องเลือกครบ count ใบ (ไม่ซ้ำ) · ผลเกิดกับทุกใบต่อกันในครั้งเดียว (ถาม Kagemusha ของทุกเป้าก่อน)
+   */
+  | { kind: 'multiCard'; player: PlayerId; sourceId: string; prompt: string; candidates: string[]; count: number; step: Step }
+  /**
+   * แบ่งจำนวนคอร์ที่จะส่งออกจากสปิริต/อัลติเมทหลายตัวทีเดียว (removeOpponentCores หลายเม็ด): ตอบด้วย pick: { alloc: { [cardId]: n } }
+   * แต่ละตัวไม่เกิน caps[cardId] · รวมต้องเท่ากับ total พอดี (บังคับ ทำเท่าที่ทำได้)
+   */
+  | {
+      kind: 'distribute';
+      player: PlayerId;
+      sourceId: string;
+      prompt: string;
+      candidates: string[];
+      caps: Record<string, number>;
+      total: number;
+      to: 'reserve' | 'trash' | 'void';
+      step: Step;
+    }
   /** เอฟเฟกต์หลายอันเกิดพร้อมกัน: เลือกอันที่จะทำงานก่อน (pick = index ใน effects) ที่เหลือจะถามต่อ */
   | {
       kind: 'order';
@@ -382,8 +402,12 @@ export type Action =
   | { type: 'choose'; player: PlayerId; pick: ChoicePick }
   /** Flash [Evolution]: ย้าย Core จากสปิริตอื่นของเรามาวางบน cardId */
   | { type: 'evolve'; player: PlayerId; cardId: string; cores: string[] }
-  /** ใช้เอฟเฟกต์ Flash ของการ์ดบนสนาม (ability kind activated ที่บรรทัด source) */
-  | { type: 'activate'; player: PlayerId; cardId: string; source: number }
+  /**
+   * ใช้เอฟเฟกต์ Flash ของการ์ดบนสนาม (ability kind activated ที่บรรทัด source)
+   * from = การ์ดที่เป็นเจ้าของเอฟเฟกต์ (cardId เอง หรือ Brave ที่ร่วมร่างอยู่ซึ่งให้เอฟเฟกต์นี้)
+   * ต้องระบุเมื่อผู้ร่วมร่างกับ Brave มีเอฟเฟกต์ที่บรรทัดเดียวกัน (เช่น ไทคูน + โอเทนตะ: บรรทัด 1 ทั้งคู่) · ไม่ระบุ = อันแรกที่ตรง (แบบเดิม)
+   */
+  | { type: 'activate'; player: PlayerId; cardId: string; source: number; from?: string }
   /**
    * Main Step: ย้าย Brave บนสนามของเรา
    *  - Brave เดี่ยว → ร่วมร่างกับ hostId (Core บน Brave กลับรีเสิร์ฟ, ผู้ร่วมร่างมีสภาพตาม Brave)
@@ -404,7 +428,7 @@ export interface SummonPick {
   braveOnto?: string;
 }
 
-export type ChoicePick = number | string | { pay: string[] } | { summons: SummonPick[] } | { order: string[] } | null;
+export type ChoicePick = number | string | { pay: string[] } | { summons: SummonPick[] } | { order: string[] } | { alloc: Record<string, number> } | { cards: string[] } | null;
 
 export type GameEvent =
   | { type: 'gameStarted'; firstPlayer: PlayerId }
@@ -436,7 +460,8 @@ export type GameEvent =
   /** การ์ดบนสนามกลับไปไว้ในเด็ค (บนสุด/ใต้สุด) */
   | { type: 'returnedToDeck'; player: PlayerId; cardId: string; where: 'top' | 'bottom' }
   /** ผู้เล่นกดใช้เอฟเฟกต์ Flash ของการ์ดบนสนาม */
-  | { type: 'activated'; player: PlayerId; cardId: string; source: number }
+  /** from = การ์ดเจ้าของเอฟเฟกต์ (Brave ที่ให้เอฟเฟกต์ / ไม่ระบุ = cardId) */
+  | { type: 'activated'; player: PlayerId; cardId: string; source: number; from?: string }
   | { type: 'battleEnded' }
   | { type: 'gameOver'; winner: PlayerId; reason: EndReason }
   /** source = index บรรทัดเอฟเฟกต์ใน CardDef.effects */

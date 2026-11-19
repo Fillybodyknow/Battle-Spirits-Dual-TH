@@ -79,6 +79,18 @@ export function smartBot(s: GameState, summon = false): Action | null {
     if (c.player !== p) return null;
     if (c.kind === 'card') return { type: 'choose', player: p, pick: c.optional ? null : (c.candidates[0] ?? null) };
     if (c.kind === 'payCost') return { type: 'choose', player: p, pick: null };
+    if (c.kind === 'multiCard') return { type: 'choose', player: p, pick: { cards: c.candidates.slice(0, c.count) } };
+    if (c.kind === 'distribute') {
+      // แบ่งคอร์: ไล่จากตัวแรกให้ครบจำนวน
+      const alloc: Record<string, number> = {};
+      let left = c.total;
+      for (const id of c.candidates) {
+        const n = Math.min(left, c.caps[id] ?? 0);
+        if (n > 0) alloc[id] = n;
+        left -= n;
+      }
+      return { type: 'choose', player: p, pick: { alloc } };
+    }
     return { type: 'choose', player: p, pick: 0 };
   }
   if (s.awaitingDraw === p) return { type: 'drawStep', player: p };

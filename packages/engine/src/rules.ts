@@ -722,7 +722,18 @@ function baseCostInner(state: GameState, db: CardDatabase, cardId: string, zone:
 }
 
 /** เอฟเฟกต์ Flash ที่กดใช้เอง (activated) ของการ์ดบนสนามนี้ที่ใช้ได้ตอนนี้ */
-export function activatableAbilities(state: GameState, db: CardDatabase, player: PlayerId, cardId: string): Extract<Ability, { kind: 'activated' }>[] {
+/** เอฟเฟกต์ Flash ที่กดใช้ได้ตอนนี้ พร้อมการ์ดเจ้าของเอฟเฟกต์ (from = cardId เอง หรือ Brave ที่ร่วมร่างอยู่) */
+export interface ActivatableOption {
+  ability: Extract<Ability, { kind: 'activated' }>;
+  from: string;
+}
+
+/**
+ * เอฟเฟกต์ Flash (activated) ของการ์ดบนสนามที่ใช้ได้ตอนนี้ แยกตามการ์ดเจ้าของ
+ * ผู้ร่วมร่างกับ Brave อาจมีเอฟเฟกต์ที่บรรทัดเดียวกัน → ต้องรู้ว่าเป็นของใบไหน
+ * "เทิร์นละ N ครั้ง" นับที่การ์ดเจ้าของเอฟเฟกต์ (เอฟเฟกต์ที่ Brave ให้ = นับที่ Brave ไม่ปนกับของผู้ร่วมร่าง)
+ */
+export function activatableOptions(state: GameState, db: CardDatabase, player: PlayerId, cardId: string): ActivatableOption[] {
   const card = state.cards[cardId];
   if (!card || card.owner !== player || !state.players[player].field.includes(cardId)) return [];
   if (state.winner || state.choice) return [];
@@ -730,13 +741,24 @@ export function activatableAbilities(state: GameState, db: CardDatabase, player:
   if (!flash || flash.priority !== player || state.phase !== 'attack') return [];
   if (effectsNegated(state, db, cardId)) return [];
   const level = cardLevel(state, db, cardId);
-  return [...db.get(card.cardNo).abilities, ...grantedActivated(state, db, cardId)].filter(
-    (a): a is Extract<Ability, { kind: 'activated' }> =>
-      a.kind === 'activated' &&
+  const isActivated = (a: Ability): a is Extract<Ability, { kind: 'activated' }> => a.kind === 'activated';
+  const own = db.get(card.cardNo).abilities.filter(isActivated).map((ability) => ({ ability, from: cardId }));
+  const granted = card.braves.flatMap((b) =>
+    db
+      .get(state.cards[b]!.cardNo)
+      .abilities.filter((a): a is Extract<Ability, { kind: 'activated' }> => isActivated(a) && !!a.granted)
+      .map((ability) => ({ ability, from: b })),
+  );
+  return [...own, ...granted].filter(
+    ({ ability: a, from }) =>
       (a.granted || a.levels.includes(level)) &&
-      (a.maxPerTurn === undefined || card.usedThisTurn.filter((x) => x === a.source).length < a.maxPerTurn) &&
+      (a.maxPerTurn === undefined || state.cards[from]!.usedThisTurn.filter((x) => x === a.source).length < a.maxPerTurn) &&
       conditionHolds(state, cardId, a.if, false, false, db),
   );
+}
+
+export function activatableAbilities(state: GameState, db: CardDatabase, player: PlayerId, cardId: string): Extract<Ability, { kind: 'activated' }>[] {
+  return activatableOptions(state, db, player, cardId).map((o) => o.ability);
 }
 
 /** ผู้โจมตีนี้ไม่ถูกป้องกันโดยการ์ดประเภทนี้ */

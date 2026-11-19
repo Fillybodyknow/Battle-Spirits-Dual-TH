@@ -355,9 +355,10 @@ describe('Booster Set 04', () => {
     const b = put(s, 'p2', DARIU, 1);
     s = act(act(s, { type: 'endMain', player: 'p1' }), { type: 'declareAttack', player: 'p1', attackerId: raika });
     if (s.battle?.flash?.priority === 'p2') s = act(s, { type: 'passFlash', player: 'p2' });
-    s = choose(magic(s, 'ดรีมบับเบิล'), a);
-    expect(s.choice?.kind === 'card' && s.choice.candidates).toEqual([b]);
-    s = choose(s, b);
+    s = magic(s, 'ดรีมบับเบิล');
+    // Dispersion: เล็ง 2 ตัวทีเดียว
+    expect(s.choice).toMatchObject({ kind: 'multiCard', count: 2, candidates: [a, b] });
+    s = choose(s, { cards: [a, b] });
     expect(s.players.p2.hand).toEqual(expect.arrayContaining([a, b]));
   });
 

@@ -135,7 +135,8 @@ describe('Booster Set 02 / 03', () => {
     put(s, 'p1', no('องเมียวจิดูดเลือด ฮิเร็น'), 1);
     const target = put(s, 'p2', DARIU, 5);
     let x = summon(s, 'ราชายักษ์ นาราคุ');
-    for (let i = 0; i < 2; i++) x = choose(x, target);
+    // แบ่งคอร์ทีเดียว: เลือกตัวนี้ 2 เม็ด
+    x = choose(x, { alloc: { [target]: 2 } });
     expect(x.choice).toBeFalsy();
     expect(x.cards[target]!.cores).toHaveLength(3);
   });
@@ -510,7 +511,7 @@ describe('Booster Set 02 / 03', () => {
       const target = put(s, 'p2', DARIU, 5);
       s = act(endMain(s), { type: 'declareAttack', player: 'p1', attackerId: hiren });
       s = choose(s, 0);
-      for (let i = 0; i < 4; i++) s = choose(s, target); // เด็คเป็นมุฉะดาริวทั้งหมด = สปิริต 4 ใบ
+      s = choose(s, { alloc: { [target]: 4 } }); // เด็คเป็นมุฉะดาริวทั้งหมด = สปิริต 4 ใบ
       expect(s.cards[target]!.cores).toHaveLength(1);
     });
 

@@ -21,6 +21,7 @@ import {
   trashSummonRule,
   applyAction,
   attackLifeDamage,
+  extraSymbols,
   blockersFor,
   magicUsedUp,
   cardLevel,
@@ -236,6 +237,53 @@ export function isInlineChoice(s: GameState): boolean {
   // Brave ที่ร่วมร่างอยู่ (ไม่อยู่ใน field) ก็เลือกบนกระดานได้
   const onBoard = (id: string) => PLAYERS.some((p) => s.players[p].field.some((f) => f === id || s.cards[f]!.braves.includes(id)));
   return c.candidates.every((id) => onBoard(id) || s.players[c.player].hand.includes(id));
+}
+
+/** ตัวระบุ choice distribute (ใช้แยกว่าจำนวนที่แบ่งไว้เป็นของ choice ไหน) */
+function distributeKey(c: Extract<GameState['choice'], { kind: 'distribute' }>): string {
+  return `${c.sourceId}|${c.player}|${c.total}|${c.candidates.join(',')}`;
+}
+
+/** จำนวนคอร์ที่แบ่งไว้ของ choice distribute ตอนนี้ (choice อื่น = ว่าง) */
+export function allocOf(s: { state: GameState; alloc: { key: string; n: Record<string, number> } | null }): Record<string, number> {
+  const c = s.state.choice;
+  return c?.kind === 'distribute' && s.alloc?.key === distributeKey(c) ? s.alloc.n : NO_ALLOC;
+}
+/** ค่าว่างคงที่ (ใช้เป็น selector ของ zustand ได้: ไม่สร้าง object ใหม่ทุกครั้ง) */
+const NO_ALLOC: Record<string, number> = Object.freeze({}) as Record<string, number>;
+
+/** สีของ Gem Symbol ทั้งหมดของผู้โจมตี (ตัวเอง + Brave ที่ร่วมร่าง + ที่ได้เพิ่มจากเอฟเฟกต์) สูงสุด 12 เม็ด */
+function attackGemColors(s: GameState, attackerId: string): string[] {
+  const card = s.cards[attackerId];
+  if (!card) return [];
+  const out: string[] = [];
+  const add = (map: Partial<Record<string, number>>) => {
+    for (const [color, n] of Object.entries(map)) for (let i = 0; i < (n ?? 0); i++) out.push(color);
+  };
+  add(db.get(card.cardNo).symbols);
+  for (const b of card.braves) add(db.get(s.cards[b]!.cardNo).symbols);
+  add(extraSymbols(s, db, attackerId));
+  return out.slice(0, 12);
+}
+
+/** ตัวระบุ choice multiCard */
+function multiCardKey(c: Extract<GameState['choice'], { kind: 'multiCard' }>): string {
+  return `${c.sourceId}|${c.player}|${c.count}|${c.candidates.join(',')}`;
+}
+const NO_PICKS: string[] = Object.freeze([]) as unknown as string[];
+/** การ์ดที่เลือกไว้ของ choice multiCard ตอนนี้ (choice อื่น = ว่าง) */
+export function pickedOf(s: { state: GameState; picked: { key: string; ids: string[] } | null }): string[] {
+  const c = s.state.choice;
+  return c?.kind === 'multiCard' && s.picked?.key === multiCardKey(c) ? s.picked.ids : NO_PICKS;
+}
+/** การ์ดนี้เป็นตัวเลือกของการเลือกหลายใบทีเดียว (choice multiCard ของเรา) */
+export function isMultiCardCandidate(s: GameState, cardId: string): boolean {
+  return s.choice?.kind === 'multiCard' && mine(s.choice.player) && s.choice.candidates.includes(cardId);
+}
+
+/** การ์ดนี้เป็นตัวเลือกของการแบ่งคอร์ (choice distribute ของเรา) */
+export function isDistributeCandidate(s: GameState, cardId: string): boolean {
+  return s.choice?.kind === 'distribute' && mine(s.choice.player) && s.choice.candidates.includes(cardId);
 }
 
 /** การ์ดนี้เป็นตัวเลือกของการเลือกบนกระดานตอนนี้หรือไม่ */
@@ -529,6 +577,8 @@ export type Fx =
       startLying?: boolean;
       toExhausted: boolean;
       dies: boolean;
+      /** โจมตีเข้า Life ตรง ๆ: สีของ Gem Symbol ทั้งหมด (ตัวเอง + Brave + ที่ได้เพิ่ม) ลอยออกมาพุ่งชนไปพร้อมกัน */
+      gems?: string[];
       delay: number;
     }
   /** ภาพการ์ดที่ออกจากสนามไปแล้ว: แตกกระจาย (ถูกทำลาย) หรือจางหาย (สูญสลาย) */
@@ -841,6 +891,7 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         fromExhausted: attacker.state === 'exhausted',
         toExhausted: s.players[after.owner].field.includes(attackerId) && after.state === 'exhausted',
         dies: attackerDies,
+        ...(blocked ? {} : { gems: attackGemColors(prev, attackerId) }),
         delay: 0,
       };
     }
@@ -2179,6 +2230,19 @@ interface Store {
   setPlayCores(v: PlayCores | null): void;
   /** คลิก Core บนกระดานระหว่างเล่นการ์ด: ว่าง → จ่าย → วางบนการ์ด → ว่าง */
   cyclePlayCore(coreId: string): void;
+  /**
+   * กำลังแบ่งคอร์ที่จะส่งออก (choice distribute): key = choice ที่แบ่งอยู่ (เปลี่ยน choice = เริ่มใหม่) · n = จำนวนต่อการ์ด
+   * อ่านผ่าน allocOf() เสมอ
+   */
+  alloc: { key: string; n: Record<string, number> } | null;
+  /** เพิ่ม/ลดจำนวนคอร์ที่จะส่งออกจากการ์ดนี้ (ไม่เกินที่มี และรวมไม่เกินที่ต้องส่ง) */
+  allocAdd(cardId: string, delta: number): void;
+  allocClear(): void;
+  /** เลือกหลายใบทีเดียว (choice multiCard): การ์ดที่เลือกไว้ · อ่านผ่าน pickedOf() */
+  picked: { key: string; ids: string[] } | null;
+  /** เลือก/ยกเลิกการ์ดนี้ (เต็มจำนวนแล้วเลือกเพิ่มไม่ได้) */
+  togglePick(cardId: string): void;
+  clearPicks(): void;
   /** สปิริตที่กดโจมตีแล้ว รอยืนยัน */
   attackConfirm: string | null;
   confirmAttack(ok: boolean): void;
@@ -3100,6 +3164,36 @@ export const useGame = create<Store>((set, get) => {
     play: null,
     playCores: null,
     attackConfirm: null,
+    alloc: null,
+    allocAdd(cardId, delta) {
+      const { state } = get();
+      const c = state.choice;
+      if (c?.kind !== 'distribute' || !mine(c.player) || !c.candidates.includes(cardId)) return;
+      const n = { ...allocOf(get()) };
+      const sum = Object.values(n).reduce((a, b) => a + b, 0);
+      const cur = n[cardId] ?? 0;
+      const next = Math.max(0, Math.min(c.caps[cardId] ?? 0, cur + delta, cur + (c.total - sum)));
+      if (next === cur) return;
+      sfx('click');
+      n[cardId] = next;
+      set({ alloc: { key: distributeKey(c), n } });
+    },
+    allocClear() {
+      set({ alloc: null });
+    },
+    picked: null,
+    togglePick(cardId) {
+      const c = get().state.choice;
+      if (c?.kind !== 'multiCard' || !mine(c.player) || !c.candidates.includes(cardId)) return;
+      const ids = pickedOf(get());
+      const next = ids.includes(cardId) ? ids.filter((x) => x !== cardId) : ids.length < c.count ? [...ids, cardId] : ids;
+      if (next === ids) return;
+      sfx('click');
+      set({ picked: { key: multiCardKey(c), ids: next } });
+    },
+    clearPicks() {
+      set({ picked: null });
+    },
     duel: null,
     evolveCard: null,
     hovered: null,
@@ -3342,6 +3436,8 @@ export const useGame = create<Store>((set, get) => {
       const { state, selectedHandCard, choose } = get();
       set({ pinned: cardId });
       if (isChoiceCandidate(state, cardId)) return choose(cardId);
+      // เลือกหลายใบทีเดียว: คลิก = เลือก/ยกเลิก
+      if (isMultiCardCandidate(state, cardId)) return get().togglePick(cardId);
       if (state.choice) return;
       const owner = state.cards[cardId]!.owner;
       if (!mine(owner)) return;
@@ -3512,6 +3608,10 @@ export const useGame = create<Store>((set, get) => {
       set({ pinned: cardId });
 
       if (isChoiceCandidate(state, cardId)) return choose(cardId);
+      // เลือกหลายใบทีเดียว: คลิก = เลือก/ยกเลิก
+      if (isMultiCardCandidate(state, cardId)) return get().togglePick(cardId);
+      // แบ่งคอร์ที่จะส่งออก: คลิก = +1 เม็ด
+      if (isDistributeCandidate(state, cardId)) return get().allocAdd(cardId, 1);
       // อัญเชิญหลายใบ: Brave ที่กำลังจัด → คลิกสปิริตที่จะร่วมร่าง
       {
         const m = get().multi;

@@ -356,8 +356,7 @@ describe('SD03 ถูกทำลาย', () => {
     const b = put(s, 'p2', PANTHER, 1); // คอสต์ 3
     const magic = inHand(s, 'p1', BLESS);
     let x = act(s, { type: 'useMagic', player: 'p1', cardId: magic, payment: pay(s, 'p1', BLESS), timing: 'flash' });
-    x = choose(x, a);
-    x = choose(x, b);
+    x = choose(x, { cards: [a, b] });
     expect(x.players.p2.field).toHaveLength(0);
     expect(trashCount(x, 'p2')).toBe(2 + 6);
   });
@@ -380,12 +379,14 @@ describe('SD03 ถูกทำลาย', () => {
 
   it('โดจินกาขาว: รอดในเทิร์นคู่แข่ง → เจ้าของเทิร์นเรียง "คงอยู่" ก่อน เอฟเฟกต์ "เมื่อถูกทำลายโดยคู่แข่ง" ไม่ทำงาน (กติกา 11)', () => {
     const s = setup();
-    put(s, 'p2', WHITE, 1);
+    const white = put(s, 'p2', WHITE, 1);
     const wing = put(s, 'p2', WING, 1);
     const magic = inHand(s, 'p1', BLESS);
     let x = act(s, { type: 'useMagic', player: 'p1', cardId: magic, payment: pay(s, 'p1', BLESS), timing: 'flash' });
-    x = choose(x, wing);
-    x = choose(x, 0); // โดจินกาขาว: ทิ้งเด็ค p1 3 ใบ ให้โดจิวิหคเขียวอยู่ต่อ
+    // ทำลาย 2 ตัว: เลือกทีเดียว (โดจินกาขาวก่อน แล้วโดจิวิหคเขียว)
+    x = choose(x, { cards: [white, wing] });
+    // โดจินกาขาว: ทิ้งเด็ค p1 3 ใบ ให้ตัวที่ถูกทำลายอยู่ต่อ (ถามทีละตัว)
+    while (x.choice?.kind === 'option' && x.choice.player === 'p2') x = choose(x, 0);
     expect(x.players.p2.field).toContain(wing);
     // p1 ถือเทิร์นและเป็นฝ่ายทำลาย: เรียงให้ "คงอยู่" เกิดก่อน → เอฟเฟกต์เมื่อถูกทำลายของโดจิวิหคเขียวไม่ทันเห็นการถูกทำลาย
     expect(x.log.some((e) => e.type === 'abilityTriggered' && e.cardId === wing)).toBe(false);
@@ -415,8 +416,8 @@ describe('SD03 ถูกทำลาย', () => {
     const m1 = inHand(s, 'p1', MANTRA);
     let x = act(s, { type: 'useMagic', player: 'p1', cardId: m1, payment: pay(s, 'p1', MANTRA), timing: 'main' });
     const before = x.players.p1.hand.length;
-    x = choose(x, x.players.p1.hand[0]!);
-    x = choose(x, x.players.p1.hand[0]!);
+    // ทิ้ง 2 ใบ: เลือกทีเดียว
+    x = choose(x, { cards: x.players.p1.hand.slice(0, 2) });
     expect(x.players.p1.hand.length).toBe(before - 2);
     expect(x.choice).toBeNull();
 

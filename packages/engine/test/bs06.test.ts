@@ -95,6 +95,53 @@ describe('Booster Set 06', () => {
     expect(s.cards[target]!.state).toBe('refresh');
   });
 
+  it('ส่งคอร์หลายเม็ด: แบ่งทีเดียว → ถาม Kagemusha → ใช้ = คอร์ทั้งหมดไปที่การ์ด Kagemusha', () => {
+    let s = setup();
+    const rinne = put(s, 'p1', no('มิโกะเบื้องหลัง รินเนะ'), 1); // เมื่อโจมตี: ส่งคอร์บนสปิริตคู่แข่ง 2 เม็ด
+    const soulT = put(s, 'p2', DARIU, 3, true);
+    const plain = put(s, 'p2', DARIU, 2);
+    const s23 = inHand(s, 'p2', no('นักรบเครื่องกล S23'));
+    s = attack(s, rinne);
+    expect(s.choice).toMatchObject({ kind: 'distribute', player: 'p1', total: 2, caps: { [soulT]: 3, [plain]: 2 } });
+    // รวมไม่ครบ / เกินที่มี = ไม่ได้
+    expect(fails(s, { type: 'choose', player: 'p1', pick: { alloc: { [soulT]: 1 } } })).toBe('INVALID_PICK');
+    expect(fails(s, { type: 'choose', player: 'p1', pick: { alloc: { [plain]: 3 } } })).toBe('INVALID_PICK');
+    s = choose(s, { alloc: { [soulT]: 1, [plain]: 1 } });
+    // ตัวที่มี Soul Core ตกเป็นเป้า: ถามคู่แข่งเรื่อง Kagemusha ก่อน (ยังไม่มีคอร์ออก)
+    expect(s.choice).toMatchObject({ kind: 'option', player: 'p2' });
+    expect(s.cards[plain]!.cores).toHaveLength(2);
+    s = choose(s, optionIndex(s, 'อัญเชิญ'));
+    const cost = (s.choice as { cost: number }).cost;
+    s = choose(s, { pay: normalCores(s, 'p2').slice(0, cost) });
+    s = choose(s, { pay: normalCores(s, 'p2').slice(0, 3) });
+    expect(s.players.p2.field).toContain(s23);
+    // ดูดเอฟเฟกต์มาหมด: 2 เม็ดออกจาก S23 ตัวเดิมไม่โดน
+    expect(s.choice).toBeNull();
+    expect(s.cards[s23]!.cores).toHaveLength(1);
+    expect(s.cards[soulT]!.cores).toHaveLength(3);
+    expect(s.cards[plain]!.cores).toHaveLength(2);
+  });
+
+  it('ส่งคอร์หลายเม็ด: ไม่ใช้ Kagemusha → เลือก Soul Core → ส่งออกทุกตัวพร้อมกันใน action เดียว', () => {
+    let s = setup();
+    const rinne = put(s, 'p1', no('มิโกะเบื้องหลัง รินเนะ'), 1);
+    const soulT = put(s, 'p2', DARIU, 3, true);
+    const plain = put(s, 'p2', DARIU, 2);
+    inHand(s, 'p2', no('นักรบเครื่องกล S23'));
+    s = attack(s, rinne);
+    s = choose(s, { alloc: { [soulT]: 1, [plain]: 1 } });
+    s = choose(s, optionIndex(s, 'ไม่ใช้'));
+    // เจ้าของเลือกว่าจะส่ง Soul Core ไหม (ยังไม่มีคอร์ออก)
+    expect(s.choice).toMatchObject({ kind: 'option', player: 'p2' });
+    expect(s.cards[plain]!.cores).toHaveLength(2);
+    const r = applyAction(s, { type: 'choose', player: 'p2', pick: optionIndex(s, 'เก็บ Soul Core') }, db);
+    if (!r.ok) throw new Error(r.error.message);
+    expect(r.events.filter((e) => e.type === 'coresRemoved').map((e) => (e as { cardId: string }).cardId)).toEqual([soulT, plain]);
+    expect(r.state.cards[soulT]!.cores.some((c) => r.state.cores[c]!.isSoul)).toBe(true);
+    expect(r.state.cards[soulT]!.cores).toHaveLength(2);
+    expect(r.state.cards[plain]!.cores).toHaveLength(1);
+  });
+
   it('Kagemusha: ไม่ใช้ = เป้าเดิม · ไม่มี Soul Core = ไม่ถาม', () => {
     let s = setup();
     const target = put(s, 'p2', DARIU, 1, true);
@@ -127,16 +174,41 @@ describe('Booster Set 06', () => {
     const plain = put(s, 'p2', DARIU, 1);
     const s23 = inHand(s, 'p2', no('นักรบเครื่องกล S23'));
     s = attack(s, host);
-    s = choose(s, soul);
+    // เลือก 2 ตัวทีเดียว → ถาม Kagemusha ก่อนเกิดผล
+    s = choose(s, { cards: [soul, plain] });
     s = choose(s, optionIndex(s, 'อัญเชิญ'));
     s = choose(s, { pay: normalCores(s, 'p2').slice(0, (s.choice as { cost: number }).cost) });
     s = choose(s, { pay: normalCores(s, 'p2').slice(0, 1) });
-    expect(s.choice).toMatchObject({ kind: 'card', candidates: [s23] });
-    s = choose(s, s23);
-    expect(s.choice?.kind).not.toBe('card');
+    // ดูดเอฟเฟกต์มาหมด: เป้าทั้งหมดกลายเป็น S23 (เสื่อมสภาพไปแล้ว = จบ)
+    expect(s.choice).toBeNull();
     expect(s.cards[s23]!.state).toBe('exhausted');
     expect(s.cards[soul]!.state).toBe('refresh');
     expect(s.cards[plain]!.state).toBe('refresh');
+  });
+
+  it('เล็งหลายเป้า: เลือกครบทีเดียว · ไม่ใช้ Kagemusha → ผลเกิดกับทุกตัวใน action เดียว', () => {
+    let s = setup();
+    const host = put(s, 'p1', no('ผู้นำมารวายุ ชิโนบิโอว'), 1);
+    brave(s, host, 'ดาบคู่แห่งวายุกรรโชก คามุย-ฮายาเตะ');
+    put(s, 'p1', no('ดาบคู่แห่งวายุกรรโชก คามุย-ฮายาเตะ'), 1); // Charge +1 = เสื่อมสภาพ 2 ตัว
+    const soul = put(s, 'p2', DARIU, 1, true);
+    const plain = put(s, 'p2', DARIU, 1);
+    const third = put(s, 'p2', DARIU, 1);
+    inHand(s, 'p2', no('นักรบเครื่องกล S23'));
+    s = attack(s, host);
+    expect(s.choice).toMatchObject({ kind: 'multiCard', player: 'p1', count: 2, candidates: [soul, plain, third] });
+    // ไม่ครบ / ซ้ำ / ไม่ใช่ตัวเลือก = ไม่ได้
+    expect(fails(s, { type: 'choose', player: 'p1', pick: { cards: [soul] } })).toBe('INVALID_PICK');
+    expect(fails(s, { type: 'choose', player: 'p1', pick: { cards: [soul, soul] } })).toBe('INVALID_PICK');
+    expect(fails(s, { type: 'choose', player: 'p1', pick: { cards: [soul, host] } })).toBe('INVALID_PICK');
+    s = choose(s, { cards: [plain, soul] });
+    // ถาม Kagemusha ก่อน ยังไม่มีตัวไหนเสื่อมสภาพ
+    expect(s.choice).toMatchObject({ kind: 'option', player: 'p2' });
+    expect(s.cards[plain]!.state).toBe('refresh');
+    const r = applyAction(s, { type: 'choose', player: 'p2', pick: optionIndex(s, 'ไม่ใช้') }, db);
+    if (!r.ok) throw new Error(r.error.message);
+    expect(r.events.filter((e) => e.type === 'exhausted').map((e) => (e as { cardId: string }).cardId)).toEqual(expect.arrayContaining([soul, plain]));
+    expect(r.state.cards[third]!.state).toBe('refresh');
   });
 
   it('Kagemusha: โดนตีระบุ (เลือกผู้ป้องกัน) → อัญเชิญ S23 แล้ว S23 เป็นผู้ป้องกันแทน', () => {
@@ -247,10 +319,8 @@ describe('Booster Set 06', () => {
     const a = put(s, 'p1', DARIU, 1, false, 'exhausted');
     const b = put(s, 'p1', DARIU, 1, false, 'exhausted');
     s = attack(s, host);
-    expect(s.choice).toMatchObject({ kind: 'card', player: 'p1' });
-    s = choose(s, a);
-    expect(s.choice).toMatchObject({ kind: 'card', candidates: [b] });
-    s = choose(s, b);
+    expect(s.choice).toMatchObject({ kind: 'multiCard', player: 'p1', count: 2 });
+    s = choose(s, { cards: [a, b] });
     expect(s.cards[a]!.state).toBe('refresh');
     expect(s.cards[b]!.state).toBe('refresh');
   });
@@ -265,7 +335,7 @@ describe('Booster Set 06', () => {
     const t2 = put(s, 'p2', DARIU, 1);
     const t3 = put(s, 'p2', DARIU, 1);
     s = attack(s, host);
-    for (const t of [t1, t2, t3]) s = choose(s, t);
+    s = choose(s, { cards: [t1, t2, t3] });
     expect([t1, t2, t3].every((t) => s.cards[t]!.state === 'exhausted')).toBe(true);
     expect(s.cards[host]!.state).toBe('refresh');
   });
@@ -396,6 +466,39 @@ describe('Booster Set 06', () => {
     expect(s.cards[host]!.cores).toContain(soul);
     s = choose(s, target);
     expect(s.players.p2.hand).toContain(target);
+  });
+
+  it('ไทคูน + Brave โอเทนตะ: Flash บรรทัดเดียวกันแยกด้วย from · เทิร์นละครั้งของโอเทนตะนับที่ Brave', async () => {
+    const { activatableOptions } = await import('../src');
+    let s = setup();
+    const host = put(s, 'p1', no('จอมทัพใหญ่จักรกล ไทคูน'), 2);
+    const otenta = brave(s, host, 'ดาบเทพธรณี โอเทนตะ');
+    const machine = put(s, 'p1', no('จอมทัพใหญ่จักรกล ไทคูน'), 1);
+    const soul = soulInTrash(s, 'p1');
+    const target = put(s, 'p2', DARIU, 1);
+    s = attack(s, host);
+    s = act(s, { type: 'passFlash', player: 'p2' });
+    // ทั้งสองอันเป็นบรรทัด 1 แต่คนละเจ้าของ
+    expect(activatableOptions(s, db, 'p1', host).map((o) => [o.from, o.ability.source])).toEqual([
+      [host, 1],
+      [otenta, 1],
+    ]);
+    // เลือกของโอเทนตะ (from = Brave) → ทำงานเอฟเฟกต์ของโอเทนตะ ไม่ใช่ของไทคูน
+    s = act(s, { type: 'activate', player: 'p1', cardId: host, source: 1, from: otenta });
+    expect(s.cards[host]!.cores).toContain(soul);
+    s = choose(s, target);
+    expect(s.players.p2.hand).toContain(target);
+    expect(s.players.p1.field).toContain(machine);
+    expect(s.cards[otenta]!.usedThisTurn).toEqual([1]);
+    expect(s.cards[host]!.usedThisTurn).toEqual([]);
+    // โอเทนตะใช้ครบแล้ว แต่ของไทคูนยังใช้ได้ (ไม่ใช้โควตาร่วมกัน)
+    s = act(s, { type: 'passFlash', player: 'p2' });
+    expect(activatableOptions(s, db, 'p1', host).map((o) => o.from)).toEqual([host]);
+    expect(fails(s, { type: 'activate', player: 'p1', cardId: host, source: 1, from: otenta })).toBe('CANNOT_ACTIVATE');
+    s = act(s, { type: 'activate', player: 'p1', cardId: host, source: 1 });
+    if (s.choice) s = choose(s, machine);
+    expect(s.players.p1.hand).toContain(machine);
+    expect(s.cards[host]!.state).toBe('refresh');
   });
 
   it('โควจิกิริ [Flash]: ย้ายเบรฟไปสปิริตอื่น (ผู้ร่วมร่างเดิมเสื่อมสภาพ → ตัวใหม่เสื่อมสภาพ กติกา 04 ข้อ 1)', () => {

@@ -3525,6 +3525,17 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
   const cardH = fx.fromExhausted ? fx.from.w : fx.from.h;
   const cx = fx.from.x + fx.from.w / 2;
   const cy = fx.from.y + fx.from.h / 2;
+  /** Brave ที่ร่วมร่าง: ตำแหน่งบนกระดานตอนเริ่ม (ลอยออกจากช่อง แล้วพุ่งเคียงข้างผู้ร่วมร่าง) · หาไม่เจอ = ติดไปกับการ์ดแบบเดิม */
+  const [braves] = useState(() =>
+    (card?.braves ?? []).flatMap((b, bi, all) => {
+      const r = rectOf(document.querySelector(`[data-brave-card="${b}"]`));
+      return r ? [{ id: b, cardNo: useGame.getState().state.cards[b]!.cardNo, x: r.x + r.w / 2, y: r.y + r.h / 2, right: braveSlot(bi, all.length).right }] : [];
+    }),
+  );
+  const braveRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const gemRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const gems = fx.gems ?? [];
+  const detached = braves.length > 0 && braves.length === (card?.braves.length ?? 0);
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -3565,6 +3576,79 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
       // ผู้โจมตีที่แพ้ (ออกจากสนามแล้ว): ภาพนี้ยืนแทนที่ช่องเดิมไปจนวิ่ง
       { duration: CHARGE_MS, delay: fx.delay, easing: 'cubic-bezier(.5,0,.3,1)', fill: onBoard ? 'forwards' : 'both' },
     );
+    // ---- ของที่พุ่งไปพร้อมกัน (Brave ที่ร่วมร่าง / Gem Symbol): จังหวะเดียวกับการ์ด (offset 0 / 0.2 / HIT_AT ตรงกัน) ----
+    const ux = tx / len;
+    const uy = ty / len;
+    const nx = -uy;
+    const ny = ux;
+    const timing: KeyframeAnimationOptions = { duration: CHARGE_MS, delay: fx.delay, easing: 'cubic-bezier(.5,0,.3,1)', fill: onBoard ? 'forwards' : 'both' };
+    const extra: Animation[] = [];
+    /** ตำแหน่งกลางการ์ดที่วิ่ง (เทียบจุดเริ่ม) ตามคีย์เฟรมของการ์ด */
+    const P = { wind: [-hx * 0.08, -hy * 0.08], hit: [hx, hy], back: fx.dies ? [hx * K, hy * K] : [hx * 0.9, hy * 0.9], end: fx.dies ? [hx * K, hy * K] : [0, 0] };
+    const tr = (x: number, y: number, rot: number, sc: number) => `translate(${x}px,${y}px) rotate(${rot}deg) scale(${sc})`;
+    if (detached) {
+      braves.forEach((b, j) => {
+        const el = braveRefs.current[j];
+        if (!el) return;
+        // ข้างที่อยู่ตอนนี้ (ขวา/ซ้ายของผู้ร่วมร่างตามทิศที่วิ่ง) · ตัวที่ 3 ขึ้นไปออกห่างอีกชั้น
+        const sx = b.x - cx;
+        const sy = b.y - cy;
+        const side = sx * nx + sy * ny >= 0 ? 1 : -1;
+        const d = cardW * (1.22 + 0.8 * Math.floor(j / 2));
+        const slotRot = b.right ? 12 : -12;
+        const at = (px: number, py: number, lat: number, fwd: number) => [px + nx * side * lat + ux * fwd - sx, py + ny * side * lat + uy * fwd - sy] as const;
+        const form = at(P.wind[0]!, P.wind[1]!, d, -cardH * 0.22);
+        const hit = at(P.hit[0]!, P.hit[1]!, d * 0.55, -cardH * 0.02);
+        const back = at(P.back[0]!, P.back[1]!, d * 0.7, 0);
+        const end = [P.end[0]! , P.end[1]!] as const;
+        extra.push(
+          el.animate(
+            [
+              { transform: tr(0, 0, slotRot, 1) },
+              { transform: tr((form[0] + 0) * 0.5, (form[1] + 0) * 0.5 - 18, slotRot * 0.3, 1.3), offset: 0.1 },
+              { transform: tr(form[0], form[1], -side * 4, 1.5), offset: 0.2 },
+              { transform: tr(hit[0], hit[1], 0, 1.62), offset: HIT_AT, easing: 'ease-out' },
+              { transform: tr(back[0], back[1], side * 3, 1.4), offset: fx.dies ? 0.6 : 0.58 },
+              { transform: tr(end[0], end[1], slotRot, 1) },
+            ].map((k) => ({ ...k, opacity: 1 })),
+            timing,
+          ),
+        );
+      });
+    }
+    gems.forEach((_, i) => {
+      const el = gemRefs.current[i];
+      if (!el) return;
+      const m = gems.length;
+      // ลอยออกรอบการ์ด (วงรอบทั้งใบ) → เรียงเป็นวงโค้งด้านหลังการ์ด → พุ่งเข้าเป้าพร้อมการ์ด → แตกเป็นแสงตอนชน
+      const ring = (i / m) * Math.PI * 2 - Math.PI / 2;
+      const pop = [Math.cos(ring) * cardW * 0.62, Math.sin(ring) * cardH * 0.5];
+      // วงโค้งรอบการ์ด: ข้างซ้าย → หลัง → ข้างขวา (เกาะตามการ์ดตลอดทางพุ่ง แล้วค่อยพุ่งนำเข้าเป้าตอนท้าย)
+      const th = m === 1 ? Math.PI * 0.62 : Math.PI / 2 + 0.3 + (i / (m - 1)) * (Math.PI - 0.6);
+      const R = cardH * 0.72;
+      const off = [R * (Math.cos(th) * ux + Math.sin(th) * nx), R * (Math.cos(th) * uy + Math.sin(th) * ny)];
+      const form = [P.wind[0]! + off[0]!, P.wind[1]! + off[1]!];
+      // จุดก่อนชนเล็กน้อย: ตำแหน่งการ์ดตอนนั้น + วงที่หดเข้า
+      const PRE = HIT_AT - 0.07;
+      const f = (PRE - 0.2) / (HIT_AT - 0.2);
+      const pre = [P.wind[0]! + (P.hit[0]! - P.wind[0]!) * f + off[0]! * 0.6, P.wind[1]! + (P.hit[1]! - P.wind[1]!) * f + off[1]! * 0.6];
+      const spread = (i - (m - 1) / 2) * 10;
+      const hit = [tx + nx * spread, ty + ny * spread];
+      extra.push(
+        el.animate(
+          [
+            { transform: tr(0, 0, 45, 0), opacity: 0 },
+            { transform: tr(pop[0]!, pop[1]!, 45 + 90, 1.35), opacity: 1, offset: 0.1 },
+            { transform: tr(form[0]!, form[1]!, 45 + 180, 1), opacity: 1, offset: 0.2 },
+            { transform: tr(pre[0]!, pre[1]!, 45 + 420, 1.15), opacity: 1, offset: PRE },
+            { transform: tr(hit[0]!, hit[1]!, 45 + 540, 1.5), opacity: 1, offset: HIT_AT, easing: 'ease-out' },
+            { transform: tr(hit[0]!, hit[1]!, 45 + 600, 2.8), opacity: 0, offset: Math.min(0.99, HIT_AT + 0.07) },
+            { transform: tr(hit[0]!, hit[1]!, 45 + 600, 2.8), opacity: 0 },
+          ],
+          { ...timing, fill: 'both' },
+        ),
+      );
+    });
     const real = onBoard ? document.querySelector<HTMLElement>(`[data-field-card="${fx.cardId}"]`) : null;
     const swap = setTimeout(() => real && (real.style.visibility = 'hidden'), fx.delay);
     const hit = setTimeout(() => {
@@ -3591,6 +3675,7 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
       clearTimeout(swap);
       if (real) real.style.visibility = '';
       anim.cancel();
+      for (const a of extra) a.cancel();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -3605,8 +3690,8 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
         <Upside on={upsideFor(card?.owner)}>
           <div className="relative h-full w-full">
             <CardFace def={db.get(fx.cardNo)} />
-            {/* Brave ที่ร่วมร่าง วิ่งไปพร้อมผู้ร่วมร่าง */}
-            {(card?.braves ?? []).map((b, bi, all) => (
+            {/* Brave ที่ร่วมร่าง วิ่งไปพร้อมผู้ร่วมร่าง (หาตำแหน่งบนกระดานไม่เจอ: ติดไปกับการ์ด) */}
+            {(detached ? [] : (card?.braves ?? [])).map((b, bi, all) => (
               <div
                 key={b}
                 className={`absolute h-[4.6rem] w-[3.3rem] rounded shadow-[0_4px_10px_rgba(0,0,0,0.7)] ring-2 ring-emerald-300 ${braveSlot(bi, all.length).right ? '-right-8 rotate-12' : '-left-8 -rotate-12'}`}
@@ -3618,6 +3703,44 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
           </div>
         </Upside>
       </div>
+      {/* Brave ที่ร่วมร่าง: ลอยออกจากช่อง ขยายขึ้น แล้วพุ่งชนเคียงข้างผู้ร่วมร่าง กลับเข้าช่องเดิมตอนจบ */}
+      {detached &&
+        braves.map((b, j) => (
+          <div
+            key={b.id}
+            ref={(el) => {
+              braveRefs.current[j] = el;
+            }}
+            className="pointer-events-none fixed z-[42] rounded ring-2 ring-emerald-300 shadow-[0_8px_22px_rgba(0,0,0,0.75),0_0_18px_rgba(110,231,183,0.55)]"
+            style={{ left: b.x - 26.4, top: b.y - 36.8, width: 52.8, height: 73.6, ...(onBoard ? { opacity: 0 } : {}) }}
+          >
+            <Upside on={upsideFor(card?.owner)}>
+              <div className="h-full w-full">
+                <CardFace def={db.get(b.cardNo)} size="xs" />
+              </div>
+            </Upside>
+          </div>
+        ))}
+      {/* Gem Symbol (โจมตีเข้า Life): ถอดออกจากการ์ด ลอยเป็นวง แล้วพุ่งชนไปพร้อมกัน */}
+      {gems.map((color, i) => {
+        const hex = COLOR_HEX[color] ?? '#facc15';
+        return (
+          <div
+            key={i}
+            ref={(el) => {
+              gemRefs.current[i] = el;
+            }}
+            className="pointer-events-none fixed z-[43] h-8 w-8 rounded-md border-2 border-white/90"
+            style={{
+              left: cx - 16,
+              top: cy - 16,
+              opacity: 0,
+              background: `linear-gradient(135deg, #ffffff 0%, ${hex} 42%, ${hex} 70%, rgba(15,23,42,0.85) 100%)`,
+              boxShadow: `0 0 12px ${hex}, 0 0 34px ${hex}, 0 0 60px ${hex}88, inset 0 0 8px rgba(255,255,255,0.85)`,
+            }}
+          />
+        );
+      })}
       {/* หางควันสีตามการ์ด: ปล่อยตั้งแต่เริ่มพุ่ง (หลังถอยตั้งหลัก) จนชนเป้าหมาย · วางหลังการ์ดใน DOM: ชั้นหน้า (z 42 เท่าการ์ด) จึงทับการ์ด */}
       <SmokeTrail
         follow={ref}

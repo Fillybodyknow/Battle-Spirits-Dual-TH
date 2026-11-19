@@ -201,8 +201,8 @@ describe('Booster Set 05', () => {
     const fresh = put(s, 'p2', DARIU, 1);
     const tired = put(s, 'p2', DARIU, 1, false, 'exhausted');
     s = attack(s, rinne);
-    // เมื่อโจมตี: ส่งคอร์บนสปิริตคู่แข่ง 2 เม็ด (ทีละเม็ด)
-    while (s.choice?.kind === 'card') s = choose(s, s.choice.candidates[0]!);
+    // เมื่อโจมตี: ส่งคอร์บนสปิริตคู่แข่ง 2 เม็ด (แบ่งทีเดียว: ตัวละ 1 เม็ด)
+    if (s.choice?.kind === 'distribute') s = choose(s, { alloc: { [fresh]: 1, [tired]: 1 } });
     s = passFlashes(s);
     const can = blockersFor(s, db, 'p2');
     expect(can).not.toContain(fresh);

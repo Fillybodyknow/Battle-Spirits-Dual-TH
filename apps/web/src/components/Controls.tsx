@@ -3,6 +3,8 @@ import { bpOf, cardLevel, currentBp, isSpiritLike, levelOf, minCores, opponentOf
 import { cardName, formatEvent, playerLabel } from '../format';
 import {
   actingPlayer,
+  allocOf,
+  pickedOf,
   blockCandidates,
   controls,
   db,
@@ -128,6 +130,8 @@ export function PromptBar() {
   const bottom = useGame(viewPlayer);
   const multi = useGame((s) => s.multi);
   const attackConfirm = useGame((s) => s.attackConfirm);
+  const alloc = useGame(allocOf);
+  const picked = useGame(pickedOf);
   const { confirmAttack } = useGame.getState();
   const { dispatch, clearCores, choose, confirmEvolve, closeEvolve, confirmCores, cancelCores, multiNext, multiBack, multiAsSpirit } = useGame.getState();
   const actor = actingPlayer(state);
@@ -252,6 +256,19 @@ export function PromptBar() {
     } else if (choice.kind === 'arrange') {
       tag = 'target';
       detail = `${src} · คลิกการ์ดตามลำดับ แล้วกดยืนยัน`;
+    } else if (choice.kind === 'multiCard') {
+      // เลือกหลายใบทีเดียว: คลิกการ์ด = เลือก/ยกเลิก · ครบแล้วยืนยัน ผลเกิดกับทุกใบพร้อมกัน
+      tag = 'target';
+      detail = `${src} · คลิกการ์ดที่เรืองแสงสีชมพูเพื่อเลือก/ยกเลิก · เลือกแล้ว ${picked.length}/${choice.count}`;
+      add('reset', 'ล้าง', () => useGame.getState().clearPicks(), 'secondary', picked.length === 0);
+      add('ok', `ยืนยัน ${picked.length}/${choice.count}`, () => choose({ cards: picked }), 'primary', picked.length !== choice.count, `เลือกอีก ${choice.count - picked.length} ใบ`);
+    } else if (choice.kind === 'distribute') {
+      // แบ่งคอร์ที่จะส่งออก: คลิกการ์ด = +1 เม็ด · ปุ่ม − บนการ์ด = ลด · ครบแล้วยืนยันทีเดียว
+      tag = 'target';
+      const sum = Object.values(alloc).reduce((a, b) => a + b, 0);
+      detail = `${src} · คลิกการ์ดที่เรืองแสงสีชมพู 1 ครั้ง = 1 เม็ด (กด − บนการ์ดเพื่อลด) · เลือกแล้ว ${sum}/${choice.total}`;
+      add('reset', 'ล้าง', () => useGame.getState().allocClear(), 'secondary', sum === 0);
+      add('ok', `ยืนยัน ${sum}/${choice.total}`, () => choose({ alloc }), 'primary', sum !== choice.total, `เลือกอีก ${choice.total - sum} เม็ด`);
     } else if (isInlineChoice(state) && choice.kind === 'card') {
       tag = 'target';
       detail = `${src} · คลิกการ์ดที่เรืองแสงสีชมพู`;

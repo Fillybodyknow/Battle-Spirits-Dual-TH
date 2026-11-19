@@ -179,9 +179,11 @@ export function formatEvent(e: GameEvent, s: GameState): string | null {
     case 'attackBanned':
       return `ในเทิร์นนี้ สปิริตของ${playerLabel(e.player)}โจมตีไม่ได้`;
     case 'activated': {
-      const ab = db.get(s.cards[e.cardId]!.cardNo).abilities.find((a) => (a.kind === 'activated' || a.kind === 'onStage') && a.source === e.source);
+      // เอฟเฟกต์ที่ Brave ให้: ข้อความอยู่ที่การ์ด Brave (from)
+      const owner = e.from ?? e.cardId;
+      const ab = db.get(s.cards[owner]!.cardNo).abilities.find((a) => (a.kind === 'activated' || a.kind === 'onStage') && a.source === e.source);
       if (ab?.kind === 'onStage') return `${playerLabel(e.player)} ใช้ ${name(e.cardId)}: ${ab.label}`;
-      return `${playerLabel(e.player)} ใช้เอฟเฟกต์ [Flash] ของ ${name(e.cardId)}${ab?.kind === 'activated' ? `: ${ab.label}` : ''}`;
+      return `${playerLabel(e.player)} ใช้เอฟเฟกต์ [Flash] ของ ${name(e.cardId)}${owner !== e.cardId ? ` (จาก ${name(owner)})` : ''}${ab?.kind === 'activated' ? `: ${ab.label}` : ''}`;
     }
     case 'coresRemoved':
       return `${name(e.cardId)} ถูกส่งคอร์ ${e.count} เม็ดไป${e.to === 'trash' ? 'แทรช' : e.to === 'void' ? 'วอยด์' : 'รีเสิร์ฟ'}`;

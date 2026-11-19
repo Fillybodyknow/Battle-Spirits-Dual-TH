@@ -114,8 +114,8 @@ describe('SD04 เมจิค', () => {
     const a = put(s, 'p2', DARIU, 1);
     const b = put(s, 'p2', DARIU, 1);
     let x = fireball(s, '', true);
-    x = choose(x, a);
-    x = choose(x, b);
+    expect(x.choice).toMatchObject({ kind: 'multiCard', count: 2 });
+    x = choose(x, { cards: [a, b] });
     expect(x.players.p2.field).toEqual([]);
   });
 

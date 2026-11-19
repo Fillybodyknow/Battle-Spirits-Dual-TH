@@ -464,6 +464,16 @@ export type Step =
    * soul = ผลที่เลือกแล้ว · byOpponent = เอฟเฟกต์ของคู่แข่ง (เช็กสูญสลายโดยคู่แข่ง)
    */
   | { do: 'coresOff'; cardId: string; n: number; to: 'reserve' | 'trash' | 'void'; byOpponent: boolean; soul?: boolean }
+  /**
+   * (ภายใน engine) ส่งคอร์ออกจากหลายตัวตามที่แบ่งไว้ (choice distribute) ทีเดียว:
+   * ถาม Kagemusha ของทุกเป้าก่อน (kage = ผู้เลือกคือผู้ควบคุมเอฟเฟกต์) → ถามเรื่อง Soul Core ของแต่ละตัว → ส่งออกพร้อมกัน
+   */
+  /**
+   * (ภายใน engine) ผลของการเลือกหลายใบทีเดียว (choice multiCard): step = step เดิม (count 1) · player = ผู้เลือก
+   * ถาม Kagemusha ของทุกเป้าก่อน (kage) แล้วทำผลกับทีละใบต่อกันทันที
+   */
+  | { do: 'applyPicks'; picks: string[]; step: Step; player: 'p1' | 'p2'; kage: boolean }
+  | { do: 'coresOffBatch'; alloc: { cardId: string; n: number; soul?: boolean }[]; to: 'reserve' | 'trash' | 'void'; kage: boolean }
   /** ทิ้งใบบนสุดเด็คเราเอง */
   | { do: 'millSelf'; count: number }
   /** ในการต่อสู้นี้ ผู้โจมตีจะไม่ถูกป้องกัน (by: 'spirits' = ไม่ถูกป้องกันโดยสปิริตเท่านั้น) */

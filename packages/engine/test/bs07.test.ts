@@ -428,9 +428,10 @@ describe('Booster Set 07', () => {
     s = choose(s, b2);
     expect(s.cards[x]!.braves).toEqual([b1, b2]);
     s = act(s, { type: 'declareAttack', player: 'p1', attackerId: x });
-    while (s.choice && s.choice.kind !== 'card') s = choose(s, (s.choice as { options: string[] }).options.length - 1);
-    s = choose(s, o1);
-    s = choose(s, o2);
+    while (s.choice && s.choice.kind === 'option') s = choose(s, s.choice.options.length - 1);
+    // เบรฟ 2 ใบ = 2 ตัว เลือกทีเดียว
+    expect(s.choice).toMatchObject({ kind: 'multiCard', count: 2 });
+    s = choose(s, { cards: [o1, o2] });
     expect(s.players.p2.deck.slice(-2)).toEqual([o1, o2]);
   });
 

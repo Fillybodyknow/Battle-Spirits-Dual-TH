@@ -47,6 +47,7 @@ import {
   quickAnyCores,
   trashSummonRule,
   activatableAbilities,
+  activatableOptions,
 } from './rules';
 import {
   DEFAULT_CONFIG,
@@ -821,20 +822,23 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     runQueue(ctx);
   },
 
-  activate(ctx, { player, cardId, source }) {
+  activate(ctx, { player, cardId, source, from }) {
     const { s, db } = ctx;
     const flash = s.battle?.flash;
     if (!flash) fail('WRONG_PHASE', 'ใช้เอฟเฟกต์ Flash ได้เฉพาะใน Flash timing');
     if (flash.priority !== player) fail('NOT_YOUR_PRIORITY', 'ยังไม่ถึงตาคุณใน Flash timing');
     if (s.battle?.noFlash === player) fail('NO_FLASH', 'ในการต่อสู้นี้ใช้เอฟเฟกต์แฟลชไม่ได้');
-    const card = fieldCard(s, player, cardId);
-    const ab = activatableAbilities(s, db, player, cardId).find((a) => a.source === source);
-    if (!ab) fail('CANNOT_ACTIVATE', 'ใช้เอฟเฟกต์นี้ไม่ได้ตอนนี้');
-    card.usedThisTurn.push(source);
-    emit(ctx, { type: 'activated', player, cardId, source });
+    fieldCard(s, player, cardId);
+    // from = การ์ดเจ้าของเอฟเฟกต์ (ผู้ร่วมร่างกับ Brave อาจมีเอฟเฟกต์บรรทัดเดียวกัน)
+    const opt = activatableOptions(s, db, player, cardId).find((o) => o.ability.source === source && (from === undefined || o.from === from));
+    if (!opt) fail('CANNOT_ACTIVATE', 'ใช้เอฟเฟกต์นี้ไม่ได้ตอนนี้');
+    const ab = opt.ability;
+    // นับ "เทิร์นละ N ครั้ง" ที่การ์ดเจ้าของเอฟเฟกต์
+    s.cards[opt.from]!.usedThisTurn.push(source);
+    emit(ctx, { type: 'activated', player, cardId, source, ...(opt.from !== cardId ? { from: opt.from } : {}) });
     flash.consecutivePasses = 0;
     flash.priority = opponentOf(player);
-    enqueue(ctx, { controller: player, sourceId: ab.granted ? activatedSourceCard(s, db, cardId, source) : cardId, steps: [...ab.steps], paidWithSoul: false, trashWhenDone: false, source });
+    enqueue(ctx, { controller: player, sourceId: ab.granted ? opt.from : cardId, steps: [...ab.steps], paidWithSoul: false, trashWhenDone: false, source });
     runQueue(ctx);
   },
 
