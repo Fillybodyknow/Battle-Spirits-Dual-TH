@@ -16,6 +16,11 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '22.0.1',
+    date: '2026-11-20',
+    items: ['หน้ารายละเอียดการ์ด แสดงป้าย [ร่วมร่าง] หน้าเอฟเฟกต์ที่ทำงานเฉพาะตอนสปิริตมีเบรฟร่วมร่างอยู่ (เช่น สัตว์เทพเพลิง โฮมุระวูล์ฟ)'],
+  },
+  {
     version: '22.0.0',
     date: '2026-11-20',
     items: [
