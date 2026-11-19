@@ -17,6 +17,10 @@ import { SettingsDialog } from '../components/SettingsDialog';
 import { Icon } from '../components/Icon';
 import { sfx } from '../sfx';
 import { deckCover } from './shared';
+import { BTN } from '../components/Modal';
+import { useNeedsWelcome } from '../tutorial/TutorialMenu';
+import { markPrompted, startTutorial } from '../tutorial/tutorial';
+import { LESSONS } from '../tutorial/lessons';
 
 /** ประกายลอยขึ้น (ตำแหน่ง/ความเร็วตายตัวตามลำดับ ไม่สุ่มทุกครั้งที่วาด) */
 const MOTES = Array.from({ length: 36 }, (_, i) => ({
@@ -101,7 +105,11 @@ function Emblem() {
  * ฉากเข้าเกม: อุโมงค์เนบิวลาหมุนวน + เส้นความเร็ว · การ์ด (หลังการ์ดของเกมปนภาพการ์ดจริง) พุ่งออกจากกลางจอเข้าหากล้อง → แสงวาบ
  * ค่าของแต่ละใบตายตัวตามลำดับ (ไม่สุ่มทุกครั้งที่วาด) · กราฟิกต่ำ = การ์ดครึ่งเดียว
  */
-function WarpOut() {
+/**
+ * hold = ค้างฉากนี้ไว้ (ID ใหม่: รอเลือกเริ่มบทเรียน/ข้าม) การ์ดพุ่งวนไม่หยุด ไม่มีแสงวาบ
+ * leaving = แสงวาบทันที (ออกจากฉากค้าง)
+ */
+function WarpOut({ hold = false, leaving = false }: { hold?: boolean; leaving?: boolean }) {
   // การ์ดน้อย ใหญ่ ช้า ให้มองเห็นแต่ละใบชัด (เจ้าของโปรเจกต์ปรับ: เดิม 28 ใบ เล็กและเร็วเกินไป)
   const count = effects().blur ? 12 : 7;
   const fronts = useMemo(
@@ -135,7 +143,7 @@ function WarpOut() {
           // ไม่ใช้ filter: blur บน element ใหญ่ขนาดนี้ (เบราว์เซอร์บางตัวไม่วาดชั้นนี้เลย) · conic ไล่สีนุ่มอยู่แล้ว
           background:
             'conic-gradient(from 0deg, #6d28d9, #1d4ed8, #a21caf, #312e81, #7c3aed, #0e7490, #9333ea, #1e3a8a, #6d28d9)',
-          animation: 'login-vortex 3.3s cubic-bezier(.5,0,.8,.6) both',
+          animation: hold ? 'login-vortex 3.3s cubic-bezier(.5,0,.8,.6) both, login-vortex-loop 40s linear 3.3s infinite' : 'login-vortex 3.3s cubic-bezier(.5,0,.8,.6) both',
         }}
       />
       {/* ก้อนแสงม่วงซ้าย / ฟ้าขวา */}
@@ -188,13 +196,14 @@ function WarpOut() {
                 '--rx': c.rx,
                 '--ry': c.ry,
                 '--rz': c.rz,
-                animation: `login-warp-card ${c.dur}s cubic-bezier(.55,0,.9,.5) ${c.delay}s both`,
+                animation: `login-warp-card ${c.dur}s cubic-bezier(.55,0,.9,.5) ${c.delay}s ${hold ? 'infinite' : 'both'}`,
               } as React.CSSProperties
             }
           />
         ))}
       </div>
       {/* มุมขวาล่าง: กำลังเชื่อมต่อ */}
+      {!hold && (
       <div className="absolute right-8 bottom-6 flex items-center gap-2 text-white" style={{ animation: 'login-tap 1.2s ease-in-out infinite' }}>
         <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
           <rect x="6" y="3" width="12" height="18" rx="2" transform="rotate(-14 12 12)" />
@@ -202,8 +211,9 @@ function WarpOut() {
         </svg>
         <span className="text-xl font-black tracking-wider italic [text-shadow:0_0_10px_rgba(255,255,255,0.6)]">CONNECTING</span>
       </div>
-      {/* ปิดท้าย: แสงวาบ */}
-      <div className="absolute inset-0 bg-white" style={{ animation: 'login-flash 0.5s ease-in 2.8s both' }} />
+      )}
+      {/* ปิดท้าย: แสงวาบ (ค้างฉาก = วาบตอนเลือกแล้วเท่านั้น) */}
+      {(!hold || leaving) && <div className="absolute inset-0 bg-white" style={{ animation: hold ? 'login-flash 0.5s ease-in both' : 'login-flash 0.5s ease-in 2.8s both' }} />}
     </div>
   );
 }
@@ -277,15 +287,34 @@ const PILL_BTN =
 export function Login({ onEnter }: { onEnter: () => void }) {
   const { ready, user, error } = useAccount();
   const [phase, setPhase] = useState<'title' | 'login' | 'entering'>('title');
+  // ID ใหม่: ค้างฉากการ์ดพุ่งไว้ แล้วชวนเล่นบทเรียน (เริ่ม = เข้าบทที่ 1 · ข้าม = หน้าหลัก)
+  const needsWelcome = useNeedsWelcome();
+  const [hold, setHold] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const leave = (tutorial: boolean) => {
+    if (leaving) return;
+    sfx('click');
+    markPrompted();
+    setLeaving(true);
+    setTimeout(() => sfx('impact'), 80);
+    setTimeout(() => {
+      if (tutorial) startTutorial(LESSONS[0]!.id);
+      onEnter();
+    }, 520);
+  };
   const [dialog, setDialog] = useState<'settings' | 'account' | null>(null);
 
   // เข้าเกม: ฉากการ์ดพุ่งออกจากอุโมงค์ (~3.3 วิ) แล้วแสงวาบเข้าหน้าหลัก
   const enter = useCallback(() => {
     setPhase('entering');
     sfx('whoosh');
+    if (needsWelcome) {
+      setHold(true);
+      return;
+    }
     setTimeout(() => sfx('impact'), 2750);
     setTimeout(onEnter, 3300);
-  }, [onEnter]);
+  }, [onEnter, needsWelcome]);
 
   const start = useCallback(() => {
     if (!ready || phase !== 'title' || dialog) return;
@@ -450,7 +479,33 @@ export function Login({ onEnter }: { onEnter: () => void }) {
       )}
 
       {/* เข้าเกม: การ์ดพุ่งออกจากอุโมงค์ แล้วแสงวาบ */}
-      {phase === 'entering' && <WarpOut />}
+      {phase === 'entering' && <WarpOut hold={hold} leaving={leaving} />}
+      {phase === 'entering' && hold && !leaving && (
+        <div className="absolute inset-0 z-[60] flex items-center justify-center p-6" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="hud-panel flex w-[min(560px,92vw)] flex-col gap-4 rounded-2xl border border-yellow-300/50 p-6 shadow-[0_0_60px_rgba(167,139,250,0.45)]"
+            style={{ animation: 'fx-slide-up 0.45s cubic-bezier(.2,.9,.3,1) 1.4s both' }}
+          >
+            <div>
+              <div className="text-xs font-bold tracking-[0.3em] text-yellow-200/80">WELCOME</div>
+              <div className="text-2xl font-black text-white">ยินดีต้อนรับนักดวลหน้าใหม่!</div>
+            </div>
+            <p className="text-sm leading-relaxed text-slate-200">
+              เล่นบทเรียนพื้นฐานก่อนไหม? พาดูสนาม อัญเชิญสปิริต และโจมตีจนชนะ บนกระดานจริงทีละขั้น ใช้เวลาไม่กี่นาที
+              <br />
+              <span className="text-slate-400">กลับมาเล่นได้ทุกเมื่อจากเมนู TUTORIAL ในหน้าหลัก</span>
+            </p>
+            <div className="flex justify-end gap-2">
+              <button type="button" className={BTN.secondary} onClick={() => leave(false)}>
+                ข้าม
+              </button>
+              <button type="button" className={`${BTN.primary} px-8`} onClick={() => leave(true)}>
+                เริ่มบทเรียน
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

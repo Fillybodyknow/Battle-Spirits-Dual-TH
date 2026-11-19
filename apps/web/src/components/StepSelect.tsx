@@ -81,6 +81,7 @@ export function StepSelectDialog({ onClose }: { onClose: () => void }) {
                   {isCur && <div className="absolute -top-6 text-xs font-black text-amber-300">ตอนนี้</div>}
                   <button
                     type="button"
+                    data-tutorial={`step-${st.id}`}
                     disabled={!target}
                     onClick={() => pick(st.id)}
                     className={`group relative flex h-[84px] w-[76px] flex-col items-center justify-center gap-0.5 transition ${
@@ -142,6 +143,7 @@ export function TurnBadge() {
     <>
       <button
         type="button"
+        data-tutorial="turn-badge"
         key={`${turn}-${phase}`}
         disabled={!ctl}
         onClick={() => setOpen(true)}

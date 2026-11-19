@@ -58,6 +58,21 @@ export type PlayKind = 'summon' | 'deployNexus' | 'useMagic';
 export type PlayCores = { marks: Record<string, 'pay' | 'place'>; manual: boolean; allowPlace: boolean; pool: string[] };
 export type MagicTiming = 'main' | 'flash';
 
+// ---------------------------------------------------------------- บทเรียน (tutorial)
+
+/**
+ * ตัวกั้น action ระหว่างเล่นบทเรียน (src/tutorial): guard คืน false = ไม่ให้ทำ action นี้ (ผู้เล่นทำนอกขั้นตอน)
+ * after = แจ้งหลัง action ทำสำเร็จ (ใช้เลื่อนขั้นบทเรียน) · null = ไม่ได้เล่นบทเรียน
+ */
+export interface TutorialHooks {
+  guard(action: Action): boolean;
+  after(action: Action): void;
+}
+let tutorialHooks: TutorialHooks | null = null;
+export function setTutorialHooks(h: TutorialHooks | null) {
+  tutorialHooks = h;
+}
+
 // ---------------------------------------------------------------- selectors (pure)
 
 /** ผู้เล่นที่ต้องตัดสินใจตอนนี้ */
@@ -2191,6 +2206,8 @@ interface Store {
   setPlayerName(name: string): void;
   /** เริ่มเกมเล่นเครื่องเดียวด้วยเด็คที่เลือก แล้วไปหน้ากระดาน */
   startLocal(decks: DeckChoice): void;
+  /** เริ่มเกมจาก state ที่จัดไว้แล้ว (บทเรียน): ไม่มีฉากเปิดเกม · ไม่นับเป็นเกมเครื่องเดียวที่เล่นต่อได้ */
+  startScripted(state: GameState): void;
   /** มีเกมเครื่องเดียวที่เล่นค้างอยู่ (กลับไปเล่นต่อได้) */
   localInProgress: boolean;
   /** ก่อนเริ่มเกม: คนชนะการเสี่ยง และผู้เริ่มก่อนที่เลือก (null = ยังเลือกอยู่) */
@@ -2963,6 +2980,9 @@ export const useGame = create<Store>((set, get) => {
     deckReturn: 'home',
     deckPick: null,
     pregame: null,
+    startScripted: (state) => {
+      set({ ...resetUi, state, truth: null, history: [], error: null, fx: [], holds: {}, pregame: null, viewTurn: state.turnPlayer, screen: 'game', localInProgress: false });
+    },
     startLocal: (decks) => {
       set({ decks });
       get().newGame();
@@ -3151,7 +3171,15 @@ export const useGame = create<Store>((set, get) => {
 
     dispatch(action) {
       const on = get().online;
-      if (!on) return get().applyLocal(action);
+      if (!on) {
+        if (tutorialHooks && !tutorialHooks.guard(action)) {
+          sfx('error');
+          return false;
+        }
+        const ok = get().applyLocal(action);
+        if (ok) tutorialHooks?.after(action);
+        return ok;
+      }
       // ออนไลน์: ตรวจในเครื่องก่อน แล้วส่งเข้าห้อง (ทั้งสองเครื่องทำ action เมื่อได้รับกลับมาตามลำดับ)
       if (on.status !== 'playing') {
         set({ error: 'รอคู่แข่งเข้าห้องก่อน' });

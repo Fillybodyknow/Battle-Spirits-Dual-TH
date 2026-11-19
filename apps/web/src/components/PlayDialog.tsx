@@ -181,7 +181,7 @@ function PlayDialogInner({ cardId, kind, timing, braveOnto }: { cardId: string; 
 
   return (
     <div className="pointer-events-none fixed inset-y-0 left-0 right-[var(--sidebar)] z-[38]">
-      <div className="hud-panel pointer-events-auto absolute flex gap-3 rounded-xl p-3" style={{ ...style, width: PANEL_W }}>
+      <div data-tutorial="play-panel" className="hud-panel pointer-events-auto absolute flex gap-3 rounded-xl p-3" style={{ ...style, width: PANEL_W }}>
         <div className="flex w-24 shrink-0 flex-col gap-1">
           <div className="h-34 w-24" onMouseEnter={() => hover(cardId)} onMouseLeave={() => hover(null)}>
             <CardFace def={def} level={level} />

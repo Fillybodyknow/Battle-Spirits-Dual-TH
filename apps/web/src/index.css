@@ -496,6 +496,7 @@ input:-webkit-autofill:focus {
 /* ฉากเข้าเกม: การ์ดพุ่งออกจากอุโมงค์ (Login.tsx WarpOut) */
 @keyframes login-warp-bg { from { opacity: 0; } to { opacity: 1; } }
 @keyframes login-vortex { from { transform: translate(-50%, -50%) rotate(0deg) scale(0.6); } to { transform: translate(-50%, -50%) rotate(-220deg) scale(1.25); } }
+@keyframes login-vortex-loop { from { transform: translate(-50%, -50%) rotate(-220deg) scale(1.25); } to { transform: translate(-50%, -50%) rotate(-580deg) scale(1.25); } }
 @keyframes login-streak { 0% { transform: translateX(4vmax) scaleX(0.05); opacity: 0; } 30% { opacity: 1; } 100% { transform: translateX(30vmax) scaleX(1); opacity: 0; } }
 @keyframes login-warp-card {
   0% { transform: translate(-50%, -50%) translate3d(0, 0, -2000px) rotateZ(0deg); opacity: 0; }
@@ -899,3 +900,5 @@ html.gfx-no-blur *::after {
 @keyframes idol-note-float { 0%, 100% { transform: translateY(0) rotate(-8deg); opacity: 0.6; } 50% { transform: translateY(-6px) rotate(8deg); opacity: 1; } }
 @keyframes idol-bulbs { from { filter: drop-shadow(0 0 6px rgba(250,204,21,0.9)) brightness(1); } to { filter: drop-shadow(0 0 2px rgba(250,204,21,0.4)) brightness(0.6); } }
 @keyframes idol-wave { from { transform: translate(-50%, -50%) scale(0.7); opacity: 0.9; } to { transform: translate(-50%, -50%) scale(1.5); opacity: 0; } }
+/* บทเรียน: กรอบจุดที่ต้องกด */
+@keyframes tutorial-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }

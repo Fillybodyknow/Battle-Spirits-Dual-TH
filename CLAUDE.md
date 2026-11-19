@@ -180,6 +180,12 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
   กฎ Realtime Database อยู่ที่ `database.rules.json` (+ `firebase.json`) ไม่ได้ deploy อัตโนมัติ: แก้ path ใหม่ใน DB ต้องแก้ไฟล์นี้
   แล้วให้เจ้าของโปรเจกต์วางใน Firebase Console → Realtime Database → Rules (หรือ `npx firebase-tools deploy --only database`)
   ไม่งั้น path ใหม่ถูกปฏิเสธ (เช่น `lobby` ใช้ไม่ได้ = รายการห้องว่าง แต่เข้าด้วยรหัสยังได้)
+- **บทเรียน (`src/tutorial/`)**: เมนู TUTORIAL หน้าหลัก + ชวนเล่นครั้งเดียวสำหรับ ID ใหม่ (บัญชีสร้างตั้งแต่ `TUTORIAL_SINCE`, กดข้ามได้): ค้างฉากวาร์ปของ Login.tsx (`WarpOut hold`) แล้วขึ้นแผงชวน · ป้ายในหน้าหลักเป็นทางสำรอง · ใช้การ์ด SD01 · กล่องข้อความล้วน (เจ้าของโปรเจกต์กำหนด)
+  - `lessons.ts` = ข้อมูลบทเรียน: `setup()` จัด state ด้วย engine (เด็คไม่สับ, `put` วางการ์ดลงสนาม) · ขั้น = `focus`/`allow` (selector ที่ส่องไฟ/กดได้), `expect` (action ที่รอ), `until` (รอ state), `draw` (โชว์หน้ากดจั่ว), `free` (เล่นอิสระ: action ฝั่งเราได้หมด กล่องข้อความย่อ) · `bot` = คู่แข่งตัดสินใจ (null = `smartBot`: จั่ว/อัญเชิญเทิร์นละ 1 ถ้า `botSummons`/โจมตี/ป้องกันเมื่อ BP สูงกว่า/ผ่าน Flash) · `passed` = ด่านที่ต้องชนะ (แพ้ = ลองใหม่)
+  - `tutorial.ts` = ตัวรัน: `store.setTutorialHooks` กั้น action ใน `dispatch` (นอกขั้นตอน = ไม่ทำ) · `startScripted(state)` เริ่มเกมไม่มีฉากเปิด · มุมมองคงที่ฝั่ง p1 ระหว่างเรียน
+  - `TutorialOverlay.tsx` = ไฟส่อง + กล่องข้อความ + บล็อกการกดทุกที่ (capture) ยกเว้นจุดใน focus/allow ของขั้นที่รอ action
+  - จุดที่ส่องไฟใช้ `data-tutorial="..."` (turn-badge, step-<สเต็ป>, play-panel, hand-menu, phase-btn = PASS, prompt-<key> = ปุ่มในแถบคำสั่ง เช่น prompt-opt0 / prompt-pay · `data-tutorial-lock` = ปุ่มมุมซ้ายบนที่กดไม่ได้แม้เล่นอิสระ) และ data-* เดิม (`data-life`, `data-reserve`, `data-hand-card` ฯลฯ): เปลี่ยน UI ตรงนี้ต้องดูบทเรียนด้วย
+  - ความคืบหน้า = localStorage `bs-tutorial` (อยู่ใน `SETTING_KEYS` ซิงก์ตามบัญชี)
 
 ## ทดสอบ UI
 

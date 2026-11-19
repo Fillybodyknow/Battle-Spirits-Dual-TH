@@ -16,6 +16,8 @@ export interface CloudUser {
   email: string | null;
   /** ล็อกอินด้วยอะไร */
   provider: 'google' | 'password';
+  /** เวลาที่สร้างบัญชี (ms) · ไม่รู้ = undefined (บัญชีจำลองในเครื่อง) */
+  createdAt?: number;
 }
 
 export interface CloudProfile {

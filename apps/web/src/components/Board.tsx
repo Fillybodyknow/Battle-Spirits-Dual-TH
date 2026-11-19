@@ -1230,7 +1230,7 @@ function HandCard({ cardId, hidden, small, fan, shown: order }: { cardId: string
         )}
       </div>
       {selected && (
-        <div className={`absolute inset-x-0 z-20 flex flex-col ${fan?.top ? "top-full mt-4" : "bottom-full mb-4"} gap-1 rounded-lg border border-yellow-300/60 bg-slate-900 p-1.5 shadow-xl`}>
+        <div data-tutorial="hand-menu" className={`absolute inset-x-0 z-20 flex flex-col ${fan?.top ? "top-full mt-4" : "bottom-full mb-4"} gap-1 rounded-lg border border-yellow-300/60 bg-slate-900 p-1.5 shadow-xl`}>
           {options.length === 0 && <span className="px-1 text-xs text-slate-400">ใช้ตอนนี้ไม่ได้</span>}
           {options.map((o) => (
             <button

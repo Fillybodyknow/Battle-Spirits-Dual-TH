@@ -12,6 +12,9 @@ import { DECKS, db, onlineAvailable, useGame, type DeckId, playableDecks } from 
 import { deckInfo } from '../decks';
 import { playerId, useAccount } from '../account/account';
 import { AccountDialog, AvatarImg } from '../components/AccountDialog';
+import { TutorialMenu, TutorialWelcome } from '../tutorial/TutorialMenu';
+import { useTutorial } from '../tutorial/tutorial';
+import { LESSONS } from '../tutorial/lessons';
 import { CardArt, DeckTile, GLOW, deckColor, deckCover, deckSize } from './shared';
 
 /** คู่การ์ด X-Rare ที่หมุนแสดงทางขวาของหน้าหลัก */
@@ -314,6 +317,8 @@ export function Home() {
   const [local, setLocal] = useState(false);
   const [sound, setSound] = useState(sfxSettings());
   const [settings, setSettings] = useState(false);
+  const [tutorial, setTutorial] = useState(false);
+  const tutorialLeft = useTutorial((s) => LESSONS.some((l) => !s.progress.done.includes(l.id)));
 
   return (
     <div className="game-bg relative h-screen min-w-[1200px] overflow-hidden">
@@ -338,6 +343,7 @@ export function Home() {
           <MenuItem big title="DUEL" sub="ดวลออนไลน์กับเพื่อน" onClick={() => setScreen('lobby')} disabled={!onlineAvailable} badge={onlineAvailable ? 'ONLINE' : undefined} />
           <MenuItem title="LOCAL" sub="เล่นเครื่องเดียว สองคนสลับกัน" onClick={() => setLocal(true)} />
           <MenuItem title="DECK" sub="เด็คของฉัน · จัดเด็ค · ของตกแต่ง" onClick={() => setScreen('mydeck')} />
+          <MenuItem title="TUTORIAL" sub="บทเรียนพื้นฐาน · เรียนวิธีเล่นทีละขั้น" onClick={() => setTutorial(true)} badge={tutorialLeft ? 'NEW' : undefined} />
           {!onlineAvailable && <p className="mt-1 text-xs text-amber-300/80">ยังไม่ได้ตั้งค่า Firebase: ดวลออนไลน์ไม่ได้</p>}
         </nav>
 
@@ -380,6 +386,8 @@ export function Home() {
       </div>
 
       {local && <LocalSetup onClose={() => setLocal(false)} />}
+      {tutorial && <TutorialMenu onClose={() => setTutorial(false)} />}
+      <TutorialWelcome />
       {settings && (
         <SettingsDialog
           onClose={() => {

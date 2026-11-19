@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { controls, isFxBlocking, useGame } from '../store';
 import { sfx } from '../sfx';
 import { CardBack } from './CardFace';
+import { currentStep, useTutorial } from '../tutorial/tutorial';
 
 /**
  * Draw Step แบบกดจั่วเอง: การ์ดใบบนสุดของเด็คลอยขึ้นมากลางจอ กดเพื่อจั่ว
@@ -15,6 +16,8 @@ export function DrawPrompt() {
   const busy = useGame((s) => s.fx.some((f) => f.kind === 'banner') || isFxBlocking(s.fx));
   const deckLeft = useGame((s) => (player ? s.state.players[player].deck.length : 0));
   const mine = !!player && controls({ online }, player);
+  // บทเรียน: แสดงเฉพาะขั้นที่สอนจั่ว (ขั้นอื่นไม่บังคำอธิบาย)
+  const tutorialHide = useTutorial((t) => !!t.lesson && !currentStep(t)?.draw);
 
   const draw = () => {
     if (!player) return;
@@ -28,7 +31,7 @@ export function DrawPrompt() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mine, animations, player]);
 
-  if (!mine || busy || !animations) return null;
+  if (!mine || busy || !animations || tutorialHide) return null;
   return (
     <div className="fixed inset-0 z-[45] flex cursor-pointer items-center justify-center bg-black/40" onClick={draw} style={{ animation: 'fx-fade-in 0.25s ease-out both' }}>
       <div className="flex flex-col items-center gap-5">

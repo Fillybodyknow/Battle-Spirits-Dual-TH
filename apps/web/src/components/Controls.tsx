@@ -384,6 +384,7 @@ export function PromptBar() {
       <button
         key={a.key}
         type="button"
+        data-tutorial={`prompt-${a.key}`}
         title={a.label}
         className={`${BTN[a.kind]} ${wide ? 'w-full text-left whitespace-normal' : 'max-w-full min-w-0 truncate'}`}
         onClick={a.onClick}
@@ -580,6 +581,7 @@ function PhaseButton({ btn }: { btn: { label: string; sub: string; onClick: () =
   return (
     <button
       type="button"
+      data-tutorial="phase-btn"
       onClick={btn.onClick}
       className="flex h-8 shrink-0 items-center gap-2 rounded-full border border-amber-200/80 bg-gradient-to-b from-amber-300 via-amber-500 to-orange-600 pr-4 pl-1.5 font-black text-slate-950 shadow-[0_0_14px_rgba(251,191,36,0.45),inset_0_1px_0_rgba(255,255,255,0.5)] transition hover:brightness-110 active:scale-95"
       style={{ animation: 'phase-btn-pulse 2s ease-in-out infinite' }}

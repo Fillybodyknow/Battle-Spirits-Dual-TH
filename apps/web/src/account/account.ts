@@ -12,6 +12,7 @@ import { setPrefs, type Prefs } from '../prefs';
 import { setSfx } from '../sfx';
 import { setBgmSettings } from '../bgm';
 import { reloadGfx } from '../gfx';
+import { reloadTutorialProgress } from '../tutorial/tutorial';
 import { useGame, type CutInMode } from '../store';
 import { AccountError, type CloudBackend, type CloudProfile, type CloudUser } from './cloud';
 import { firebaseCloud } from './firebaseCloud';
@@ -23,7 +24,7 @@ const useLocal = typeof location !== 'undefined' && new URLSearchParams(location
 export const cloud: CloudBackend = useLocal || !firebaseConfigured ? localCloud : firebaseCloud;
 
 /** การตั้งค่าที่ซิงก์ (คีย์ localStorage เก็บค่าดิบ) · ไม่ซิงก์: เกมที่ค้าง, เวอร์ชันที่ดูแล้ว, ผลวัดความเร็วเครื่อง */
-const SETTING_KEYS = ['bs-play-prefs', 'bs-sfx', 'bs-bgm', 'bs-gfx', 'bs-cutin', 'bs-lobby-deck', 'bs-deck-acc'] as const;
+const SETTING_KEYS = ['bs-play-prefs', 'bs-sfx', 'bs-bgm', 'bs-gfx', 'bs-cutin', 'bs-lobby-deck', 'bs-deck-acc', 'bs-tutorial'] as const;
 const AVATAR_KEY = 'bs-avatar';
 const STATE_KEY = 'bs-sync';
 const PUSH_MS = 2500;
@@ -108,6 +109,7 @@ function applySettings(values: Record<string, string>) {
   const b = json<{ on: boolean; volume: number }>('bs-bgm');
   if (b) setBgmSettings(b);
   if (values['bs-gfx']) reloadGfx();
+  if (values['bs-tutorial']) reloadTutorialProgress();
   const cut = values['bs-cutin'];
   if (cut === 'always' || cut === 'first' || cut === 'off') useGame.getState().setCutIn(cut as CutInMode);
 }

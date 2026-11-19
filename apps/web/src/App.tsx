@@ -14,6 +14,7 @@ import { MyDeck } from './screens/MyDeck';
 import { BTN } from './components/Modal';
 import { AttackArrow, FxLayer } from './components/Fx';
 import { DrawPrompt } from './components/DrawPrompt';
+import { TutorialOverlay } from './tutorial/TutorialOverlay';
 import { Icon } from './components/Icon';
 import { usePortraitPhone } from './touch';
 import { probeGfx, useGfx } from './gfx';
@@ -49,7 +50,7 @@ function Toolbar() {
     );
   }
   return (
-    <div className="fixed top-2 left-2 z-[45] flex items-center gap-1.5">
+    <div data-tutorial-lock className="fixed top-2 left-2 z-[45] flex items-center gap-1.5">
       <button
         type="button"
         className={ICON_BTN}
@@ -358,6 +359,7 @@ function GameScreen() {
       <CoreDragGhost />
       <FxLayer />
       <DrawPrompt />
+      <TutorialOverlay />
       <PlayDialog />
       <ChoiceDialog />
       <SummonPanel />

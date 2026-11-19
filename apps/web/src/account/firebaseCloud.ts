@@ -31,7 +31,8 @@ const auth = (): Auth => getAuth(firebaseApp());
 function toUser(u: User | null): CloudUser | null {
   if (!u || u.isAnonymous) return null;
   const google = u.providerData.some((p) => p.providerId === 'google.com');
-  return { uid: u.uid, email: u.email, provider: google ? 'google' : 'password' };
+  const created = Date.parse(u.metadata.creationTime ?? '');
+  return { uid: u.uid, email: u.email, provider: google ? 'google' : 'password', ...(Number.isFinite(created) ? { createdAt: created } : {}) };
 }
 
 /** ข้อความภาษาไทยของข้อผิดพลาดที่ผู้เล่นเจอบ่อย */
