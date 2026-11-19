@@ -1,8 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { bpOf, cardLevel, currentBp, isSpiritLike, levelOf, minCores, onStageAbilities, opponentOf, PLAYERS, levelBoostSources, summonLevelCostBoost, summonMinCores, trashSummonRule, type GameState, type PlayerId } from '@bs/engine';
 import { cardName, formatEvent, playerLabel } from '../format';
 import {
   actingPlayer,
+  isChoiceCandidate,
+  isMultiCardCandidate,
   allocOf,
   pickedOf,
   blockCandidates,
@@ -21,6 +24,7 @@ import {
   viewPlayer,
 } from '../store';
 import { CardFace } from './CardFace';
+import { playOptions } from './Board';
 import { useHeld } from './useHeld';
 import { ChainTracker, RevealFan } from './Fx';
 import { BTN, Modal } from './Modal';
@@ -1016,6 +1020,85 @@ function OrderPanel() {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * การ์ดนอกมือ: แตะโซนนอกมือบนสนาม → กางเป็นพัดใหญ่กลางกระดาน
+ *  - ของเรา: แตะใบที่ใช้ได้ = ทางเล่นทางเดียวเปิดแผงเลย / หลายทาง = เมนูใต้การ์ด · เป็นตัวเลือกของเอฟเฟกต์ = แตะเพื่อเลือก
+ *  - ของคู่แข่ง / ใช้ไม่ได้ตอนนี้: ดูอย่างเดียว (ชี้ = แผงข้อมูลการ์ด)
+ */
+export function ShownFan() {
+  const player = useGame((s) => s.shownFan);
+  const state = useGame((s) => s.state);
+  const busy = useGame((s) => isFxBlocking(s.fx) || !!s.play);
+  const picked = useGame(pickedOf);
+  const [menu, setMenu] = useState<string | null>(null);
+  const ids = player ? (state.shownCards ?? []).filter((id) => state.players[player].hand.includes(id)) : [];
+  const close = () => {
+    setMenu(null);
+    useGame.setState({ shownFan: null });
+  };
+  useEffect(() => {
+    if (player && ids.length === 0) close();
+  });
+  if (!player || busy || ids.length === 0) return null;
+  const choiceIds = ids.filter((id) => isChoiceCandidate(state, id) || isMultiCardCandidate(state, id));
+  const opts = Object.fromEntries(ids.map((id) => [id, choiceIds.length ? [] : playOptions(state, id)]));
+  const candidates = choiceIds.length ? choiceIds : ids.filter((id) => opts[id]!.length > 0);
+  const menuRect = menu ? document.querySelector(`[data-reveal-card="${menu}"]`)?.getBoundingClientRect() : null;
+  return (
+    <>
+      <RevealFan
+        owner={player}
+        cardIds={ids}
+        candidates={candidates}
+        chosenIds={state.choice?.kind === 'multiCard' ? picked : undefined}
+        chosen={menu}
+        flatChosen
+        chosenLabel="เลือกวิธีใช้ ▾"
+        onPick={(id) => {
+          if (choiceIds.includes(id)) {
+            useGame.getState().clickHandCard(id);
+            if (state.choice?.kind !== 'multiCard') close();
+            return;
+          }
+          const o = opts[id]!;
+          if (o.length === 1) {
+            close();
+            o[0]!.run();
+          } else setMenu(menu === id ? null : id);
+        }}
+        pickLabel={choiceIds.length ? 'คลิกเพื่อเลือก' : 'แตะเพื่อใช้'}
+        title={`นอกมือ${controls(useGame.getState(), player) ? '' : `ของ${playerLabel(player)}`} ${ids.length} ใบ${candidates.length ? '' : ' · ตอนนี้ยังใช้ไม่ได้'}`}
+        onSkip={close}
+        skipLabel="ปิด"
+      />
+      {/* หลายทางเล่น: เมนูใต้การ์ดที่เลือก */}
+      {menu && menuRect && (opts[menu]?.length ?? 0) > 1 &&
+        createPortal(
+          <div
+            data-tutorial="hand-menu"
+            className="fixed z-[66] flex w-44 -translate-x-1/2 flex-col gap-1 rounded-lg border border-yellow-300/60 bg-slate-900 p-1.5 shadow-xl"
+            style={{ left: menuRect.left + menuRect.width / 2, top: menuRect.bottom + 18, animation: 'fx-fade-in 0.15s ease-out both' }}
+          >
+            {opts[menu]!.map((o) => (
+              <button
+                key={o.label}
+                type="button"
+                className="rounded bg-yellow-300/90 px-2 py-1 text-left text-xs font-bold text-slate-900 hover:bg-yellow-200"
+                onClick={() => {
+                  close();
+                  o.run();
+                }}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }
 

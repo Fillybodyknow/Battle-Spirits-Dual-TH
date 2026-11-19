@@ -1261,7 +1261,7 @@ function useShownHand(player: PlayerId, hidden: boolean): string[] {
 }
 
 /** ทางเล่นการ์ดใบนี้ตอนนี้ (การ์ดในมือ / การ์ดที่วางแสดงนอกมือ ที่ใช้ได้เสมือนอยู่ในมือ) */
-function playOptions(state: GameState, cardId: string): { label: string; run: () => void }[] {
+export function playOptions(state: GameState, cardId: string): { label: string; run: () => void }[] {
   const { openPlay, dispatch } = useGame.getState();
   const card = state.cards[cardId]!;
   const def = db.get(card.cardNo);
@@ -1294,126 +1294,49 @@ function playOptions(state: GameState, cardId: string): { label: string; run: ()
 
 /**
  * โซน "นอกมือ" (กติกา 14 ข้อ 1): การ์ดที่วางแสดงนอกมือ อยู่ข้างสนาม ทั้งสองฝ่ายเห็น ไม่อยู่ในพัดการ์ดในมือ
- * ใช้งานได้เสมือนอยู่ในมือ: แตะการ์ด = เมนูเล่นการ์ด (ลอยเหนือการ์ด) · เป็นตัวเลือกของเอฟเฟกต์ = แตะเพื่อเลือก
+ * แตะตรงไหนของโซนก็ได้ = กางเป็นพัดใหญ่กลางกระดาน (ShownFan ใน Controls) แล้วเลือกใช้จากพัด
+ * มีใบที่ใช้ได้ตอนนี้ = โซนเรืองแสง (ฟ้า = Flash / เหลือง = Main / ชมพู = เป็นตัวเลือกของเอฟเฟกต์)
  */
 function OutsideZone({ player }: { player: PlayerId }) {
   const state = useGame((s) => s.state);
   const hover = useGame((s) => s.hover);
   const blocking = useGame((s) => isFxBlocking(s.fx));
-  const [menu, setMenu] = useState<string | null>(null);
+  const flying = useGame((s) => s.fx.filter((f) => f.kind === 'fly' && f.hideTarget).map((f) => (f.kind === 'fly' ? f.cardId : '')).join('|'));
   const ids = (state.shownCards ?? []).filter((id) => state.players[player].hand.includes(id));
   if (ids.length === 0) return null;
+  const candidate = !blocking && ids.some((id) => isChoiceCandidate(state, id) || isMultiCardCandidate(state, id));
+  const usable = !blocking && !candidate && ids.some((id) => playOptions(state, id).length > 0);
+  const tone = candidate ? 'fuchsia' : usable ? (flashPlayer(state) ? 'cyan' : 'yellow') : null;
   return (
-    <div data-outside-zone={player} className="flex flex-col items-end gap-0.5" title="นอกมือ: การ์ดที่วางแสดง ใช้งานได้เสมือนอยู่ในมือ (ทั้งสองฝ่ายเห็น)">
-      <span className="rounded bg-amber-400 px-1.5 text-[10px] font-black tracking-wide text-slate-900 shadow">นอกมือ {ids.length}</span>
-      <div className="flex">
-        {ids.map((id, i) => {
-          const options = blocking ? [] : playOptions(state, id);
-          const candidate = !blocking && (isChoiceCandidate(state, id) || isMultiCardCandidate(state, id));
-          const flash = options.length > 0 && !!flashPlayer(state);
-          return (
-            <OutsideCard
-              key={id}
-              cardId={id}
-              index={i}
-              total={ids.length}
-              ring={candidate ? 'ring-4 ring-fuchsia-400' : flash ? 'ring-4 ring-cyan-300' : options.length > 0 ? 'ring-2 ring-yellow-300/80' : 'ring-1 ring-amber-300/60'}
-              onClick={() => {
-                if (candidate) return useGame.getState().clickHandCard(id);
-                if (options.length > 0) setMenu(menu === id ? null : id);
-              }}
-              hover={hover}
-              menu={menu === id && options.length > 0 ? options : null}
-              onCloseMenu={() => setMenu(null)}
-            />
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function OutsideCard({
-  cardId,
-  index,
-  total,
-  ring,
-  onClick,
-  hover,
-  menu,
-  onCloseMenu,
-}: {
-  cardId: string;
-  index: number;
-  total: number;
-  ring: string;
-  onClick: () => void;
-  hover: (id: string | null) => void;
-  menu: { label: string; run: () => void }[] | null;
-  onCloseMenu: () => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const flying = useFlying(cardId);
-  const cardNo = useGame((s) => s.state.cards[cardId]!.cardNo);
-  return (
-    <>
-      <div
-        ref={ref}
-        data-hand-card={cardId}
-        className={`relative h-16 w-11 shrink-0 cursor-pointer rounded shadow-[0_2px_8px_rgba(0,0,0,0.6)] transition hover:-translate-y-1 ${ring} ${flying ? 'invisible' : ''}`}
-        style={{ marginLeft: index === 0 ? 0 : total > 3 ? -30 : -14, zIndex: index }}
-        onMouseEnter={() => hover(cardId)}
-        onMouseLeave={() => hover(null)}
-        onClick={() => {
-          useGame.setState({ pinned: cardId });
-          onClick();
-        }}
-      >
-        <CardFace def={db.get(cardNo)} size="xs" />
-      </div>
-      {menu && <OutsideMenu anchor={ref} options={menu} onClose={onCloseMenu} />}
-    </>
-  );
-}
-
-/** เมนูเล่นการ์ดนอกมือ: ลอยเหนือการ์ด (portal: ไม่ถูกกรอบสนามตัด) */
-function OutsideMenu({ anchor, options, onClose }: { anchor: React.RefObject<HTMLDivElement | null>; options: { label: string; run: () => void }[]; onClose: () => void }) {
-  const menuRef = useRef<HTMLDivElement>(null);
-  const r = anchor.current?.getBoundingClientRect();
-  useEffect(() => {
-    const down = (e: PointerEvent) => {
-      const t = e.target as Node;
-      if (menuRef.current?.contains(t) || anchor.current?.contains(t)) return;
-      onClose();
-    };
-    document.addEventListener('pointerdown', down, true);
-    return () => document.removeEventListener('pointerdown', down, true);
-  }, [anchor, onClose]);
-  if (!r) return null;
-  const below = r.top + r.height / 2 < window.innerHeight / 2;
-  return createPortal(
-    <div
-      ref={menuRef}
-      data-tutorial="hand-menu"
-      className="fixed z-[65] flex w-44 -translate-x-1/2 flex-col gap-1 rounded-lg border border-yellow-300/60 bg-slate-900 p-1.5 shadow-xl"
-      style={{ left: Math.min(Math.max(r.left + r.width / 2, 92), window.innerWidth - 92), ...(below ? { top: r.bottom + 8 } : { bottom: window.innerHeight - r.top + 8 }), animation: 'fx-fade-in 0.15s ease-out both' }}
+    <button
+      type="button"
+      data-outside-zone={player}
+      onClick={() => useGame.setState({ shownFan: player })}
+      title="นอกมือ: การ์ดที่วางแสดง ใช้งานได้เสมือนอยู่ในมือ (ทั้งสองฝ่ายเห็น) · แตะเพื่อกางดู/ใช้"
+      className={`flex cursor-pointer flex-col items-end gap-0.5 rounded-lg p-1 transition hover:bg-amber-300/15 ${
+        tone === 'cyan' ? 'ring-2 ring-cyan-300 bg-cyan-400/10' : tone === 'yellow' ? 'ring-2 ring-yellow-300 bg-yellow-300/10' : tone === 'fuchsia' ? 'ring-2 ring-fuchsia-400 bg-fuchsia-400/10' : ''
+      }`}
+      style={tone === 'cyan' ? { animation: 'fx-flash-glow 1.2s ease-in-out infinite' } : tone ? { animation: 'fx-choice-glow 1.4s ease-in-out infinite' } : undefined}
     >
-      <span className="px-1 text-[10px] font-black text-amber-300">นอกมือ</span>
-      {options.map((o) => (
-        <button
-          key={o.label}
-          type="button"
-          className="rounded bg-yellow-300/90 px-2 py-1 text-left text-xs font-bold text-slate-900 hover:bg-yellow-200"
-          onClick={() => {
-            onClose();
-            o.run();
-          }}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>,
-    document.body,
+      <span className="rounded bg-amber-400 px-1.5 text-[10px] font-black tracking-wide whitespace-nowrap text-slate-900 shadow">
+        นอกมือ {ids.length}
+        {tone ? ' · แตะเพื่อใช้' : ''}
+      </span>
+      <span className="flex">
+        {ids.map((id, i) => (
+          <span
+            key={id}
+            data-hand-card={id}
+            className={`block h-20 w-14 shrink-0 rounded shadow-[0_2px_8px_rgba(0,0,0,0.6)] ring-1 ring-amber-300/70 ${flying.split('|').includes(id) ? 'invisible' : ''}`}
+            style={{ marginLeft: i === 0 ? 0 : ids.length > 3 ? -36 : -20, zIndex: i }}
+            onMouseEnter={() => hover(id)}
+            onMouseLeave={() => hover(null)}
+          >
+            <CardFace def={db.get(state.cards[id]!.cardNo)} size="xs" />
+          </span>
+        ))}
+      </span>
+    </button>
   );
 }
 
@@ -1431,6 +1354,8 @@ function HandCard({ cardId, hidden, small, fan, shown: order }: { cardId: string
   const fxBlocking = useGame((s) => isFxBlocking(s.fx));
   const { startHandDrag, endHandDrag } = useGame.getState();
   const scroller = useContext(HandScrollCtx);
+  /** ตัวการ์ด (ตำแหน่งให้เมนูที่ portal ไปชั้นบนสุด) */
+  const cardRef = useRef<HTMLDivElement>(null);
   const card = state.cards[cardId]!;
   const def = db.get(card.cardNo);
   /** วางแสดงนอกมือ (อันโกะ): หงายให้ทั้งสองฝ่ายเห็น */
@@ -1467,6 +1392,7 @@ function HandCard({ cardId, hidden, small, fan, shown: order }: { cardId: string
 
   return (
     <div
+      ref={cardRef}
       data-hand-card={cardId}
       className={`relative ${size} pointer-events-auto shrink-0 ${flying ? 'invisible' : ''}`}
       style={style}
@@ -1564,7 +1490,7 @@ function HandCard({ cardId, hidden, small, fan, shown: order }: { cardId: string
         )}
       </div>
       {selected && (
-        <div data-tutorial="hand-menu" className={`absolute inset-x-0 z-20 flex flex-col ${fan?.top ? "top-full mt-4" : "bottom-full mb-4"} gap-1 rounded-lg border border-yellow-300/60 bg-slate-900 p-1.5 shadow-xl`}>
+        <HandMenuPortal anchor={cardRef} below={!!fan?.top}>
           {options.length === 0 && <span className="px-1 text-xs text-slate-400">ใช้ตอนนี้ไม่ได้</span>}
           {options.map((o) => (
             <button
@@ -1605,9 +1531,41 @@ function HandCard({ cardId, hidden, small, fan, shown: order }: { cardId: string
           <button type="button" onClick={() => clickHandCard(cardId)} className="rounded px-2 py-0.5 text-xs text-slate-400 hover:bg-white/10">
             ยกเลิก
           </button>
-        </div>
+        </HandMenuPortal>
       )}
     </div>
+  );
+}
+
+/**
+ * เมนูของการ์ดในมือ: วาดบนชั้นบนสุดของหน้า (portal) เพราะพัดการ์ดในมืออยู่ชั้นต่ำกว่าแถบคำสั่งกลางกระดาน
+ * (เดิมเมนูที่เด้งขึ้นไปโดนแถบทับ ปุ่มบนสุดกดไม่ได้) · ตามตำแหน่งการ์ดทุกเฟรม (การ์ดยกขึ้น/พัดเลื่อน)
+ */
+function HandMenuPortal({ anchor, below, children }: { anchor: React.RefObject<HTMLDivElement | null>; below: boolean; children: React.ReactNode }) {
+  const [rect, setRect] = useState<DOMRect | null>(() => anchor.current?.getBoundingClientRect() ?? null);
+  useEffect(() => {
+    let raf = 0;
+    const loop = () => {
+      const r = anchor.current?.getBoundingClientRect();
+      if (r) setRect((p) => (p && Math.abs(p.left - r.left) < 0.5 && Math.abs(p.top - r.top) < 0.5 && Math.abs(p.width - r.width) < 0.5 && Math.abs(p.bottom - r.bottom) < 0.5 ? p : r));
+      raf = requestAnimationFrame(loop);
+    };
+    loop();
+    return () => cancelAnimationFrame(raf);
+  }, [anchor]);
+  if (!rect) return null;
+  const w = Math.max(rect.width, 136);
+  const left = Math.min(Math.max(rect.left + rect.width / 2 - w / 2, 8), window.innerWidth - w - 8);
+  return createPortal(
+    <div
+      data-tutorial="hand-menu"
+      onClick={(e) => e.stopPropagation()}
+      className="fixed z-[66] flex flex-col gap-1 rounded-lg border border-yellow-300/60 bg-slate-900 p-1.5 shadow-xl"
+      style={{ left, width: w, ...(below ? { top: rect.bottom + 16 } : { bottom: window.innerHeight - rect.top + 16 }) }}
+    >
+      {children}
+    </div>,
+    document.body,
   );
 }
 

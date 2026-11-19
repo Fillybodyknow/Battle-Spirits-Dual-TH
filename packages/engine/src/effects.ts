@@ -6,7 +6,7 @@
  */
 import type { CardFilter, CountPer, Step, SubjectFilter, TriggerEvent } from '@bs/cards';
 import { assertUsableCore, checkDepletion, destroy, drawCard, emit, emitStatic, endGame, handIncreasedByEffect, leaveField, loseLife, newCore, payCost, pendBurst, sendToTrash, type Ctx } from './ctx';
-import {
+import { cardColors,
   baseCost,
   braveHostOf,
   braveFits,
@@ -75,7 +75,7 @@ export function refreshByEffect(ctx: Ctx, cardId: string, sourceId?: string): vo
       if (effectsNegated(s, db, gateId)) continue;
       const level = cardLevel(s, db, gateId);
       const ab = db.get(s.cards[gateId]!.cardNo).abilities.find((a) => a.kind === 'destroyRefreshedByEffect' && a.levels.includes(level));
-      if (!ab || ab.kind !== 'destroyRefreshedByEffect' || !def.colors.some((c) => ab.colors.includes(c))) continue;
+      if (!ab || ab.kind !== 'destroyRefreshedByEffect' || !cardColors(s, db, cardId).some((c) => ab.colors.includes(c))) continue;
       if (card.owner !== gateOwner) {
         const blocker = effectBlocker(s, db, gateId, cardId);
         if (blocker) {
@@ -245,7 +245,7 @@ function subjectMatches(
     const b = ctx.s.battle;
     if (!b || !(b.attackerId === cardId || b.blockers.includes(cardId))) return false;
   }
-  if (f.color && !def.colors.includes(f.color)) return false;
+  if (f.color && !cardColors(ctx.s, ctx.db, cardId).includes(f.color)) return false;
   if (f.types && !f.types.includes(def.type)) return false;
   if (f.paidWithSoul && !extra.subjectPaidSoul) return false;
   if (f.byEffect && !extra.subjectByEffect) return false;
@@ -565,6 +565,21 @@ export function queueSummonTriggers(
 function braveSummonLevel(ctx: Ctx, cardId: string): number {
   const lowest = Math.min(...ctx.db.get(ctx.s.cards[cardId]!.cardNo).levels.map((l) => l.level));
   return Number.isFinite(lowest) ? lowest : 1;
+}
+
+/** นำสปิริต/เบรฟกลับไปใต้สุดเด็คเจ้าของ (เบรฟที่ร่วมร่างอยู่: แยกออกจากร่างต้นแล้วไปใต้เด็ค) */
+function returnToDeckBottomAny(ctx: Ctx, id: string): void {
+  const { s } = ctx;
+  const owner = s.cards[id]!.owner;
+  const host = braveHostOf(s, id);
+  if (host) {
+    removeFrom(s.cards[host]!.braves, id);
+    s.players[owner].deck.push(id);
+    emit(ctx, { type: 'returnedToDeck', player: owner, cardId: id, where: 'bottom' });
+    return;
+  }
+  if (!PLAYERS.some((p) => s.players[p].field.includes(id))) return;
+  returnCard(ctx, id, 'deckBottom');
 }
 
 /** ผู้เล่นเสียไลฟ์: trigger "เมื่อเราเสียไลฟ์" ของการ์ดบนสนามของผู้เล่นนั้น */
@@ -1225,7 +1240,8 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
         return;
       }
       // อัญเชิญด้วยเอฟเฟกต์: ใช้ Core จากรีเสิร์ฟและบนการ์ดในสนามของเราได้
-      const available = usableCores(ctx, me).length;
+      // เบรฟที่คงอยู่หลังร่างต้นออกจากสนาม: ดึงจากรีเสิร์ฟเท่านั้น (กติกา 04 ข้อ 2.2)
+      const available = step.noSummon ? s.players[me].reserve.length : usableCores(ctx, me).length;
       const need = summonMinCores(s, db, step.cardId); // รวม Lv คอสต์ +N
       if (!step.noSummon && available < need) {
         // วาง Core กำหนด Lv1 ไม่ได้ = อัญเชิญไม่ได้ (เจ้าของโปรเจกต์กำหนด) การ์ดอยู่ที่เดิม
@@ -1258,6 +1274,25 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
         optional: true,
         skipLabel: 'ลงสนามเป็นสปิริต',
         step,
+      });
+      return;
+    }
+
+    case 'braveFate': {
+      // กติกา 04 ข้อ 2.2: คงอยู่ = กำหนดคอร์ใหม่โดยดึงจากรีเสิร์ฟ · รีเสิร์ฟไม่พอเลเวล 1 = คงอยู่ไม่ได้ ลงแทรชพร้อมร่างต้น
+      if (s.players[me].reserve.length < summonMinCores(s, db, step.cardId)) {
+        item.steps.unshift({ do: 'braveTrash', cardId: step.cardId });
+        return;
+      }
+      item.steps.unshift({
+        do: 'chooseOne',
+        options: [
+          {
+            label: 'ให้เบรฟอยู่บนสนามต่อ (วาง Core จากรีเสิร์ฟ)',
+            steps: [{ do: 'placeCores', cardId: step.cardId, state: step.state, noSummon: true, ...(step.continuesAttackOf ? { continuesAttackOf: step.continuesAttackOf } : {}) }],
+          },
+          { label: 'ส่งเบรฟลง Trash', steps: [{ do: 'braveTrash', cardId: step.cardId }] },
+        ],
       });
       return;
     }
@@ -2434,17 +2469,13 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
     }
 
     case 'returnSubjectToDeck': {
-      const id = item.subjectId;
-      if (!id || !s.cards[id] || s.cards[id]!.owner === me || db.get(s.cards[id]!.cardNo).type === 'nexus' || !hits(id)) return;
-      const host = braveHostOf(s, id);
-      if (host) {
-        removeFrom(s.cards[host]!.braves, id);
-        s.players[opp].deck.push(id);
-        emit(ctx, { type: 'returnedToDeck', player: opp, cardId: id, where: 'bottom' });
-        return;
-      }
-      if (!onField(ctx, id)) return;
-      returnCard(ctx, id, 'deckBottom');
+      // มาคินะ: "เอฟเฟกต์ของสปิริต/เบรฟ 1 ตัวไร้ผล, นำสปิริต/เบรฟนั้นกลับไปไว้ใต้สุดเด็ค"
+      // ข้อความไม่ได้เจาะจงการ์ดที่เพิ่งถูกอัญเชิญ และไม่ได้ระบุฝ่าย → เลือกสปิริต/เบรฟบนสนาม 1 ตัวเอง (ทั้งสองฝ่าย รวมเบรฟที่ร่วมร่าง)
+      // ทั้งตอนเบิร์สเปิดตามเงื่อนไข และตอนสั่งใช้ด้วย Catalyze · การ์ดของคู่แข่งที่มี Shield กันเอฟเฟกต์นี้ = เลือกไม่ได้
+      const pool = PLAYERS.flatMap((p) => [...s.players[p].field.filter((c) => spiritLike(c)), ...s.players[p].field.flatMap((c) => s.cards[c]!.braves)]);
+      const candidates = pool.filter((c) => s.cards[c]!.owner === me || hits(c));
+      if (candidates.length === 0) return;
+      ask(ctx, item, { kind: 'card', prompt: 'เลือกสปิริต/เบรฟ 1 ตัว: เอฟเฟกต์ไร้ผล แล้วนำกลับไปไว้ใต้สุดเด็ค', candidates, step });
       return;
     }
 
@@ -2903,6 +2934,8 @@ export function resolveChoice(ctx: Ctx, player: PlayerId, pick: ChoicePick): voi
     for (const id of cores) assertUsableCore(ctx, player, id);
     if (cores.length < choice.min) fail('NOT_ENOUGH_CORES', `ต้องวาง Core อย่างน้อย ${choice.min} ดวง`);
     if (step.do !== 'placeCores') throw new Error('placeCores');
+    // เบรฟที่คงอยู่หลังร่างต้นออกจากสนาม: คอร์ต้องมาจากรีเสิร์ฟ (กติกา 04 ข้อ 2.2)
+    if (step.noSummon && cores.some((id) => !s.players[player].reserve.includes(id))) fail('RESERVE_ONLY', 'เบรฟที่คงอยู่ต้องวาง Core จากรีเสิร์ฟ');
     putOnField(ctx, s.queue[0]!, step, cores);
     s.choice = null;
     runQueue(ctx);
@@ -3124,6 +3157,9 @@ function applyCardPick(ctx: Ctx, cur: QueuedEffect, choice: Extract<PendingChoic
     }
     case 'voidCore':
       addVoidCores(ctx, player, pick, step.count);
+      break;
+    case 'returnSubjectToDeck':
+      returnToDeckBottomAny(ctx, pick);
       break;
     case 'braveOrSpirit': {
       // ร่วมร่างทันที: ไม่วาง Core · กติกา 04: อัญเชิญแบบร่วมร่างโดยตรง "เมื่อเบรฟนี้ถูกอัญเชิญ" ก็ทำงานตามปกติ

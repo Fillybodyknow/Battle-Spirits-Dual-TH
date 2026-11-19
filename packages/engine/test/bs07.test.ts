@@ -381,6 +381,26 @@ describe('Booster Set 07', () => {
     expect(s.players.p1.reserve.length).toBe(reserve - 2 + 1);
   });
 
+  it('เซ็นโงคุฮิเมะ มาคินะ สั่งใช้ด้วย Catalyze: เลือกสปิริต/เบรฟ 1 ตัว (ทั้งสองฝ่าย) กลับใต้สุดเด็ค แล้วอัญเชิญมาคินะ', () => {
+    let s = setup();
+    const makina = inHand(s, 'p1', no('เซ็นโงคุฮิเมะ มาคินะ'));
+    s.players.p1.hand = s.players.p1.hand.filter((x) => x !== makina);
+    s.players.p1.burst = makina;
+    const src = put(s, 'p1', DARIU, 1);
+    const a = put(s, 'p2', DARIU, 1);
+    const b = put(s, 'p2', DARIU, 1);
+    s.queue.push({ controller: 'p1', sourceId: src, steps: [{ do: 'catalyze' }], paidWithSoul: false, trashWhenDone: false });
+    s = act(s, { type: 'moveCores', player: 'p1', moves: [] });
+    // ข้อความไม่ได้ระบุฝ่าย: เลือกได้ทั้งของเราและของคู่แข่ง
+    expect(s.choice).toMatchObject({ kind: 'card', player: 'p1' });
+    expect((s.choice as { candidates: string[] }).candidates).toEqual(expect.arrayContaining([src, a, b]));
+    s = choose(s, b);
+    expect(s.players.p2.deck.at(-1)).toBe(b);
+    expect(s.players.p2.field).toContain(a);
+    // หลังจากนั้นอัญเชิญมาคินะไม่จ่ายคอสต์
+    expect(s.choice).toMatchObject({ kind: 'placeCores', cardId: makina });
+  });
+
   it('แอปโซลูทสเตอ: ที่เหลือนำกลับบนสุดเด็คโดยเรียงลำดับได้', () => {
     let s = setup();
     const top = [inHand(s, 'p1', no('มู')), inHand(s, 'p1', no('อัน'))];
@@ -457,7 +477,7 @@ describe('Booster Set 07', () => {
     expect(s.players.p2.deck.slice(-2)).toEqual([o1, o2]);
   });
 
-  it('เซ็นโงคุฮิเมะ มาคินะ (Soul Burst): หลังเอฟเฟกต์อัญเชิญของคู่แข่ง → การ์ดนั้นกลับใต้สุดเด็ค แล้วอัญเชิญมาคินะ', () => {
+  it('เซ็นโงคุฮิเมะ มาคินะ (Soul Burst): หลังเอฟเฟกต์อัญเชิญของคู่แข่ง → เลือกสปิริต/เบรฟ 1 ตัว (ไม่จำเป็นต้องเป็นตัวที่เพิ่งอัญเชิญ) กลับใต้สุดเด็ค แล้วอัญเชิญมาคินะ', () => {
     let s = setup();
     const makina = inHand(s, 'p2', no('เซ็นโงคุฮิเมะ มาคินะ'));
     s.players.p2.hand = s.players.p2.hand.filter((x) => x !== makina);
@@ -467,6 +487,10 @@ describe('Booster Set 07', () => {
     s = act(s, { type: 'summon', player: 'p1', cardId: shining, payment: normalCores(s).slice(0, cost), placement: normalCores(s).slice(cost, cost + 1) });
     expect(s.choice).toMatchObject({ kind: 'option', player: 'p2' });
     s = choose(s, optionIndex(s, 'เปิด Burst'));
+    // เลือกเป้าเอง (สปิริต/เบรฟบนสนามทั้งสองฝ่าย)
+    expect(s.choice).toMatchObject({ kind: 'card', player: 'p2' });
+    expect((s.choice as { candidates: string[] }).candidates).toContain(shining);
+    s = choose(s, shining);
     expect(s.players.p1.deck.at(-1)).toBe(shining);
     s = choose(s, { pay: normalCores(s, 'p2').slice(0, 1) });
     expect(s.players.p2.field).toContain(makina);

@@ -341,6 +341,10 @@ describe('Booster Set 04', () => {
     s = act(act(s, { type: 'endMain', player: 'p1' }), { type: 'declareAttack', player: 'p1', attackerId: host });
     if (s.battle?.flash?.priority === 'p2') s = act(s, { type: 'passFlash', player: 'p2' });
     s = magic(s, 'เยลโล่รีคัฟเวอร์');
+    // ร่างต้น (ขาว) ร่วมร่างโอคิดาคุ (เหลือง) = เป็นสปิริตสีเหลืองด้วย (กติกา 04: ได้รับสีจากเบรฟ) → ฟื้นสภาพตัวนี้ได้
+    expect(s.choice).toMatchObject({ kind: 'card', candidates: [host] });
+    s = choose(s, host);
+    expect(s.cards[host]!.state).toBe('refresh');
     expect(s.battle?.symbolOverride).toMatchObject({ cardId: host, color: 'yellow', count: 2 });
     s = passFlashes(s);
     s = act(s, { type: 'noBlock', player: 'p2' });

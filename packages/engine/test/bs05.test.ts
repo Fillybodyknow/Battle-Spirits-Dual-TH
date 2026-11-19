@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { loadAllCards } from '@bs/cards';
-import { applyAction, blockersFor, canAttackWith, cardLevel, createGame, currentBp, effectsNegated, payableCost, summonLevelCostBoost, summonMinCores, type Action, type GameState, type PlayerId } from '../src';
+import { applyAction, blockersFor, canAttackWith, cardColors, cardLevel, matchesFilter, createGame, currentBp, effectsNegated, payableCost, summonLevelCostBoost, summonMinCores, type Action, type GameState, type PlayerId } from '../src';
 
 const db = loadAllCards();
 const no = (name: string) => db.all().find((c) => c.name === name)!.cardNo;
@@ -404,6 +404,61 @@ describe('Booster Set 05', () => {
     s = passFlashes(act(s, { type: 'declareAttack', player: 'p1', attackerId: host }));
     if (s.battle?.step === 'declareBlock') s = act(s, { type: 'noBlock', player: 'p2' });
     expect(s.players.p2.life.length).toBe(life);
+  });
+
+  it('เบรฟคงอยู่หลังร่างต้นออกจากสนาม: วางคอร์จากรีเสิร์ฟเท่านั้น · รีเสิร์ฟว่าง = ลงแทรชเลยไม่ถาม (กติกา 04 ข้อ 2.2)', () => {
+    // รีเสิร์ฟว่าง (คอร์ร่างต้นไปแทรช): ไม่มีตัวเลือกให้คงอยู่
+    let s = setup();
+    let host = put(s, 'p1', no('แม่ทัพโยวไค คาฉะเนโกะ-อิคุสะ'), 1);
+    let shion = brave(s, host, 'ดาบวิญญาณประกายม่วง ไลท์นิ่ง-ชิออน');
+    s.players.p1.trashCores.push(...s.players.p1.reserve);
+    s.players.p1.reserve = [];
+    s.players.p1.trashCores.push(...s.cards[host]!.cores);
+    s.cards[host]!.cores = [];
+    s = act(s, { type: 'moveCores', player: 'p1', moves: [] }); // เช็กสูญสลาย
+    expect(s.choice).toBeNull();
+    expect(s.players.p1.trashCards).toEqual(expect.arrayContaining([host, shion]));
+    // มีคอร์ในรีเสิร์ฟ: เลือกคงอยู่ได้ แต่ใช้คอร์จากสปิริตตัวอื่นบนสนามไม่ได้
+    s = setup();
+    host = put(s, 'p1', no('แม่ทัพโยวไค คาฉะเนโกะ-อิคุสะ'), 1);
+    shion = brave(s, host, 'ดาบวิญญาณประกายม่วง ไลท์นิ่ง-ชิออน');
+    const other = put(s, 'p1', DARIU, 3);
+    s.queue.push({ controller: 'p1', sourceId: host, steps: [{ do: 'destroySelf' }], paidWithSoul: false, trashWhenDone: false, started: true });
+    s = act(s, { type: 'moveCores', player: 'p1', moves: [] });
+    expect(s.choice).toMatchObject({ kind: 'option' });
+    s = choose(s, 0);
+    expect(s.choice).toMatchObject({ kind: 'placeCores', cardId: shion });
+    expect(fails(s, { type: 'choose', player: 'p1', pick: { pay: [s.cards[other]!.cores[0]!] } })).toBe('RESERVE_ONLY');
+    s = choose(s, { pay: normalCores(s).slice(0, 1) });
+    expect(s.players.p1.field).toContain(shion);
+  });
+
+  it('สีจากเบรฟ: สปิริตที่ร่วมร่างเบรฟสีม่วง นับเป็นสปิริตสีม่วงด้วย (กติกา 04)', () => {
+    const s = setup();
+    const host = put(s, 'p1', no('แม่ทัพโยวไค คาฉะเนโกะ-อิคุสะ'), 1);
+    const def = db.get(s.cards[host]!.cardNo);
+    expect(def.colors).not.toContain('purple');
+    expect(matchesFilter(s, db, host, { color: 'purple' })).toBe(false);
+    brave(s, host, 'ดาบวิญญาณประกายม่วง ไลท์นิ่ง-ชิออน');
+    expect(matchesFilter(s, db, host, { color: 'purple' })).toBe(true);
+    expect(cardColors(s, db, host)).toEqual(expect.arrayContaining([...def.colors, 'purple']));
+  });
+
+  it('ร่างต้นถูกทำลายขณะมีเอฟเฟกต์อื่นรอคิว: ถามเรื่องเบรฟทันที ก่อนเอฟเฟกต์ที่รออยู่ (กติกา 04 ข้อ 2)', () => {
+    let s = setup();
+    const host = put(s, 'p1', no('แม่ทัพโยวไค คาฉะเนโกะ-อิคุสะ'), 3);
+    brave(s, host, 'ดาบวิญญาณประกายม่วง ไลท์นิ่ง-ชิออน');
+    const hand = s.players.p1.hand.length;
+    // เอฟเฟกต์ที่ทำลายร่างต้น (กำลังทำงาน) + เอฟเฟกต์อื่นที่รอคิวอยู่ (จั่ว 1)
+    s.queue.push({ controller: 'p1', sourceId: host, steps: [{ do: 'destroySelf' }], paidWithSoul: false, trashWhenDone: false, started: true });
+    s.queue.push({ controller: 'p1', sourceId: host, steps: [{ do: 'draw', count: 1 }], paidWithSoul: false, trashWhenDone: false });
+    s = act(s, { type: 'moveCores', player: 'p1', moves: [] });
+    expect(s.players.p1.field).not.toContain(host);
+    // ถามเรื่องเบรฟก่อน ยังไม่จั่ว
+    expect(s.choice).toMatchObject({ kind: 'option', player: 'p1' });
+    expect(s.players.p1.hand.length).toBe(hand);
+    s = choose(s, 1);
+    expect(s.players.p1.hand.length).toBe(hand + 1);
   });
 
   it('อัญเชิญด้วยเอฟเฟกต์ ดึงคอร์จากร่างที่ร่วมร่างไลท์นิ่ง-ชิออนจนสูญสลาย: ถามเรื่องเบรฟก่อน แล้วเทพยักษ์บาซาระนับคอร์ 3 = ส่ง 3 (ไม่ได้ Charge +1) · กติกา 03 / 04', () => {

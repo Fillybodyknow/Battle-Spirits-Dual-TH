@@ -389,7 +389,7 @@ export function currentBp(state: GameState, db: CardDatabase, cardId: string): n
                 : 'sameTeam' in scope
                   ? isSpirit && (holder === cardId || shareTeam(db.get(state.cards[holder]!.cardNo), def))
                   : isSpirit &&
-                    (!scope.ownSpirits.color || def.colors.includes(scope.ownSpirits.color)) &&
+                    (!scope.ownSpirits.color || cardColors(state, db, cardId).includes(scope.ownSpirits.color)) &&
                     (!scope.ownSpirits.family || def.family.includes(scope.ownSpirits.family)) &&
                     (!scope.ownSpirits.soul || card.cores.some((x) => state.cores[x]!.isSoul));
       if (applies) bp += ab.amount * (ab.perSongs ? (ownerP.songs ?? []).length : 1);
@@ -444,7 +444,7 @@ export function matchesFilter(state: GameState, db: CardDatabase, cardId: string
   if (filter.cost !== undefined && costOf() !== filter.cost) return false;
   if (filter.nameIncludes && !nameHas(def, filter.nameIncludes)) return false;
   if (filter.hasBurst && !def.burst) return false;
-  if (filter.color && !def.colors.includes(filter.color)) return false;
+  if (filter.color && !cardColors(state, db, cardId).includes(filter.color)) return false;
   if (filter.minBp !== undefined && currentBp(state, db, cardId) < filter.minBp) return false;
   const card = state.cards[cardId]!;
   const hasSoul = card.cores.some((id) => state.cores[id]!.isSoul);
@@ -836,7 +836,7 @@ export function effectBlocker(state: GameState, db: CardDatabase, sourceId: stri
                     ? nameHas(tDef, sc.ownNamed)
                     : 'own' in sc
                       ? matchesFilter(state, db, targetId, sc.own)
-                      : tDef.colors.includes(sc.ownColor));
+                      : cardColors(state, db, targetId).includes(sc.ownColor));
         if (inScope) return { cardId: holder, source: ab.source };
       }
     }
@@ -864,6 +864,18 @@ export function bounceBottomSource(state: GameState, db: CardDatabase, cardId: s
     if (a) return { cardId: id, source: a.source };
   }
   return null;
+}
+
+/**
+ * สีของการ์ดบนสนาม: สีของตัวเอง + สีของเบรฟที่ร่วมร่างอยู่ (กติกา 04: สปิริต/อัลติเมทได้รับสีจากเบรฟ)
+ * การ์ดนอกสนาม / เบรฟที่ร่วมร่างอยู่ = สีของตัวเอง
+ */
+export function cardColors(state: GameState, db: CardDatabase, cardId: string): CardDef['colors'] {
+  const card = state.cards[cardId];
+  if (!card) return [];
+  const own = db.get(card.cardNo).colors;
+  if (card.braves.length === 0) return own;
+  return [...new Set([...own, ...card.braves.flatMap((b) => db.get(state.cards[b]!.cardNo).colors)])];
 }
 
 /** การ์ดในมือจริง (ไม่รวมการ์ดที่วางแสดงนอกมือ): ใช้กับเอฟเฟกต์ทิ้งการ์ด / เงื่อนไขจำนวนการ์ดในมือ */

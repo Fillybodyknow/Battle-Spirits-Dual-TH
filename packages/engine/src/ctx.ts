@@ -112,25 +112,19 @@ export function leaveField(ctx: Ctx, cardId: string, to: 'trash' | 'hand'): void
   delete card.battleSymbols;
   card.usedThisTurn = [];
   (to === 'trash' ? p.trashCards : p.hand).push(cardId);
+  // กติกา 04 ข้อ 2: ร่างต้นออกจากสนาม (ถูกทำลาย / สูญสลาย / กลับขึ้นมือ / กลับใต้กอง) → เลือกเรื่องเบรฟทันที
+  // แทรกต่อจากเอฟเฟกต์ที่กำลังทำงาน ก่อนเอฟเฟกต์อื่นที่รอคิวอยู่ (เดิมต่อท้ายคิว = เอฟเฟกต์ที่รออยู่ทำงานก่อน ระหว่างนั้นเบรฟไม่อยู่บนสนาม)
+  let at = ctx.s.queue[0]?.started ? 1 : 0;
   for (const braveId of card.braves) {
-    ctx.s.queue.push({
+    ctx.s.queue.splice(at++, 0, {
       controller: card.owner,
       sourceId: braveId,
-      steps: [
-        {
-          do: 'chooseOne',
-          options: [
-            {
-              label: 'ให้เบรฟอยู่บนสนามต่อ (วาง Core จากรีเสิร์ฟ)',
-              steps: [{ do: 'placeCores', cardId: braveId, state: hostState, noSummon: true, continuesAttackOf: cardId }],
-            },
-            { label: 'ส่งเบรฟลง Trash', steps: [{ do: 'braveTrash', cardId: braveId }] },
-          ],
-        },
-      ],
+      steps: [{ do: 'braveFate', cardId: braveId, state: hostState, continuesAttackOf: cardId }],
       paidWithSoul: false,
       trashWhenDone: false,
       announce: false,
+      // ทำทันที ไม่รวมกลุ่มให้ถามลำดับกับเอฟเฟกต์อื่น
+      started: true,
     });
   }
   card.braves = [];

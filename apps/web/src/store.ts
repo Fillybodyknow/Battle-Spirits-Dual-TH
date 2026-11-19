@@ -375,7 +375,9 @@ export function canSelectCore(s: GameState, evolveCard: string | null, coreId: s
     return core.owner === s.choice.player && loc.player === s.choice.player && (loc.area === 'reserve' || loc.area === 'card');
   }
   // อัญเชิญด้วยเอฟเฟกต์: Core ในรีเสิร์ฟ หรือบนการ์ดในสนามของผู้เลือก
-  if (s.choice?.kind === 'placeCores') return core.owner === s.choice.player && loc.player === s.choice.player && (loc.area === 'reserve' || loc.area === 'card');
+  // เบรฟที่คงอยู่หลังร่างต้นออกจากสนาม: วาง Core จากรีเสิร์ฟเท่านั้น (กติกา 04 ข้อ 2.2)
+  if (s.choice?.kind === 'placeCores')
+    return core.owner === s.choice.player && loc.player === s.choice.player && (loc.area === 'reserve' || (loc.area === 'card' && !(s.choice.step.do === 'placeCores' && s.choice.step.noSummon)));
   return canMoveCore(s, coreId);
 }
 
@@ -2260,6 +2262,8 @@ interface Store {
   trashView: PlayerId | null;
   /** พัดการ์ดใน Trash ที่อัญเชิญได้ตอนนี้ (แตะช่อง Trash ตอนมีใบที่อัญเชิญได้) */
   trashFan: PlayerId | null;
+  /** พัดการ์ดนอกมือ (แตะโซนนอกมือบนสนาม) */
+  shownFan: PlayerId | null;
 
   newGame(): void;
   setDeck(player: PlayerId, deck: DeckId): void;
@@ -3207,6 +3211,7 @@ export const useGame = create<Store>((set, get) => {
     pinned: null,
     trashView: null,
     trashFan: null,
+    shownFan: null,
     truth: null,
     handDrag: null,
     handOrder: {},

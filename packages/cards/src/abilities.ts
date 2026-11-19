@@ -533,6 +533,8 @@ export type Step =
   /** (engine ใช้ภายใน) Brave ที่อัญเชิญด้วยเอฟเฟกต์: เลือกสปิริตที่จะร่วมร่าง หรือไม่เลือก = ลงเป็นสปิริต */
   | { do: 'braveOrSpirit'; cardId: string }
   /** (engine ใช้ภายใน) เบรฟที่ผู้ร่วมร่างออกจากสนาม: เลือกให้อยู่ต่อหรือลง Trash */
+  /** (ภายใน engine) ร่างต้นออกจากสนาม: เบรฟจะคงอยู่ไหม · รีเสิร์ฟไม่พอ Lv1 = ลงแทรชเลย ไม่ถาม (กติกา 04 ข้อ 2) */
+  | { do: 'braveFate'; cardId: string; state: 'refresh' | 'exhausted'; continuesAttackOf?: string }
   | { do: 'braveTrash'; cardId: string }
   /**
    * ผู้ควบคุมเลือก 1 ตัวเลือก (if = ถามเฉพาะเมื่อเงื่อนไขเป็นจริง)
@@ -651,7 +653,7 @@ export type Step =
   | { do: 'symbolThisTurn'; color: Color; count: number; per?: CountPer; /** มีผลจนจบการต่อสู้นั้น */ untilBattleEnd?: true }
   /** ทำให้เอฟเฟกต์ของการ์ดเมจิคต้นเหตุ (subject) ไร้ผล */
   | { do: 'negateSubjectMagic' }
-  /** นำการ์ดต้นเหตุ (subject) ของคู่แข่งกลับไปไว้ใต้สุดเด็ค */
+  /** (มาคินะ) เลือกสปิริต/เบรฟบนสนาม 1 ตัว (ทั้งสองฝ่าย): เอฟเฟกต์ไร้ผล แล้วนำกลับไปไว้ใต้สุดเด็คเจ้าของ */
   | { do: 'returnSubjectToDeck' }
   /** ทำลายสปิริตของคู่แข่งที่ทำลายสปิริตต้นเหตุ (subject) */
   | { do: 'destroyDestroyer' }
