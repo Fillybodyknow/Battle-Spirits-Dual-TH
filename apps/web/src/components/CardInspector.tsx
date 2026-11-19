@@ -223,6 +223,12 @@ export function CardInspector() {
         {def.teams.length > 0 && <span className="ml-2 rounded bg-pink-500/80 px-1.5 text-xs font-black text-white">ทีม: {def.teams.join(' / ')}</span>}
         {def.magicTypes.length > 0 && <span className="ml-2 rounded bg-fuchsia-600/80 px-1.5 text-xs font-black text-white">ไทป์: {def.magicTypes.join(' / ')}</span>}
       </div>
+      {/* BS08: เงื่อนไขอัญเชิญของอัลติเมท */}
+      {(def.summonCondition as { text?: string } | undefined)?.text && (
+        <div className="border-b border-amber-400/30 bg-amber-500/15 px-3 py-1 text-xs font-bold text-amber-200">
+          《เงื่อนไขอัญเชิญ: {(def.summonCondition as { text: string }).text}》
+        </div>
+      )}
 
       {/* สถานะ + ตารางเลเวล */}
       <div className="flex flex-col gap-1.5 px-3 pt-2 text-xs">

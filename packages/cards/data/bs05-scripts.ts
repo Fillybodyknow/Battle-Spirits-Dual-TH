@@ -298,7 +298,7 @@ export const BS05_SCRIPTS: Record<string, CardScript> = {
     { kind: 'trigger', on: 'attack', granted: true, levels: [], steps: [{ do: 'battleColorless' }] },
   ],
   'ดาบภูต มุราซาเมะ': [
-    { kind: 'burst', soul: true, on: 'afterAllyDestroyedByOpponent', steps: [{ do: 'removeOpponentCores', count: 1, perPick: 3 }, { do: 'summonThisFree' }] },
+    { kind: 'burst', soul: true, on: 'afterAllyDestroyedByOpponent', alsoDepleted: true, steps: [{ do: 'removeOpponentCores', count: 1, perPick: 3 }, { do: 'summonThisFree' }] },
     {
       kind: 'activated',
       granted: true,
@@ -316,7 +316,7 @@ export const BS05_SCRIPTS: Record<string, CardScript> = {
     { kind: 'braveNotCounted', hostName: 'เจ้าหญิงดาบศักดิ์สิทธิ์ ชิซุรุ' },
   ],
   'ดาบชีพอัสนี มิคาซึกิ': [
-    { kind: 'burst', soul: true, on: 'afterAllyDestroyedByOpponent', steps: [{ do: 'negateOpponentsThisTurn' }, { do: 'summonThisFree' }] },
+    { kind: 'burst', soul: true, on: 'afterAllyDestroyedByOpponent', alsoDepleted: true, steps: [{ do: 'negateOpponentsThisTurn' }, { do: 'summonThisFree' }] },
     {
       kind: 'trigger',
       on: ['attack', 'block'],

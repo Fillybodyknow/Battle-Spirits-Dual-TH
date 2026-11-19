@@ -3,6 +3,9 @@ import { assertUsableCore, checkDepletion, destroy, drawCard, emit, emitStatic, 
 import { destroyCard, enqueue, fireTriggers, refreshByEffect, newBatch, queueExhaustTriggers, queueLifeLostTriggers, queueMagicUsedTriggers, queueSummonTriggers, queueTriggers, resolveChoice, runQueue } from './effects';
 import { nextRandom, shuffle } from './rng';
 import {
+  hasEvolutionNow,
+  summonBanned,
+  summonConditionOk,
   onStageAbilities,
   effectsNegated,
   RuleError,
@@ -166,6 +169,8 @@ function beginTurn(ctx: Ctx): void {
   {
     const batch = newBatch(ctx);
     for (const id of [...p.field]) queueTriggers(ctx, id, 'startStep', batch);
+    // "สตาร์ทสเต็ปของคู่แข่ง" (BS08 Showdown)
+    for (const id of [...s.players[opponentOf(player)].field]) queueTriggers(ctx, id, 'oppStartStep', batch);
   }
   if (s.queue.length > 0) {
     runQueue(ctx);
@@ -258,8 +263,21 @@ function drawStep(ctx: Ctx): void {
 
 /** Refresh Step → Main Step */
 function afterDraw(ctx: Ctx): void {
-  refreshStep(ctx);
+  const { s } = ctx;
+  const player = s.turnPlayer;
+  // ไทดัล-บลู (Soul Drive): เทิร์นนี้ข้ามรีเฟรชสเต็ป / เมนสเต็ป
+  const skip = (s.skipSteps ?? []).filter((x) => x.player === player && x.turn === s.turn).flatMap((x) => x.steps);
+  if (skip.includes('refresh')) setPhase(ctx, 'refresh');
+  else refreshStep(ctx);
+  if (skip.includes('main')) {
+    enterAttackStep(ctx, player);
+    return;
+  }
   setPhase(ctx, 'main');
+  // "เมื่อเริ่มเมนสเต็ปของเรา" (BS08 No.15 นิวลากูน)
+  const batch = newBatch(ctx);
+  for (const id of [...s.players[player].field]) queueTriggers(ctx, id, 'ownMainStepStart', batch);
+  runQueue(ctx);
 }
 
 /** Refresh Step ของผู้เล่นเทิร์น (ใช้ซ้ำกับ "เข้า [รีเฟรชสเต็ปของเรา] อีก 1 ครั้ง") */
@@ -406,8 +424,12 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
       // เบรฟที่มี [Quick] อัญเชิญมาร่วมร่างทันทีในแอทแท็คสเต็ปได้ (กติกา 04)
       if (braveOnto && !quick) fail('WRONG_PHASE', 'ร่วมร่าง Brave ได้เฉพาะ Main Step');
     }
-    if (def.type === 'ultimate') fail('NOT_SUPPORTED', 'Ultimate ยังไม่รองรับ (ขั้นที่ 3)');
-    if (def.type !== 'spirit' && def.type !== 'brave') fail('WRONG_CARD_TYPE', 'อัญเชิญได้เฉพาะ Spirit/Brave');
+    if (def.type !== 'spirit' && def.type !== 'brave' && def.type !== 'ultimate') fail('WRONG_CARD_TYPE', 'อัญเชิญได้เฉพาะ Spirit/Ultimate/Brave');
+    // อัลติเมท: ตรวจเงื่อนไขอัญเชิญก่อน (กติกา 03 ข้อ 2.2)
+    if (def.type === 'ultimate' && !summonConditionOk(s, db, cardId)) fail('SUMMON_CONDITION', `ยังไม่ครบเงื่อนไขอัญเชิญ: ${(def.summonCondition as { text?: string })?.text ?? ''}`);
+    if (def.type === 'ultimate' && braveOnto) fail('WRONG_CARD_TYPE', 'อัลติเมทร่วมร่างไม่ได้');
+    // เฮียวจินดราก้อน: ในเทิร์นนี้อัญเชิญคอสต์ไม่เกิน N ไม่ได้
+    if (summonBanned(s, db, player, def)) fail('SUMMON_BANNED', 'ในเทิร์นนี้อัญเชิญการ์ดนี้ไม่ได้ (เอฟเฟกต์ของคู่แข่ง)');
 
     const p = s.players[player];
     const card = s.cards[cardId]!;
@@ -730,7 +752,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
       fail('CANNOT_BLOCK', battle.consecutiveBlade ? 'ต้องป้องกันด้วยสปิริตที่ไม่มีชีลด์ให้ครบก่อน ([Consecutive Blade])' : 'ป้องกันด้วยการ์ดนี้ไม่ได้');
     }
 
-    payBlockTax(ctx, player);
+    payBlockTax(ctx, player, battle.attackerId);
     card.state = battle.exhaustedBlock ? 'refresh' : 'exhausted';
     battle.blockers.push(blockerId);
     emit(ctx, { type: 'blockDeclared', blockerId });
@@ -752,6 +774,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     for (const id of [...ctx.s.players[player].field]) if (id !== blockerId) queueTriggers(ctx, id, 'allyBlock', batch, { subject: blockerId });
     queueTriggers(ctx, blockerId, 'allyBlock', batch, { subject: blockerId });
     queueBlockedTriggers(ctx, battle.attackerId, blockerId, batch);
+    lifeOnBlocked(ctx);
     queueExhaustTriggers(ctx, blockerId);
     runQueue(ctx);
   },
@@ -852,7 +875,8 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     }
     const card = fieldCard(s, player, cardId);
     const level = cardLevel(s, db, cardId);
-    if (!db.get(card.cardNo).abilities.some((a) => a.kind === 'evolution' && a.levels.includes(level))) {
+    void level;
+    if (!hasEvolutionNow(s, db, cardId)) {
       fail('NO_EVOLUTION', 'สปิริตนี้ใช้ [Evolution] ไม่ได้ (ที่เลเวลนี้)');
     }
     if (cores.length === 0) fail('NO_CORES', 'ต้องเลือก Core อย่างน้อย 1 ดวง');
@@ -875,10 +899,17 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     }
 
     const depleted = checkDepletion(ctx);
-    if (soul) fireTriggers(ctx, cardId, 'soulEvolvedOnto');
+    if (soul) {
+      // "เมื่อโซลคอร์ถูกวางบนสปิริตของเราโดย Evolution" (สุเมรากิ-ดราก้อน) เกิดพร้อมกับของตัวเอง
+      const batch = newBatch(ctx);
+      queueTriggers(ctx, cardId, 'soulEvolvedOnto', batch);
+      for (const id of [...s.players[player].field]) queueTriggers(ctx, id, 'allySoulEvolvedOnto', batch, { subject: cardId });
+      runQueue(ctx);
+    }
     if (depleted.length > 0) {
       const batch = newBatch(ctx);
-      for (const id of [...s.players[player].field]) queueTriggers(ctx, id, 'allyDepletedByEvolution', batch);
+      // การ์ดในมือก็ทำงาน (สุเมรากิ-ดราก้อน: อัญเชิญไม่จ่ายคอสต์)
+      for (const id of [...s.players[player].field, ...s.players[player].hand]) queueTriggers(ctx, id, 'allyDepletedByEvolution', batch);
       runQueue(ctx);
     }
   },
@@ -1002,7 +1033,7 @@ function applyChosenBlockers(ctx: Ctx): void {
   const defender = opponentOf(s.turnPlayer);
   const chosen = battle.chosenBlockers.filter((id) => inBattle(s, id));
   if (chosen.length === 0) return;
-  payBlockTax(ctx, defender);
+  payBlockTax(ctx, defender, battle.attackerId);
   for (const id of chosen) {
     const wasExhausted = s.cards[id]!.state === 'exhausted';
     s.cards[id]!.state = battle.exhaustedBlock ? 'refresh' : 'exhausted';
@@ -1015,7 +1046,21 @@ function applyChosenBlockers(ctx: Ctx): void {
   const batch = newBatch(ctx);
   for (const id of chosen) queueTriggers(ctx, id, 'block', batch);
   for (const id of chosen) queueBlockedTriggers(ctx, battle.attackerId, id, batch);
+  lifeOnBlocked(ctx);
   runQueue(ctx);
+}
+
+/** เฟลมมังกรคลั่ง: ผู้โจมตีของเรา (มีโซลคอร์) ถูกป้องกัน → ส่งคอร์ไลฟ์ฝ่ายป้องกันลงรีเสิร์ฟ */
+function lifeOnBlocked(ctx: Ctx): void {
+  const { s } = ctx;
+  const b = s.battle;
+  const lb = b?.lifeOnBlocked;
+  if (!b || !lb || lb.done || b.blockers.length === 0) return;
+  const attacker = s.cards[b.attackerId]!;
+  if (attacker.owner !== lb.player || !attacker.cores.some((c) => s.cores[c]!.isSoul)) return;
+  lb.done = true;
+  const defender = opponentOf(lb.player);
+  if (!loseLife(ctx, defender, lb.amount, lb.player)) queueLifeLostTriggers(ctx, defender, lb.amount);
 }
 
 function openFlashAfterBlock(battle: NonNullable<GameState['battle']>, defender: PlayerId): void {
@@ -1169,9 +1214,15 @@ function blockLevelTotal(ctx: Ctx): number {
 }
 
 /** ฮิเมะเนโกะ: การป้องกันครั้งแรกของการต่อสู้นี้ ฝ่ายป้องกันส่งคอร์รีเสิร์ฟลงแทรช (คอร์ปกติก่อน) */
-function payBlockTax(ctx: Ctx, defender: PlayerId): void {
+function payBlockTax(ctx: Ctx, defender: PlayerId, attackerId: string): void {
   const tax = ctx.s.battle?.blockTax;
   if (!tax || tax.paid) return;
+  // อาคิตะ-ด็อก: ทิ้งการ์ดบนมือ (ฝ่ายป้องกันเลือก) แทนการส่งคอร์
+  if (tax.discard) {
+    tax.paid = true;
+    enqueue(ctx, { controller: defender, sourceId: attackerId, steps: [{ do: 'discard', count: tax.discard }], paidWithSoul: false, trashWhenDone: false, announce: false });
+    return;
+  }
   const p = ctx.s.players[defender];
   const pay = [...p.reserve].sort((a, b) => Number(ctx.s.cores[a]!.isSoul) - Number(ctx.s.cores[b]!.isSoul)).slice(0, tax.reserveToTrash);
   for (const id of pay) removeFrom(p.reserve, id);

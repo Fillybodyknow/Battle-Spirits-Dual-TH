@@ -207,6 +207,17 @@ export function extraSymbols(state: GameState, db: CardDatabase, cardId: string)
   }
   // เจ็มที่เพิ่มจนจบการต่อสู้นี้ (เอฟเฟกต์ไม่บอกระยะเวลา)
   for (const t of state.cards[cardId]!.battleSymbols ?? []) out[t.color as SymbolColor] = (out[t.color as SymbolColor] ?? 0) + t.count;
+  // "ในเทิร์นนี้ สปิริตของเรา...ทั้งหมดได้รับเจ็มเพิ่ม" / "สปิริตคู่แข่งทั้งหมดสูญเสียเจ็มสี..." (BS08)
+  for (const t of state.turnSymbolBuffs ?? []) {
+    const c = state.cards[cardId]!;
+    if (t.player !== c.owner || t.turn !== state.turn || (t.filter && !matchesFilter(state, db, cardId, t.filter))) continue;
+    const col = t.color as SymbolColor;
+    if (t.count < 0) {
+      // เสียเจ็มได้เฉพาะสีที่มีอยู่ (ของการ์ด + เบรฟ + ที่เพิ่ม)
+      const have = [cardId, ...c.braves].reduce((n, x) => n + (db.get(state.cards[x]!.cardNo).symbols[col] ?? 0), 0) + (out[col] ?? 0);
+      out[col] = (out[col] ?? 0) - Math.min(have, -t.count);
+    } else out[col] = (out[col] ?? 0) + t.count;
+  }
   // "ในเทิร์นนี้ สปิริตนี้เจ็ม...เพิ่ม"
   for (const t of state.turnSymbols ?? []) {
     if (t.cardId === cardId && t.turn === state.turn) out[t.color as SymbolColor] = (out[t.color as SymbolColor] ?? 0) + t.count;
@@ -262,7 +273,8 @@ export function conditionHolds(
     if (!db) return false;
     // ปกติไม่นับการ์ดที่วางแสดงนอกมือ · withShown = "ในมือ/นอกมือ"
     const pool = cond.handHas.withShown ? owner.hand : handCards(state, card.owner);
-    return pool.some((id) => matchesFilter(state, db, id, cond.handHas));
+    const f = withTeamOf(state, db, cond.handHas, sourceId);
+    return pool.some((id) => matchesFilter(state, db, id, f));
   }
   if ('catalyzed' in cond) return catalyzed;
   if ('selfCoresAtLeast' in cond) return card.cores.length >= cond.selfCoresAtLeast;
@@ -334,6 +346,7 @@ export function conditionHolds(
     const f = withTeamOf(state, db, cond.alliesMatchAtLeast.filter, sourceId);
     return owner.field.filter((id) => (f.types || isSpiritLike(db.get(state.cards[id]!.cardNo))) && matchesFilter(state, db, id, f)).length >= cond.alliesMatchAtLeast.count;
   }
+  if ('kageTargeted' in cond) return card.kageTurn === state.turn;
   if ('selfIs' in cond) return !!db && matchesFilter(state, db, sourceId, cond.selfIs);
   if ('onceFree' in cond) return !(state.usedOncePerTurn ?? []).includes(`${sourceId}:${cond.onceFree}`);
   // ตรวจได้เฉพาะตอนประมวลผลเอฟเฟกต์ในคิว (ดู holds ใน effects.ts)
@@ -465,6 +478,10 @@ export function matchesFilter(state: GameState, db: CardDatabase, cardId: string
   if (filter.hasSoloPart && !hasSoloPart(def)) return false;
   if (filter.notShown && (state.shownCards ?? []).includes(cardId)) return false;
   if (filter.excludeIds?.includes(cardId)) return false;
+  // ---------------- BS08
+  if (filter.textIncludes && !filter.textIncludes.some((w) => effectText(def).includes(w))) return false;
+  if (filter.noEffectText && effectText(def).trim() !== '') return false;
+  if (filter.notInBattle && state.battle && (state.battle.attackerId === cardId || state.battle.blockers.includes(cardId))) return false;
   return true;
 }
 
@@ -480,6 +497,12 @@ export function shareTeam(a: CardDef, b: CardDef): boolean {
 
 /** ตัวกรอง sameTeamAs: แทนด้วยทีมของการ์ด refId (ไม่มีทีม = ไม่มีการ์ดใดตรง) */
 export function withTeamOf(state: GameState, db: CardDatabase, f: CardFilter, selfId: string, subjectId?: string): CardFilter {
+  // BS08 "มีเผ่าเดียวกันกับสปิริตนี้"
+  if (f.sameFamilyAs) {
+    const fam = state.cards[selfId] ? db.get(state.cards[selfId]!.cardNo).family : [];
+    const { sameFamilyAs: _f, ...rest } = f;
+    return withTeamOf(state, db, { ...rest, families: fam.length ? fam : ['\u0000'] }, selfId, subjectId);
+  }
   if (!f.sameTeamAs) return f;
   const ref = f.sameTeamAs === 'self' ? selfId : subjectId;
   const teams = ref && state.cards[ref] ? db.get(state.cards[ref]!.cardNo).teams : [];
@@ -797,7 +820,16 @@ export function effectBlocked(state: GameState, db: CardDatabase, sourceId: stri
 export function effectBlocker(state: GameState, db: CardDatabase, sourceId: string, targetId: string): StaticSource | 'battle' | null {
   const src = state.cards[sourceId];
   const target = state.cards[targetId];
-  if (!src || !target || src.owner === target.owner) return null;
+  if (!src || !target) return null;
+  // ทาเคะนาชิ ฟอร์เทรส: ไม่รับผลเอฟเฟกต์ใด ๆ (รวมของเรา) ยกเว้นการ์ดที่ชื่อมีคำที่ระบุ
+  if (state.players[target.owner].field.includes(targetId) && !effectsNegated(state, db, targetId)) {
+    const lv = cardLevel(state, db, targetId);
+    for (const ab of db.get(target.cardNo).abilities) {
+      if (ab.kind !== 'effectImmune' || !ab.exceptNamed || !ab.levels.includes(lv) || sourceId === targetId) continue;
+      if (!nameHas(db.get(src.cardNo), ab.exceptNamed)) return { cardId: targetId, source: ab.source };
+    }
+  }
+  if (src.owner === target.owner) return null;
   const tDef = db.get(target.cardNo);
   const hostOf = (braveId: string) => braveHostOf(state, braveId);
   // ต้นเหตุเป็นสปิริตรวมร่าง (หรือเบรฟที่ให้ความสามารถแก่ผู้ร่วมร่าง): นับเป็นสปิริต ได้สีของเบรฟด้วย (กติกา 04)
@@ -814,7 +846,8 @@ export function effectBlocker(state: GameState, db: CardDatabase, sourceId: stri
     for (const holder of state.players[p].field.flatMap((f) => [f, ...state.cards[f]!.braves])) {
       const hDef = db.get(state.cards[holder]!.cardNo);
       for (const ab of hDef.abilities) {
-        if (ab.kind !== 'effectImmune') continue;
+        // exceptNamed (ทาเคะนาชิ ฟอร์เทรส) ตรวจแยกไว้ด้านบน
+        if (ab.kind !== 'effectImmune' || ab.exceptNamed) continue;
         const host = ab.granted ? hostOf(holder) : holder;
         if (!host) continue;
         if (!ab.granted && (!state.players[p].field.includes(holder) || !ab.levels.includes(cardLevel(state, db, holder)))) continue;
@@ -873,7 +906,13 @@ export function bounceBottomSource(state: GameState, db: CardDatabase, cardId: s
 export function cardColors(state: GameState, db: CardDatabase, cardId: string): CardDef['colors'] {
   const card = state.cards[cardId];
   if (!card) return [];
-  const own = db.get(card.cardNo).colors;
+  let own = db.get(card.cardNo).colors;
+  // "สีของสปิริตนี้ถือว่าเป็นสี...ด้วย" (BS08 โฮมุแรดคอล / เมโนอุดราก้อน)
+  if (state.players[card.owner].field.includes(cardId) && !effectsNegated(state, db, cardId)) {
+    const lv = cardLevel(state, db, cardId);
+    const also = db.get(card.cardNo).abilities.flatMap((a) => (a.kind === 'colorAlso' && a.levels.includes(lv) ? [a.color] : []));
+    if (also.length) own = [...new Set([...own, ...also])];
+  }
   if (card.braves.length === 0) return own;
   return [...new Set([...own, ...card.braves.flatMap((b) => db.get(state.cards[b]!.cardNo).colors)])];
 }
@@ -1020,7 +1059,10 @@ export function payableCost(state: GameState, db: CardDatabase, player: PlayerId
   // "เมื่ออัญเชิญการ์ดที่ชื่อมีคำ ... สปิริตนี้เจ็มเพิ่ม" (ปะกุกุ)
   for (const id of state.players[player].field) {
     for (const ab of db.get(state.cards[id]!.cardNo).abilities) {
-      if (ab.kind !== 'summonSymbol' || !nameHas(def, ab.nameIncludes) || effectsNegated(state, db, id)) continue;
+      if (ab.kind !== 'summonSymbol' || effectsNegated(state, db, id)) continue;
+      if (ab.nameIncludes && !nameHas(def, ab.nameIncludes)) continue;
+      // Spirit Soul: "เมื่อเราทำการอัญเชิญการ์ดอัลติเมท"
+      if (ab.filter?.types && !ab.filter.types.includes(def.type)) continue;
       if (!ab.levels.includes(cardLevel(state, db, id)) || !conditionHolds(state, id, ab.if, false, false, db)) continue;
       symbols[ab.color] = (symbols[ab.color] ?? 0) + ab.count;
     }
@@ -1153,6 +1195,8 @@ export function attackLifeDamage(state: GameState, db: CardDatabase, attackerId:
   let dmg = override ?? symbolCount(db.get(attacker.cardNo)) + braves + extra;
   if (state.symbolsZero?.turn === state.turn && dmg >= state.symbolsZero.minSymbols) dmg = 0;
   if ((state.lifeShields ?? []).some((l) => l.player === defender && l.turn === state.turn && fieldCost(state, db, attackerId) >= l.minCost)) dmg = 0;
+  // กำแพงผลึกขาว: ในเทิร์นนี้ไลฟ์เสียหายได้ไม่เกิน 1
+  if (dmg > 1 && (state.lifeCapOne ?? []).some((l) => l.player === defender && l.turn === state.turn)) dmg = 1;
   if (dmg > 0 && lifeDamageCapped(state, db, defender)) {
     const rec = state.lifeDamageBy?.turn === state.turn && state.lifeDamageBy.player === defender ? state.lifeDamageBy : null;
     dmg = rec?.ids.includes(attackerId) ? 0 : 1;
@@ -1292,6 +1336,7 @@ export function canAttackWith(state: GameState, db: CardDatabase, cardId: string
     const level = cardLevel(state, db, cardId);
     if (def.abilities.some((a) => a.kind === 'cannotAttack' && a.levels.includes(level) && conditionHolds(state, cardId, a.if, false, false, db))) return false;
   }
+  if ((state.turnNoAttack ?? []).some((t) => t.cardId === cardId && t.turn === state.turn)) return false;
   return !(state.attackBans ?? []).some((b) => b.player === card.owner && b.turn === state.turn && b.types.includes(def.type));
 }
 
@@ -1326,6 +1371,8 @@ export function blockersFor(state: GameState, db: CardDatabase, defender: Player
     if (b?.blockFilter && !matchesFilter(state, db, id, b.blockFilter)) return false;
     if (attacker && attackerUnblockable(state, attacker.id, def.type)) return false;
     if (turnLocked(state, id)) return false;
+    // ไทรซอร์ดอน: ป้องกันสปิริตที่ BP น้อยกว่าสปิริตนี้ไม่ได้
+    if (attacker && cannotBlockLowerBp(state, db, id) && currentBp(state, db, attacker.id) < currentBp(state, db, id)) return false;
     // โนอา-เฟลอร์: ไม่ถูกป้องกันโดยสปิริต/อัลติเมทคอสต์ไม่เกิน N
     if (attacker && costBlockBan(state, db, attacker.id, id)) return false;
     // ฮาคุเกอิน: สปิริตที่ BP ไม่เกินผู้โจมตีป้องกันไม่ได้
@@ -1341,6 +1388,8 @@ export function blockersFor(state: GameState, db: CardDatabase, defender: Player
   }
   // ฮิเมะเนโกะ: ต้องส่งคอร์รีเสิร์ฟลงแทรชก่อนป้องกัน (ยังไม่จ่าย และคอร์ไม่พอ = ป้องกันไม่ได้)
   if (b?.blockTax && !b.blockTax.paid && state.players[defender].reserve.length < b.blockTax.reserveToTrash) return [];
+  // อาคิตะ-ด็อก: ต้องทิ้งการ์ดบนมือก่อนป้องกัน
+  if (b?.blockTax?.discard && !b.blockTax.paid && handCards(state, defender).length < b.blockTax.discard) return [];
   // [Consecutive Blade]: ตัวที่ไม่มีชีลด์ (ไม่รับผลของผู้โจมตี) ต้องป้องกันให้ครบก่อน
   // ตัวที่มีชีลด์จะมาแย่งช่องไม่ได้ ยกเว้นตัวไม่มีชีลด์ไม่พอ (กติกา 14 Consecutive Blade Q&A 4-5)
   if (b?.consecutiveBlade && b.mustBlock) {
@@ -1450,4 +1499,77 @@ export function magicUsedUp(state: GameState, db: CardDatabase, player: PlayerId
   const ab = def.abilities.find((a) => a.kind === 'magic' && a.timing === timing);
   if (!ab || ab.kind !== 'magic' || !ab.oncePerTurn) return false;
   return (state.usedOncePerTurn ?? []).includes(`${player}:${cardNo}:${ab.source}`);
+}
+
+// ---------------------------------------------------------------- BS08
+
+/** ข้อความเอฟเฟกต์ทั้งหมดของการ์ด (ใช้ตรวจคีย์เวิร์ด เช่น Showdown / Rush / Evolution) */
+export function effectText(def: CardDef): string {
+  return (def.effects as { text?: string }[]).map((e) => e.text ?? '').join(' ');
+}
+
+/** ไทรซอร์ดอน: สปิริตนี้ป้องกันสปิริตที่ BP น้อยกว่าไม่ได้ (แอทแท็คสเต็ปของคู่แข่ง) */
+export function cannotBlockLowerBp(state: GameState, db: CardDatabase, cardId: string): boolean {
+  if (effectsNegated(state, db, cardId)) return false;
+  const lv = cardLevel(state, db, cardId);
+  return db.get(state.cards[cardId]!.cardNo).abilities.some((a) => a.kind === 'cannotBlockLowerBp' && a.levels.includes(lv));
+}
+
+/** เจ้าแห่งน้ำ โอตโตะ: จำนวนคอร์ขั้นต่ำที่คู่แข่งถอดการ์ดนี้ให้ต่ำกว่าไม่ได้ (0 = ไม่มีผล) */
+export function coreFloorOf(state: GameState, db: CardDatabase, cardId: string): { min: number; src: StaticSource } | null {
+  const owner = state.cards[cardId]!.owner;
+  let best: { min: number; src: StaticSource } | null = null;
+  for (const id of state.players[owner].field) {
+    if (effectsNegated(state, db, id)) continue;
+    const lv = cardLevel(state, db, id);
+    for (const ab of db.get(state.cards[id]!.cardNo).abilities) {
+      if (ab.kind !== 'coreFloor' || !ab.levels.includes(lv) || !conditionHolds(state, id, ab.if, false, false, db)) continue;
+      if (!matchesFilter(state, db, cardId, ab.filter)) continue;
+      if (!best || ab.min > best.min) best = { min: ab.min, src: { cardId: id, source: ab.source } };
+    }
+  }
+  return best;
+}
+
+/** การ์ดนี้ใช้ [Evolution] ได้ไหม (ของตัวเอง หรือได้รับจากการ์ดของเรา: ซามูไร-ดราก้อน-อามาสึ) */
+export function hasEvolutionNow(state: GameState, db: CardDatabase, cardId: string): boolean {
+  const card = state.cards[cardId]!;
+  const level = cardLevel(state, db, cardId);
+  if (db.get(card.cardNo).abilities.some((a) => a.kind === 'evolution' && a.levels.includes(level))) return true;
+  for (const id of state.players[card.owner].field) {
+    if (effectsNegated(state, db, id)) continue;
+    const lv = cardLevel(state, db, id);
+    for (const ab of db.get(state.cards[id]!.cardNo).abilities) {
+      if (ab.kind === 'grantEvolution' && ab.levels.includes(lv) && matchesFilter(state, db, cardId, ab.filter)) return true;
+    }
+  }
+  return false;
+}
+
+/** BP ที่ใช้เทียบใน Showdown (รวม "ขณะทำการ Showdown สปิริตนี้ BP+") */
+export function showdownBp(state: GameState, db: CardDatabase, cardId: string): number {
+  let bp = currentBp(state, db, cardId);
+  if (!effectsNegated(state, db, cardId)) {
+    const lv = cardLevel(state, db, cardId);
+    for (const ab of db.get(state.cards[cardId]!.cardNo).abilities) if (ab.kind === 'showdownBp' && ab.levels.includes(lv)) bp += ab.amount;
+  }
+  return bp;
+}
+
+/** การ์ดนี้ของ player อัญเชิญไม่ได้ในเทิร์นนี้ (เฮียวจินดราก้อน) */
+export function summonBanned(state: GameState, db: CardDatabase, player: PlayerId, def: CardDef): boolean {
+  return (state.summonBans ?? []).some((b) => b.player === player && b.turn === state.turn && b.types.includes(def.type) && def.cost <= b.maxCost);
+}
+
+/** เงื่อนไขอัญเชิญของอัลติเมท ("ไลฟ์เราไม่เกิน N") ผ่านไหม */
+export function summonConditionOk(state: GameState, db: CardDatabase, cardId: string): boolean {
+  const cond = db.get(state.cards[cardId]!.cardNo).summonCondition as (Condition & { text?: string }) | undefined;
+  if (!cond) return true;
+  const { text: _t, ...c } = cond as Condition & { text?: string };
+  return conditionHolds(state, cardId, c as Condition, false, false, db);
+}
+
+/** ฟุทสึโนะมิทามะ: ผู้เล่นทุกคนนำคอร์จากวอยด์มาวางที่ไลฟ์ไม่ได้ */
+export function noLifeFromVoidSource(state: GameState, db: CardDatabase): StaticSource | null {
+  return staticSources(state, db, ['p1', 'p2'], 'noLifeFromVoid')[0] ?? null;
 }

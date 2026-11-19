@@ -413,6 +413,7 @@ export const BS07_SCRIPTS: Record<string, CardScript> = {
       kind: 'burst',
       soul: true,
       on: 'afterAllyDestroyedByOpponent',
+      alsoDepleted: true,
       steps: [{ do: 'debuffChosenOpponent', amount: 20000, filter: { types: SPIRIT }, exhaustAtZero: true }, { do: 'summonThisFree' }],
     },
     { kind: 'burstOnDiscard' },

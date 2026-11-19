@@ -119,6 +119,15 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
   Solo Part = `destroyImmune` (`soloPart`, ตรวจใน `destroyCard`), My Unit = step `myUnit` (`battle.unit`, เงื่อนไข `inUnit`),
   ตัวคูณ "ต่อจำนวน..." = `per` บน step (`CountPer`), `when` (if/else), `extraSteps` (`afterAttackStep` ใน game.ts), `blockLevelSum` (`battle.levelBlock`),
   `unblockableByCost`, `selfCostIf`, `burstOnDiscard`, trigger `allyBlock`/`oppMagicUse` (`negateSubjectMagic`), ตัวกรอง `team`/`sameTeamAs`/`notSelf`/`hasSoloPart`/`hasOnStage`
+- **BS08**: อัลติเมทอัญเชิญได้ (ไม่ร่วมร่าง) · `《เงื่อนไขอัญเชิญ: ไลฟ์เราไม่เกิน N》` ในไฟล์การ์ด → `summonCondition` (ตรวจด้วย `summonConditionOk`, หน้าเว็บซ่อนปุ่มอัญเชิญถ้าไม่ครบ) · เจ็ม `อัลติเมท`,
+  Showdown = trigger `oppStartStep` + step `showdown.then` (คู่แข่งระบุเป้า, `showdownBp`, event `showdown`), Soul Drive = step `soulToVoid` (event `soulDrive`),
+  Spirit Soul = `summonSymbol.filter`, Infinite Blade = `chooseBlockers.direct` + `unexhaustSelf`, Evolution ที่ได้รับ = `grantEvolution` (ใช้ `hasEvolutionNow` ทั้ง engine และเว็บ),
+  คีย์เวิร์ดในข้อความ = ตัวกรอง `textIncludes` (Rush / Showdown ฯลฯ), `noEffectText`, `sameFamilyAs`, `notInBattle` · ถาวร `coreFloor`, `cannotBlockLowerBp`, `colorAlso`, `noLifeFromVoid`, `effectImmune.exceptNamed`,
+  ในเทิร์นนี้: `summonBans` / `turnSymbolBuffs` / `lifeCapOne` / `turnNoAttack` / `attackShiftTurn` · เทิร์นถัดไป `skipSteps` · ในการต่อสู้ `battle.lifeOnBlocked`, `blockTax.discard`,
+  `bounceAllOpponent.to: 'deckTop'` (เรียงด้วย `toDeckTop` ซึ่งใช้เด็คของเจ้าของการ์ด) · trigger `ownMainStepStart` / `allyBurstActivated` / `allySoulEvolvedOnto`
+- **สูญสลายไม่ใช่การถูกทำลาย** (กติกา 10): สูญสลายโดยคู่แข่ง = trigger `depletedByOpponent` + เบิร์ส `afterAllyDepletedByOpponent` เท่านั้น
+  ข้อความ "ถูกทำลาย/สูญสลาย" = trigger `on: ['destroyedByOpponent', 'depletedByOpponent']` / เบิร์ส `alsoDepleted: true` · "ถูกทำลายโดยเอฟเฟกต์ของคู่แข่ง" (ไม่นับแพ้เทียบ BP) = `destroyedByOpponentEffect`
+  · เอฟเฟกต์ "เมื่อถูกทำลาย" ทำงานขณะยังอยู่บนสนาม (engine ส่งลงแทรชก่อน: "วางคอร์บนสปิริตนี้" = คอร์กลับรีเสิร์ฟ)
 - **BP0 ไม่ถูกทำลายเอง** (เจ้าของโปรเจกต์กำหนด): ทำลายเฉพาะการ์ดที่เขียน "ทำลาย…ที่กลายเป็น BP0" = `debuffChosenOpponent.destroyAtZero`
 - **ย้ายการ์ดไปเขียนเต็มที่ชุดอื่น = รหัสการ์ดเปลี่ยน**: เพิ่มรหัสเดิม → รหัสใหม่ใน `packages/cards/src/legacy-card-no.ts`
   (เด็คที่ผู้เล่นจัดไว้ / รหัสเด็คออนไลน์แปลงตอนโหลดด้วย `migrateEntries` ใน decks.ts) ไม่งั้นเด็คเก่าหาการ์ดไม่เจอ

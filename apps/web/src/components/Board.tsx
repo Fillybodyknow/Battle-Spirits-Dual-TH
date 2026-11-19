@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { activatableOptions, onStageAbilities, baseCost, braveToSwap, canAttackWith, cardLevel, currentBp, isSpiritLike, payableCost, trashSummonRule, type CoreTarget, type GameState, type PlayerId } from '@bs/engine';
+import { activatableOptions, onStageAbilities, baseCost, braveToSwap, canAttackWith, cardLevel, currentBp, isSpiritLike, payableCost, summonConditionOk, trashSummonRule, type CoreTarget, type GameState, type PlayerId } from '@bs/engine';
 import { playerLabel } from '../format';
 import { IMG } from '../assets';
 import type { Fx } from '../store';
@@ -1296,7 +1296,8 @@ export function playOptions(state: GameState, cardId: string): { label: string; 
   /** วางแสดงนอกมือ: เซ็ทเป็น Burst ไม่ได้ (กติกา 06 Q5) */
   const shownOut = (state.shownCards ?? []).includes(cardId);
   const options: { label: string; run: () => void }[] = [];
-  if (main && (def.type === 'spirit' || def.type === 'brave' || def.type === 'ultimate')) {
+  // อัลติเมท: แสดงเมื่อครบเงื่อนไขอัญเชิญ (เช่น ไลฟ์เราไม่เกิน 3)
+  if (main && (def.type === 'spirit' || def.type === 'brave' || (def.type === 'ultimate' && summonConditionOk(state, db, cardId)))) {
     options.push({ label: 'อัญเชิญ', run: () => openPlay(cardId, 'summon') });
   }
   for (const host of braveHosts(state, cardId)) {

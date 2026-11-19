@@ -121,12 +121,11 @@ describe('Core, คอสต์ และเลเวล (หมวด 3)', () =
     expect(s.players.p1.reserve).toHaveLength(3);
   });
 
-  it('Magic จ่ายคอสต์แล้วลง Trash, Ultimate ยังไม่รองรับ', () => {
+  it('Magic จ่ายคอสต์แล้วลง Trash', () => {
     let s = setup({ p1: [FIRE, TITAN] });
     s = act(s, { type: 'useMagic', player: 'p1', cardId: inHand(s, 'p1', FIRE), payment: reserve(s, 'p1', 4) });
     expect(s.players.p1.trashCards).toHaveLength(1);
     expect(s.players.p1.trashCores).toHaveLength(4);
-    actFails(s, { type: 'summon', player: 'p1', cardId: inHand(s, 'p1', TITAN), payment: [], placement: [] }, 'NOT_SUPPORTED');
   });
 });
 

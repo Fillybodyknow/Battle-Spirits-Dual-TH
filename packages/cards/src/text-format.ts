@@ -13,7 +13,7 @@
  *
  * ไฟล์นี้ import แค่ type เพื่อให้สคริปต์รันด้วย node ได้ตรง ๆ (type stripping)
  */
-import type { CardDefInput, Color } from './schema';
+import type { CardDefInput, Color, SymbolColor } from './schema';
 import type { DeckEntry, Foil } from './deck';
 
 export interface TextEffect {
@@ -252,11 +252,12 @@ function parseCardBlock(block: Line[], autoCardNo: string, errors: string[]): Ca
   // ลดคอสต์ / Gem symbol: "แดง 2, ขาว 1"
   const symbolMap = (key: string) => {
     const f = optional(key);
-    const map: Partial<Record<Color, number>> = {};
+    const map: Partial<Record<SymbolColor, number>> = {};
     if (!f || isNone(f.value)) return map;
     for (const part of f.value.split(/[,/]/).map((s) => s.trim()).filter(Boolean)) {
       const m = part.match(/^(\D+?)\s*(\d+)$/);
-      const color = m ? COLOR_TH[m[1]!] : undefined;
+      // "เจ็มอัลติเมท1" = สัญลักษณ์อัลติเมท (BS08)
+      const color: SymbolColor | undefined = m ? (/^(เจ็ม)?อัลติเมท$/.test(m[1]!.trim()) ? 'ultimate' : COLOR_TH[m[1]!]) : undefined;
       if (!m || !color || Number(m[2]) < 1) {
         errIn(f.line, `${key} ต้องเป็นรูปแบบ "สี จำนวน": "${part}"`);
         continue;
@@ -309,7 +310,14 @@ function parseCardBlock(block: Line[], autoCardNo: string, errors: string[]): Ca
   // บรรทัด "ทีม: A/B" และ "ไทป์: เพลง" (BS07) = ข้อมูลของการ์ด ไม่ใช่บรรทัดเอฟเฟกต์
   const teams: string[] = [];
   const magicTypes: string[] = [];
+  /** 《เงื่อนไขอัญเชิญ : ...》 (อัลติเมท) */
+  let summonCondition: unknown;
   const effectLine = (line: Line) => {
+    const cond = line.text.trim().match(/^《\s*เงื่อนไขอัญเชิญ\s*:\s*(.+?)\s*》$/);
+    if (cond) {
+      summonCondition = parseSummonCondition(cond[1]!, (msg) => errIn(line, msg));
+      return;
+    }
     const tag = line.text.trim().match(/^(ทีม|ไทป์)\s*:\s*(.+)$/);
     if (tag) {
       const list = tag[2]!.split(/[,/]/).map((s) => s.trim()).filter(Boolean);
@@ -370,7 +378,19 @@ function parseCardBlock(block: Line[], autoCardNo: string, errors: string[]): Ca
     ...(braveCondition ? { braveCondition } : {}),
     ...(teams.length ? { teams } : {}),
     ...(magicTypes.length ? { magicTypes } : {}),
+    ...(summonCondition ? { summonCondition } : {}),
   };
+}
+
+/**
+ * เงื่อนไขอัญเชิญของอัลติเมท → Condition ของ DSL (engine ตรวจตอนอัญเชิญ)
+ * รูปแบบที่รองรับ: "ไลฟ์เราไม่เกิน N"
+ */
+function parseSummonCondition(text: string, err: (msg: string) => void): unknown {
+  const life = text.match(/^ไลฟ์เราไม่เกิน\s*(\d+)$/);
+  if (life) return { lifeAtMost: Number(life[1]), text };
+  err(`ยังไม่รองรับเงื่อนไขอัญเชิญ "${text}"`);
+  return undefined;
 }
 
 function parseEffectLine(line: Line, type: CardDefInput['type'] | undefined, err: (msg: string) => void): TextEffect {

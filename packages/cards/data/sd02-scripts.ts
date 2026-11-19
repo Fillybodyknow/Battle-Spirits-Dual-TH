@@ -106,6 +106,7 @@ export const SD02_SCRIPTS: Record<string, CardScript> = {
       kind: 'burst',
       soul: true,
       on: 'afterAllyDestroyedByOpponent',
+      alsoDepleted: true,
       steps: [
         exhaust1,
         { do: 'exhaustOpponent', count: 1, filter: { types: ['spirit', 'ultimate', 'brave'] }, if: { catalyzed: true } },

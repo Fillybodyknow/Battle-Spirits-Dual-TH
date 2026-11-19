@@ -45,6 +45,8 @@ export interface CardInstance {
   cores: string[];
   /** BP+ จากเอฟเฟกต์ "ในเทิร์นนี้" (ล้างตอนจบเทิร์น และเมื่อออกจากสนาม) */
   turnBp: number;
+  /** BS08: ถูกอัญเชิญโดย Kagemusha ในเทิร์นนี้ (โชวเอ็น) */
+  kageTurn?: number;
   /** BP+ จากเอฟเฟกต์ที่ไม่บอกระยะเวลา ([เมื่อสปิริตนี้โจมตี]): มีผลจนจบการต่อสู้นั้น */
   battleBp?: number;
   /** เจ็มที่เพิ่มจากเอฟเฟกต์ที่ไม่บอกระยะเวลา: มีผลจนจบการต่อสู้นั้น */
@@ -117,7 +119,9 @@ export interface Battle {
   /** จบ Attack Step เมื่อจบการต่อสู้นี้ ถ้าเงื่อนไขของผู้เล่นนี้เป็นจริงตอนจบ (ยูคิเกิร์ล) */
   endAttackStepIf?: { player: PlayerId; sourceId: string; cond: Condition };
   /** คู่แข่งต้องส่งคอร์รีเสิร์ฟ N เม็ดลงแทรชก่อนป้องกัน (ฮิเมะเนโกะ) · paid = จ่ายแล้วในการต่อสู้นี้ */
-  blockTax?: { reserveToTrash: number; paid?: boolean };
+  blockTax?: { reserveToTrash: number; discard?: number; paid?: boolean };
+  /** เฟลมมังกรคลั่ง: ถ้าผู้โจมตี (ของ player ที่มีโซลคอร์) ถูกป้องกัน ส่งคอร์ไลฟ์ของฝ่ายป้องกันลงรีเสิร์ฟ amount เม็ด */
+  lifeOnBlocked?: { player: PlayerId; amount: number; done?: boolean };
   /** ผู้โจมตีถือว่าไร้สีในการต่อสู้นี้ (ไลท์นิ่ง-ชิออน) */
   colorless?: boolean;
   /** การ์ดที่ออกจากสนามไปแล้วระหว่างการต่อสู้นี้ (กลับมาบนสนามอีก = การ์ดใหม่ ไม่ใช่ผู้โจมตี/ผู้ป้องกันเดิม) */
@@ -214,6 +218,10 @@ export interface QueuedEffect {
   /** (BS07) trigger summon: การ์ดถูกอัญเชิญโดย On Stage / โดยเอฟเฟกต์ของการ์ดนี้ */
   summonByOnStage?: boolean;
   summonBySource?: string;
+  /** (BS08) การ์ดที่เพิ่งเลือกในเอฟเฟกต์นี้ (allySoulToTrash / buffChosen) */
+  chosenId?: string;
+  /** (BS08) จำนวนการ์ดของคู่แข่งที่เอฟเฟกต์นี้นำกลับขึ้นมือ/เด็ค */
+  bouncedCount?: number;
   /** (BS07) trigger allyDestroyed: การ์ดของคู่แข่งที่ทำลาย subject */
   destroyerId?: string;
   /** เอฟเฟกต์ "เมื่อสปิริต/เบรฟนี้ถูกอัญเชิญ" */
@@ -361,6 +369,19 @@ export interface GameState {
   turnHandCost?: { player: PlayerId; turn: number; filter: CardFilter; delta: number }[];
   /** ความสามารถ "เกมละ 1 ครั้ง" ที่ใช้แล้ว (player:cardNo:source) */
   usedOncePerGame?: string[];
+  // ---------------- BS08
+  /** ในเทิร์นนี้ player อัญเชิญการ์ดประเภท types คอสต์ไม่เกิน maxCost ไม่ได้ */
+  summonBans?: { player: PlayerId; turn: number; maxCost: number; types: string[] }[];
+  /** ในเทิร์นนี้ เจ็มของสปิริต/อัลติเมทของ player ที่ตรงตัวกรองเปลี่ยน count เม็ด (ลบได้) */
+  turnSymbolBuffs?: { player: PlayerId; turn: number; filter?: CardFilter; color: string; count: number }[];
+  /** player ข้ามสเต็ปเหล่านี้ในเทิร์น turn */
+  skipSteps?: { player: PlayerId; turn: number; steps: ('refresh' | 'main')[] }[];
+  /** ในเทิร์นนี้ ไลฟ์ของ player เสียหายได้ไม่เกิน 1 ต่อครั้ง */
+  lifeCapOne?: { player: PlayerId; turn: number }[];
+  /** ในเทิร์นนี้ การ์ดนี้โจมตีไม่ได้ */
+  turnNoAttack?: { cardId: string; turn: number }[];
+  /** เทิร์นที่ [เมื่อป้องกัน] ทำงานตอนโจมตีแทน (แอทแท็คชิฟท์) */
+  attackShiftTurn?: number;
   /** สเต็ปที่ต้องเข้าเพิ่มหลังจบแอทแท็คสเต็ป (จาก extraSteps) */
   extraSteps?: ('refresh' | 'attack')[];
   /** อิจิโกะฮิโทฟุริ: สปิริตของ attackerOwner ตัวนี้ต้องโจมตีเป็นใบแรกของสเต็ป และ holder เข้าป้องกันเอง */
@@ -528,7 +549,12 @@ export type GameEvent =
   /** สเต็ปเพิ่มจากเอฟเฟกต์ (รีเฟรช/แอทแท็คสเต็ปอีกครั้ง) */
   | { type: 'extraStep'; player: PlayerId; step: 'refresh' | 'attack'; cardId: string }
   /** เอฟเฟกต์ของคู่แข่งบนการ์ดนี้ถูกล้าง */
-  | { type: 'cleansed'; cardId: string };
+  | { type: 'cleansed'; cardId: string }
+  // ---------------- BS08
+  /** Showdown: เทียบ BP ของการ์ดนี้กับเป้าของคู่แข่ง */
+  | { type: 'showdown'; cardId: string; targetId: string; bp: number; targetBp: number }
+  /** Soul Drive: โซลคอร์บนการ์ดนี้ออกจากเกม */
+  | { type: 'soulDrive'; cardId: string };
 
 export type ActionResult =
   | { ok: true; state: GameState; events: GameEvent[] }

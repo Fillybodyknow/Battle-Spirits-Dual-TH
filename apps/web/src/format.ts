@@ -201,6 +201,10 @@ export function formatEvent(e: GameEvent, s: GameState): string | null {
       return `${name(e.cardId)}: ${playerLabel(e.player)} เข้า${e.step === 'refresh' ? 'รีเฟรชสเต็ป' : 'แอทแท็คสเต็ป'}อีกครั้ง`;
     case 'cleansed':
       return `เอฟเฟกต์ของคู่แข่งบน ${name(e.cardId)} ไร้ผล`;
+    case 'showdown':
+      return `[Showdown] ${name(e.cardId)} (BP ${e.bp.toLocaleString()}) vs ${name(e.targetId)} (BP ${e.targetBp.toLocaleString()})`;
+    case 'soulDrive':
+      return `[Soul Drive] ${name(e.cardId)} นำโซลคอร์ออกจากเกม`;
     case 'gameOver':
       return `🏆 ${playerLabel(e.winner)} ชนะ (${END_REASON[e.reason]})`;
   }

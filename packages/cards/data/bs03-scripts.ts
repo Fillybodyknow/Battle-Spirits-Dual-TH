@@ -291,7 +291,7 @@ export const BS03_SCRIPTS: Record<string, CardScript> = {
       levels: [],
       steps: [{ do: 'chooseOne', options: [{ label: 'อัญเชิญเมียวโอเพลิงคราม อากุนิอัสไม่จ่ายคอสต์', steps: [{ do: 'summonThisFree' }] }, { label: 'ไม่ใช้', steps: [] }] }],
     },
-    { kind: 'burstAlsoOn', levels: [1, 2], events: ['afterLifeLost', 'afterAllyDestroyedByOpponent'] },
+    { kind: 'burstAlsoOn', levels: [1, 2], events: ['afterLifeLost', 'afterAllyDestroyedByOpponent', 'afterAllyDepletedByOpponent'] },
     { kind: 'trigger', on: 'attack', levels: [2], steps: [{ do: 'destroyChosenOpponent', filter: { types: SPIRITISH }, costFrom: 'self', if: soulOnSelf }] },
   ],
   'โบน-วีเซล': [

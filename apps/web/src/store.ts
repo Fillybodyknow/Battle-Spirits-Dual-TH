@@ -42,6 +42,7 @@ import {
   type GameEvent,
   type GameState,
   type PlayerId,
+  hasEvolutionNow,
 } from '@bs/engine';
 
 /** การ์ดทุกชุดที่ UI ใช้: Starter Deck 01–04 (SD01-…SD04-) */
@@ -96,8 +97,8 @@ export function canEvolve(s: GameState, cardId: string): boolean {
   const card = s.cards[cardId]!;
   const timingOk = inMain(s) ? card.owner === s.turnPlayer : flashPlayer(s) === card.owner;
   if (!timingOk) return false;
-  const level = cardLevel(s, db, cardId);
-  return db.get(card.cardNo).abilities.some((a) => a.kind === 'evolution' && a.levels.includes(level));
+  // รวม Evolution ที่ได้รับจากการ์ดอื่น (BS08 อามาสึ)
+  return hasEvolutionNow(s, db, cardId);
 }
 
 /** จังหวะที่ Magic ใบนี้มีตามข้อความเอฟเฟกต์ */
@@ -1239,6 +1240,20 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
       case 'myUnit':
         out.push({ kind: 'idol', variant: 'myUnit', cardId: e.attackerId, cardIds: e.cardIds, title: e.cardIds.map((id) => db.get(s.cards[id]!.cardNo).name).join(' · '), delay: t, duration: 1400 });
         t += 1400;
+        break;
+      case 'showdown': {
+        // BS08 Showdown: ป้ายเทียบ BP แล้วค่อยแตก (destroyed ตามหลัง)
+        const nm = (id: string) => db.get(s.cards[id]!.cardNo).name;
+        out.push({ kind: 'banner', tone: 'burst', title: 'SHOWDOWN!', sub: `${nm(e.cardId)} BP ${e.bp.toLocaleString()} ปะทะ ${nm(e.targetId)} BP ${e.targetBp.toLocaleString()}`, delay: t });
+        out.push({ kind: 'float', anchor: `[data-field-card="${e.cardId}"]`, text: `BP ${e.bp.toLocaleString()}`, tone: e.bp > e.targetBp ? 'good' : 'bad', delay: t + 300 });
+        out.push({ kind: 'float', anchor: `[data-field-card="${e.targetId}"]`, text: `BP ${e.targetBp.toLocaleString()}`, tone: e.targetBp > e.bp ? 'good' : 'bad', delay: t + 300 });
+        t += 1300;
+        break;
+      }
+      case 'soulDrive':
+        out.push({ kind: 'banner', tone: 'burst', title: 'SOUL DRIVE', sub: db.get(s.cards[e.cardId]!.cardNo).name, delay: t });
+        out.push({ kind: 'float', anchor: `[data-field-card="${e.cardId}"]`, text: 'Soul Core ออกจากเกม', tone: 'bad', delay: t + 200 });
+        t += 1000;
         break;
       case 'magicNegated':
         out.push({ kind: 'banner', tone: 'step', title: 'ไร้ผล!', sub: `เอฟเฟกต์ของ ${db.get(s.cards[e.cardId]!.cardNo).name}`, delay: t });
