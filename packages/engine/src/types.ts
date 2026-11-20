@@ -154,6 +154,8 @@ export interface Battle {
   pairBlock?: boolean;
   /** BS10 เจเนอรัล: ในการต่อสู้นี้เทียบ Lv แทน BP */
   compareLevel?: boolean;
+  /** BS11 อิตทัน โมเมน: ผู้เล่นนี้ (ฝ่ายโจมตี) ที่ Lv ผู้โจมตี ≥ ผู้ป้องกัน = ไม่เทียบ BP ถือว่าไม่ถูกป้องกัน */
+  levelUnblock?: PlayerId;
   /** ปลุก trigger "เมื่อจบการต่อสู้ของสปิริตเรา" แล้ว (endBattle ถูกเรียกซ้ำหลังผู้เล่นเลือก) */
   endTriggersDone?: boolean;
   /** BS10 บลานโบอา: เมื่อตัวที่ต่อสู้กับการ์ดเหล่านี้ถูกทำลาย/สูญสลาย การ์ดนี้ฟื้นสภาพ */
@@ -193,6 +195,8 @@ export interface QueuedEffect {
   exhaustedChosen?: string;
   /** BS10 trigger lifeLost: ไลฟ์ลดเพราะเอฟเฟกต์ของคู่แข่ง */
   lifeLostByEffect?: boolean;
+  /** BS11 สุโอว: เบิร์สที่ Catalyze สั่งใช้ ถือว่าไลฟ์เราเป็นค่านี้ */
+  lifeAs?: number;
   /** BS10 มิโคโตะ: เอฟเฟกต์เลือกเป้า 1 ตัวของเบิร์สนี้ = ทั้งหมด */
   allTargets?: boolean;
   /** BS10 บิรันบะ: จำนวนคอร์ที่คู่แข่งได้จากวอยด์ */
@@ -429,6 +433,15 @@ export interface GameState {
   levelOneTurn?: { player: PlayerId; turn: number }[];
   /** ในเทิร์นนี้ การ์ดนี้ไม่ถูกทำลาย */
   noDestroyTurn?: { cardId: string; turn: number }[];
+  // ---------------- BS11
+  /** ในเทิร์นนี้ การ์ดนี้สูญเสียเอฟเฟกต์ทั้งหมด (นปเปะระเกิร์ล) */
+  negatedCards?: { cardId: string; turn: number }[];
+  /** ในเทิร์นนี้ การ์ดของ player ที่ตรงตัวกรองเจ็มเป็น 0 (โททอลซอง) */
+  symbolsZeroTurn?: { player: PlayerId; turn: number; filter: CardFilter }[];
+  /** ในเทิร์นนี้ การ์ดนี้ทำความเสียหายแก่ไลฟ์ของ player ไม่ได้ (หิมะน้ำแข็ง เซอร์เคิล) */
+  noLifeDamageCards?: { cardId: string; player: PlayerId; turn: number }[];
+  /** ในเทิร์นนี้ เอฟเฟกต์ของการ์ดที่ชื่อมีคำเหล่านี้ถือว่าได้ส่งโซลคอร์ลงแทรชแล้ว (ลองฟิลด์ cardId/source = ต้นเหตุ) */
+  soulCostFree?: { player: PlayerId; turn: number; names: string[]; cardId: string; source: number }[];
   /** ในเทิร์นนี้ player โจมตี/ป้องกันได้ต่อเมื่อส่งคอร์ 1 เม็ดบนตัวนั้นไปวอยด์ (ผ่าวิบัติไร้ผนึก) */
   coreTaxTurn?: { player: PlayerId; turn: number }[];
   /** ในเทิร์นนี้ การโจมตีของการ์ดนี้ที่ทำความเสียหายไลฟ์ = ส่งคอร์ไลฟ์คู่แข่งเพิ่ม 1 เม็ด */

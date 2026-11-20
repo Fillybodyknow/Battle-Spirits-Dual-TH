@@ -11,10 +11,11 @@ export type HandLayout = 'fan' | 'row' | 'spread';
 /** หยิบการ์ดไปเล่น: คลิกเปิดเมนู / คลิกเดียวเล่นเลย (ถ้ามีทางเล่นทางเดียว) */
 export type PlayMode = 'menu' | 'direct';
 
-export type Prefs = { confirmAttack: boolean; handSort: HandSort; handLayout: HandLayout; playMode: PlayMode };
+/** skipAnim: แสดงปุ่ม "ข้าม ▸▸" ระหว่างแอนิเมชัน (ปิด = ดูแอนิเมชันจนจบเสมอ) */
+export type Prefs = { confirmAttack: boolean; handSort: HandSort; handLayout: HandLayout; playMode: PlayMode; skipAnim: boolean };
 
 const KEY = 'bs-play-prefs';
-const DEFAULTS: Prefs = { confirmAttack: true, handSort: 'draw', handLayout: 'fan', playMode: 'menu' };
+const DEFAULTS: Prefs = { confirmAttack: true, handSort: 'draw', handLayout: 'fan', playMode: 'menu', skipAnim: true };
 
 function load(): Prefs {
   try {

@@ -126,6 +126,9 @@ export type Condition =
   | { trashCoreAtLeast: number }
   /** (trigger lifeLost) ไลฟ์ลดลงเพราะเอฟเฟกต์ของคู่แข่ง (ไม่ใช่การโจมตี) */
   | { lifeLostByOpponentEffect: true }
+  // ---------------- BS11
+  /** เจ็มทั้งหมดบนฟิลด์เราเป็นสีนี้เท่านั้น (มีอย่างน้อย 1 เม็ด) */
+  | { onlyGemColor: Color }
   /** กลับเงื่อนไข */
   | { not: Condition };
 
@@ -151,6 +154,12 @@ export interface CountPer {
   destroyedByThis?: true;
   /** BS09: จำนวนเจ็มรวมของการ์ดคู่แข่งที่เอฟเฟกต์นี้ทำลาย */
   destroyedSymbolsByThis?: true;
+  /** BS11: จำนวนการ์ดที่มือคู่แข่งเพิ่มขึ้น (trigger oppHandIncreased) */
+  handIncrease?: true;
+  /** BS11: จำนวนสีเจ็มบนฟิลด์เรา (true = ทุกการ์ด / ตัวกรอง = เฉพาะสปิริตที่ตรง) */
+  gemColors?: true | CardFilter;
+  /** BS11: จำนวนการ์ดของคู่แข่งที่เอฟเฟกต์นี้นำกลับขึ้นมือ/เด็ค */
+  bouncedByThis?: true;
   /** หารด้วย (ต่อ 2 ตัว = 2) ไม่ระบุ = 1 */
   div?: number;
 }
@@ -238,6 +247,13 @@ export interface CardFilter {
   notColors?: Color[];
   /** มีคอร์วางอยู่อย่างน้อย N เม็ด (เฉพาะบนสนาม) */
   minCores?: number;
+  // ---------------- BS11
+  /** มีสปิริตอื่นของเจ้าของที่ตรงตัวกรองนี้และมีสีเดียวกันอย่างน้อย 1 สี (ตราแห่งเพลิงรบ) */
+  sameColorAlly?: CardFilter;
+  /** สัญลักษณ์ลดคอสต์มีอย่างน้อย N สี */
+  minReductionColors?: number;
+  /** มี Ultra Shield (ของตัวเอง หรือได้รับจากการ์ดอื่น) */
+  hasUltraShield?: true;
 }
 
 /** ปลายทางของ Core จากวอยด์ */
@@ -283,9 +299,9 @@ export type Step =
   /** แสดงใบบนสุดเด็ค N ใบ เลือก 1 ใบที่ตรงตัวกรองขึ้นมือ ที่เหลือลง Trash */
   | { do: 'revealPickRestTrash'; count: number; filter: CardFilter; /** การ์ดที่เหลือ: ลงแทรช (ค่าเริ่มต้น) / ใต้สุดเด็ค / บนสุดเด็ค เรียงลำดับได้ */ rest?: 'trash' | 'bottom' | 'top' }
   /** แสดงใบบนสุดเด็ค N ใบ นำการ์ดที่ตรงตัวกรองทั้งหมดขึ้นมือ ที่เหลือลงแทรช */
-  | { do: 'revealTakeAll'; count: number; filter: CardFilter; /** ที่เหลือ: แทรช (ค่าเริ่มต้น) / ใต้สุดเด็คเรียงลำดับได้ */ rest?: 'trash' | 'bottom' }
+  | { do: 'revealTakeAll'; count: number; filter: CardFilter; /** ที่เหลือ: แทรช (ค่าเริ่มต้น) / ใต้สุดเด็คเรียงลำดับได้ */ rest?: 'trash' | 'bottom'; /** BS11: ชื่อการ์ดละ 1 ใบ */ distinctNames?: true }
   /** นำการ์ดในแทรชเรา 1 ใบที่ตรงตัวกรอง กลับขึ้นมือ */
-  | { do: 'returnFromTrash'; filter: CardFilter; if?: Condition }
+  | { do: 'returnFromTrash'; filter: CardFilter; if?: Condition; /** จำนวนใบ (ไม่ระบุ = 1) */ count?: number; per?: CountPer }
   /** เมื่อจบการต่อสู้นี้ จบ Attack Step */
   | { do: 'endAttackStepAfterBattle'; /** (engine ใช้ภายใน) ถามโฮเนะสุมิแล้ว */ checked?: true }
   /**
@@ -331,13 +347,15 @@ export type Step =
       filter?: CardFilter;
       /** ตีระบุ: เลือกแล้วไม่มีแฟลชหลังโจมตี ตัวที่ถูกเลือกป้องกันทันที (กติกา 14 ตีระบุ) */
       direct?: true;
+      /** BS11 True-Consecutive Blade: เลือกได้ไม่เกิน N ตัว (ต่อสู้พร้อมกัน) */
+      max?: number;
     }
   /** เราเลือกทิ้งการ์ดในมือ N ใบ */
   | { do: 'discard'; count: number; if?: Condition; filter?: CardFilter }
   /** นำ Core จากวอยด์ (Core ใหม่) วางที่ไลฟ์เรา */
   | { do: 'gainLifeFromVoid'; count: number }
   /** Burst: "หลังจากนั้นสามารถจ่ายคอสต์ เพื่อให้เอฟเฟกต์ [Flash] ของการ์ดนี้ทำงาน" (จ่ายหรือไม่ก็ได้) */
-  | { do: 'payToUseFlash' }
+  | { do: 'payToUseFlash'; /** BS11: เอฟเฟกต์ [Main] ของการ์ดนี้แทน [Flash] */ main?: true }
   /** (engine ใช้ภายใน) เปิด Burst: นำการ์ดออกจากช่อง Burst และลง Trash เมื่อประมวลผลเสร็จ */
   | { do: 'openBurst' }
   /** สปิริตนี้ฟื้นสภาพ */
@@ -399,7 +417,7 @@ export type Step =
   /** นำการ์ดทั้งหมดในแทรชเราไปไว้ใต้สุดเด็ค (เรียงลำดับได้) */
   | { do: 'trashToDeckBottom' }
   /** สามารถอัญเชิญไม่จ่ายคอสต์การ์ดบนมือเรา 1 ใบที่ตรงตัวกรอง */
-  | { do: 'summonFromHandFree'; filter: CardFilter; if?: Condition; /** อัญเชิญได้ไม่เกิน max ใบ (ไม่ระบุ = 1) */ max?: number }
+  | { do: 'summonFromHandFree'; filter: CardFilter; if?: Condition; /** อัญเชิญได้ไม่เกิน max ใบ (ไม่ระบุ = 1) */ max?: number; /** BS11 ริวเซ็น: สีละ 1 ใบ */ distinctColors?: true }
   /**
    * ในเทิร์นนี้ เลือกการ์ดของคู่แข่งที่ตรงตัวกรอง BP-amount แล้วทำลายตัวที่ BP กลายเป็น 0
    * count = จำนวนตัว (ไม่ระบุ = 1), countPerAllyFamily = จำนวนตัวเท่าสปิริตเราเผ่านี้
@@ -412,6 +430,8 @@ export type Step =
       destroyAtZero?: true;
       /** "เสื่อมสภาพสปิริตที่กลายเป็น BP0 โดยเอฟเฟกต์นี้" */
       exhaustAtZero?: true;
+      /** BS11 "เมื่อสปิริตนั้นกลายเป็น BP0 โดยเอฟเฟกต์นี้, ...และ...": ทำต่อเมื่อกลายเป็น BP0 (ไม่ขึ้นกับว่าทำลายได้หรือไม่) */
+      zeroThen?: Step[];
       count?: number;
       countPerAllyFamily?: string;
       if?: Condition;
@@ -462,7 +482,15 @@ export type Step =
       per?: CountPer;
     }
   /** นำการ์ดของคู่แข่งที่ตรงตัวกรองทั้งหมดกลับขึ้นมือ */
-  | { do: 'bounceAllOpponent'; filter: CardFilter; if?: Condition; /** deckTop = กลับไปไว้บนสุดเด็คโดยเรียงลำดับได้ */ to?: 'deckTop' }
+  | {
+      do: 'bounceAllOpponent';
+      filter: CardFilter;
+      if?: Condition;
+      /** deckTop / deckBottom = กลับไปไว้บนสุด/ใต้สุดเด็คโดยเรียงลำดับได้ */
+      to?: 'deckTop' | 'deckBottom';
+      /** BS11: รวมเบิร์สที่เซ็ทอยู่ของคู่แข่งด้วย */
+      withBurst?: true;
+    }
   /** นำ Core จากวอยด์มาวาง */
   | { do: 'voidCore'; to: VoidTarget; count: number; filter?: CardFilter; if?: Condition; /** จำนวนเม็ด = จำนวนสปิริตของเรา */ countPerAlly?: true; per?: CountPer }
   /** ส่ง Soul Core บนสปิริตนี้ไปที่รีเสิร์ฟเรา */
@@ -488,6 +516,7 @@ export type Step =
       exclude?: string[];
       /** (engine ใช้ภายใน) บวก Charge แล้ว */
       charged?: true;
+      per?: CountPer;
     }
   /** เสื่อมสภาพสปิริต/อัลติเมทของคู่แข่งที่ตรงตัวกรองทั้งหมด */
   | { do: 'exhaustAllOpponent'; filter: CardFilter; if?: Condition }
@@ -565,7 +594,7 @@ export type Step =
   /** สามารถอัญเชิญการ์ดในแทรชเรา 1 ใบที่ตรงตัวกรอง (จ่ายคอสต์ตามคอสต์ในแทรช) repeat = กี่ใบก็ได้ */
   | { do: 'summonFromTrash'; filter: CardFilter; repeat?: true; /** ถ้าเงื่อนไขจริง การลดคอสต์ถือว่าลดจนครบแล้ว */ fullReductionIf?: Condition }
   /** ส่งคอร์ไลฟ์คู่แข่ง N เม็ดไปที่รีเสิร์ฟคู่แข่ง */
-  | { do: 'opponentLifeToReserve'; count: number }
+  | { do: 'opponentLifeToReserve'; count: number; /** ส่งลงแทรชคู่แข่งแทนรีเสิร์ฟ */ to?: 'trash' }
   /** ส่ง Core บนสปิริตนี้ N ดวงลงแทรชเรา (เลือก Core ธรรมดาก่อน) */
   | { do: 'selfCoresToTrash'; count: number; /** ส่งไปรีเสิร์ฟเราแทนแทรช */ to?: 'reserve' }
   /** เมื่อจบการต่อสู้นี้ ทำ steps */
@@ -579,7 +608,7 @@ export type Step =
    */
   | { do: 'setBurstFromHand'; then?: Step[]; /** "ในมือ/นอกมือ" */ withShown?: true }
   /** [Catalyze]: สั่งใช้ Soul Burst สีนี้ของเราที่เซ็ทอยู่ (ไม่ต้องรอเงื่อนไข) */
-  | { do: 'catalyze'; /** ไม่ระบุ = ทุกสี */ color?: Color; /** BS10: สีใดสีหนึ่งในนี้ */ colors?: Color[]; /** BS10 มิโคโตะ: เอฟเฟกต์เลือกเป้า 1 ตัวของเบิร์สนั้น = ทั้งหมดแทน */ allTargets?: true; /** "หลังจากเบิร์สนั้นถูกสั่งใช้": ทำต่อหลังเบิร์สทำงานจบ */ then?: Step[] }
+  | { do: 'catalyze'; /** ไม่ระบุ = ทุกสี */ color?: Color; /** BS10: สีใดสีหนึ่งในนี้ */ colors?: Color[]; /** BS10 มิโคโตะ: เอฟเฟกต์เลือกเป้า 1 ตัวของเบิร์สนั้น = ทั้งหมดแทน */ allTargets?: true; /** "หลังจากเบิร์สนั้นถูกสั่งใช้": ทำต่อหลังเบิร์สทำงานจบ (subject = เบิร์สนั้น) */ then?: Step[]; /** BS11 สุโอว: เบิร์สที่ชื่อมีคำเหล่านี้ ไลฟ์เราถือว่าเป็น life */ lifeAs?: { names: string[]; life: number } }
   /** (engine ใช้ภายใน) ไล่วางการ์ดที่เหลือไว้ใต้สุดเด็คตามลำดับที่เลือก */
   | { do: 'toDeckBottom'; cardIds: string[] }
   /** (engine ใช้ภายใน) การ์ดที่แสดง (ยังอยู่บนสุดเด็ค) เรียงลำดับใหม่บนสุดเด็ค: ใบที่เลือกทีหลังอยู่บนกว่า */
@@ -772,7 +801,7 @@ export type Step =
   /** ทำลายการ์ดของทั้งสองฝ่ายที่ตรงตัวกรองทั้งหมด */
   | { do: 'destroyAllBoth'; filter: CardFilter }
   /** นำคอร์ (ไม่ใช่โซลคอร์) count เม็ดในแทรชเราไปรีเสิร์ฟ */
-  | { do: 'trashCoreToReserve'; count: number }
+  | { do: 'trashCoreToReserve'; count: number; /** BS11: รวมโซลคอร์ด้วย */ withSoul?: true }
   /** นำการ์ดนี้ (ในแทรช) กลับขึ้นมือ */
   | { do: 'selfFromTrashToHand' }
   /** สปิริตนี้ไม่เสื่อมสภาพ (กลับเป็นฟื้นสภาพ ไม่นับเป็นการฟื้นสภาพโดยเอฟเฟกต์) */
@@ -870,7 +899,30 @@ export type Step =
   /** (engine ใช้ภายใน) สิงโตควันม่วง: ทิ้งใบบนสุดเด็คเรา n ใบ */
   | { do: 'millSelfN'; n: number }
   /** คำสาปบงการชีพ: ถ้าเบิร์สนี้ถูกสั่งใช้โดย Catalyze ในเทิร์นนี้การ์ดนี้ถือว่าไร้สี */
-  | { do: 'colorlessIfCatalyzed' };
+  | { do: 'colorlessIfCatalyzed' }
+  // ---------------- BS11
+  /** เลือกระบุสปิริต/อัลติเมทของคู่แข่ง count ตัว: ในเทิร์นนี้ทำความเสียหายแก่ไลฟ์เราไม่ได้ */
+  | { do: 'noLifeDamageChosen'; count: number; filter: CardFilter; /** (engine ใช้ภายใน) ขยายจำนวนเป้าด้วย Dispersion แล้ว */ dispersed?: true }
+  /** ในเทิร์นนี้ สปิริต/อัลติเมท 1 ตัว (ฝ่ายใดก็ได้) สูญเสียเอฟเฟกต์ทั้งหมดและรับเพิ่มไม่ได้ */
+  | { do: 'negateChosenThisTurn'; filter: CardFilter }
+  /** นำคอร์ในแทรชเรา (รวมโซลคอร์) ไม่เกิน max เม็ดมาวางบนสปิริตนี้ (ไม่ระบุ = ทั้งหมด) */
+  | { do: 'trashCoresToSelf'; max?: number }
+  /** นำคอร์ไลฟ์ของเรา count เม็ดมาวางบนสปิริตนี้ (ไม่นับเป็นการเสียไลฟ์ที่สั่งใช้เบิร์สได้) */
+  | { do: 'ownLifeToSelf'; count: number }
+  /** ส่งคอร์บนสปิริต/อัลติเมทของผู้เล่นทุกคนตัวละ 1 เม็ดลงแทรชเจ้าของ */
+  | { do: 'coresOffEverySpirit' }
+  /** ในการต่อสู้นี้ สปิริตของเราที่กำลังโจมตีอยู่ได้รับเจ็มสีนี้เพิ่ม */
+  | { do: 'symbolAttackerBattle'; color: Color; count: number }
+  /** ทิ้งใบบนสุดเด็คเรา 1 ใบ แล้วทำ steps ของกรณีแรกที่ตรง ไม่ตรงเลย = นำการ์ดที่ทิ้งขึ้นมือ (otherwiseToHand) */
+  | { do: 'millTopBranch'; cases: { filter: CardFilter; steps: Step[] }[]; otherwiseToHand?: true }
+  /** ในเทิร์นนี้ สปิริต/อัลติเมทของคู่แข่งที่ตรงตัวกรองทั้งหมด เจ็มกลายเป็น 0 (รวมตัวที่ลงทีหลังในเทิร์น: กติกา 13 ข้อ 6) */
+  | { do: 'symbolsZeroAllOpponent'; filter: CardFilter }
+  /** ในการต่อสู้นี้ เมื่อเทียบ BP: ผู้โจมตีของเรามี Lv ≥ ผู้ป้องกัน = ไม่เทียบ BP และถือว่าไม่ถูกป้องกัน */
+  | { do: 'battleLevelUnblock' }
+  /** ในเทิร์นนี้ เอฟเฟกต์ของสปิริตเราที่ชื่อมีคำเหล่านี้ ถือว่าได้ส่งโซลคอร์ลงแทรชแล้ว (ลองฟิลด์) */
+  | { do: 'soulCostFreeThisTurn'; nameIncludes: string[] }
+  /** (engine ใช้ภายใน) นำการ์ดเหล่านี้บนสนามกลับไปที่ to (เด็คหลายใบ = เรียงลำดับได้) */
+  | { do: 'returnCardsTo'; cardIds: string[]; to: 'hand' | 'deckTop' | 'deckBottom' };
 
 /** ขอบเขตของ BP+ ถาวร */
 export type StaticScope =
@@ -990,7 +1042,14 @@ export type TriggerEvent =
   /** จบการต่อสู้ของสปิริต/อัลติเมทของเรา (subject = ตัวที่ต่อสู้ ยังอยู่บนสนาม) */
   | 'allyBattleEnd'
   /** (การ์ดในมือ) คู่แข่งได้คอร์จากวอยด์ (ไม่นับคอร์สเต็ป) */
-  | 'oppVoidGain';
+  | 'oppVoidGain'
+  // ---------------- BS11
+  /** โซลคอร์ของเราถูกนำไปวางที่แทรชโดยเอฟเฟกต์ของสปิริตเรา */
+  | 'allySoulTrashed'
+  /** สปิริตของเรา (subject) สูญสลายโดยเอฟเฟกต์ของคู่แข่ง (ข้อความ "ถูกทำลาย/สูญสลาย") */
+  | 'allyDepletedByOpponent'
+  /** เริ่มเมนสเต็ปของคู่แข่ง */
+  | 'oppMainStepStart';
 
 /** เงื่อนไขของสปิริตที่ทำให้ trigger แบบ ally* ทำงาน */
 export interface SubjectFilter {
@@ -1041,6 +1100,9 @@ export interface SubjectFilter {
   // ---------------- BS09
   /** allyDestroyed: ถูกทำลายโดยเอฟเฟกต์ของคู่แข่ง (ไม่นับการต่อสู้) */
   byOpponentEffect?: true;
+  // ---------------- BS11
+  /** allyBurstActivated: เบิร์สนั้นถูกสั่งใช้โดย Catalyze */
+  catalyzed?: true;
 }
 
 /** เงื่อนไขเปิด Burst */
@@ -1165,6 +1227,8 @@ export type Ability =
       perSongs?: true;
       /** BS09: BP+ × จำนวนการ์ดของเราที่ตรงตัวกรอง */
       perAllies?: CardFilter;
+      /** BS11: BP+ × จำนวนสีเจ็มบนฟิลด์เรา */
+      perGemColors?: true;
       /** เบรฟ: ผลที่ผู้ร่วมร่างได้รับ ("สปิริตนี้" = ผู้ร่วมร่าง) */
       granted?: true;
     }
@@ -1342,7 +1406,7 @@ export type Ability =
   | { kind: 'burstOnDiscard'; source: number }
   // ---------------- BS08
   /** คอร์บนการ์ดของเราที่ตรงตัวกรองจะเหลือน้อยกว่า min เม็ดโดยคู่แข่งไม่ได้ */
-  | { kind: 'coreFloor'; source: number; levels: number[]; if?: Condition; filter: CardFilter; min: number }
+  | { kind: 'coreFloor'; source: number; levels: number[]; if?: Condition; filter: CardFilter; /** lv1 = เท่าเลเวลคอสต์ Lv1 ของแต่ละการ์ด */ min: number | 'lv1' }
   /** แอทแท็คสเต็ปของคู่แข่ง: สปิริตนี้ป้องกันสปิริตที่ BP น้อยกว่าสปิริตนี้ไม่ได้ */
   | { kind: 'cannotBlockLowerBp'; source: number; levels: number[] }
   /** ขณะทำการ Showdown สปิริตนี้ BP+amount */
@@ -1384,7 +1448,25 @@ export type Ability =
   /** โฮเนะสุมิ: เอฟเฟกต์ "จบแอทแท็คสเต็ป" ของเมจิคคู่แข่ง → ส่งโซลคอร์บนการ์ดนี้ลงแทรช = ไร้ผล ถ้าคู่แข่งไม่จ่ายเพิ่ม cost */
   | { kind: 'counterEndAttackStep'; source: number; levels: number[]; cost: number }
   /** อิกคาคุ Lv3: เบิร์สที่ถูกทิ้งโดยเอฟเฟกต์ของสปิริตนี้ → สั่งใช้เอฟเฟกต์เบิร์สนั้นได้ (ห้ามอัญเชิญ/วาง/จ่ายแฟลช) */
-  | { kind: 'useDiscardedBurst'; source: number; levels: number[] };
+  | { kind: 'useDiscardedBurst'; source: number; levels: number[] }
+  // ---------------- BS11
+  /**
+   * คอสต์ในมือของการ์ดที่ตรงตัวกรอง +delta ต่อสปิริตของเราที่ตรง per 1 ตัว
+   * self = การ์ดนี้ในมือ (ไม่ดูเลเวล) · ไม่ใส่ = การ์ดบนสนามให้ผลกับการ์ดในมือ
+   */
+  | { kind: 'handCostPer'; source: number; levels: number[]; filter: CardFilter; per: CardFilter; delta: number; self?: true }
+  /** แอทแท็คสเต็ปของผู้เล่นทุกคน: สีและเจ็มของสปิริต/อัลติเมท/เน็กซัสทั้งหมดกลายเป็นสีนี้ (ยาเท็นโดว) */
+  | { kind: 'allColorAttackStep'; source: number; levels: number[]; color: Color }
+  /** สปิริตนี้จะไม่ถูกทำลาย (ทุกกรณี) ถ้าเงื่อนไขเป็นจริง */
+  | { kind: 'indestructible'; source: number; levels: number[]; if?: Condition }
+  /** เราเป็นผู้เลือกระบุสปิริตของคู่แข่งใน Showdown ของเรา (โกวจิน) */
+  | { kind: 'showdownWeChoose'; source: number; levels: number[] }
+  /** แอทแท็คสเต็ปของผู้เล่นทุกคน: สปิริตคู่แข่งที่จะกลับขึ้นมือโดยเอฟเฟกต์ของเรา → ส่งโซลคอร์ลงแทรช เพื่อไปไว้บนสุด/ใต้สุดเด็คแทน (กู๊ดลัคฮิล) */
+  | { kind: 'bounceRedirect'; source: number; levels: number[] }
+  /** [เอฟเฟกต์ทำลาย BP] ของการ์ดเราที่ชื่อมีคำเหล่านี้ ขอบเขต +amount (pierceShield = Ultra Shield ป้องกันไม่ได้) */
+  | { kind: 'bpDestroyBoost'; source: number; levels: number[]; nameIncludes: string[]; amount: number; pierceShield?: true; ownAttackStepOnly?: true }
+  /** สปิริตของเราที่ตรงตัวกรองทั้งหมดมี Lv / BP / เจ็ม เหมือนการ์ดนี้ (ฮะจิริว) */
+  | { kind: 'copyStatsAllies'; source: number; levels: number[]; if?: Condition; filter: CardFilter };
 
 /** สคริปต์ของการ์ดหนึ่งใบ เรียงตาม effects (null = ยังไม่รองรับ, array = บรรทัดเดียวมีหลายความสามารถ) */
 export type CardScript = (DistributiveOmit<Ability, 'source'> | DistributiveOmit<Ability, 'source'>[] | null)[];

@@ -291,6 +291,8 @@ function afterDraw(ctx: Ctx): void {
   // "เมื่อเริ่มเมนสเต็ปของเรา" (BS08 No.15 นิวลากูน)
   const batch = newBatch(ctx);
   for (const id of [...s.players[player].field]) queueTriggers(ctx, id, 'ownMainStepStart', batch);
+  // BS11 โททอลซอง: "เมื่อเริ่มเมนสเต็ปของคู่แข่ง"
+  for (const id of [...s.players[player === 'p1' ? 'p2' : 'p1'].field]) queueTriggers(ctx, id, 'oppMainStepStart', batch);
   runQueue(ctx);
 }
 
@@ -1193,7 +1195,9 @@ function resolveBattle(ctx: Ctx): void {
   const defender = opponentOf(attacker.owner);
 
   let lostLife = false;
-  const blockers = battle.blockers.filter((id) => inBattle(s, id));
+  let blockers = battle.blockers.filter((id) => inBattle(s, id));
+  // BS11 อิตทัน โมเมน: ผู้โจมตีมี Lv เท่ากับหรือมากกว่าผู้ป้องกัน = ไม่เทียบ BP และถือว่าไม่ถูกป้องกัน
+  if (battle.levelUnblock === attacker.owner && blockers.length > 0 && blockers.every((id) => cardLevel(s, db, attacker.id) >= cardLevel(s, db, id))) blockers = [];
   if (blockers.length === 0) {
     // BS10 เพลิงจิ้งจอกอิมแพ็ค: สปิริตเผ่าที่ระบุของผู้ใช้ไม่ถูกป้องกัน → เจ็มกลายเป็นสีนั้น N เม็ด
     const siu = battle.symbolIfUnblocked;
@@ -1203,9 +1207,11 @@ function resolveBattle(ctx: Ctx): void {
     let dmg = override ?? symbolCount(attackerDef) + braveSymbols(ctx, attacker.id) + extra;
     // ทิพบอล: ในเทิร์นนี้การ์ดที่มีเจ็มตั้งแต่ N เม็ดถือว่ามีเจ็ม 0
     if (s.symbolsZero?.turn === s.turn && dmg >= s.symbolsZero.minSymbols) dmg = 0;
-    if (symbolsZeroCard(s, attacker.id)) dmg = 0;
+    if (symbolsZeroCard(s, attacker.id, db)) dmg = 0;
     // ลิมิเต็ดบาเรีย: ไลฟ์ไม่ได้รับความเสียหายจากการโจมตีของสปิริตคอสต์ตั้งแต่ N
     if ((s.lifeShields ?? []).some((l) => l.player === defender && l.turn === s.turn && fieldCost(s, db, attacker.id) >= l.minCost)) dmg = 0;
+    // BS11 หิมะน้ำแข็ง เซอร์เคิล: การ์ดที่ถูกระบุทำความเสียหายแก่ไลฟ์ไม่ได้ในเทิร์นนี้
+    if ((s.noLifeDamageCards ?? []).some((l) => l.cardId === attacker.id && l.player === defender && l.turn === s.turn)) dmg = 0;
     // ลองเคพ: เสียหายได้ 1 เม็ดต่อสปิริต 1 ตัวต่อเทิร์น
     if (dmg > 0 && lifeDamageCapped(s, db, defender)) {
       const rec = s.lifeDamageBy?.turn === s.turn && s.lifeDamageBy.player === defender ? s.lifeDamageBy : { turn: s.turn, player: defender, ids: [] as string[] };

@@ -139,7 +139,19 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
   · ร่างแยกวางคอร์ = choice `placeCores` ของ step `placeCores.clone` (รีเสิร์ฟเท่านั้น) · หงายร่างแยก = นำออกจากสนามแล้ว `placeCores` แบบอัญเชิญด้วยเอฟเฟกต์
   · `millCostReduce` (action summon `mill`, PlayDialog มีปุ่มเลือก) · `effectSummonTax` (placeCores / payForSummon ถามจ่ายเพิ่มด้วย `payBurstTax.label`) · `counterEndAttackStep` (ใน endAttackStepAfterBattle: `endStepCounter`)
   · trigger `oppVoidGain` (การ์ดในมือ: `s.voidGained` จดใน takeVoid / gainLifeFromVoid ตรวจใน runQueue) · catalyze `allTargets` (ask() แปลงเป็น applyPicks ทุกเป้า)
-  · ยังไม่มี: ลดคอสต์ด้วยการทิ้งเด็คตอนอัญเชิญ (สิงโตควันม่วง)
+- **BS11**: ตัวแปลงรับบรรทัดกฎที่ขึ้นต้น `เมื่อโซลคอร์` / `เมื่อสปิริต...ถูกอัญเชิญ` / `ต่อจำนวน` (ใช้กับเมจิคได้ด้วย) ·
+  trigger `allySoulTrashed` (โซลคอร์ของเราลงแทรชโดยเอฟเฟกต์สปิริตเรา: `soulTrashedByEffect` ใน effects.ts เรียกทุกจุดที่ส่งโซลลงแทรช) / `oppMainStepStart` ·
+  `allySummoned` ทำงานจากในมือได้ + subject `byEffect` (ดอน) · `allyBurstActivated` subject `catalyzed` · `catalyze.then` มี subject = เบิร์สนั้น, `catalyze.lifeAs` (`item.lifeAs` ใน holds) ·
+  ถาวร `handCostPer` (คอสต์ในมือ ± ต่อจำนวนสปิริต: `self` = การ์ดในมือเอง), `allColorAttackStep` (`allColorOverride` ใน cardColors / fieldSymbols / gem helpers), `indestructible` (ใน destroyCard),
+  `showdownWeChoose`, `staticBp.perGemColors`, `coreFloor.min: 'lv1'` · ตัวกรอง `sameColorAlly` (กันวนซ้ำใน `maxLevelAllySource`) / `minReductionColors` · เงื่อนไข `onlyGemColor` ·
+  CountPer `handIncrease` / `gemColors` / `bouncedByThis` · step `noLifeDamageChosen` (`state.noLifeDamageCards`), `negateChosenThisTurn` (`state.negatedCards` ใน effectsNegated), `trashCoresToSelf`,
+  `ownLifeToSelf`, `coresOffEverySpirit`, `symbolAttackerBattle`, `millTopBranch` (สลากสืบทอด: drawStep.before + `addDrawStepDraw -1`), `symbolsZeroAllOpponent`, `battleLevelUnblock` (`battle.levelUnblock` ใน game.ts),
+  `bounceAllOpponent.to: 'deckBottom'` + `withBurst`, `payToUseFlash.main`, `summonFromHandFree.distinctColors`, `revealTakeAll.distinctNames`, `trashCoreToReserve.withSoul`, `opponentLifeToReserve.to: 'trash'`
+  · `bounceRedirect` (กู๊ดลัคฮิล: `bounceRedirect()` ใน effects.ts เรียกทุกจุดที่นำสปิริตคู่แข่งกลับขึ้นมือ → chooseOne + step `returnCardsTo`),
+  `soulCostFreeThisTurn` (ลองฟิลด์: `state.soulCostFree` · chooseOne ที่ตัวเลือกขึ้นต้นด้วย `soulToTrash` ไม่ต้องมีโซลคอร์ และ soulToTrash ไม่ย้ายโซลจริง),
+  `bpDestroyBoost` (โฮมุระแมนดริล: `bpDestroyBoostFor` ใน destroyChosenOpponent / destroyAllOpponent + ทะลุ Shield ใน `hits`), `copyStatsAllies` (ฮะจิริว: `statCopySource` ใน cardLevel / currentBp / extraSymbols)
+  · `toDeckBottom` ใช้เด็คของเจ้าของการ์ด (เหมือน toDeckTop) · trigger `allyDepletedByOpponent` (ข้อความ "ถูกทำลาย/สูญสลาย" ใช้คู่กับ allyDestroyed) · ตัวกรอง `hasUltraShield` (รวมที่ได้รับ) ·
+  `chooseBlockers.max` + `direct` = True-Consecutive Blade (เลือกระบุ 2 ตัว แบบ Infinite Blade) · `symbolsZeroAllOpponent` มีผลทั้งเทิร์น (`state.symbolsZeroTurn`, กติกา 13 ข้อ 6)
 - **สูญสลายไม่ใช่การถูกทำลาย** (กติกา 10): สูญสลายโดยคู่แข่ง = trigger `depletedByOpponent` + เบิร์ส `afterAllyDepletedByOpponent` เท่านั้น
   ข้อความ "ถูกทำลาย/สูญสลาย" = trigger `on: ['destroyedByOpponent', 'depletedByOpponent']` / เบิร์ส `alsoDepleted: true` · "ถูกทำลายโดยเอฟเฟกต์ของคู่แข่ง" (ไม่นับแพ้เทียบ BP) = `destroyedByOpponentEffect`
   · เอฟเฟกต์ "เมื่อถูกทำลาย" ทำงานขณะยังอยู่บนสนาม (engine ส่งลงแทรชก่อน: "วางคอร์บนสปิริตนี้" = คอร์กลับรีเสิร์ฟ)

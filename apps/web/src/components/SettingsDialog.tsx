@@ -245,6 +245,11 @@ function PlayTab({ extra }: { extra?: React.ReactNode }) {
           </Row>
         </Section>
       )}
+      <Section title="แอนิเมชัน">
+        <Row title="ปุ่มข้ามแอนิเมชัน" hint='แสดงปุ่ม "ข้าม ▸▸" ระหว่างแอนิเมชัน (คลิกที่อื่นบนกระดานไม่ข้าม) · ปิด = ดูแอนิเมชันจนจบเสมอ'>
+          <Segmented value={p.skipAnim ? 'on' : 'off'} options={[...onOff]} onChange={(v) => setPrefs({ skipAnim: v === 'on' })} />
+        </Row>
+      </Section>
       <Section title="การโจมตี">
         <Row title="ยืนยันก่อนโจมตี/ป้องกัน" hint='กดสปิริตแล้วขึ้นปุ่มให้ยืนยัน · กดปุ่ม "โจมตี" / "ป้องกัน" เพื่อยืนยัน · คลิกสปิริตตัวเดิมอีกครั้งเพื่อยกเลิก'>
           <Segmented value={p.confirmAttack ? 'on' : 'off'} options={[...onOff]} onChange={(v) => setPrefs({ confirmAttack: v === 'on' })} />

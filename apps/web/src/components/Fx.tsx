@@ -3,6 +3,7 @@ import { opponentOf, type PlayerId } from '@bs/engine';
 import { cardArt, GEM_IMG } from '../assets';
 import { braveSlot, CAST_MS, CHARGE_HIT, CHARGE_MS, CHARGE_WIND, DRAW_FLIP_MS, DRAW_TIER, LETHAL_RELEASE, LETHAL_SLOW, LETHAL_SLOW_EXTRA, CUTIN_MS, CUTIN_SLAM, castCards, castHandSlots, castTone, controls, CHARGE_KNOCK, actingPlayer, chainEntries, viewPlayer, db, fieldScaleOf, GHOST_MS, isFxBlocking, layoutRect, MILL_MS, millBreakAt, millDuration, PLAY_HIT, useGame, type Fx, type Rect, hiddenFrom } from '../store';
 import { CardBack, CardFace } from './CardFace';
+import { usePrefs } from '../prefs';
 import { setSfxTimeScale, sfx } from '../sfx';
 import { effects, flashScale, shakeScale } from '../gfx';
 import { playerLabel } from '../format';
@@ -1603,14 +1604,27 @@ function Lunge({ fx, onDone }: { fx: Extract<Fx, { kind: 'lunge' }>; onDone: () 
   return null;
 }
 
-/** ระหว่างแอนิเมชันที่ต้องเล่นให้จบ: บังการคลิกบนกระดาน คลิกเพื่อข้าม */
+/**
+ * ระหว่างแอนิเมชันที่ต้องเล่นให้จบ: บังการคลิกบนกระดาน
+ * ข้ามได้เฉพาะปุ่ม "ข้าม ▸▸" (คลิกที่อื่นบนกระดานไม่ข้าม กันเผลอข้ามแอนิเมชัน) · ปิดปุ่มได้ในหน้าตั้งค่า
+ */
 function SkipOverlay() {
   const blocking = useGame((s) => isFxBlocking(s.fx));
   const skipFx = useGame((s) => s.skipFx);
+  const allowSkip = usePrefs((p) => p.skipAnim);
   if (!blocking) return null;
   return (
-    <div className={`${BOARD} z-[38] cursor-pointer`} onClick={skipFx} title="คลิกเพื่อข้ามแอนิเมชัน">
-      <span className="absolute bottom-36 left-1/2 -translate-x-1/2 rounded-full bg-black/60 px-3 py-1 text-xs text-slate-300">คลิกเพื่อข้าม ▸▸</span>
+    <div className={`${BOARD} z-[38]`}>
+      {allowSkip && (
+        <button
+          type="button"
+          onClick={skipFx}
+          title="ข้ามแอนิเมชัน"
+          className="absolute bottom-36 left-1/2 -translate-x-1/2 cursor-pointer rounded-full bg-black/70 px-4 py-1.5 text-sm font-bold text-slate-100 ring-1 ring-white/20 transition hover:bg-black/90 hover:ring-white/50"
+        >
+          ข้าม ▸▸
+        </button>
+      )}
     </div>
   );
 }
