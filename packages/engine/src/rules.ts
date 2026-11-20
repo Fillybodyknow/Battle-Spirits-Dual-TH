@@ -344,7 +344,7 @@ export function conditionHolds(
   if ('alliesMatchAtLeast' in cond) {
     if (!db) return false;
     const f = withTeamOf(state, db, cond.alliesMatchAtLeast.filter, sourceId);
-    return owner.field.filter((id) => (f.types || isSpiritLike(db.get(state.cards[id]!.cardNo))) && matchesFilter(state, db, id, f)).length >= cond.alliesMatchAtLeast.count;
+    return owner.field.filter((id) => !(f.notSelf && id === sourceId) && (f.types || isSpiritLike(db.get(state.cards[id]!.cardNo))) && matchesFilter(state, db, id, f)).length >= cond.alliesMatchAtLeast.count;
   }
   if ('kageTargeted' in cond) return card.kageTurn === state.turn;
   if ('selfIs' in cond) return !!db && matchesFilter(state, db, sourceId, cond.selfIs);
@@ -1397,6 +1397,19 @@ export function blockersFor(state: GameState, db: CardDatabase, defender: Player
     if (plain.length >= b.maxBlockers - b.blockers.length) return plain;
   }
   return list;
+}
+
+/**
+ * ฝ่ายป้องกันถูกบังคับให้ป้องกัน ([True-Rage] / [Consecutive Blade]): มีตัวที่ป้องกันได้และไม่มีชีลด์กันผู้โจมตี
+ * ผู้โจมตีตั้งเงื่อนไขการป้องกันไว้ (ต้องจ่ายก่อนป้องกัน / ต้องใช้ Lv รวมหลายตัว) = ไม่บังคับ (กติกา 14 Rage Q&A 9-10)
+ */
+export function blockForced(state: GameState, db: CardDatabase): boolean {
+  const b = state.battle;
+  if (!b?.mustBlock) return false;
+  if (b.levelBlock) return false;
+  if (b.blockTax && !b.blockTax.paid) return false;
+  const defender = state.cards[b.attackerId]!.owner === 'p1' ? 'p2' : 'p1';
+  return blockersFor(state, db, defender).some((id) => !effectBlocked(state, db, b.attackerId, id));
 }
 
 /** เอฟเฟกต์ Flash ที่เบรฟที่ร่วมร่างอยู่ให้ผู้ร่วมร่าง (มุราซาเมะ) */

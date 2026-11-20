@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { bpOf, cardLevel, currentBp, isSpiritLike, levelOf, minCores, onStageAbilities, opponentOf, PLAYERS, levelBoostSources, summonLevelCostBoost, summonMinCores, trashSummonRule, type GameState, type PlayerId } from '@bs/engine';
+import { blockForced, bpOf, cardLevel, currentBp, isSpiritLike, levelOf, minCores, onStageAbilities, opponentOf, PLAYERS, levelBoostSources, summonLevelCostBoost, summonMinCores, trashSummonRule, type GameState, type PlayerId } from '@bs/engine';
 import { cardName, formatEvent, playerLabel } from '../format';
 import {
   actingPlayer,
@@ -340,7 +340,7 @@ export function PromptBar() {
         ? '[True-Rage] ต้องป้องกันถ้าทำได้ · คลิกสปิริตที่มีกรอบสีฟ้า'
         : 'คลิกสปิริตที่มีกรอบสีฟ้าบนสนามเพื่อป้องกัน';
     // ไม่ป้องกัน = คลิกแผง Life ของฝ่ายป้องกัน (ไม่มีปุ่มแล้ว)
-    if (!(battle.mustBlock && candidates.length > 0) && !(battle.levelBlock && battle.blockers.length > 0)) {
+    if (!(blockForced(state, db) && candidates.length > 0) && !(battle.levelBlock && battle.blockers.length > 0)) {
       detail += battle.blockers.length > 0 ? ' · คลิกแผง Life = ไม่ป้องกันเพิ่ม' : ' · คลิกแผง Life = ไม่ป้องกัน (รับด้วย Life)';
     }
   } else if (truth && state.phase === 'main') {

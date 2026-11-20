@@ -1097,7 +1097,15 @@ export type Ability =
   /** "ถ้า... การ์ดของเราที่ตรงตัวกรองบนสนามทั้งหมดคอสต์ +amount" */
   | { kind: 'costBoost'; source: number; levels: number[]; if?: Condition; filter: CardFilter; amount: number }
   /** เอฟเฟกต์ Magic: [Main] หรือ [Flash] (การ์ดสปิริตที่ "ถือว่าเป็นการ์ดเมจิคด้วย" ใช้จากมือได้เช่นกัน) */
-  | { kind: 'magic'; source: number; timing: 'main' | 'flash'; steps: Step[]; oncePerTurn?: true }
+  | {
+      kind: 'magic';
+      source: number;
+      timing: 'main' | 'flash';
+      steps: Step[];
+      oncePerTurn?: true;
+      /** เล็งหลายเป้าพร้อมกัน ("อย่างละ 1 ตัว" / "เลือก 1 ตัว. นอกจากนั้น เลือกอีก 1 ตัว"): กระจายด้วย Dispersion ไม่ได้ (กติกา 14 Dispersion ข้อ 11) */
+      noDispersion?: true;
+    }
   /** "การ์ดสปิริตนี้ ถือว่าเป็นการ์ดเมจิคด้วย" (ตัวกรอง types magic นับการ์ดนี้ด้วย) */
   | { kind: 'alsoMagic'; source: number }
   /** เบรฟนี้ไม่ถูกนับในจำนวนเบรฟที่รวมร่างได้ของสปิริตชื่อนี้ (ฮิเมะสึรุอิจิมอนจิ → ชิซุรุ) */

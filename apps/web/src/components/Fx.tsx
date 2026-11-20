@@ -8,7 +8,8 @@ import { effects, flashScale, shakeScale } from '../gfx';
 import { playerLabel } from '../format';
 import { MatchIntro } from './MatchIntro';
 import { MatchResult } from './MatchResult';
-import { CutInIdol, IdolFxView, IdolSparkles, isDivaCard, isSongCard, SongWaves } from './IdolFx';
+import { DAMAGE_SHOWN } from './useHeld';
+import { CutInIdol, DivaImpact, DivaTrail, IdolFxView, IdolSparkles, isDivaCard, isSongCard, SongWaves, Star } from './IdolFx';
 
 /** เรียก onDone เมื่อครบเวลา (ms = null → ไม่ปิดเอง) */
 function useAutoDismiss(onDone: () => void, ms: number | null) {
@@ -1772,10 +1773,8 @@ function Sunburst({ burst, duration }: { burst: Rect; duration: number }) {
 
 // ---------------------------------------------------------------- FINAL BLOW
 
-/** รอยร้าวจากจุดกลางฝั่งที่แพ้ (เส้นหยัก ๆ กระจายออก) */
-function crackPaths(w: number, h: number): string[] {
-  const cx = w / 2;
-  const cy = h / 2;
+/** รอยร้าวจากจุดกระทบ (ค่าเริ่มต้น = กลางฝั่งที่แพ้) เส้นหยัก ๆ กระจายออก */
+function crackPaths(w: number, h: number, cx = w / 2, cy = h / 2): string[] {
   const rays = 11;
   const out: string[] = [];
   for (let i = 0; i < rays; i++) {
@@ -1799,14 +1798,26 @@ function crackPaths(w: number, h: number): string[] {
 function FinalBlow({ fx, onDone }: { fx: Extract<Fx, { kind: 'finalBlow' }>; onDone: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const [mat, setMat] = useState<Rect | null>(null);
+  /** จุดศูนย์กลางของฉาก (รอยร้าว รอยฟัน เส้นความเร็ว) = จุดที่ขอบหน้าการ์ดกระทบตอนโจมตีตรง · ไม่มี = กลางจอ */
+  const [origin, setOrigin] = useState<{ x: number; y: number } | null>(null);
   const [on, setOn] = useState(false);
   useEffect(() => {
-    const a = setTimeout(() => {
-      setMat(layoutRect(document.querySelector(`[data-mat="${fx.loser}"]`)));
-      setOn(true);
-    }, fx.delay);
+    let cancelWait = () => {};
+    const a = setTimeout(
+      () =>
+        (cancelWait = whenChargeHits(fx.loser, () => {
+          setMat(layoutRect(document.querySelector(`[data-mat="${fx.loser}"]`)));
+          const hit = directHits[fx.loser];
+          if (hit && performance.now() - hit.at < CHARGE_MS + 4000) setOrigin({ x: hit.x, y: hit.y });
+          setOn(true);
+        })),
+      fx.delay,
+    );
     const b = setTimeout(onDone, fx.delay + 2600 + LETHAL_SLOW_EXTRA);
-    return () => [a, b].forEach(clearTimeout);
+    return () => {
+      cancelWait();
+      [a, b].forEach(clearTimeout);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useLayoutEffect(() => {
@@ -1856,7 +1867,7 @@ function FinalBlow({ fx, onDone }: { fx: Extract<Fx, { kind: 'finalBlow' }>; onD
         <div className="absolute" style={{ left: mat.x, top: mat.y, width: mat.w, height: mat.h, animation: 'fx-fb-dim 2.6s ease-out both' }}>
           <div className="absolute inset-0 rounded-xl bg-[radial-gradient(ellipse_at_center,rgba(127,29,29,0.35),rgba(0,0,0,0.75))]" />
           <svg className="absolute inset-0 h-full w-full overflow-visible" style={{ filter: 'drop-shadow(0 0 6px rgba(255,255,255,0.9)) drop-shadow(0 0 14px rgba(248,113,113,0.8))' }}>
-            {crackPaths(mat.w, mat.h).map((d, i) => (
+            {(origin ? crackPaths(mat.w, mat.h, origin.x - mat.x, origin.y - mat.y) : crackPaths(mat.w, mat.h)).map((d, i) => (
               <path
                 key={i}
                 d={d}
@@ -1876,6 +1887,7 @@ function FinalBlow({ fx, onDone }: { fx: Extract<Fx, { kind: 'finalBlow' }>; onD
       <div
         className="absolute top-1/2 left-1/2 h-[180vmax] w-[180vmax]"
         style={{
+          ...(origin ? { left: origin.x, top: origin.y } : {}),
           translate: '-50% -50%',
           background: 'repeating-conic-gradient(from 0deg, rgba(255,255,255,0.16) 0deg 1.2deg, transparent 1.2deg 7deg)',
           maskImage: 'radial-gradient(circle, transparent 12%, #000 40%)',
@@ -1889,16 +1901,17 @@ function FinalBlow({ fx, onDone }: { fx: Extract<Fx, { kind: 'finalBlow' }>; onD
           key={deg}
           className="absolute top-1/2 left-1/2 h-2 w-[140%] rounded-full bg-white"
           style={{
+            ...(origin ? { left: origin.x, top: origin.y } : {}),
             translate: '-50% -50%',
             rotate: `${deg + i * 38}deg`,
             boxShadow: '0 0 20px 6px rgba(251,191,36,0.9), 0 0 60px 20px rgba(239,68,68,0.6)',
-            animation: `fx-fb-slash 0.7s ${120 + i * 140}ms cubic-bezier(.2,.9,.2,1) both`,
+            animation: `fx-fb-slash 0.7s ${180 + i * 140}ms cubic-bezier(.2,.9,.2,1) both`,
           }}
         />
       ))}
       {/* แสงวาบ */}
       <div className="absolute inset-0" style={{ opacity: flashScale() }}>
-        <div className="absolute inset-0 bg-white" style={{ animation: 'fx-fb-flash 0.55s ease-out both' }} />
+        <div className="absolute inset-0 bg-white" style={{ animation: 'fx-fb-flash 0.55s 60ms ease-out both' }} />
       </div>
     </div>
   );
@@ -3192,12 +3205,19 @@ function ChainDisplay({ fx, onDone }: { fx: Extract<Fx, { kind: 'chain' }>; onDo
 
 /** ตัวเลขดาเมจใหญ่กลางฝั่งที่เสียไลฟ์ + ช่อง Life กะพริบแดง (โจมตีตรง: รัศมีแตกกระจาย) */
 function Damage({ fx, onDone }: { fx: Extract<Fx, { kind: 'damage' }>; onDone: () => void }) {
-  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const [pos, setPos] = useState<{ x: number; y: number; textDy: number } | null>(null);
   useLayoutEffect(() => {
-    const t = setTimeout(() => {
+    let cancelWait = () => {};
+    const t = setTimeout(() => (cancelWait = fx.big ? whenChargeHits(fx.player, start) : (start(), () => {})), fx.delay);
+    function start() {
+      window.dispatchEvent(new CustomEvent(DAMAGE_SHOWN, { detail: fx.player }));
       const mat = layoutRect(document.querySelector(`[data-mat="${fx.player}"]`));
       if (!mat) return onDone();
-      setPos({ x: mat.x + mat.w / 2, y: mat.y + mat.h / 2 });
+      // โจมตีตรง: ระเบิดตรงจุดที่ขอบหน้าการ์ดกระทบพอดี (เจ้าของโปรเจกต์กำหนด) · อื่น ๆ = กลางสนาม
+      const hit = directHits[fx.player];
+      // ตัวเลข −N LIFE เลื่อนลงให้อยู่ในแผ่นสนาม (ระเบิดยังอยู่ที่จุดกระทบ)
+      if (fx.big && hit && performance.now() - hit.at < CHARGE_MS + 4000) setPos({ x: hit.x, y: hit.y, textDy: Math.max(0, mat.y + Math.min(95, mat.h / 2) - hit.y) - Math.max(0, hit.y - (mat.y + mat.h - Math.min(95, mat.h / 2))) });
+      else setPos({ x: mat.x + mat.w / 2, y: mat.y + mat.h / 2, textDy: 0 });
       // ระเบิด: จอสั่น (ครั้งที่ Life หมด = แรงและนานกว่า)
       // ครั้งที่ Life หมด: จอสั่นตอนปล่อยสโลว์ (อยู่ใน FinalBlow)
       if (fx.big && !fx.lethal)
@@ -3213,9 +3233,10 @@ function Damage({ fx, onDone }: { fx: Extract<Fx, { kind: 'damage' }>; onDone: (
         [{ boxShadow: '0 0 0 0 rgba(244,63,94,0)', filter: 'brightness(1)' }, { boxShadow: '0 0 24px 8px rgba(244,63,94,0.9)', filter: 'brightness(1.6)', offset: 0.3 }, { boxShadow: '0 0 0 0 rgba(244,63,94,0)', filter: 'brightness(1)' }],
         { duration: 900, easing: 'ease-out' },
       );
-    }, fx.delay);
+    }
     const done = setTimeout(onDone, fx.delay + 1500 + (fx.lethal ? LETHAL_SLOW_EXTRA : 0));
     return () => {
+      cancelWait();
       clearTimeout(t);
       clearTimeout(done);
     };
@@ -3229,7 +3250,7 @@ function Damage({ fx, onDone }: { fx: Extract<Fx, { kind: 'damage' }>; onDone: (
       {/* ครั้งที่ Life หมด: แสงขาวแดงวาบทั้งจอ */}
       {fx.lethal && (
         <div className="pointer-events-none fixed inset-0 z-[44]" style={{ opacity: flashScale() }}>
-          <div className="absolute inset-0" style={{ background: 'radial-gradient(circle, #fff 0%, rgba(254,205,211,0.9) 35%, rgba(190,18,60,0.55) 70%, rgba(127,29,29,0.35) 100%)', animation: 'fx-dmg-flash 0.9s ease-out both' }} />
+          <div className="absolute inset-0" style={{ background: 'radial-gradient(circle, #fff 0%, rgba(254,205,211,0.9) 35%, rgba(190,18,60,0.55) 70%, rgba(127,29,29,0.35) 100%)', animation: 'fx-dmg-flash 0.9s 60ms ease-out both' }} />
         </div>
       )}
       <div className="pointer-events-none fixed z-[45]" style={{ left: pos.x, top: pos.y }}>
@@ -3276,7 +3297,7 @@ function Damage({ fx, onDone }: { fx: Extract<Fx, { kind: 'damage' }>; onDone: (
             />
           </>
         )}
-        <div className="absolute -translate-x-1/2 -translate-y-1/2 text-center" style={{ animation: 'fx-damage 1.5s cubic-bezier(.2,.9,.3,1) both' }}>
+        <div className="absolute -translate-x-1/2 -translate-y-1/2 text-center" style={{ top: pos.textDy, animation: 'fx-damage 1.5s cubic-bezier(.2,.9,.3,1) both' }}>
           <div
             className={`${fx.lethal ? 'text-[150px]' : 'text-[110px]'} leading-none font-black text-rose-500 italic [-webkit-text-stroke:4px_#fff] [text-shadow:0_6px_0_#7f1d1d,0_0_30px_rgba(0,0,0,0.8)]`}
           >
@@ -3540,6 +3561,31 @@ function SmokeTrail({ follow, hex, from, until, size }: { follow: React.RefObjec
 
 const HIT_AT = CHARGE_HIT; // สัดส่วนเวลาที่ชนเป้าหมาย (ค่าเดียวกับ store)
 
+/** จุดที่ผู้โจมตีชนตอนโจมตีตรง (ต่อผู้เล่นที่ถูกตี) · Charge เขียนตอนเริ่ม Damage อ่านตอนระเบิด */
+const directHits: Partial<Record<PlayerId, { x: number; y: number; at: number; anim?: Animation; hitTime: number }>> = {};
+
+/**
+ * รอให้การ์ดที่โจมตีตรงถึงจุดกระทบจริง (ตามเวลาของแอนิเมชันการ์ด) แล้วค่อยเรียก cb
+ * ตัวจับเวลา (setTimeout) อาจนำหน้าแอนิเมชันการ์ดไปเล็กน้อย: ช่วงพุ่งสั้นมาก ระเบิด/แสงวาบเลยขึ้นก่อนเห็นการ์ดแตะเป้า
+ * ไม่มีการโจมตีตรงที่เพิ่งเกิด = เรียกทันที · รอไม่เกิน 400ms
+ */
+function whenChargeHits(player: PlayerId, cb: () => void): () => void {
+  const h = directHits[player];
+  if (!h?.anim || performance.now() - h.at > CHARGE_MS + 4000) {
+    cb();
+    return () => {};
+  }
+  const anim = h.anim;
+  const t0 = performance.now();
+  let raf = 0;
+  const tick = () => {
+    if (Number(anim.currentTime ?? 0) >= h.hitTime || anim.playState !== 'running' || performance.now() - t0 > 400) cb();
+    else raf = requestAnimationFrame(tick);
+  };
+  tick();
+  return () => cancelAnimationFrame(raf);
+}
+
 /**
  * ผู้โจมตีวิ่งชนเป้าหมาย: ลุกตั้งตรง → ถอยตั้งหลัก → พุ่งชน (จอสั่น + แสงกระแทก) → วิ่งกลับ / แตกสลายตรงจุดชน
  * ใช้การ์ดโคลนลอยเหนือกระดาน เพราะแผ่นรองเล่นตัดสิ่งที่ล้นขอบ การ์ดจริงถูกซ่อนระหว่างนี้
@@ -3570,6 +3616,8 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
   const gemRefs = useRef<(HTMLDivElement | null)[]>([]);
   const gems = fx.gems ?? [];
   const detached = braves.length > 0 && braves.length === (card?.braves.length ?? 0);
+  /** เผ่าดีว่า: ท่าโจมตีธีมไอดอล (หางโน้ตดนตรี + สปอตไลต์ + แสงชมพูทอง) */
+  const diva = isDivaCard(fx.cardNo);
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -3582,6 +3630,12 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
     const stop = Math.max(0, len - cardH * 0.45);
     const hx = (tx / len) * stop;
     const hy = (ty / len) * stop;
+    // โจมตีตรง: จำจุดกระทบไว้ให้ระเบิด Life (Damage) เกิดตรงนั้น = ขอบหน้าของการ์ด (หัวการ์ดหันไปทางที่พุ่ง ขยาย ×1.16 ตอนชน)
+    const direct = typeof fx.target === 'string' && /data-player-target="(p[12])"/.exec(fx.target);
+    if (direct) {
+      const reach = (cardH / 2) * 1.16;
+      directHits[direct[1] as PlayerId] = { x: cx + hx + (tx / len) * reach, y: cy + hy + (ty / len) * reach, at: performance.now(), hitTime: fx.delay + CHARGE_MS * HIT_AT };
+    }
     const rot = fx.fromExhausted || fx.startLying ? 'rotate(90deg)' : 'rotate(0deg)';
     const rotEnd = fx.toExhausted ? 'rotate(90deg)' : 'rotate(0deg)';
     // ---- ไทม์ไลน์ (เวลาจริงเป็นเส้นตรง แต่ละช่วงมี easing ของตัวเอง ของที่พุ่งไปด้วยใช้ offset + easing ชุดเดียวกันจึงไปพร้อมกันพอดี) ----
@@ -3649,6 +3703,7 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
       // ผู้โจมตีที่แพ้ (ออกจากสนามแล้ว): ภาพนี้ยืนแทนที่ช่องเดิมไปจนวิ่ง
       { duration: CHARGE_MS, delay: fx.delay, easing: 'linear', fill: onBoard ? 'forwards' : 'both' },
     );
+    if (direct) directHits[direct[1] as PlayerId]!.anim = anim;
     // ---- ของที่พุ่งไปพร้อมกัน (Brave ที่ร่วมร่าง / Gem Symbol): offset + easing ตรงกับการ์ดทุกช่วง ----
     const ux = tx / len;
     const uy = ty / len;
@@ -3685,11 +3740,12 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
         extra.push(
           el.animate(
             [
+              // มุมเดียวกับการ์ดที่ตี: บิดตัวง้างไปพร้อมกัน → หันหัวเข้าเป้า → เอียงเลยนิดตอนชน (+ กางออกเล็กน้อยตามข้าง)
               { transform: tr(0, 0, slotRot, 1), easing: E.lift },
-              { transform: tr(lift[0], lift[1], slotRot * 0.3, 1.35), offset: LIFT, easing: E.wind },
-              { transform: tr(form[0], form[1], -side * 4, 1.5), offset: WIND, easing: E.dash },
-              { transform: tr(hit[0], hit[1], 0, 1.62), offset: HIT_AT, easing: fx.dies ? E.recoil : E.recoil },
-              { transform: tr(back[0], back[1], side * 3, 1.4), offset: BACK, easing: E.home },
+              { transform: tr(lift[0], lift[1], twist + slotRot * 0.3, 1.35), offset: LIFT, easing: E.wind },
+              { transform: tr(form[0], form[1], aim - side * 4, 1.5), offset: WIND, easing: E.dash },
+              { transform: tr(hit[0], hit[1], aim * 1.15, 1.62), offset: HIT_AT, easing: fx.dies ? E.recoil : E.recoil },
+              { transform: tr(back[0], back[1], aim + side * 3, 1.4), offset: BACK, easing: E.home },
               { transform: tr(end[0], end[1], slotRot, 1), offset: HOME },
               { transform: tr(end[0], end[1], slotRot, 1) },
             ].map((k) => ({ ...k, opacity: 1 })),
@@ -3698,35 +3754,53 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
         );
       });
     }
-    gems.forEach((_, i) => {
-      const el = gemRefs.current[i];
-      if (!el) return;
+    // ---- Gem Symbol: เกาะตำแหน่งการ์ดจริงทุกเฟรม (อ่าน transform ของการ์ดที่วิ่ง) ใช้เวลาของแอนิเมชันการ์ด → ตรงกันเสมอ แม้ตอนสโลว์ Final Blow ----
+    //  0 → LIFT: ถอดออกจากกลางการ์ด ลอยออกเป็นวง · LIFT → WIND: วนรอบการ์ดระหว่างชาร์จ
+    //  WIND → HIT: หุบเข้าเรียงแถวที่หัวการ์ด พุ่งไปด้วยกัน · HIT: ชนพร้อมการ์ดที่ขอบหน้า แล้วแตกเป็นแสง
+    let gemRaf = 0;
+    if (gems.length > 0) {
       const m = gems.length;
-      // ลอยออกรอบการ์ด (LIFT) → เรียงวงโค้งรอบการ์ด หมุนวนระหว่างถอยชาร์จ (WIND) → พุ่งไปพร้อมการ์ด → แตกเป็นแสงตอนชน
-      const ring = (i / m) * Math.PI * 2 - Math.PI / 2;
-      const pop = [P.lift[0]! + Math.cos(ring) * cardW * 0.62, P.lift[1]! + Math.sin(ring) * cardH * 0.5];
-      // วงโค้งรอบการ์ด: ข้างซ้าย → หลัง → ข้างขวา (เกาะตามการ์ดตลอดทางพุ่ง)
-      const th = m === 1 ? Math.PI * 0.62 : Math.PI / 2 + 0.3 + (i / (m - 1)) * (Math.PI - 0.6);
-      const R = cardH * 0.72;
-      const off = [R * (Math.cos(th) * ux + Math.sin(th) * nx), R * (Math.cos(th) * uy + Math.sin(th) * ny)];
-      const form = [P.wind[0]! + off[0]!, P.wind[1]! + off[1]!];
-      // ตอนชน: วงหดเข้าหน้าการ์ด แล้วแตกออก
-      const hit = [P.hit[0]! + off[0]! * 0.35 + ux * cardH * 0.25, P.hit[1]! + off[1]! * 0.35 + uy * cardH * 0.25];
-      extra.push(
-        el.animate(
-          [
-            // หมุนออกจากการ์ด → หมุนช้า ๆ ระหว่างถอยชาร์จ → หมุนอีกรอบตอนพุ่ง กลับมาตั้งตรงตอนชน
-            { transform: tr(0, 0, -200, 0), opacity: 0, easing: E.lift },
-            { transform: tr(pop[0]!, pop[1]!, -20, 1.35), opacity: 1, offset: LIFT, easing: E.wind },
-            { transform: tr(form[0]!, form[1]!, 0, 1.05), opacity: 1, offset: WIND, easing: E.dash },
-            { transform: tr(hit[0]!, hit[1]!, 360, 1.45), opacity: 1, offset: HIT_AT, easing: 'ease-out' },
-            { transform: tr(hit[0]!, hit[1]!, 380, 2.6), opacity: 0, offset: Math.min(0.99, HIT_AT + 0.05) },
-            { transform: tr(hit[0]!, hit[1]!, 380, 2.6), opacity: 0 },
-          ],
-          { ...timing, fill: 'both' },
-        ),
-      );
-    });
+      const smooth = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
+      const gap = Math.min(cardW * 0.42, (cardW * 1.5) / Math.max(1, m - 1));
+      const loop = () => {
+        const ct = Number(anim.currentTime ?? 0) - fx.delay;
+        const u = ct / CHARGE_MS;
+        let card = { x: 0, y: 0 };
+        try {
+          const mx = new DOMMatrixReadOnly(getComputedStyle(el).transform);
+          card = { x: mx.m41, y: mx.m42 };
+        } catch {
+          /* อ่าน transform ไม่ได้: ใช้จุดเริ่ม */
+        }
+        gems.forEach((_, i) => {
+          const g = gemRefs.current[i];
+          if (!g) return;
+          if (u <= 0 || u >= HIT_AT + 0.06) {
+            g.style.opacity = '0';
+            return;
+          }
+          // วงรอบการ์ด (หมุนช้า ๆ ระหว่างชาร์จ)
+          const spin = (i / m) * Math.PI * 2 - Math.PI / 2 + Math.max(0, u - LIFT) * 9;
+          const pop = smooth(u / LIFT);
+          const orbit = [Math.cos(spin) * cardW * 0.85 * pop, Math.sin(spin) * cardH * 0.62 * pop];
+          // แถวที่หัวการ์ด: เรียงตามแนวขวางทิศพุ่ง ล้ำขอบหน้าการ์ดเล็กน้อย
+          const lat = (i - (m - 1) / 2) * gap;
+          const front = [ux * cardH * 0.56 + nx * lat, uy * cardH * 0.56 + ny * lat];
+          const f = smooth((u - (WIND - 0.06)) / 0.08);
+          const ox = orbit[0]! + (front[0]! - orbit[0]!) * f;
+          const oy = orbit[1]! + (front[1]! - orbit[1]!) * f;
+          // ชนแล้ว: ขยายใหญ่ จางเป็นแสง
+          const burst = u > HIT_AT ? (u - HIT_AT) / 0.06 : 0;
+          const sc = burst > 0 ? 1.4 + burst * 1.4 : 0.3 + 0.95 * pop + 0.15 * f;
+          const rot = (1 - pop) * -200 + (1 - f) * Math.max(0, u - LIFT) * 400;
+          g.style.opacity = String(burst > 0 ? 1 - burst : Math.min(1, pop * 1.4));
+          g.style.transform = `translate(${card.x + ox}px,${card.y + oy}px) rotate(${rot}deg) scale(${sc})`;
+        });
+        if (anim.playState === 'running' && u < HIT_AT + 0.06) gemRaf = requestAnimationFrame(loop);
+        else gemRefs.current.forEach((g) => g && (g.style.opacity = '0'));
+      };
+      gemRaf = requestAnimationFrame(loop);
+    }
     // ลูกแสงชาร์จที่ตัวการ์ด (ช่วง LIFT → WIND) · ลำแสงจากจุดเริ่มถึงเป้าตอนพุ่ง (ค้างแล้วจางระหว่างที่การ์ดอยู่ที่เป้า)
     const flashAt = setTimeout(() => setChargeFlash({ x: cx + P.wind[0]!, y: cy + P.wind[1]!, ms: CHARGE_MS * (WIND - LIFT + 0.06) }), fx.delay + CHARGE_MS * (LIFT - 0.02));
     const beamAt = setTimeout(
@@ -3736,7 +3810,8 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
     const real = onBoard ? document.querySelector<HTMLElement>(`[data-field-card="${fx.cardId}"]`) : null;
     const swap = setTimeout(() => real && (real.style.visibility = 'hidden'), fx.delay);
     const hit = setTimeout(() => {
-      setImpact({ x: cx + hx, y: cy + hy });
+      // แสงกระทบที่ขอบหน้าการ์ด (จุดที่แตะเป้าจริง)
+      setImpact({ x: cx + hx + (tx / len) * cardH * 0.58, y: cy + hy + (ty / len) * cardH * 0.58 });
       // จอซูมเข้าหาจุดชนแบบกระแทก + สั่น (ทั้งกระดาน) · เป้าหมายสว่างวาบ
       zoomPunch(cx + hx, cy + hy, CHARGE_MS * (HOME - HIT_AT), (BACK - HIT_AT) / (HOME - HIT_AT));
       if (typeof fx.target === 'string') {
@@ -3748,6 +3823,7 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
       onDone();
     };
     return () => {
+      cancelAnimationFrame(gemRaf);
       clearTimeout(hit);
       clearTimeout(swap);
       clearTimeout(flashAt);
@@ -3822,25 +3898,53 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
         );
       })}
       {/* หางควันสีตามการ์ด: ปล่อยตั้งแต่เริ่มพุ่ง (หลังถอยตั้งหลัก) จนชนเป้าหมาย · วางหลังการ์ดใน DOM: ชั้นหน้า (z 42 เท่าการ์ด) จึงทับการ์ด */}
-      <SmokeTrail
-        follow={ref}
-        hex={COLOR_HEX[db.get(fx.cardNo).colors[0] ?? 'red'] ?? '#a855f7'}
-        from={fx.delay + CHARGE_MS * (CHARGE_WIND - 0.01)}
-        until={fx.delay + CHARGE_MS * (HIT_AT + 0.02)}
-        size={cardW}
-      />
+      {diva ? (
+        // ดีว่า: หางโน้ตดนตรี/ดาวแทนควัน + สปอตไลต์ส่องตามตั้งแต่ชาร์จจนชน
+        <DivaTrail
+          follow={ref}
+          from={fx.delay + CHARGE_MS * (CHARGE_WIND - 0.01)}
+          until={fx.delay + CHARGE_MS * (HIT_AT + 0.02)}
+          spotFrom={fx.delay + CHARGE_MS * 0.1}
+          size={cardW}
+        />
+      ) : (
+        <SmokeTrail
+          follow={ref}
+          hex={COLOR_HEX[db.get(fx.cardNo).colors[0] ?? 'red'] ?? '#a855f7'}
+          from={fx.delay + CHARGE_MS * (CHARGE_WIND - 0.01)}
+          until={fx.delay + CHARGE_MS * (HIT_AT + 0.02)}
+          size={cardW}
+        />
+      )}
       {chargeFlash && (
         <div className="pointer-events-none fixed z-[43]" style={{ left: chargeFlash.x, top: chargeFlash.y }}>
-          {/* ลูกแสงทับตัวการ์ด */}
+          {/* ลูกแสงทับตัวการ์ด (ดีว่า = ขอบชมพู) */}
           <div
             className="absolute h-72 w-72 rounded-full"
-            style={{ animation: `fx-charge-orb ${chargeFlash.ms}ms ease-in both`, background: 'radial-gradient(circle, rgba(255,255,255,1) 0%, rgba(255,255,245,1) 24%, rgba(255,246,190,0.92) 34%, rgba(253,224,90,0.55) 46%, rgba(253,186,60,0.18) 60%, transparent 70%)' }}
+            style={{
+              animation: `fx-charge-orb ${chargeFlash.ms}ms ease-in both`,
+              background: diva
+                ? 'radial-gradient(circle, rgba(255,255,255,1) 0%, rgba(255,250,245,1) 24%, rgba(254,240,200,0.92) 34%, rgba(249,168,212,0.6) 46%, rgba(244,114,182,0.22) 60%, transparent 70%)'
+                : 'radial-gradient(circle, rgba(255,255,255,1) 0%, rgba(255,255,245,1) 24%, rgba(255,246,190,0.92) 34%, rgba(253,224,90,0.55) 46%, rgba(253,186,60,0.18) 60%, transparent 70%)',
+            }}
           />
           {/* แฉกแสงแนวนอน (เลนส์แฟลร์) + แนวตั้งสั้น */}
-          <div className="absolute h-1.5 w-[28rem] rounded-full bg-white" style={{ animation: `fx-charge-orb ${chargeFlash.ms}ms ease-in both`, boxShadow: '0 0 16px 5px rgba(255,240,170,0.95)' }} />
+          <div className="absolute h-1.5 w-[28rem] rounded-full bg-white" style={{ animation: `fx-charge-orb ${chargeFlash.ms}ms ease-in both`, boxShadow: diva ? '0 0 16px 5px rgba(249,168,212,0.95)' : '0 0 16px 5px rgba(255,240,170,0.95)' }} />
           <div className="absolute h-28 w-1 rounded-full bg-white" style={{ animation: `fx-charge-orb ${chargeFlash.ms}ms ease-in both`, boxShadow: '0 0 12px 4px rgba(255,240,170,0.9)' }} />
           {/* วงประกายหมุนรอบลูกแสง */}
-          <div className="absolute h-40 w-40 rounded-full border-2 border-yellow-100/80" style={{ animation: `fx-charge-ring ${chargeFlash.ms}ms linear both`, boxShadow: '0 0 18px rgba(255,240,170,0.8), inset 0 0 18px rgba(255,240,170,0.6)' }} />
+          <div
+            className={`absolute h-40 w-40 rounded-full border-2 ${diva ? 'border-pink-200/90' : 'border-yellow-100/80'}`}
+            style={{ animation: `fx-charge-ring ${chargeFlash.ms}ms linear both`, boxShadow: diva ? '0 0 18px rgba(244,114,182,0.8), inset 0 0 18px rgba(253,224,71,0.6)' : '0 0 18px rgba(255,240,170,0.8), inset 0 0 18px rgba(255,240,170,0.6)' }}
+          />
+          {/* ดีว่า: ดาวประดับรอบลูกแสง หมุนตามวง */}
+          {diva && (
+            <div className="absolute h-48 w-48" style={{ animation: `fx-charge-ring ${chargeFlash.ms}ms linear both` }}>
+              {[0, 1, 2, 3, 4].map((i) => {
+                const a = (i / 5) * Math.PI * 2;
+                return <Star key={i} size={i % 2 ? 18 : 24} color={i % 2 ? '#f472b6' : '#fde047'} style={{ position: 'absolute', left: `${50 + 50 * Math.sin(a)}%`, top: `${50 - 50 * Math.cos(a)}%`, translate: '-50% -50%', filter: 'drop-shadow(0 0 6px #fff)' }} />;
+              })}
+            </div>
+          )}
         </div>
       )}
       {/* ลำแสงพุ่ง: จากจุดเริ่มถึงเป้า สว่างแล้วค่อยจาง */}
@@ -3851,16 +3955,24 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
             style={{
               animation: `fx-charge-beam ${beam.ms}ms ease-out both`,
               transformOrigin: '0 50%',
-              background: 'linear-gradient(90deg, rgba(253,186,60,0) 0%, rgba(253,224,71,0.75) 18%, rgba(255,250,220,1) 60%, rgba(255,255,255,1) 100%)',
-              filter: 'blur(2px) drop-shadow(0 0 12px rgba(253,200,60,0.9))',
+              background: diva
+                ? 'linear-gradient(90deg, rgba(244,114,182,0) 0%, rgba(249,168,212,0.75) 18%, rgba(254,240,200,1) 60%, rgba(255,255,255,1) 100%)'
+                : 'linear-gradient(90deg, rgba(253,186,60,0) 0%, rgba(253,224,71,0.75) 18%, rgba(255,250,220,1) 60%, rgba(255,255,255,1) 100%)',
+              filter: diva ? 'blur(2px) drop-shadow(0 0 12px rgba(244,114,182,0.9))' : 'blur(2px) drop-shadow(0 0 12px rgba(253,200,60,0.9))',
             }}
           />
         </div>
       )}
       {impact && (
         <div className="pointer-events-none fixed z-[43]" style={{ left: impact.x, top: impact.y }}>
-          <div className="absolute h-56 w-56 rounded-full" style={{ animation: 'fx-impact 0.5s ease-out both', background: 'radial-gradient(circle, rgba(255,255,255,0.95) 0%, rgba(253,224,71,0.7) 25%, rgba(244,63,94,0.4) 50%, transparent 70%)' }} />
-          <div className="absolute h-72 w-72 rounded-full border-4 border-yellow-200" style={{ animation: 'fx-impact-ring 0.55s ease-out both' }} />
+          {diva ? (
+            <DivaImpact />
+          ) : (
+            <>
+              <div className="absolute h-56 w-56 rounded-full" style={{ animation: 'fx-impact 0.5s ease-out both', background: 'radial-gradient(circle, rgba(255,255,255,0.95) 0%, rgba(253,224,71,0.7) 25%, rgba(244,63,94,0.4) 50%, transparent 70%)' }} />
+              <div className="absolute h-72 w-72 rounded-full border-4 border-yellow-200" style={{ animation: 'fx-impact-ring 0.55s ease-out both' }} />
+            </>
+          )}
         </div>
       )}
     </>

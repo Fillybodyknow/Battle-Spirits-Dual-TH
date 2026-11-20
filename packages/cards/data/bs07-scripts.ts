@@ -60,7 +60,8 @@ const onStage = (levels: number[], name: string): ScriptAbility => {
 };
 
 /** My Unit N: ต้องมีสปิริตเผ่า [ดีว่า] ที่ฟื้นสภาพของเรา N ตัว (ตัวที่โจมตีอยู่เสื่อมสภาพแล้ว ไม่นับ) */
-const unit = (n: number): Condition => ({ alliesMatchAtLeast: { filter: { family: DIVA, state: 'refresh' }, count: n } });
+// ไม่นับตัวที่โจมตีเอง (ตรงกับตัวเลือกของ step myUnit: กติกา "สามารถ X เพื่อ Y" ต้องทำ X ได้จริง)
+const unit = (n: number): Condition => ({ alliesMatchAtLeast: { filter: { family: DIVA, state: 'refresh', notSelf: true }, count: n } });
 const myUnit = (levels: number[], n: number, label: string, steps: Step[], cond?: Condition): ScriptAbility => ({
   kind: 'trigger',
   on: 'attack',

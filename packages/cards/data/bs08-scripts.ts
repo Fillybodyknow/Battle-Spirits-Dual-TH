@@ -89,6 +89,8 @@ export const BS08_SCRIPTS: Record<string, CardScript> = {
     {
       kind: 'magic',
       timing: 'flash',
+      // "อย่างละ 1 ตัว" = เล็ง 3 ตัวพร้อมกัน: Dispersion กระจายไม่ได้ (กติกา 14 Dispersion ข้อ 11)
+      noDispersion: true,
       steps: [
         { do: 'destroyChosenOpponent', filter: { types: SPIRIT, cost: 0 } },
         { do: 'destroyChosenOpponent', filter: { types: SPIRIT, cost: 3 } },

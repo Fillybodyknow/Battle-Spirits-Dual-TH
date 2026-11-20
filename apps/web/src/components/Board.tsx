@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { activatableOptions, onStageAbilities, baseCost, braveToSwap, canAttackWith, cardLevel, currentBp, isSpiritLike, payableCost, summonConditionOk, trashSummonRule, type CoreTarget, type GameState, type PlayerId } from '@bs/engine';
+import { activatableOptions, blockForced, onStageAbilities, baseCost, braveToSwap, canAttackWith, cardLevel, currentBp, isSpiritLike, payableCost, summonConditionOk, trashSummonRule, type CoreTarget, type GameState, type PlayerId } from '@bs/engine';
 import { playerLabel } from '../format';
 import { IMG } from '../assets';
 import type { Fx } from '../store';
@@ -11,7 +11,7 @@ import { CastRestCard, pickingCores } from './Fx';
 import { allocOf, isDistributeCandidate, isMultiCardCandidate, pickedOf } from '../store';
 import { actingPlayer, canEvolve, db, isMultiHostCandidate, flashPlayer, inMain, isChoiceCandidate, isFxBlocking, handMagicTimings, responseOptions, simulateEvolve, simulateMove, useGame } from '../store';
 import { useFlashUsable } from './Controls';
-import { useHeld } from './useHeld';
+import { useHeld, useShownLife } from './useHeld';
 import { CardBack, CardFace } from './CardFace';
 import { FieldCracks } from './Cracks';
 import { Note } from './IdolFx';
@@ -432,6 +432,8 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
           }
           // มีเอฟเฟกต์ Flash / [Evolution] ที่กดใช้ได้: เปิด/ปิดเมนูเหนือการ์ด (เลือก Core ไว้ = ย้าย Core มาวางตามปกติ)
           if (menuCount > 0 && !st.state.choice && !isChoiceCandidate(st.state, cardId) && st.selectedCores.length === 0) {
+            // แตะการ์ด = ปักแผงรายละเอียดการ์ดด้วย (เหมือนการ์ดใบอื่น) พร้อมเปิดเมนู
+            useGame.setState({ pinned: cardId });
             setFlashOpen(!flashOpen);
             return;
           }
@@ -738,6 +740,7 @@ function LifeSlot({ player }: { player: PlayerId }) {
   const blocking = useGame((s) => isFxBlocking(s.fx));
   const dispatch = useGame((s) => s.dispatch);
   const life = state.players[player].life;
+  const shownLife = useShownLife(player);
   const slots = Math.max(state.config.initialLife, life.length, 6);
   // ช่วงประกาศป้องกัน: คลิกแผง Life ของฝ่ายป้องกัน = ไม่ป้องกัน (รับการโจมตีด้วย Life)
   const battle = state.battle;
@@ -748,14 +751,14 @@ function LifeSlot({ player }: { player: PlayerId }) {
     !state.winner &&
     battle?.step === 'declareBlock' &&
     player !== state.turnPlayer &&
-    !(battle.mustBlock && blockCandidates(state).length > 0);
+    !(blockForced(state, db) && blockCandidates(state).length > 0);
   const more = (battle?.blockers.length ?? 0) > 0;
   return (
     <MatSlot
       data-life={player}
       label="Life"
       sub="ไลฟ์"
-      count={life.length}
+      count={shownLife}
       className={canTake ? 'cursor-pointer ring-4 ring-rose-400 shadow-[0_0_20px_rgba(251,113,133,0.6)] transition hover:brightness-125' : ''}
       style={canTake ? { animation: 'fx-choice-glow 1.4s ease-in-out infinite' } : undefined}
       onClick={canTake ? () => dispatch({ type: 'noBlock', player }) : undefined}

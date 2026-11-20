@@ -620,3 +620,22 @@ describe('Booster Set 05', () => {
     expect(s.players.p2.field).toContain(target);
   });
 });
+
+describe('True-Rage + ป้องกันที่ต้องจ่ายก่อน (กติกา 14 Rage Q&A 10)', () => {
+  it('ฮิเมะเนโกะ (ป้องกันต้องส่งคอร์ลงแทรช) + True-Rage: ไม่ป้องกันก็ได้ · ไม่มีเงื่อนไขจ่าย = ต้องป้องกัน', () => {
+    let s = setup();
+    const host = put(s, 'p1', no('แม่ทัพโยวไค คาฉะเนโกะ-อิคุสะ'), 1);
+    brave(s, host, 'ฮิเมะเนโกะ');
+    put(s, 'p2', DARIU, 1);
+    s = passFlashes(attack(s, host));
+    s.battle!.mustBlock = true; // ได้รับ True-Rage
+    expect(fails(s, { type: 'noBlock', player: 'p2' })).toBe('ok');
+
+    let t = setup();
+    const host2 = put(t, 'p1', no('แม่ทัพโยวไค คาฉะเนโกะ-อิคุสะ'), 1);
+    put(t, 'p2', DARIU, 1);
+    t = passFlashes(attack(t, host2));
+    t.battle!.mustBlock = true;
+    expect(fails(t, { type: 'noBlock', player: 'p2' })).toBe('MUST_BLOCK');
+  });
+});

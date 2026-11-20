@@ -761,6 +761,16 @@ function ask(ctx: Ctx, item: QueuedEffect, choice: DistributiveOmit<PendingChoic
     const f = item.kageForce;
     item.kageForce = undefined;
     const forced = [f.kage, f.orig].find((id) => !!id && onField(id));
+    // การ์ด Kagemusha ที่ไม่รับผลเอฟเฟกต์นี้ (ชิโมะคาเสะ: ไม่รับผลสปิริต/เมจิคของคู่แข่ง) = ดูดเอฟเฟกต์มาแล้วลบทิ้ง (กติกา 14 Kagemusha)
+    if (forced && forced === f.kage) {
+      const blocker = effectBlocker(ctx.s, ctx.db, item.sourceId, forced);
+      if (blocker) {
+        emitStatic(ctx, blocker);
+        item.kageDone = [...(item.kageDone ?? []), forced];
+        if ('step' in choice) item.kageAbsorb = { cardId: forced, stepDo: choice.step.do };
+        return;
+      }
+    }
     if (forced) {
       item.kageDone = [...(item.kageDone ?? []), forced];
       // กติกา 14 Kagemusha ข้อ 2: ดูดเอฟเฟกต์มาหมด = เป้าที่เหลือของ step นี้ก็ต้องเป็นการ์ด Kagemusha
@@ -812,6 +822,11 @@ const KAGE_STEPS = new Set<Step['do']>([
   'removeOpponentCores',
   'moveOpponentCore',
   'destroyHighestCostOpponent',
+  // เล็งตามผลรวม BP/คอสต์ และบังคับโจมตี (ราชาผึ้ง ฟง-นี้ด, โควจิกิริ, อิจิโกะฮิโทฟุริ ฯลฯ)
+  'exhaustOpponentTotalBp',
+  'exhaustOpponentTotalCost',
+  'opponentTotalBp',
+  'forceAttackChosen',
 ]);
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
@@ -854,10 +869,18 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
    * คืน true ถ้าขยายแล้ว (step ใหม่เข้าคิวแทน)
    */
   const disperse = (count: number, st: Step & { dispersed?: true }): boolean => {
-    // กติกา 14 Dispersion: เฉพาะเมจิค 1 เป้า, เอฟเฟกต์จากเบิร์ส (รวมแฟลชหลังเปิดเบิร์ส) กระจายไม่ได้
+    // กติกา 14 Dispersion: เฉพาะเมจิค 1 เป้า, เอฟเฟกต์จากเบิร์สกระจายไม่ได้ (แฟลชที่จ่ายต่อจากเบิร์สกระจายได้: isBurst ถูกล้างตอนจ่าย)
     if (count !== 1 || st.dispersed || item.controller !== me || item.isBurst) return false;
     const src = s.cards[item.sourceId];
-    if (!src || db.get(src.cardNo).type !== 'magic') return false;
+    if (!src) return false;
+    const srcDef = db.get(src.cardNo);
+    // เมจิค หรือสปิริตที่ใช้เป็นเมจิค (เจ้าของโปรเจกต์กำหนด)
+    if (srcDef.type !== 'magic' && !item.asMagic) return false;
+    // ข้อ 11: เล็งหลายเป้าพร้อมกัน ("อย่างละ 1 ตัว" / "นอกจากนั้น") กระจายไม่ได้
+    if (srcDef.abilities.some((a) => a.kind === 'magic' && a.noDispersion)) return false;
+    // ข้อ 1: เฉพาะเอฟเฟกต์ที่เล็งสปิริต/อัลติเมท (เบรฟที่ยืนเดี่ยวนับเป็นสปิริต) · เล็งเน็กซัส กระจายไม่ได้
+    const types = 'filter' in st ? (st.filter as CardFilter | undefined)?.types : undefined;
+    if (types && types.some((t) => t !== 'spirit' && t !== 'ultimate' && t !== 'brave')) return false;
     const n = dispersionCount(s, db, me);
     if (n <= 1) return false;
     item.steps.unshift({ ...st, count: n, dispersed: true } as Step);
@@ -1375,6 +1398,8 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
         item.kageForce = undefined;
         if (kage && onField(ctx, kage)) {
           item.kageDone = [...(item.kageDone ?? []), kage];
+          // การ์ด Kagemusha ไม่รับผลเอฟเฟกต์นี้ = ดูดมาแล้วลบทิ้ง
+          if (!hits(kage)) return;
           picks = [kage];
         }
       }
@@ -1403,6 +1428,8 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
         item.kageForce = undefined;
         if (kage && onField(ctx, kage)) {
           item.kageDone = [...(item.kageDone ?? []), kage];
+          // การ์ด Kagemusha ไม่รับผลเอฟเฟกต์นี้ = ดูดมาแล้วลบทิ้ง
+          if (!hits(kage)) return;
           alloc = [{ cardId: kage, n: alloc.reduce((n, a) => n + a.n, 0) }];
         }
       }
@@ -2386,12 +2413,13 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
         const at = f.indexOf(self);
         if (picked[0]) f.splice(at + 1, 0, picked[0]);
         if (picked[1]) f.splice(at, 0, picked[1]);
-        b.unit = [...(b.unit ?? []), ...picked];
+        b.unit = [...new Set([...(b.unit ?? []), ...picked])];
         emit(ctx, { type: 'myUnit', attackerId: self, cardIds: picked });
         return;
       }
       const candidates = s.players[me].field.filter(
-        (id) => id !== self && !picked.includes(id) && !(b.unit ?? []).includes(id) && spiritLike(id) && s.cards[id]!.state === 'refresh' && db.get(s.cards[id]!.cardNo).family.includes('ดีว่า'),
+        // ตัวที่อยู่ใน unit ของการต่อสู้นี้แล้วเลือกซ้ำได้ (เจ้าของโปรเจกต์กำหนด: My Unit อีกครั้งใช้คู่เดิมได้)
+        (id) => id !== self && !picked.includes(id) && spiritLike(id) && s.cards[id]!.state === 'refresh' && db.get(s.cards[id]!.cardNo).family.includes('ดีว่า'),
       );
       if (candidates.length < step.count - picked.length) return;
       ask(ctx, item, { kind: 'card', prompt: `My Unit: เลือกสปิริตเผ่า [ดีว่า] ที่ฟื้นสภาพมาวางชิด (${picked.length + 1}/${step.count})`, candidates, step: { ...step, picked } });
@@ -3179,6 +3207,8 @@ export function resolveChoice(ctx: Ctx, player: PlayerId, pick: ChoicePick): voi
       const { paid } = payCost(ctx, player, def, pick.pay, []);
       emit(ctx, { type: 'costPaid', player, cardId: choice.sourceId, paid });
       item.paidWithSoul = pick.pay.some((id) => s.cores[id]!.isSoul);
+      // แฟลชที่จ่ายคอสต์ต่อจากเบิร์ส ไม่ใช่ "เอฟเฟกต์จากเบิร์ส" แล้ว: กระจายด้วย Dispersion ได้ (เจ้าของโปรเจกต์กำหนด)
+      item.isBurst = false;
       const flash = def.abilities.flatMap((a) => (a.kind === 'magic' && a.timing === 'flash' ? a.steps : []));
       item.steps.unshift(...flash);
       // จ่าย Flash ของการ์ดนี้ (เช่น หลังเปิด Burst) = ต่อ Chain อีกข้อ

@@ -6,7 +6,7 @@
  *  - SongWaves: คลื่นเสียง + โน้ตหมุนรอบเมจิคไทป์เพลงตอนร่าย
  * ทุกอย่างวาดด้วย CSS/SVG เอง (ไม่ใช้อีโมจิ: Windows 7 แสดงเป็นกล่องว่าง)
  */
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type RefObject } from 'react';
 import { db, layoutRect, type Fx, type Rect } from '../store';
 import { effects } from '../gfx';
 
@@ -410,6 +410,193 @@ export function SongWaves({ color }: { color: string }) {
           );
         })}
       </div>
+    </>
+  );
+}
+
+// ---------------- ท่าโจมตีของดีว่า ----------------
+
+const NOTE1 = 'M11 3 V15.6 A3.4 3.4 0 1 1 9 12.6 V3 Z M11 3 C15 4 18 6 17 10 C16 7.5 13.5 6.8 11 6.8 Z';
+const NOTE2 = 'M9 4 L21 2 V15.5 A3 3 0 1 1 19 12.8 V6.6 L11 8 V17.5 A3 3 0 1 1 9 14.8 Z';
+const STAR = 'M12 1.5 L14.9 8.6 L22.5 9.2 L16.7 14.1 L18.5 21.6 L12 17.6 L5.5 21.6 L7.3 14.1 L1.5 9.2 L9.1 8.6 Z';
+const TRAIL_COLORS = [GOLD, PINK, '#ffffff', '#f9a8d4', '#fde68a'];
+
+/**
+ * หางของดีว่าตอนพุ่งโจมตี (แทนควัน): โน้ตดนตรีและดาวหลุดออกจากการ์ดตามทางที่พุ่ง ลอยกระจายออกด้านข้าง หมุน แล้วจางหาย
+ * + สปอตไลต์จากขอบจอบนส่องตามการ์ดตั้งแต่ช่วงชาร์จจนชนเป้า
+ * follow = การ์ดโคลนที่กำลังพุ่ง · from/until = ช่วงเวลา (ms นับจาก mount) ที่ปล่อยโน้ต · spotFrom = เวลาที่สปอตไลต์เริ่มส่อง
+ */
+export function DivaTrail({ follow, from, until, spotFrom, size }: { follow: RefObject<HTMLDivElement | null>; from: number; until: number; spotFrom: number; size: number }) {
+  const back = useRef<HTMLCanvasElement>(null);
+  const front = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const cv = back.current;
+    const cv2 = front.current;
+    const ctx = cv?.getContext('2d');
+    const ctx2 = cv2?.getContext('2d');
+    if (!cv || !cv2 || !ctx || !ctx2) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const full = effects().blur;
+    const paths = [new Path2D(NOTE1), new Path2D(NOTE2), new Path2D(STAR)];
+    type P = { x: number; y: number; vx: number; vy: number; rot: number; vr: number; s: number; born: number; life: number; shape: number; color: string; front: boolean };
+    const parts: P[] = [];
+    const t0 = performance.now();
+    let prev: [number, number] | null = null;
+    let raf = 0;
+    let seq = 0;
+    /** จุดต้นสปอตไลต์ (ขอบบนจอ) เลือกครั้งเดียวตอนเริ่มส่อง */
+    let spotX: number | null = null;
+    const rand = (a: number, b: number) => a + Math.random() * (b - a);
+    const spotEnd = until + 420;
+    const step = (now: number) => {
+      const box = cv.getBoundingClientRect();
+      if (cv.width !== Math.round(box.width * dpr)) {
+        cv.width = cv2.width = Math.round(box.width * dpr);
+        cv.height = cv2.height = Math.round(box.height * dpr);
+      }
+      const k = cv.width / (box.width || 1);
+      const w = size * k;
+      const elapsed = now - t0;
+      const el = follow.current;
+      ctx.clearRect(0, 0, cv.width, cv.height);
+      ctx2.clearRect(0, 0, cv2.width, cv2.height);
+      const r = el?.getBoundingClientRect();
+      const cx = r ? (r.left + r.width / 2 - box.left) * k : 0;
+      const cy = r ? (r.top + r.height / 2 - box.top) * k : 0;
+      // ---- สปอตไลต์: กรวยแสงจากขอบบนจอ ส่องตามการ์ด (ค่อย ๆ สว่างขึ้น/จางลง) ----
+      if (r && elapsed >= spotFrom && elapsed <= spotEnd) {
+        if (spotX === null) spotX = cx + (cx < cv.width / 2 ? 1 : -1) * cv.width * 0.12;
+        const a = Math.min(1, (elapsed - spotFrom) / 260) * Math.min(1, (spotEnd - elapsed) / 300);
+        const rad = w * 1.05;
+        const ang = Math.atan2(cy, cx - spotX);
+        const nx = -Math.sin(ang);
+        const ny = Math.cos(ang);
+        const g = ctx.createLinearGradient(spotX, 0, cx, cy);
+        g.addColorStop(0, `rgba(255,250,210,${0.05 * a})`);
+        g.addColorStop(0.75, `rgba(253,230,138,${0.3 * a})`);
+        g.addColorStop(1, `rgba(255,255,240,${0.45 * a})`);
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.moveTo(spotX - w * 0.12, -4);
+        ctx.lineTo(spotX + w * 0.12, -4);
+        ctx.lineTo(cx + nx * rad, cy + ny * rad);
+        ctx.lineTo(cx - nx * rad, cy - ny * rad);
+        ctx.closePath();
+        ctx.fill();
+        // วงแสงบนพื้นรอบการ์ด
+        const pool = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad * 1.25);
+        pool.addColorStop(0, `rgba(255,250,220,${0.4 * a})`);
+        pool.addColorStop(0.6, `rgba(244,114,182,${0.18 * a})`);
+        pool.addColorStop(1, 'rgba(244,114,182,0)');
+        ctx.fillStyle = pool;
+        ctx.beginPath();
+        ctx.arc(cx, cy, rad * 1.25, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+      // ---- ปล่อยโน้ต/ดาวตามทางที่พุ่ง ----
+      if (r && elapsed >= from && elapsed <= until) {
+        const [px, py] = prev ?? [cx, cy];
+        const dx = cx - px;
+        const dy = cy - py;
+        const dist = Math.hypot(dx, dy);
+        if (dist > w * 0.04) {
+          const ux = dx / dist;
+          const uy = dy / dist;
+          const n = Math.min(full ? 7 : 3, Math.max(1, Math.round(dist / (w * (full ? 0.22 : 0.5)))));
+          for (let i = 0; i < n; i++) {
+            const f = (i + Math.random()) / n;
+            const s = seq++;
+            // หลุดออกทางซ้าย/ขวาสลับกัน ลอยออกด้านข้าง + ขึ้นเล็กน้อย
+            const sideDir = s % 2 ? 1 : -1;
+            const off = rand(0.1, 0.5) * w * sideDir;
+            const spd = rand(0.05, 0.16) * k;
+            parts.push({
+              x: px + dx * f - uy * off,
+              y: py + dy * f + ux * off,
+              vx: -uy * sideDir * spd - ux * 0.04 * k,
+              vy: ux * sideDir * spd - uy * 0.04 * k - 0.03 * k,
+              rot: rand(-0.6, 0.6),
+              vr: rand(-0.004, 0.004),
+              s: w * rand(0.28, 0.46),
+              born: now - (1 - f) * 16,
+              life: rand(650, 1000),
+              shape: s % 5 === 4 ? 1 : s % 3 === 0 ? 2 : 0,
+              color: TRAIL_COLORS[s % TRAIL_COLORS.length]!,
+              front: s % 3 === 1,
+            });
+          }
+        }
+        prev = [cx, cy];
+      } else prev = null;
+      for (let i = 0; i < parts.length; i++) {
+        const p = parts[i]!;
+        const age = now - p.born;
+        const u = age / p.life;
+        if (u >= 1) {
+          parts.splice(i--, 1);
+          continue;
+        }
+        const c = p.front ? ctx2 : ctx;
+        const pop = u < 0.12 ? 0.5 + (u / 0.12) * 0.7 : 1.2 - 0.35 * ((u - 0.12) / 0.88);
+        const sc = (p.s / 24) * pop;
+        c.save();
+        c.globalAlpha = u < 0.1 ? u / 0.1 : Math.pow(1 - (u - 0.1) / 0.9, 1.4);
+        c.translate(p.x + p.vx * age, p.y + p.vy * age);
+        c.rotate(p.rot + p.vr * age + Math.sin(age / 140) * 0.25);
+        c.scale(sc, sc);
+        c.translate(-12, -12);
+        if (full) {
+          c.shadowColor = p.color === '#ffffff' ? GOLD : p.color;
+          c.shadowBlur = 10 * k;
+        }
+        c.fillStyle = p.color;
+        c.fill(paths[p.shape]!);
+        c.shadowBlur = 0;
+        c.lineWidth = 0.8;
+        c.strokeStyle = 'rgba(120,20,70,0.55)';
+        c.stroke(paths[p.shape]!);
+        c.restore();
+      }
+      if (parts.length > 0 || elapsed < spotEnd) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // ชั้นหลังใต้การ์ด (z 41: สปอตไลต์ + โน้ตส่วนใหญ่) · ชั้นหน้าเหนือการ์ด (z 42)
+  return (
+    <>
+      <canvas ref={back} className="pointer-events-none fixed inset-0 z-[41] h-full w-full" />
+      <canvas ref={front} className="pointer-events-none fixed inset-0 z-[42] h-full w-full" />
+    </>
+  );
+}
+
+/** จุดชนของดีว่า: วงแสงชมพูทอง + โน้ตและดาวแตกกระจายออกรอบทิศ (วางในกล่อง fixed ที่จุดชน) */
+export function DivaImpact() {
+  const n = effects().blur ? 14 : 8;
+  return (
+    <>
+      <div className="absolute h-60 w-60 rounded-full" style={{ animation: 'fx-impact 0.55s ease-out both', background: 'radial-gradient(circle, rgba(255,255,255,0.95) 0%, rgba(253,224,71,0.7) 25%, rgba(244,114,182,0.5) 50%, transparent 70%)' }} />
+      <div className="absolute h-72 w-72 rounded-full border-4 border-pink-300" style={{ animation: 'fx-impact-ring 0.6s ease-out both', boxShadow: '0 0 18px rgba(244,114,182,0.8)' }} />
+      {Array.from({ length: n }, (_, i) => {
+        const a = (i / n) * Math.PI * 2 + rnd(i + 3) * 0.4;
+        const d = 110 + rnd(i + 7) * 90;
+        const color = TRAIL_COLORS[i % TRAIL_COLORS.length]!;
+        const style: CSSProperties = {
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          ['--dx' as string]: `${Math.cos(a) * d}px`,
+          ['--dy' as string]: `${Math.sin(a) * d - 30}px`,
+          animation: `idol-note-fly ${700 + rnd(i + 11) * 300}ms ${rnd(i + 13) * 80}ms ease-out both`,
+          filter: `drop-shadow(0 0 6px ${color === '#ffffff' ? GOLD : color})`,
+        };
+        return i % 3 === 2 ? <Star key={i} size={20 + rnd(i) * 10} color={color} style={style} /> : <Note key={i} size={24 + rnd(i) * 12} color={color} double={i % 4 === 1} style={style} />;
+      })}
     </>
   );
 }

@@ -185,8 +185,10 @@ export interface QueuedEffect {
   summonFrom?: string;
   /** เอฟเฟกต์นี้ทำให้การ์ดที่มี Soul Core สูญสลายแล้ว */
   depletedSoul?: boolean;
-  /** เอฟเฟกต์จากเบิร์ส (รวมแฟลชที่จ่ายคอสต์ต่อจากเบิร์ส: กติกา 06 Q&A 3) */
+  /** เอฟเฟกต์จากเบิร์ส (แฟลชที่จ่ายคอสต์ต่อจากเบิร์สไม่นับ: เจ้าของโปรเจกต์กำหนด = กระจายด้วย Dispersion ได้) */
   isBurst?: boolean;
+  /** การ์ดสปิริตที่ใช้เป็นเมจิค (alsoMagic / grantMagic): นับเป็นเมจิคสำหรับ Dispersion (เจ้าของโปรเจกต์กำหนด) */
+  asMagic?: boolean;
   /** trigger oppHandIncreased: จำนวนการ์ดที่มือคู่แข่งเพิ่มขึ้น */
   handIncrease?: number;
   /** เอฟเฟกต์นี้ทิ้งเบิร์สของคู่แข่งได้ */

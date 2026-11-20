@@ -6,6 +6,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PlayerId } from '@bs/engine';
 import { useGame } from '../store';
+import { useShownLife } from './useHeld';
 
 const W = 1000;
 const H = 420;
@@ -117,23 +118,6 @@ function spread(i: number, lost: number): number {
   if (i >= lost) return 0;
   const age = lost - i - 1;
   return Math.min(1, 0.16 + age * 0.2 + lost * 0.05);
-}
-
-/** Life ที่แสดง: ลดลงตรงจังหวะตัวเลขดาเมจ (ไม่ใช่ทันทีที่ state เปลี่ยน) */
-function useShownLife(player: PlayerId): number {
-  const life = useGame((s) => s.state.players[player].life.length);
-  const [shown, setShown] = useState(life);
-  useEffect(() => {
-    if (life >= shown) {
-      setShown(life);
-      return;
-    }
-    const hit = useGame.getState().fx.find((f) => f.kind === 'damage' && f.player === player);
-    const t = setTimeout(() => setShown(life), hit && 'delay' in hit ? hit.delay : 0);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [life]);
-  return shown;
 }
 
 /** ค่อย ๆ เปลี่ยนความกว้างร่องไปหาเป้าหมาย (หินค่อย ๆ แยก) */

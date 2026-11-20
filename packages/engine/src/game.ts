@@ -23,6 +23,7 @@ import {
   braveRoom,
   braveToSwap,
   blockersFor,
+  blockForced,
   canAttackWith,
   magicUsedUp,
   baseCost,
@@ -41,7 +42,6 @@ import {
   removeCore,
   removeFrom,
   symbolCount,
-  effectBlocked,
   forcedAttackers,
   forceAttackHolders,
   attackerUnblockable,
@@ -586,6 +586,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
       controller: player,
       sourceId: cardId,
       ...(def.type !== 'magic' && source !== undefined ? { source } : {}),
+      ...(def.type !== 'magic' ? { asMagic: true } : {}),
       steps,
       paidWithSoul,
       trashWhenDone: true,
@@ -782,7 +783,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
   /** ไม่บล็อก หรือ (เมื่อบล็อกได้หลายตัว) ไม่บล็อกเพิ่ม */
   noBlock(ctx, { player }) {
     const battle = requireBlockStep(ctx, player);
-    if (battle.mustBlock && canBlockWith(ctx, player).some((id) => !effectBlocked(ctx.s, ctx.db, battle.attackerId, id))) {
+    if (blockForced(ctx.s, ctx.db)) {
       fail('MUST_BLOCK', battle.consecutiveBlade ? 'ต้องป้องกัน 2 ตัวถ้าทำได้ ([Consecutive Blade])' : 'ต้องป้องกันถ้าทำได้ ([True-Rage])');
     }
     if (battle.levelBlock && battle.blockers.length > 0 && blockLevelTotal(ctx) < battle.levelBlock) {
@@ -1136,11 +1137,12 @@ function resolveBattle(ctx: Ctx): void {
       queueLifeLostTriggers(ctx, defender, perBlocker * destroyedBlockers.length);
     }
     // อุสึบะคาเงโร่: ชนะและทำลายจากการเทียบ BP → ส่งคอร์ไลฟ์คู่แข่งลงแทรช
+    // [Consecutive Blade] ทำลายผู้ป้องกันได้ 2 ตัว ก็เกิดผลครั้งเดียว (กติกา 14 Consecutive Blade ข้อควรรู้ 2: เบรฟแบบเบโอวูฟ)
     const toTrash = !attackerLoses ? (battle.lifeOnBlockerDestroyedTrash ?? 0) : 0;
     if (destroyedBlockers.length > 0 && toTrash > 0) {
-      if (loseLife(ctx, defender, toTrash * destroyedBlockers.length, attacker.owner, 'trash')) return;
+      if (loseLife(ctx, defender, toTrash, attacker.owner, 'trash')) return;
       lostLife = true;
-      queueLifeLostTriggers(ctx, defender, toTrash * destroyedBlockers.length);
+      queueLifeLostTriggers(ctx, defender, toTrash);
     }
   }
 

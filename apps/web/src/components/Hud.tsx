@@ -9,6 +9,7 @@ import { GameLog } from './Controls';
 import { Icon } from './Icon';
 import { DiamondAvatar, useSeatAvatar } from './SeatAvatar';
 import { setTouchInspected, useLastInputTouch, useTouchInspected } from '../touch';
+import { useShownLife } from './useHeld';
 
 /** ชื่อที่แสดงของผู้เล่น (ออนไลน์ = ชื่อที่ตั้ง, เครื่องเดียว = ผู้เล่น 1/2) */
 function useSeatName(p: PlayerId): string {
@@ -20,7 +21,8 @@ function useSeatName(p: PlayerId): string {
 
 /** ป้ายผู้เล่น: ฝั่งเรามุมซ้ายล่าง ฝั่งคู่แข่งมุมขวาบน (ชื่อ + Life + จำนวนการ์ดบนมือ) */
 export function PlayerPlate({ player, corner }: { player: PlayerId; corner: 'bottom-left' | 'top-right' }) {
-  const life = useGame((s) => s.state.players[player].life.length);
+  // ลดตอนการ์ดชนจริง (ไม่ใช่ตอนเริ่มแอนิเมชันโจมตี)
+  const life = useShownLife(player);
   // จำนวนการ์ดในมือ (ไม่นับการ์ดที่วางแสดงนอกมือ: อยู่ในโซนนอกมือบนสนาม)
   const hand = useGame((s) => s.state.players[player].hand.filter((id) => !(s.state.shownCards ?? []).includes(id)).length);
   const turn = useGame((s) => s.state.turnPlayer === player && !s.state.winner);

@@ -526,3 +526,47 @@ describe('Booster Set 04', () => {
     expect(s.players.p1.life.length).toBe(life + 1);
   });
 });
+
+describe('Dispersion ตามกติกา 14 (แก้บั๊ก)', () => {
+  /** ไรกะโจมตีอยู่ (Dispersion 2) แล้วผ่านแฟลชของคู่แข่งมาถึงคิวเรา */
+  function raikaAttacking(s: GameState): GameState {
+    const raika = put(s, 'p1', no('เซ็นโงคุฮิเมะ ไรกะ'), 1);
+    s = act(act(s, { type: 'endMain', player: 'p1' }), { type: 'declareAttack', player: 'p1', attackerId: raika });
+    if (s.battle?.flash?.priority === 'p2') s = act(s, { type: 'passFlash', player: 'p2' });
+    return s;
+  }
+
+  it('ข้อ 11: "อย่างละ 1 ตัว" (ทลายครามกงล้อสวรรค์) เล็งพร้อมกัน = กระจายไม่ได้', () => {
+    let s = setup();
+    // สปิริตคอสต์ 0 ที่ความสามารถน้อยที่สุด (ไม่มีใบที่ไม่มีความสามารถเลย)
+    const zero = db
+      .all()
+      .filter((c) => c.type === 'spirit' && c.cost === 0)
+      .sort((x, y) => x.abilities.length - y.abilities.length)[0]!.cardNo;
+    const a = put(s, 'p2', zero, 1);
+    const b = put(s, 'p2', zero, 1);
+    s = magic(raikaAttacking(s), 'ทลายครามกงล้อสวรรค์');
+    expect(s.choice).toMatchObject({ kind: 'card', candidates: [a, b] });
+    s = choose(s, a);
+    expect(s.players.p2.field).toContain(b);
+  });
+
+  it('ข้อ 1: เอฟเฟกต์ที่เล็งเน็กซัส (เอ็นชินสไตรค์ ส่วนโซลคอร์) กระจายไม่ได้', () => {
+    let s = setup();
+    const nexus = db.all().find((c) => c.type === 'nexus')!.cardNo;
+    const n1 = put(s, 'p2', nexus, 0);
+    const n2 = put(s, 'p2', nexus, 0);
+    s = magic(raikaAttacking(s), 'เอ็นชินสไตรค์', { soul: true });
+    expect(s.choice).toMatchObject({ kind: 'card', candidates: [n1, n2] });
+    s = choose(s, n1);
+    expect(s.players.p2.field).toContain(n2);
+  });
+
+  it('สปิริตที่ใช้เป็นเมจิค (นักดาบบิวะ โบคุโบคุ) กระจายได้ (เจ้าของโปรเจกต์กำหนด)', () => {
+    let s = setup();
+    const a = put(s, 'p2', DARIU, 1);
+    const b = put(s, 'p2', DARIU, 1);
+    s = magic(raikaAttacking(s), 'นักดาบบิวะ โบคุโบคุ');
+    expect(s.choice).toMatchObject({ kind: 'multiCard', count: 2, candidates: [a, b] });
+  });
+});

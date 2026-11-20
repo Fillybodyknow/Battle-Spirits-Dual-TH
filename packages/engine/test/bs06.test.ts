@@ -587,3 +587,53 @@ describe('ชีลด์กันเอฟเฟกต์ (แก้บั๊�
     expect(s.cards[shimo]!.state).toBe('refresh');
   });
 });
+
+describe('Kagemusha / Consecutive Blade ตามกติกา 14 (แก้บั๊ก)', () => {
+  it('Kagemusha ชิโมะคาเสะ (ไม่รับผลเมจิคคู่แข่ง): ดูดเอฟเฟกต์มาแล้วลบทิ้ง ไม่โดนผลทั้งสองใบ', () => {
+    let s = setup();
+    const target = put(s, 'p2', DARIU, 1, true);
+    const shimo = inHand(s, 'p2', no('เสนาธิการเครื่องกล ชิโมะคาเสะ'));
+    const tatami = inHand(s, 'p1', no('เคล็ดวิชาพลิกเสื่อทาทามิ'));
+    s = useMagic(s, 'p1', tatami);
+    s = choose(s, target);
+    s = choose(s, optionIndex(s, 'อัญเชิญ'));
+    s = choose(s, { pay: normalCores(s, 'p2').slice(0, (s.choice as { cost: number }).cost) });
+    s = choose(s, { pay: normalCores(s, 'p2').slice(0, 1) });
+    expect(s.players.p2.field).toContain(shimo);
+    expect(s.choice).toBeNull();
+    expect(s.cards[shimo]!.state).toBe('refresh');
+    expect(s.cards[target]!.state).toBe('refresh');
+  });
+
+  it('Kagemusha ทำงานกับเอฟเฟกต์เล็งตาม BP รวม (ราชาผึ้ง ฟง-นี้ด)', () => {
+    let s = setup();
+    const fong = put(s, 'p1', no('ราชาผึ้ง ฟง-นี้ด'), 1);
+    const target = put(s, 'p2', DARIU, 1, true);
+    inHand(s, 'p2', no('นักรบเครื่องกล S23'));
+    s = attack(s, fong);
+    expect(s.choice).toMatchObject({ kind: 'card', player: 'p1' });
+    s = choose(s, target);
+    expect(s.choice).toMatchObject({ kind: 'option', player: 'p2' });
+    expect(optionIndex(s, 'อัญเชิญ')).toBeGreaterThanOrEqual(0);
+  });
+
+  it('อุสึบะคาเงโร่ + ป้องกัน 2 ตัว (Consecutive Blade) ทำลายทั้งคู่: ส่งคอร์ไลฟ์ลงแทรชครั้งเดียว (ข้อควรรู้ 2)', () => {
+    let s = setup();
+    const host = put(s, 'p1', no('แปดอัศวินเก็นจิ ฮิสะมารุ บัสเตอร์'), 1);
+    brave(s, host, 'ดาบมารแมลงดำ อุสึบะคาเงโร่');
+    const b1 = put(s, 'p2', DARIU, 1);
+    const b2 = put(s, 'p2', DARIU, 1);
+    const life = s.players.p2.life.length;
+    s = attack(s, host);
+    while (s.battle?.flash) s = act(s, { type: 'passFlash', player: s.battle.flash.priority });
+    // จำลอง [Consecutive Blade]: ต้องป้องกัน 2 ตัว
+    s.battle!.maxBlockers = 2;
+    s.battle!.consecutiveBlade = true;
+    s = act(s, { type: 'declareBlock', player: 'p2', blockerId: b1 });
+    s = act(s, { type: 'declareBlock', player: 'p2', blockerId: b2 });
+    while (s.battle?.flash) s = act(s, { type: 'passFlash', player: s.battle.flash.priority });
+    expect(s.players.p2.field).not.toContain(b1);
+    expect(s.players.p2.field).not.toContain(b2);
+    expect(s.players.p2.life.length).toBe(life - 1);
+  });
+});

@@ -512,3 +512,37 @@ describe('Booster Set 07', () => {
     expect(s.cards[target]!.state).toBe('exhausted');
   });
 });
+
+describe('My Unit ตามกติกา 14 (แก้บั๊ก)', () => {
+  /** มู Lv3 โจมตี: ใช้ My Unit ทุกครั้งที่ถาม (เลือกตัวแรกที่เสนอ) แล้วคืน log ตัวเลือก */
+  function muAttack(divas: number) {
+    let s = setup();
+    const mu = put(s, 'p1', no('[ไอดอลดาวอันดับหนึ่ง] มู'), 5);
+    const mates = Array.from({ length: divas }, (_, i) => put(s, 'p1', no(i % 2 ? 'โชโกะ' : 'อัน'), 1));
+    s = act(toAttack(s), { type: 'declareAttack', player: 'p1', attackerId: mu });
+    const offered: string[] = [];
+    for (let g = 0; g < 20 && s.choice; g++) {
+      const c = s.choice as { kind: string; options?: string[]; candidates?: string[] };
+      if (c.kind === 'option') {
+        offered.push(...c.options!);
+        const i = optionIndex(s, 'My Unit');
+        s = choose(s, i >= 0 ? i : c.options!.length - 1);
+      } else if (c.kind === 'card') s = choose(s, c.candidates![0]!);
+      else if (c.kind === 'multiCard') s = choose(s, { cards: c.candidates!.slice(0, (c as unknown as { count: number }).count) });
+      else s = choose(s, 0);
+    }
+    return { s, mu, mates, offered };
+  }
+
+  it('My Unit ครั้งที่สองใช้คู่เดิมซ้ำได้ (เจ้าของโปรเจกต์กำหนด): ดีว่า 2 ตัว → My Unit 1 แล้ว My Unit 2 ครบ ได้เจ็มเหลือง', () => {
+    const { s, mu, mates } = muAttack(2);
+    expect(new Set(s.battle?.unit)).toEqual(new Set(mates));
+    expect(s.cards[mu]!.battleSymbols).toEqual([{ color: 'yellow', count: 2 }]);
+  });
+
+  it('ดีว่าฟื้นสภาพไม่พอ (1 ตัว): ไม่เสนอ My Unit 2 และไม่ได้เจ็ม', () => {
+    const { s, mu, offered } = muAttack(1);
+    expect(offered.some((o) => o.includes('My Unit 2'))).toBe(false);
+    expect(s.cards[mu]!.battleSymbols ?? []).toEqual([]);
+  });
+});
