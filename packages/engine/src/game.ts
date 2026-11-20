@@ -3,6 +3,8 @@ import { assertUsableCore, checkDepletion, destroy, drawCard, emit, emitStatic, 
 import { destroyCard, enqueue, fireTriggers, refreshByEffect, newBatch, queueExhaustTriggers, queueLifeLostTriggers, queueMagicUsedTriggers, queueSummonTriggers, queueTriggers, resolveChoice, runQueue } from './effects';
 import { nextRandom, shuffle } from './rng';
 import {
+  attackTaxFor,
+  ignoreSummonConditionSource,
   hasEvolutionNow,
   summonBanned,
   summonConditionOk,
@@ -245,10 +247,17 @@ function drawStep(ctx: Ctx): void {
   let count = 1 + (s.drawStepExtra ?? 0);
   delete s.drawStepExtra;
   const after: { sourceId: string; steps: Step[] }[] = [];
+  const stacked = new Set<string>();
   for (const id of s.players[player].field) {
     const level = cardLevel(s, db, id);
     for (const ab of db.get(s.cards[id]!.cardNo).abilities) {
       if (ab.kind !== 'drawStep' || !ab.levels.includes(level)) continue;
+      // "เอฟเฟกต์นี้ไม่แสดงผลซ้ำซ้อน" (เลิฟวิสต้อม): ชื่อเดียวกันนับครั้งเดียว
+      if (ab.noStack) {
+        const key = `${db.get(s.cards[id]!.cardNo).name}:${ab.source}`;
+        if (stacked.has(key)) continue;
+        stacked.add(key);
+      }
       emit(ctx, { type: 'abilityTriggered', cardId: id, source: ab.source });
       for (const extra of ab.extraDraw) if (conditionHolds(s, id, extra.if)) count += extra.amount;
       if (ab.after) after.push({ sourceId: id, steps: ab.after });
@@ -359,7 +368,7 @@ function endTurn(ctx: Ctx): void {
   setPhase(ctx, 'end');
   // "เอนด์สเต็ปของเรา"
   const batch = newBatch(ctx);
-  for (const id of [...s.players[s.turnPlayer].field]) queueTriggers(ctx, id, 'endStep', batch);
+  for (const id of [...s.players[s.turnPlayer].field, ...s.players[s.turnPlayer].trashCards]) queueTriggers(ctx, id, 'endStep', batch);
   for (const id of [...s.players[opponentOf(s.turnPlayer)].field]) queueTriggers(ctx, id, 'oppEndStep', batch);
   if (s.queue.length > 0) {
     runQueue(ctx);
@@ -426,8 +435,11 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     }
     if (def.type !== 'spirit' && def.type !== 'brave' && def.type !== 'ultimate') fail('WRONG_CARD_TYPE', 'อัญเชิญได้เฉพาะ Spirit/Ultimate/Brave');
     // อัลติเมท: ตรวจเงื่อนไขอัญเชิญก่อน (กติกา 03 ข้อ 2.2)
-    if (def.type === 'ultimate' && !summonConditionOk(s, db, cardId)) fail('SUMMON_CONDITION', `ยังไม่ครบเงื่อนไขอัญเชิญ: ${(def.summonCondition as { text?: string })?.text ?? ''}`);
+    const soulPay = payment.some((id) => s.cores[id]?.isSoul);
+    if (def.type === 'ultimate' && !summonConditionOk(s, db, cardId, { paidWithSoul: soulPay })) fail('SUMMON_CONDITION', `ยังไม่ครบเงื่อนไขอัญเชิญ: ${(def.summonCondition as { text?: string })?.text ?? ''}`);
     if (def.type === 'ultimate' && braveOnto) fail('WRONG_CARD_TYPE', 'อัลติเมทร่วมร่างไม่ได้');
+    // เงื่อนไขไม่ครบแต่อัญเชิญได้เพราะจ่ายด้วยโซลคอร์: เรืองแสงการ์ดที่ให้ผล
+    if (def.type === 'ultimate' && soulPay && !summonConditionOk(s, db, cardId, { paidWithSoul: false })) emitStatic(ctx, ignoreSummonConditionSource(s, db, cardId));
     // เฮียวจินดราก้อน: ในเทิร์นนี้อัญเชิญคอสต์ไม่เกิน N ไม่ได้
     if (summonBanned(s, db, player, def)) fail('SUMMON_BANNED', 'ในเทิร์นนี้อัญเชิญการ์ดนี้ไม่ได้ (เอฟเฟกต์ของคู่แข่ง)');
 
@@ -536,6 +548,8 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
       requireMain(ctx, player);
     }
     const def = cardInHand(ctx, player, cardId);
+    // BS09 วัดอรุณ: ในเทิร์นนี้ใช้งานการ์ดเมจิคไม่ได้
+    if ((s.magicBans ?? []).some((b) => b.player === player && b.turn === s.turn)) fail('MAGIC_BANNED', 'ในเทิร์นนี้ใช้งานการ์ดเมจิคไม่ได้ (เอฟเฟกต์ของคู่แข่ง)');
     // เมจิค / การ์ดสปิริตที่ "ถือว่าเป็นการ์ดเมจิคด้วย" / การ์ดที่ได้รับเอฟเฟกต์เมจิคจากการ์ดบนสนาม (คาฉะเนโกะ-อิคุสะ)
     const asMagic = handMagic(s, ctx.db, cardId);
     if (def.type !== 'magic' && asMagic.length === 0) fail('WRONG_CARD_TYPE', 'ใช้ได้เฉพาะ Magic');
@@ -666,56 +680,31 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     s.forcedAttack = undefined;
     if (s.firstAttack?.turn !== s.turn) s.firstAttack = { turn: s.turn, cardId: attackerId };
 
-    card.state = 'exhausted';
-    s.battle = {
-      attackerId,
-      blockers: [],
-      maxBlockers: 1,
-      consecutiveBlade: false,
-      chosenBlockers: [],
-      step: 'flashBeforeBlock',
-      flash: { priority: opponentOf(player), consecutivePasses: 0 },
-      mustBlock: false,
-      endAttackStepAfter: false,
-      endEffects: [],
-      lifeOnBlockerDestroyed: 0,
-      lifeOnBlockerDestroyedByBlade: 0,
-    };
-    // แคนดี้-ซาร์ด: ป้องกันได้ด้วยสปิริต/อัลติเมทตั้งแต่ 1 ตัวที่ Lv รวมตั้งแต่ N (ป้องกันหลายตัวได้)
-    const lb = levelBlockFor(ctx, attackerId);
-    if (lb) {
-      s.battle.levelBlock = lb;
-      s.battle.maxBlockers = 99;
-    }
-    emit(ctx, { type: 'attackDeclared', attackerId });
-    // อิจิโกะฮิโทฟุริ: ผู้ร่วมร่างที่ระบุไว้เข้าป้องกันเองถ้าป้องกันได้
-    if (fa) {
-      const hc = s.cards[fa.holderId]!;
-      if ((hc.state === 'refresh' || canBlockExhausted(s, ctx.db, fa.holderId)) && !attackerUnblockable(s, attackerId, ctx.db.get(hc.cardNo).type)) {
-        s.battle.chosenBlockers.push(fa.holderId);
-        s.battle.skipFlash1 = true;
+    // BS09 สุสานของจักรพรรดิมาร: ต้องส่งคอร์ N เม็ดบนตัวที่สั่งโจมตีลงแทรชก่อนโจมตี · สูญสลาย = ไม่ได้โจมตี
+    const tax = attackTaxFor(s, ctx.db, player);
+    if (tax > 0) {
+      emitStatic(ctx, staticSources(s, ctx.db, [opponentOf(player)], 'attackTax'));
+      const normals = card.cores.filter((c) => !s.cores[c]!.isSoul);
+      const hasSoul = card.cores.some((c) => s.cores[c]!.isSoul);
+      // มีโซลคอร์และเลือกได้ (ส่งไม่หมด และคอร์ปกติพอ): ผู้เล่นเลือกว่าจะส่งโซลคอร์ด้วยหรือไม่ แล้วโจมตีต่อ (resume)
+      if (hasSoul && tax < card.cores.length && normals.length >= tax) {
+        enqueue(ctx, { controller: player, sourceId: attackerId, steps: [{ do: 'coresOff', cardId: attackerId, n: tax, to: 'trash', byOpponent: false }], paidWithSoul: false, trashWhenDone: false, announce: false });
+        s.pendingAttack = { attackerId, ...(fa ? { fa } : {}) };
+        s.resume = 'declareAttack';
+        runQueue(ctx);
+        return;
+      }
+      const pay = [...card.cores].sort((x, y) => Number(s.cores[x]!.isSoul) - Number(s.cores[y]!.isSoul)).slice(0, tax);
+      card.cores = card.cores.filter((c) => !pay.includes(c));
+      s.players[player].trashCores.push(...pay);
+      emit(ctx, { type: 'coresRemoved', cardId: attackerId, count: pay.length, to: 'trash' });
+      checkDepletion(ctx);
+      if (!s.players[player].field.includes(attackerId)) {
+        runQueue(ctx);
+        return;
       }
     }
-    // "ต้องโจมตีมาที่สปิริตนี้" (ราดัน): สปิริตนั้นเข้าป้องกันเองถ้าป้องกันได้
-    for (const h of fa ? [] : forceAttackHolders(s, ctx.db, player)) {
-      if (!matchesFilter(s, ctx.db, attackerId, h.filter)) continue;
-      const hc = s.cards[h.id]!;
-      const ok = (hc.state === 'refresh' || canBlockExhausted(s, ctx.db, h.id)) && !attackerUnblockable(s, attackerId, ctx.db.get(hc.cardNo).type);
-      if (ok) {
-        s.battle.chosenBlockers.push(h.id);
-        s.battle.skipFlash1 = true;
-        break;
-      }
-    }
-    // เอฟเฟกต์ "เมื่อสปิริตนี้โจมตี" + "เมื่อสปิริตเรา...โจมตี" (เกิดพร้อมกัน) ประมวลผลก่อนเปิด Flash timing
-    const batch = newBatch(ctx);
-    queueTriggers(ctx, attackerId, 'attack', batch);
-    for (const id of [...s.players[player].field]) queueTriggers(ctx, id, 'allyAttack', batch, { subject: attackerId });
-    for (const id of [...s.players[opponentOf(player)].field]) queueTriggers(ctx, id, 'oppAttack', batch, { subject: attackerId });
-    queueExhaustTriggers(ctx, attackerId);
-    // Burst "หลังจากสปิริต/อัลติเมทคู่แข่งโจมตี" (เซ็นโงคุฮิเมะ คุอง)
-    pendBurst(ctx, opponentOf(player), 'afterOpponentAttack');
-    runQueue(ctx);
+    beginAttack(ctx, player, attackerId, fa);
   },
 
   passFlash(ctx, { player }) {
@@ -1076,6 +1065,62 @@ function requireBlockStep(ctx: Ctx, player: PlayerId) {
   return battle;
 }
 
+/** ประกาศโจมตีต่อหลังผ่านเงื่อนไข (และจ่ายคอร์ของสุสานของจักรพรรดิมารแล้ว): เสื่อมสภาพผู้โจมตี + เริ่มการต่อสู้ */
+function beginAttack(ctx: Ctx, player: PlayerId, attackerId: string, fa: { attackerId: string; holderId: string } | null | undefined): void {
+  const { s } = ctx;
+  const card = s.cards[attackerId]!;
+    card.state = 'exhausted';
+    s.battle = {
+      attackerId,
+      blockers: [],
+      maxBlockers: 1,
+      consecutiveBlade: false,
+      chosenBlockers: [],
+      step: 'flashBeforeBlock',
+      flash: { priority: opponentOf(player), consecutivePasses: 0 },
+      mustBlock: false,
+      endAttackStepAfter: false,
+      endEffects: [],
+      lifeOnBlockerDestroyed: 0,
+      lifeOnBlockerDestroyedByBlade: 0,
+    };
+    // แคนดี้-ซาร์ด: ป้องกันได้ด้วยสปิริต/อัลติเมทตั้งแต่ 1 ตัวที่ Lv รวมตั้งแต่ N (ป้องกันหลายตัวได้)
+    const lb = levelBlockFor(ctx, attackerId);
+    if (lb) {
+      s.battle.levelBlock = lb;
+      s.battle.maxBlockers = 99;
+    }
+    emit(ctx, { type: 'attackDeclared', attackerId });
+    // อิจิโกะฮิโทฟุริ: ผู้ร่วมร่างที่ระบุไว้เข้าป้องกันเองถ้าป้องกันได้
+    if (fa) {
+      const hc = s.cards[fa.holderId]!;
+      if ((hc.state === 'refresh' || canBlockExhausted(s, ctx.db, fa.holderId)) && !attackerUnblockable(s, attackerId, ctx.db.get(hc.cardNo).type)) {
+        s.battle.chosenBlockers.push(fa.holderId);
+        s.battle.skipFlash1 = true;
+      }
+    }
+    // "ต้องโจมตีมาที่สปิริตนี้" (ราดัน): สปิริตนั้นเข้าป้องกันเองถ้าป้องกันได้
+    for (const h of fa ? [] : forceAttackHolders(s, ctx.db, player)) {
+      if (!matchesFilter(s, ctx.db, attackerId, h.filter)) continue;
+      const hc = s.cards[h.id]!;
+      const ok = (hc.state === 'refresh' || canBlockExhausted(s, ctx.db, h.id)) && !attackerUnblockable(s, attackerId, ctx.db.get(hc.cardNo).type);
+      if (ok) {
+        s.battle.chosenBlockers.push(h.id);
+        s.battle.skipFlash1 = true;
+        break;
+      }
+    }
+    // เอฟเฟกต์ "เมื่อสปิริตนี้โจมตี" + "เมื่อสปิริตเรา...โจมตี" (เกิดพร้อมกัน) ประมวลผลก่อนเปิด Flash timing
+    const batch = newBatch(ctx);
+    queueTriggers(ctx, attackerId, 'attack', batch);
+    for (const id of [...s.players[player].field]) queueTriggers(ctx, id, 'allyAttack', batch, { subject: attackerId });
+    for (const id of [...s.players[opponentOf(player)].field]) queueTriggers(ctx, id, 'oppAttack', batch, { subject: attackerId });
+    queueExhaustTriggers(ctx, attackerId);
+    // Burst "หลังจากสปิริต/อัลติเมทคู่แข่งโจมตี" (เซ็นโงคุฮิเมะ คุอง)
+    pendBurst(ctx, opponentOf(player), 'afterOpponentAttack');
+    runQueue(ctx);
+}
+
 /** ผู้โจมตีถูกป้องกัน: "เมื่อสปิริตนี้ถูกป้องกัน" + "เมื่อสปิริตเราถูกป้องกัน" */
 function queueBlockedTriggers(ctx: Ctx, attackerId: string, blockerId: string, batch: number): void {
   const attacker = ctx.s.cards[attackerId];
@@ -1125,6 +1170,17 @@ function resolveBattle(ctx: Ctx): void {
     for (const id of destroyedBlockers) destroyCard(ctx, id, attacker.owner, { bySource: attacker.id });
     if (s.winner) return;
     if (attackerLoses) destroyCard(ctx, attacker.id, defender, { bySource: results.find((r) => bpA <= r.bp)!.id });
+    // BS09 "เมื่อสปิริตของเราชนะและทำลายสปิริตคู่แข่งจากการต่อสู้เทียบ BP"
+    {
+      const batch = newBatch(ctx);
+      const winners: string[] = [];
+      if (!attackerLoses && destroyedBlockers.length > 0) winners.push(attacker.id);
+      for (const r of results) if (r.bp > bpA) winners.push(r.id);
+      for (const w of winners) {
+        if (!s.cards[w] || !s.players[s.cards[w]!.owner].field.includes(w)) continue;
+        for (const id of [...s.players[s.cards[w]!.owner].field]) queueTriggers(ctx, id, 'allyWonBattle', batch, { subject: w });
+      }
+    }
     // "ชนะและทำลายสปิริตคู่แข่งจากการเทียบ BP → ฟื้นสภาพ" (คาราคุริโอโอคามิ)
     if (!attackerLoses && destroyedBlockers.length > 0 && battle.refreshOnWin?.includes(attacker.id) && inBattle(s, attacker.id)) {
       refreshByEffect(ctx, attacker.id, attacker.id);
@@ -1212,6 +1268,7 @@ function levelBlockFor(ctx: Ctx, attackerId: string): number | null {
 
 /** Lv รวมของผู้ป้องกันที่ประกาศแล้ว */
 function blockLevelTotal(ctx: Ctx): number {
+  if (ctx.s.battle?.pairBlock) return ctx.s.battle.blockers.length;
   return (ctx.s.battle?.blockers ?? []).reduce((n, id) => n + cardLevel(ctx.s, ctx.db, id), 0);
 }
 
@@ -1289,6 +1346,13 @@ export function applyAction(state: GameState, input: Action, db: CardDatabase): 
         if (ctx.s.battle) resolveBattle(ctx);
       } else if (resume === 'endTurn') finishTurn(ctx);
       else if (resume === 'drawStepStart') startDraw(ctx);
+      else if (resume === 'declareAttack') {
+        // สุสานของจักรพรรดิมาร: จ่ายคอร์แล้ว ผู้โจมตียังอยู่ = โจมตีต่อ
+        const pa = ctx.s.pendingAttack;
+        ctx.s.pendingAttack = undefined;
+        const owner = pa && ctx.s.cards[pa.attackerId]?.owner;
+        if (pa && owner && ctx.s.players[owner].field.includes(pa.attackerId) && ctx.s.phase === 'attack' && !ctx.s.battle) beginAttack(ctx, owner, pa.attackerId, pa.fa);
+      }
       else if (ctx.s.battle) endBattle(ctx);
     }
   } catch (e) {

@@ -29,6 +29,8 @@ export const BraveConditionSchema = z.object({
   minCost: z.number().int().min(0).optional(),
   /** ผู้ร่วมร่างต้องเป็นสปิริตเผ่านี้ (BS07 ชุดตุ๊กตาฟูริน) */
   family: z.string().optional(),
+  /** ผู้ร่วมร่างต้องเป็นสปิริตที่ไม่มีข้อความเอฟเฟกต์ (BS09 ไดกิว-อาร์มส์) */
+  noEffectText: z.boolean().optional(),
   /** เอฟเฟกต์ติดตัวที่ให้ผู้ร่วมร่าง: BP+ */
   bp: z.number().int().min(0).optional(),
   /** เงื่อนไขอื่นเก็บเป็นข้อมูลดิบไว้ก่อน */

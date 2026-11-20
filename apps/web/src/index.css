@@ -1,5 +1,10 @@
 @import 'tailwindcss';
 
+/* คลาส font-sans ของ Tailwind = ฟอนต์ที่ฝังในแอป */
+@theme {
+  --font-sans: 'Noto Sans Thai Variable', 'Noto Sans Thai', 'Segoe UI', system-ui, sans-serif;
+}
+
 :root {
   /* ความกว้างแผงถาวรด้านขวา (ไม่มีแล้ว: รายละเอียดการ์ด/Log เป็นแผงลอย กระดานเต็มจอ) */
   --sidebar: 0px;
@@ -9,7 +14,7 @@ html,
 body {
   background: #0f1117;
   color: #e5e7eb;
-  font-family: 'Noto Sans Thai', 'Segoe UI', system-ui, sans-serif;
+  font-family: 'Noto Sans Thai Variable', 'Noto Sans Thai', 'Segoe UI', system-ui, sans-serif;
 }
 
 /* แถบเลื่อนธีมเกม: เส้นบาง สีฟ้าโปร่ง บนพื้นใส (แทนแถบสีเทาขาวของ Windows)

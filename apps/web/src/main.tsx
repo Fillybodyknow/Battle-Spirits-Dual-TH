@@ -1,6 +1,8 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
+// ฟอนต์ฝังในแอป (ทุกเครื่องหน้าตาเหมือนกัน · ใช้ได้ตอนออฟไลน์)
+import '@fontsource-variable/noto-sans-thai';
 import './index.css';
 // สีสำรองสำหรับเบราว์เซอร์ที่ไม่รู้จัก oklch() (สร้างด้วย npm run legacy-colors)
 import './legacy-colors.css';

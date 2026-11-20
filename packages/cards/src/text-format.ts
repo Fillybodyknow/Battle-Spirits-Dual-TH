@@ -313,6 +313,8 @@ function parseCardBlock(block: Line[], autoCardNo: string, errors: string[]): Ca
   /** 《เงื่อนไขอัญเชิญ : ...》 (อัลติเมท) */
   let summonCondition: unknown;
   const effectLine = (line: Line) => {
+    // "(…)" ในหัวข้อเอฟเฟกต์ = หมายเหตุ ไม่นำไปใช้
+    if (line.text.trim().startsWith('(')) return;
     const cond = line.text.trim().match(/^《\s*เงื่อนไขอัญเชิญ\s*:\s*(.+?)\s*》$/);
     if (cond) {
       summonCondition = parseSummonCondition(cond[1]!, (msg) => errIn(line, msg));
@@ -342,15 +344,19 @@ function parseCardBlock(block: Line[], autoCardNo: string, errors: string[]): Ca
     // "ร่วมร่างกับสปิริตเผ่าดีว่า" / "เผ่า [ดีว่า]" (BS07 ชุดตุ๊กตาฟูริน)
     const family = braveField.value.match(/เผ่า\s*\[?([^\],\s]+)\]?/);
     const bp = all.match(/BP\s*\+\s*(\d+)/);
-    if (!minCost && !family) errIn(braveField.line, 'Brave ต้องระบุ "คอสต์ตั้งแต่ N ขึ้นไป" หรือ "สปิริตเผ่า..."');
+    // "ร่วมร่างกับสปิริตที่ไม่มีข้อความเอฟเฟกต์" (BS09)
+    const noEffectText = /ไม่มีข้อความเอฟเฟกต์/.test(braveField.value);
+    if (!minCost && !family && !noEffectText) errIn(braveField.line, 'Brave ต้องระบุ "คอสต์ตั้งแต่ N ขึ้นไป" หรือ "สปิริตเผ่า..." หรือ "สปิริตที่ไม่มีข้อความเอฟเฟกต์"');
     braveCondition = {
       maxSpirits: 1,
       ...(minCost ? { minCost: Number(minCost[1]) } : {}),
       ...(family ? { family: family[1]! } : {}),
+      ...(noEffectText ? { noEffectText: true } : {}),
       ...(bp ? { bp: Number(bp[1]) } : {}),
     };
     for (const line of children.get('Brave') ?? []) {
       const text = line.text.trim();
+      if (text.startsWith('(')) continue; // หมายเหตุ
       if (text.startsWith('[')) effects.push({ text, granted: true });
       // บรรทัดต่อของเอฟเฟกต์ร่วมร่างก่อนหน้า ("เมื่อร่วมร่างกับสปิริตเผ่า [ดีว่า], นอกจากนี้...")
       else if (effects.length > 0 && effects[effects.length - 1]!.granted) effects[effects.length - 1]!.text += ' ' + text;
@@ -413,7 +419,8 @@ function parseEffectLine(line: Line, type: CardDefInput['type'] | undefined, err
   // กฎของการ์ดเองที่ไม่ผูกกับเลเวล/จังหวะ เช่น "การ์ดสปิริตนี้ เมื่อถูกทิ้ง..." หรือ "ถ้าเรามี ... การลดคอสต์..."
   // หรือ "สปิริตนี้/การ์ดสปิริตนี้ถือว่ามีคำว่า ... ในชื่อการ์ดด้วย"
   // "เบรฟนี้/การ์ดเบรฟนี้ จะไม่ถูกนับ..." · "Immortality: ..." (อัญเชิญจากแทรชได้เมื่อ...) · "Kagemusha: ..." (อัญเชิญจากมือเมื่อสปิริตเราตกเป็นเป้า)
-  if (/^(การ์ด|ถ้า|สปิริตนี้|เบรฟนี้|Immortality\b|Kagemusha\b)/.test(rest)) return { text: rest };
+  // "เมื่อ "<ชื่อ>" ของเรา..., จะสามารถอัญเชิญการ์ดสปิริตนี้ในแทรช..." (BS09 เซ็นคิ: ทำงานขณะอยู่ในแทรช)
+  if (/^(การ์ด|ถ้า|สปิริตนี้|เบรฟนี้|Immortality\b|Kagemusha\b|เมื่อ\s*")/.test(rest)) return { text: rest };
   // การ์ดสปิริตที่ "ถือว่าเป็นการ์ดเมจิคด้วย": "Flash (เอฟเฟกต์นี้, ถ้าอยู่บนฟิลด์, จะใช้งานไม่ได้): ..." = ใช้จากมือแบบ Magic [Flash]
   const asMagic = rest.match(/^Flash\s*\([^)]*\)\s*:\s*/);
   if (asMagic) return { timing: 'flash', text: rest.slice(asMagic[0].length) };

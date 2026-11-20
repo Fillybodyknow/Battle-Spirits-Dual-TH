@@ -148,6 +148,8 @@ export interface Battle {
   unit?: string[];
   /** แคนดี้-ซาร์ด: ฝ่ายป้องกันต้องใช้สปิริต/อัลติเมทที่ Lv รวมตั้งแต่ค่านี้ (ป้องกันหลายตัว แล้วผู้โจมตีเลือกสู้ 1 ตัว) */
   levelBlock?: number;
+  /** BS09 ไดบีท: ต้องป้องกันด้วยสปิริต 2 ตัว หรืออัลติเมท 2 ตัว (ใช้กลไกเดียวกับ levelBlock: levelBlock = 2) */
+  pairBlock?: boolean;
 }
 
 /** เอฟเฟกต์ที่รอประมวลผล (หัวคิวคือที่กำลังทำ) */
@@ -174,7 +176,9 @@ export interface QueuedEffect {
   /** การ์ดที่ถูกทิ้งด้วย mill ล่าสุดของเอฟเฟกต์นี้ */
   milled?: string[];
   /** การ์ดที่เอฟเฟกต์นี้ทำลาย (BP ตอนถูกทำลาย / ประเภท) ใช้กับ ifDestroyed */
-  destroyedByThis?: { bp: number; type: string; opponent: boolean }[];
+  destroyedByThis?: { bp: number; type: string; opponent: boolean; /** เจ็มรวมตอนถูกทำลาย */ symbols?: number }[];
+  /** BS09 refreshAllAllies: การ์ดที่ฟื้นสภาพโดยเอฟเฟกต์นี้ */
+  refreshedByThis?: string[];
   /** ตำแหน่งใน log ตอนเอฟเฟกต์เริ่ม (นับการ์ดที่ถูกทำลายโดยเอฟเฟกต์นี้) */
   logStart?: number;
   /** สปิริตที่เป็นต้นเหตุของ trigger นี้ */
@@ -321,7 +325,9 @@ export interface GameState {
   /** เงื่อนไข Burst ที่เกิดขึ้นแล้ว รอถามเจ้าของ Burst เมื่อเอฟเฟกต์ที่กำลังทำงานจบ */
   pendingBursts: { player: PlayerId; on: BurstEvent; /** การ์ดต้นเหตุ (เช่น การ์ดของคู่แข่งที่เอฟเฟกต์อัญเชิญเพิ่งทำงาน) */ subjectId?: string }[];
   /** ขั้นตอนของเทิร์นที่ต้องเดินต่อเมื่อเลือกเสร็จ (เช่น เอฟเฟกต์ใน Draw Step ให้เลือกทิ้งการ์ด) */
-  resume: 'afterDraw' | 'afterStart' | 'resolveBattle' | 'endBattle' | 'endTurn' | 'drawStepStart' | null;
+  resume: 'afterDraw' | 'afterStart' | 'resolveBattle' | 'endBattle' | 'endTurn' | 'drawStepStart' | 'declareAttack' | null;
+  /** BS09 สุสานของจักรพรรดิมาร: การโจมตีที่รอผู้เล่นเลือกคอร์ที่จะจ่ายก่อน */
+  pendingAttack?: { attackerId: string; fa?: { attackerId: string; holderId: string } };
   burstSetThisTurn: boolean;
   /** "ในเทิร์นนี้ ... โจมตีไม่ได้": การ์ดของ player ประเภท types โจมตีไม่ได้ในเทิร์น turn */
   attackBans?: { player: PlayerId; turn: number; types: string[] }[];
@@ -374,6 +380,17 @@ export interface GameState {
   // ---------------- BS08
   /** ในเทิร์นนี้ player อัญเชิญการ์ดประเภท types คอสต์ไม่เกิน maxCost ไม่ได้ */
   summonBans?: { player: PlayerId; turn: number; maxCost: number; types: string[] }[];
+  // ---------------- BS09
+  /** ในเทิร์นนี้ ผู้เล่นนี้สั่งใช้เบิร์สไม่ได้ */
+  burstBans?: { player: PlayerId; turn: number }[];
+  /** ในเทิร์นนี้ ผู้เล่นนี้ใช้งานการ์ดเมจิคไม่ได้ */
+  magicBans?: { player: PlayerId; turn: number }[];
+  /** ในเทิร์นนี้ การ์ดนี้ไม่รับเอฟเฟกต์ทั้งหมดของคู่แข่ง (เฟเธอร์บาเรีย) */
+  turnImmune?: { cardId: string; turn: number }[];
+  /** ในเทิร์นนี้ ขณะสปิริตของ player ที่ตรงตัวกรองโจมตีอยู่ เอฟเฟกต์ของคู่แข่งจบแอทแท็คสเต็ปไม่ได้ */
+  noEndAttackStep?: { player: PlayerId; turn: number; filter: import('@bs/cards').CardFilter }[];
+  /** โซลคอร์ที่อยู่ในแทรชของแต่ละฝ่ายตอนตรวจครั้งล่าสุด (trigger oppSoulToTrash) */
+  soulInTrashSeen?: Partial<Record<PlayerId, boolean>>;
   /** ในเทิร์นนี้ เจ็มของสปิริต/อัลติเมทของ player ที่ตรงตัวกรองเปลี่ยน count เม็ด (ลบได้) */
   turnSymbolBuffs?: { player: PlayerId; turn: number; filter?: CardFilter; color: string; count: number }[];
   /** player ข้ามสเต็ปเหล่านี้ในเทิร์น turn */

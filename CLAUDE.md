@@ -125,6 +125,11 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
   คีย์เวิร์ดในข้อความ = ตัวกรอง `textIncludes` (Rush / Showdown ฯลฯ), `noEffectText`, `sameFamilyAs`, `notInBattle` · ถาวร `coreFloor`, `cannotBlockLowerBp`, `colorAlso`, `noLifeFromVoid`, `effectImmune.exceptNamed`,
   ในเทิร์นนี้: `summonBans` / `turnSymbolBuffs` / `lifeCapOne` / `turnNoAttack` / `attackShiftTurn` · เทิร์นถัดไป `skipSteps` · ในการต่อสู้ `battle.lifeOnBlocked`, `blockTax.discard`,
   `bounceAllOpponent.to: 'deckTop'` (เรียงด้วย `toDeckTop` ซึ่งใช้เด็คของเจ้าของการ์ด) · trigger `ownMainStepStart` / `allyBurstActivated` / `allySoulEvolvedOnto`
+- **BS09**: trigger `allyWonBattle` (ชนะและทำลายจากการเทียบ BP: ผู้โจมตีหรือผู้ป้องกันที่ชนะ) / `allyBouncedByOpponent` / `oppSoulToTrash` (การ์ดในมือ: ตรวจใน `checkSoulToTrash` ทุกรอบของ runQueue) · subject `byOpponentEffect`,
+  trigger `zone: 'trash'` ทำงานกับ `allySummoned` / `endStep` ด้วย (เซ็นคิ / โกคิ) · ถาวร `familyAlso` (ใช้ `cardFamilies` แทน `def.family`), `ignoreSummonCondition` (`summonConditionOk(..., { paidWithSoul })`),
+  `destroyCostBoost`, `maxLevelAllies`, `trashLock` (รวมใน `trashImmune`), `opponentNoTrashReturn`, `oneCoreNoBattle` / `attackTax` (`canAttackWith` / `blockersFor` / declareAttack), `staticBp.perAllies`, `drawStep.noStack`,
+  เบรฟ `braveCondition.noEffectText` · step `opponentRandomDiscard` (สุ่มด้วย `s.rng`), `opponentExhaustsOwn`, `ownSoulToTrash`, `opponentNoBurstThisTurn` / `opponentNoMagicThisTurn` (`burstBans` / `magicBans`), `peekOpponentBurst`,
+  `immuneChosenThisTurn` (`turnImmune` ใน effectBlocker), `pairBlock` (ใช้กลไก levelBlock: นับจำนวนตัว), `summonFromTrashThen`, `summonFreeHandOrTrash`, `noEndAttackStepThisTurn`, ตัวกรอง `inBattle` / `notFamilies` / `highestBp`, เงื่อนไข `any` / `trashAtLeast` / `ownGemColorsAtLeast` (`gemColorCount`)
 - **สูญสลายไม่ใช่การถูกทำลาย** (กติกา 10): สูญสลายโดยคู่แข่ง = trigger `depletedByOpponent` + เบิร์ส `afterAllyDepletedByOpponent` เท่านั้น
   ข้อความ "ถูกทำลาย/สูญสลาย" = trigger `on: ['destroyedByOpponent', 'depletedByOpponent']` / เบิร์ส `alsoDepleted: true` · "ถูกทำลายโดยเอฟเฟกต์ของคู่แข่ง" (ไม่นับแพ้เทียบ BP) = `destroyedByOpponentEffect`
   · เอฟเฟกต์ "เมื่อถูกทำลาย" ทำงานขณะยังอยู่บนสนาม (engine ส่งลงแทรชก่อน: "วางคอร์บนสปิริตนี้" = คอร์กลับรีเสิร์ฟ)

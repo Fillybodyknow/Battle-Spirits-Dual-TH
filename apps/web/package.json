@@ -11,6 +11,7 @@
   "dependencies": {
     "@bs/cards": "0.1.0",
     "@bs/engine": "0.1.0",
+    "@fontsource-variable/noto-sans-thai": "5.3.0",
     "firebase": "^13.3.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
