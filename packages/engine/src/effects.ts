@@ -65,7 +65,7 @@ import { cardColors,
   removeCore,
   removeFrom,
 } from './rules';
-import { nextRandom } from './rng';
+import { shuffle } from './rng';
 import { PLAYERS, opponentOf, type ChoicePick, type PendingChoice, type PlayerId, type QueuedEffect } from './types';
 import type { Ability, Color } from '@bs/cards';
 
@@ -1134,27 +1134,6 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
         return;
       }
       if (step.count < 1) return;
-      // BS09 เฮล-สคัล / BS10 มุโดว: เลือกคอร์จากรีเสิร์ฟ / แทรชของคู่แข่งได้ด้วย (ถามจำนวนก่อน ที่เหลือเลือกจากการ์ดบนสนาม)
-      if ((step.withReserve || step.withTrash) && !step.pileAsked) {
-        const from: 'reserve' | 'trash' = step.withReserve ? 'reserve' : 'trash';
-        const to = step.to ?? 'reserve';
-        const pile = from === 'reserve' ? s.players[opp].reserve : s.players[opp].trashCores;
-        // กติกา 07 ข้อ 4: โซลคอร์ไม่ไปวอยด์
-        const avail = pile.filter((c) => to !== 'void' || !s.cores[c]!.isSoul).length;
-        const rest: Step = { ...step, pileAsked: true };
-        const max = Math.min(step.count, avail);
-        if (max === 0) {
-          item.steps.unshift(rest);
-          return;
-        }
-        const where = from === 'reserve' ? 'รีเสิร์ฟ' : 'แทรช';
-        const options = Array.from({ length: max + 1 }, (_, k) => ({
-          label: k === 0 ? `เลือกจากการ์ดบนสนามทั้งหมด ${step.count} เม็ด` : `จาก${where}คู่แข่ง ${k} เม็ด${step.count - k > 0 ? ` + การ์ดบนสนาม ${step.count - k} เม็ด` : ''}`,
-          steps: [...(k > 0 ? [{ do: 'opponentPileCores' as const, from, n: k, to }] : []), ...(step.count - k > 0 ? [{ ...rest, count: step.count - k } as Step] : [])],
-        }));
-        item.steps.unshift({ do: 'chooseOne', options });
-        return;
-      }
       // Charge: เอฟเฟกต์ถอดคอร์ลงรีเสิร์ฟของเรา ถอดเพิ่ม (ไลท์นิ่ง-ชิออน)
       if (!step.charged && (step.to ?? 'reserve') === 'reserve' && !step.untilOne && !step.opponentChooses) {
         const bonus = chargeBonus(s, db, me, 'coreRemovalBoost');
@@ -1171,13 +1150,20 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
           (!step.filter || matchesFilter(s, db, id, step.filter)) &&
           !coreRemovalImmune(s, db, id),
       );
-      if (candidates.length === 0) return;
+      // BS09 เฮล-สคัล / BS10 มุโดว: เลือกคอร์ในรีเสิร์ฟ / แทรชของคู่แข่งได้ด้วย (กองคอร์เป็นตัวเลือกหนึ่งในหน้าแบ่งคอร์)
+      const pileFrom: 'reserve' | 'trash' | null = step.withReserve ? 'reserve' : step.withTrash ? 'trash' : null;
+      const pileId = pileFrom ? `pile:${pileFrom}:${opp}` : null;
+      const pileCap = pileFrom
+        ? (pileFrom === 'reserve' ? s.players[opp].reserve : s.players[opp].trashCores).filter((c) => (step.to ?? 'reserve') !== 'void' || !s.cores[c]!.isSoul).length
+        : 0;
+      if (candidates.length === 0 && pileCap === 0) return;
       // หลายเม็ด (ทีละ 1 เม็ดต่อการเลือก): แบ่งจำนวนให้แต่ละตัวทีเดียว แล้วส่งออกพร้อมกัน (เจ้าของโปรเจกต์กำหนด)
-      if (!step.untilOne && (step.perPick ?? 1) === 1 && step.count > 1) {
+      if (!step.untilOne && (step.perPick ?? 1) === 1 && (step.count > 1 || pileCap > 0)) {
         const to = step.to ?? 'reserve';
         // กติกา 07 ข้อ 4: โซลคอร์ไม่ถูกนำไปวอยด์
-        const caps = Object.fromEntries(candidates.map((id) => [id, s.cards[id]!.cores.filter((c) => to !== 'void' || !s.cores[c]!.isSoul).length]));
-        const usable = candidates.filter((id) => caps[id]! > 0);
+        const caps: Record<string, number> = Object.fromEntries(candidates.map((id) => [id, s.cards[id]!.cores.filter((c) => to !== 'void' || !s.cores[c]!.isSoul).length]));
+        if (pileId && pileCap > 0) caps[pileId] = pileCap;
+        const usable = [...candidates, ...(pileId && pileCap > 0 ? [pileId] : [])].filter((id) => caps[id]! > 0);
         const total = Math.min(step.count, usable.reduce((n, id) => n + caps[id]!, 0));
         if (total === 0) return;
         const where = to === 'trash' ? 'แทรช' : to === 'void' ? 'วอยด์' : 'รีเสิร์ฟ';
@@ -1186,7 +1172,7 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
           item,
           {
             kind: 'distribute',
-            prompt: `เลือกคอร์บนสปิริต/อัลติเมท${step.opponentChooses ? 'ของตัวเอง' : 'ของคู่แข่ง'}ที่จะส่งไป${where} รวม ${total} เม็ด`,
+            prompt: `เลือกคอร์บนสปิริต/อัลติเมท${step.opponentChooses ? 'ของตัวเอง' : 'ของคู่แข่ง'}${pileFrom ? ` (หรือคลิกช่อง${pileFrom === 'reserve' ? 'รีเสิร์ฟ' : 'แทรช'}คู่แข่ง)` : ''}ที่จะส่งไป${where} รวม ${total} เม็ด`,
             candidates: usable,
             caps: Object.fromEntries(usable.map((id) => [id, caps[id]!])),
             total,
@@ -2359,17 +2345,19 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
 
     // ---------------- BS09
     case 'opponentRandomDiscard': {
-      if (!holds(step.if) || handImmune(s, db, opp)) return;
-      for (let i = 0; i < step.count; i++) {
-        const hand = handCards(s, opp);
-        if (hand.length === 0) return;
-        const [r, next] = nextRandom(s.rng);
-        s.rng = next;
-        const id = hand[Math.floor(r * hand.length)]!;
-        removeFrom(s.players[opp].hand, id);
-        s.players[opp].trashCards.push(id);
-        emit(ctx, { type: 'discarded', player: opp, cardId: id });
-      }
+      if (!holds(step.if) || handImmune(s, db, opp) || step.count < 1) return;
+      const hand = handCards(s, opp);
+      if (hand.length === 0) return;
+      // "ทิ้งแบบสุ่ม" แบบเล่นจริง: คู่แข่งสับการ์ดในมือแล้วยื่นคว่ำหน้าให้เราเลือก (เจ้าของโปรเจกต์กำหนด)
+      const [order, next] = shuffle(hand, s.rng);
+      s.rng = next;
+      ask(ctx, item, {
+        kind: 'card',
+        prompt: `เลือกการ์ดในมือคู่แข่ง (คว่ำหน้า) 1 ใบที่จะทิ้ง${step.count > 1 ? ` (อีก ${step.count} ใบ)` : ''}`,
+        candidates: order,
+        blind: true,
+        step,
+      });
       return;
     }
 
@@ -3889,6 +3877,14 @@ export function resolveChoice(ctx: Ctx, player: PlayerId, pick: ChoicePick): voi
     if (sum !== choice.total) fail('INVALID_PICK', `ต้องเลือกคอร์รวม ${choice.total} เม็ด`);
     // เรียงตามลำดับตัวเลือก (deterministic ไม่ขึ้นกับลำดับคีย์ที่ส่งมา)
     const entries = choice.candidates.filter((id) => (alloc[id] ?? 0) > 0).map((id) => ({ cardId: id, n: alloc[id]! }));
+    // กองคอร์ในรีเสิร์ฟ/แทรชของคู่แข่ง (มุโดว / เฮล-สคัล)
+    for (const e of entries.filter((x) => x.cardId.startsWith('pile:'))) {
+      const from = e.cardId.split(':')[1] as 'reserve' | 'trash';
+      cur.steps.unshift({ do: 'opponentPileCores', from, n: e.n, to: choice.to === 'place' ? 'reserve' : choice.to });
+    }
+    const cardEntries = entries.filter((x) => !x.cardId.startsWith('pile:'));
+    entries.length = 0;
+    entries.push(...cardEntries);
     if (choice.to === 'place') {
       // เทนเซย์: วางคอร์วอยด์ตามที่แบ่ง
       for (const e of entries) if (s.players[player].field.includes(e.cardId)) addVoidCores(ctx, player, e.cardId, e.n);
@@ -4065,6 +4061,15 @@ function applyCardPick(ctx: Ctx, cur: QueuedEffect, choice: Extract<PendingChoic
         leaveField(ctx, pick, 'trash');
         emit(ctx, { type: 'cloneDiscarded', player, cardId: pick });
       }
+      break;
+    }
+    // ---------------- BS09 ทิ้งการ์ดในมือคู่แข่งแบบสุ่ม (เลือกคว่ำหน้า)
+    case 'opponentRandomDiscard': {
+      const owner = s.cards[pick]!.owner;
+      removeFrom(s.players[owner].hand, pick);
+      s.players[owner].trashCards.push(pick);
+      emit(ctx, { type: 'discarded', player: owner, cardId: pick });
+      if (step.count > 1) cur.steps.unshift({ ...step, count: step.count - 1, if: undefined });
       break;
     }
     // ---------------- BS10

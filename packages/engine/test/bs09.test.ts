@@ -99,6 +99,8 @@ describe('Booster Set 09', () => {
     s = useMagic(s, 'เฟลมมังกรคลั่ง');
     if (s.choice?.kind === 'card' && s.choice.player === 'p1') s = choose(s, tree);
     expect(s.players.p2.trashCards).toContain(tree);
+    // ทิ้งแบบสุ่ม = p2 เลือกการ์ดคว่ำหน้าในมือ p1 ทีละใบ
+    while (s.choice?.kind === 'card' && s.choice.blind) s = choose(s, s.choice.candidates[0]!);
     const after1 = before - 1;
     expect(s.players.p1.hand.length).toBe(after1 >= 5 ? after1 - 2 : after1);
   });

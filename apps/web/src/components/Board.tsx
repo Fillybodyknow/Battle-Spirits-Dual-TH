@@ -706,6 +706,48 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
 // ---------------------------------------------------------------- playmat
 
 /** ช่องบนแผ่นรองเล่น: กรอบขอบโลหะ ชื่อช่องตัวสลัก + คำอ่านภาษาไทย */
+/**
+ * มุโดว / เฮล-สคัล: คอร์ในรีเสิร์ฟ/แทรชของคู่แข่งเป็นตัวเลือกหนึ่งในหน้าแบ่งคอร์ (choice distribute)
+ * คลิกช่อง = +1 เม็ด · ปุ่ม − = ลด
+ */
+function PileAlloc({ pileId, label }: { pileId: string; label: string }) {
+  const candidate = useGame((s) => isDistributeCandidate(s.state, pileId) && !isFxBlocking(s.fx));
+  const n = useGame((s) => allocOf(s)[pileId] ?? 0);
+  // ฝั่งคู่แข่งหมุน 180°: หมุนป้ายกลับให้อ่านได้
+  const matTop = useContext(MatTopCtx);
+  if (!candidate) return null;
+  return (
+    <div
+      className={`absolute inset-0 z-20 flex cursor-pointer items-center justify-center rounded-lg ring-4 ring-fuchsia-400 ${matTop ? 'rotate-180' : ''}`}
+      style={{ animation: 'fx-choice-glow 1.4s ease-in-out infinite' }}
+      onClick={(e) => {
+        e.stopPropagation();
+        useGame.getState().allocAdd(pileId, 1);
+      }}
+      title={`คลิกเพื่อส่งคอร์จาก${label} 1 เม็ด`}
+    >
+      {n > 0 ? (
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            aria-label="ลด 1 เม็ด"
+            onClick={(e) => {
+              e.stopPropagation();
+              useGame.getState().allocAdd(pileId, -1);
+            }}
+            className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-900/90 text-lg font-black text-white shadow ring-2 ring-fuchsia-300 hover:bg-slate-700"
+          >
+            −
+          </button>
+          <span className="rounded-md bg-fuchsia-500 px-2 py-0.5 text-sm font-black whitespace-nowrap text-white shadow-lg">ส่ง {n}</span>
+        </div>
+      ) : (
+        <span className="rounded bg-fuchsia-500 px-1.5 py-0.5 text-[11px] font-bold text-white shadow">คลิก: คอร์จาก{label}</span>
+      )}
+    </div>
+  );
+}
+
 function MatSlot({
   label,
   sub,
@@ -806,6 +848,7 @@ function ReserveSlot({ player }: { player: PlayerId }) {
       {...dropHandlers(active, () => moveCoresTo(target), setOver)}
     >
       {p.reserve.length > 0 ? <CoreRow cores={p.reserve} size="md" board /> : <span className="text-[11px] text-slate-500">ว่าง</span>}
+      <PileAlloc pileId={`pile:reserve:${player}`} label="รีเสิร์ฟ" />
     </MatSlot>
   );
 }
@@ -960,6 +1003,7 @@ function TrashSlot({ player }: { player: PlayerId }) {
       {burstDrop && (
         <div className="pointer-events-none absolute inset-x-1 -top-2 z-10 rounded bg-rose-600 py-0.5 text-center text-[11px] font-bold text-white shadow">ปล่อยเพื่อทิ้ง Burst</div>
       )}
+      <PileAlloc pileId={`pile:trash:${player}`} label="แทรช" />
       {summonable > 0 && !burstDrop && (
         <div
           className={`pointer-events-none absolute inset-x-1 -top-2.5 z-10 rounded py-0.5 text-center text-[11px] font-black text-slate-950 shadow ${inFlash ? 'bg-cyan-300' : 'bg-yellow-300'}`}

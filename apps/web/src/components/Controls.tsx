@@ -743,7 +743,22 @@ export function ChoiceDialog() {
   if (!blocking && choice?.kind === 'order') return <OrderPanel />;
   if (!blocking && choice?.kind === 'multiSummon') return <MultiPickFan />;
   if (!blocking && choice?.kind === 'arrange') return <ArrangeFan key={choice.cardIds.join('|')} />;
-  if (blocking || !choice || choice.kind !== 'card' || isInlineChoice(state)) return null;
+  if (blocking || !choice || choice.kind !== 'card') return null;
+  // ทิ้งการ์ดในมือคู่แข่งแบบสุ่ม: พัดการ์ดคว่ำหน้า (สับลำดับแล้ว) ให้เราเลือก 1 ใบ
+  if (choice.blind) {
+    const owner = state.cards[choice.candidates[0]!]!.owner;
+    return (
+      <RevealFan
+        owner={owner}
+        cardIds={choice.candidates}
+        candidates={choice.candidates}
+        onPick={(id) => choose(id)}
+        faceDown
+        title={`${choice.prompt} · มือของ${playerLabel(owner)}`}
+      />
+    );
+  }
+  if (isInlineChoice(state)) return null;
   // การ์ดที่เปิดจากเด็ค: เรียงเป็นพัดบนกระดาน (ทั้งสองฝ่ายเห็น)
   if (choice.revealed) {
     return (

@@ -492,7 +492,9 @@ export function costBoostSources(state: GameState, db: CardDatabase, cardId: str
 
 export function matchesFilter(state: GameState, db: CardDatabase, cardId: string, filter: CardFilter): boolean {
   const def = db.get(state.cards[cardId]!.cardNo);
-  const costOf = () => fieldCost(state, db, cardId, !!filter.ignoreBraveCost);
+  // การ์ดในแทรช: ใช้คอสต์ในแทรช ("การ์ดนี้ในแทรชถือว่ามีคอสต์ N": นาราคุ ↔ คุรามะ "คอสต์ไม่เกิน 4 ในแทรช")
+  const inTrash = state.players[state.cards[cardId]!.owner].trashCards.includes(cardId);
+  const costOf = () => (inTrash ? baseCost(state, db, cardId) : fieldCost(state, db, cardId, !!filter.ignoreBraveCost));
   // "การ์ดสปิริตนี้ ถือว่าเป็นการ์ดเมจิคด้วย" (ยูคิเกิร์ล / โบคุโบคุ)
   if (filter.types && !filter.types.includes(def.type) && !(filter.types.includes('magic') && def.abilities.some((a) => a.kind === 'alsoMagic'))) return false;
   // เผ่า (รวมเผ่าที่ได้รับ: โอโทโนะซามะ)

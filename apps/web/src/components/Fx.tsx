@@ -2926,10 +2926,15 @@ function fanLayout(owner: string, n: number) {
   const cy = mat ? mat.y + mat.h / 2 : innerHeight / 2;
   const W = 132;
   const H = 185;
-  const gap = Math.min(150, (innerWidth - sidebar - 120) / Math.max(n, 1));
+  const gap = Math.min(150, (innerWidth - sidebar - W - 40) / Math.max(n - 1, 1));
+  // การ์ดเยอะ: โค้งพัดตามสัดส่วน (เดิมโค้งตามจำนวนใบ การ์ดริมพัดจมลงล่างจอ)
+  const half = Math.max(1, (n - 1) / 2);
   return Array.from({ length: n }, (_, i) => {
     const off = i - (n - 1) / 2;
-    return { x: cx + off * gap - W / 2, y: cy - H / 2 + off * off * 6, rot: off * 5, W, H };
+    const t = off / half;
+    const y = n <= 7 ? off * off * 6 : t * t * 30;
+    const rot = n <= 7 ? off * 5 : t * 14;
+    return { x: cx + off * gap - W / 2, y: cy - H / 2 + y, rot, W, H };
   });
 }
 
@@ -2953,6 +2958,7 @@ export function RevealFan({
   flatChosen,
   skipLabel,
   pickLabel,
+  faceDown,
 }: {
   owner: string;
   cardIds: string[];
@@ -2975,9 +2981,13 @@ export function RevealFan({
   /** ข้อความปุ่ม onSkip (ไม่ระบุ = ไม่เลือก) · ป้ายใต้ใบที่เลือกได้ (ไม่ระบุ = คลิกเพื่อเลือก) */
   skipLabel?: string;
   pickLabel?: string;
+  /** การ์ดคว่ำหน้า (เลือกแบบสุ่มจากมือคู่แข่ง): ไม่แสดงหน้าการ์ดและไม่เปิดรายละเอียดตอนชี้ */
+  faceDown?: boolean;
 }) {
   const cards = useGame((s) => s.state.cards);
   const hover = useGame((s) => s.hover);
+  // การ์ดซ้อนกันเยอะ: ใบที่ชี้อยู่ขึ้นมาบนสุดให้เห็นทั้งใบ
+  const hovered = useGame((s) => s.hovered);
   const pos = fanLayout(owner, cardIds.length);
   const top = Math.min(...pos.map((p) => p.y)) - 44;
   const cx = pos.length ? (pos[0]!.x + pos[pos.length - 1]!.x + pos[0]!.W) / 2 : 0;
@@ -3030,18 +3040,18 @@ export function RevealFan({
               height: p.H,
               transform: isChosen && !flatChosen ? 'rotate(0deg) translateY(-36px) scale(1.12)' : `rotate(${p.rot}deg)`,
               filter: dim ? 'brightness(0.45) grayscale(0.5)' : undefined,
-              zIndex: isChosen ? 5 : i,
+              zIndex: hovered === id ? 200 : isChosen ? 100 + i : i,
             }}
             onClick={can ? () => onPick!(id) : undefined}
-            onMouseEnter={() => hover(id)}
-            onMouseLeave={() => hover(null)}
+            onMouseEnter={() => !faceDown && hover(id)}
+            onMouseLeave={() => !faceDown && hover(null)}
           >
             <div className="h-full w-full" style={{ animation: `fx-chain-in 0.4s ${i * 90}ms cubic-bezier(.2,.9,.3,1.2) both` }}>
             <div
               className={`relative h-full w-full rounded-lg shadow-[0_10px_25px_rgba(0,0,0,0.7)] ${can && !isChosen ? 'ring-4 ring-fuchsia-400' : ''} ${isChosen ? 'ring-4 ring-yellow-300' : ''}`}
               style={isChosen ? { boxShadow: '0 0 30px 8px rgba(250,204,21,0.7)' } : can ? { animation: 'fx-choice-glow 1.4s ease-in-out infinite' } : undefined}
             >
-              <CardFace def={db.get(card.cardNo)} />
+              {faceDown ? <CardBack /> : <CardFace def={db.get(card.cardNo)} />}
               {dim && <div className="absolute inset-0 rounded-lg bg-slate-950/65" />}
             </div>
             </div>

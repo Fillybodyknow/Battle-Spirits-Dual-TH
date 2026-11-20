@@ -4,6 +4,7 @@ import { destroyCard, enqueue, fireTriggers, refreshByEffect, newBatch, queueExh
 import { nextRandom, shuffle } from './rng';
 import {
   attackTaxFor,
+  effectSummonTax,
   coreTaxed,
   symbolsZeroCard,
   magicBanned,
@@ -450,6 +451,9 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     const p = s.players[player];
     const card = s.cards[cardId]!;
     const paidWithSoul = payment.some((id) => s.cores[id]?.isSoul);
+    // BS10 สิงโตควันม่วง: อัญเชิญโดยเอฟเฟกต์ ([Quick] / [Soul Quick] / อัญเชิญจากแทรชด้วยเอฟเฟกต์) ต้องจ่ายคอสต์เพิ่ม
+    const effTax = flash || trashRule ? effectSummonTax(s, db, cardId) : { cost: 0, sources: [] };
+    emitStatic(ctx, effTax.sources);
     if (trashRule?.soulPayment && !paidWithSoul) fail('SOUL_REQUIRED', 'ต้องใช้ Soul Core ร่วมจ่ายคอสต์เพื่ออัญเชิญจากแทรช');
 
     if (braveOnto) {
@@ -459,7 +463,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
       if (def.type !== 'brave' || !def.braveCondition) fail('WRONG_CARD_TYPE', 'ร่วมร่างได้เฉพาะ Brave');
       const host = braveHost(ctx, player, def, braveOnto, cardId);
       // [Quick] ใน Flash timing: คอร์ที่จ่ายต้องมาจากรีเสิร์ฟ
-      const { paid } = payCost(ctx, player, def, payment, placement, { noPlacement: true, reserveOnly: !!flash && !quickAnyCores(s, db, player) });
+      const { paid } = payCost(ctx, player, def, payment, placement, { noPlacement: true, reserveOnly: !!flash && !quickAnyCores(s, db, player), extra: effTax.cost });
       removeFrom(p.hand, cardId);
       host.braves.push(cardId);
       card.state = host.state;
@@ -484,18 +488,23 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     if (flash && quick?.soul) {
       // [Soul Quick]: จ่ายคอสต์ทั้งหมดด้วย Soul Core ในรีเสิร์ฟ 1 ดวง, วาง Core จากรีเสิร์ฟ
       const soul = payment[0];
-      if (payment.length !== 1 || !soul || !s.cores[soul]?.isSoul || !p.reserve.includes(soul)) {
-        fail('WRONG_PAYMENT', '[Soul Quick] ต้องจ่ายด้วย Soul Core ในรีเสิร์ฟ 1 ดวง');
+      // สิงโตควันม่วง: จ่ายเพิ่มด้วยคอร์ปกติในรีเสิร์ฟ
+      const extra = payment.slice(1);
+      if (payment.length !== 1 + effTax.cost || !soul || !s.cores[soul]?.isSoul || !p.reserve.includes(soul) || extra.some((id) => s.cores[id]?.isSoul || !p.reserve.includes(id))) {
+        fail('WRONG_PAYMENT', effTax.cost > 0 ? `[Soul Quick] ต้องจ่ายด้วย Soul Core 1 ดวง + คอร์ในรีเสิร์ฟอีก ${effTax.cost} ดวง` : '[Soul Quick] ต้องจ่ายด้วย Soul Core ในรีเสิร์ฟ 1 ดวง');
       }
       if (new Set(placement).size !== placement.length || placement.includes(soul) || placement.some((id) => !p.reserve.includes(id))) {
         fail('RESERVE_ONLY', '[Soul Quick] วางได้เฉพาะ Core จากรีเสิร์ฟ');
       }
       const need = summonMinCores(s, db, cardId);
       if (placement.length < need) fail('NOT_ENOUGH_CORES', `ต้องวาง Core อย่างน้อย ${need} ดวง`);
-      removeCore(s, soul);
-      p.trashCores.push(soul);
+      if (new Set(payment).size !== payment.length || placement.some((id) => payment.includes(id))) fail('DUPLICATE_CORE', 'ใช้ Core ดวงเดียวกันซ้ำ');
+      for (const id of payment) {
+        removeCore(s, id);
+        p.trashCores.push(id);
+      }
       for (const id of placement) removeCore(s, id);
-      paid = 1;
+      paid = payment.length;
       placed = placement;
     } else {
       // BS10 สิงโตควันม่วง: ทิ้งใบบนสุดเด็คเราไม่เกิน N ใบ ใบละคอสต์ -1
@@ -515,6 +524,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
         reserveOnly: !!flash && !trashRule && !quickAnyCores(s, db, player),
         baseCost: Math.max(0, baseCost(s, db, cardId) - milled),
         minPlacement: summonMinCores(s, db, cardId),
+        extra: effTax.cost,
       }));
     }
     removeFrom(inTrash ? p.trashCards : p.hand, cardId);

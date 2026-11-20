@@ -246,7 +246,9 @@ describe('Booster Set 10', () => {
     const reserve = s.players.p2.reserve.length;
     const trash = s.players.p2.trashCores.length;
     s = attack(s, hell);
-    s = choose(s, optionIndex(s, 'จากรีเสิร์ฟคู่แข่ง 3 เม็ด'));
+    // หน้าแบ่งคอร์: ช่องรีเสิร์ฟคู่แข่งเป็นตัวเลือกหนึ่ง
+    expect(s.choice).toMatchObject({ kind: 'distribute' });
+    s = choose(s, { alloc: { 'pile:reserve:p2': 3 } });
     expect(s.players.p2.reserve.length).toBe(reserve - 3);
     expect(s.players.p2.trashCores.length).toBe(trash + 3);
   });
@@ -260,7 +262,8 @@ describe('Booster Set 10', () => {
     s = attack(s, mudo);
     s = choose(s, optionIndex(s, 'Soul Drive'));
     // หลังส่งโซลคอร์ออก มุโดวเหลือคอร์ 1 เม็ด = Lv3 → 2×3 = 6 เม็ด
-    s = choose(s, optionIndex(s, 'จากแทรชคู่แข่ง 6 เม็ด'));
+    expect(s.choice).toMatchObject({ kind: 'distribute', total: 6 });
+    s = choose(s, { alloc: { 'pile:trash:p2': 6 } });
     expect(s.players.p2.trashCores.length).toBe(0);
     for (const id of moved) expect(s.cores[id]).toBeUndefined();
   });
@@ -452,6 +455,29 @@ describe('Booster Set 10', () => {
     t = attack(t, shido);
     t = choose(t, optionIndex(t, 'Catalyze'));
     expect((t.colorlessTurn ?? []).map((c) => c.cardId)).toContain(b2);
+  });
+
+  it('คุรามะ: อัญเชิญนาราคุจากแทรชได้ (คอสต์ในแทรช 4)', () => {
+    let s = setup();
+    const naraku = card(s, 'p1', no('ราชายักษ์ นาราคุ'), 'trashCards');
+    const kurama = put(s, 'p1', no('ฤาษีแห่งความมืด คุรามะ'), 1);
+    s = attack(s, kurama);
+    expect(s.choice).toMatchObject({ kind: 'card', player: 'p1' });
+    expect((s.choice as { candidates: string[] }).candidates).toContain(naraku);
+  });
+
+  it('สิงโตควันม่วง Lv2: อัญเชิญด้วย [Quick] ก็ต้องจ่ายเพิ่ม 5', () => {
+    let s = setup();
+    put(s, 'p2', no('สิงโตควันม่วง'), 2);
+    const wolf = card(s, 'p1', no('ลีฟวูล์ฟ'), 'hand');
+    s = attack(s, put(s, 'p1', DARIU, 1));
+    s = act(s, { type: 'passFlash', player: 'p2' });
+    const cost = payableCost(s, db, 'p1', db.get(s.cards[wolf]!.cardNo));
+    const res = normalCores(s);
+    const summon = (n: number): Action => ({ type: 'summon', player: 'p1', cardId: wolf, payment: res.slice(0, n), placement: res.slice(n, n + 1) });
+    expect(fails(s, summon(cost))).toBe('WRONG_PAYMENT');
+    s = act(s, summon(cost + 5));
+    expect(s.players.p1.field).toContain(wolf);
   });
 
   it('เทนเซย์ Soul Drive: วางคอร์วอยด์เท่าจำนวนคอร์ในรีเสิร์ฟและบนสปิริต/อัลติเมทของเรา', () => {
