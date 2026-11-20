@@ -117,6 +117,15 @@ export type Condition =
   | { ownGemColorsAtLeast: number }
   /** เงื่อนไขใดเงื่อนไขหนึ่งเป็นจริง */
   | { any: Condition[] }
+  // ---------------- BS10
+  /** มีเจ็มสีนี้บนฟิลด์เรา */
+  | { ownGemColor: Color }
+  /** การ์ดต้นเหตุ (subject) ของเอฟเฟกต์นี้ตรงตัวกรอง (ตรวจตอนประมวลผล) */
+  | { subjectIs: CardFilter }
+  /** ในแทรชเรามีคอร์ที่ไม่ใช่โซลคอร์อย่างน้อย N เม็ด */
+  | { trashCoreAtLeast: number }
+  /** (trigger lifeLost) ไลฟ์ลดลงเพราะเอฟเฟกต์ของคู่แข่ง (ไม่ใช่การโจมตี) */
+  | { lifeLostByOpponentEffect: true }
   /** กลับเงื่อนไข */
   | { not: Condition };
 
@@ -126,6 +135,12 @@ export interface CountPer {
   allies?: CardFilter;
   /** BS09: นับ allies ของผู้เล่นทุกคน (ไม่ใช่เฉพาะของเรา) */
   anySide?: true;
+  /** BS10: สปิริต/อัลติเมทของคู่แข่งที่ตรงตัวกรอง */
+  opponents?: CardFilter;
+  /** BS10: เลเวลของการ์ดนี้ */
+  selfLevel?: true;
+  /** BS10 บิรันบะ: จำนวนคอร์ที่คู่แข่งได้จากวอยด์ (trigger oppVoidGain) */
+  voidGained?: true;
   /** การ์ดเมจิคไทป์ [เพลง] บนฟิลด์เรา */
   songs?: true;
   /** เบรฟที่ร่วมร่างกับสปิริตต้นเหตุ (subject) */
@@ -219,6 +234,10 @@ export interface CardFilter {
   notFamilies?: string[];
   /** มี BP มากที่สุดในบรรดาสปิริตของเจ้าของ (เท่ากันหลายตัว = นับทุกตัว) */
   highestBp?: true;
+  /** BS10: ไม่ใช่สีใดเลยในสีเหล่านี้ */
+  notColors?: Color[];
+  /** มีคอร์วางอยู่อย่างน้อย N เม็ด (เฉพาะบนสนาม) */
+  minCores?: number;
 }
 
 /** ปลายทางของ Core จากวอยด์ */
@@ -268,7 +287,7 @@ export type Step =
   /** นำการ์ดในแทรชเรา 1 ใบที่ตรงตัวกรอง กลับขึ้นมือ */
   | { do: 'returnFromTrash'; filter: CardFilter; if?: Condition }
   /** เมื่อจบการต่อสู้นี้ จบ Attack Step */
-  | { do: 'endAttackStepAfterBattle' }
+  | { do: 'endAttackStepAfterBattle'; /** (engine ใช้ภายใน) ถามโฮเนะสุมิแล้ว */ checked?: true }
   /**
    * ในการต่อสู้นี้ ส่งไลฟ์คู่แข่งลงรีเสิร์ฟคู่แข่ง ต่อผู้ป้องกัน 1 ตัวที่ถูกทำลายจากการเทียบ BP
    * onlyConsecutiveBlade = นับเฉพาะเมื่อการต่อสู้นี้ใช้ [Consecutive Blade]
@@ -370,7 +389,7 @@ export type Step =
    */
   | { do: 'summonFromHand'; filter: CardFilter; fullReductionIf?: Condition }
   /** (engine ใช้ภายใน) จ่ายคอสต์เพื่ออัญเชิญ cardId จากมือ */
-  | { do: 'payForSummon'; cardId: string; cost: number }
+  | { do: 'payForSummon'; cardId: string; cost: number; /** (engine ใช้ภายใน) รวมคอสต์เพิ่มของสิงโตควันม่วงแล้ว */ taxPaid?: true; /** (engine ใช้ภายใน) ถามทิ้งเด็คลดคอสต์แล้ว */ millAsked?: true }
   /** (engine ใช้ภายใน) ทำลายการ์ด (ไม่ถามเอฟเฟกต์แทนที่ซ้ำ) */
   | { do: 'destroyCard'; cardId: string; by: 'p1' | 'p2'; bySource?: string }
   /** (engine ใช้ภายใน) การ์ดอยู่บนสนามต่อในรูปแบบเสื่อมสภาพ */
@@ -417,6 +436,8 @@ export type Step =
       /** (engine ใช้ภายใน) บวก Charge แล้ว */
       charged?: true;
       per?: CountPer;
+      /** BS10 ชา-ซู: เลือกสปิริตของฝ่ายไหนก็ได้ (รวมของเรา) */
+      anySide?: true;
     }
   /** เสื่อมสภาพสปิริตคู่แข่งกี่ตัวก็ได้ BP รวมไม่เกิน maxTotal */
   | { do: 'exhaustOpponentTotalBp'; maxTotal: number }
@@ -490,6 +511,12 @@ export type Step =
       countPerMilled?: CardFilter;
       /** จำนวนเม็ดที่ส่งออกจากตัวที่เลือกแต่ละครั้ง (ไม่ระบุ = 1) */
       perPick?: number;
+      /** BS10 มุโดว: เลือกคอร์ในแทรชของคู่แข่งได้ด้วย */
+      withTrash?: true;
+      /** BS09 เฮล-สคัล: เลือกคอร์ในรีเสิร์ฟของคู่แข่งได้ด้วย */
+      withReserve?: true;
+      /** (engine ใช้ภายใน) ถามแบ่งจากรีเสิร์ฟ/แทรชแล้ว */
+      pileAsked?: true;
       if?: Condition;
       per?: CountPer;
       /** (engine ใช้ภายใน) บวก Charge แล้ว */
@@ -536,7 +563,7 @@ export type Step =
   /** เลือกการ์ดของเราที่ฟื้นสภาพอยู่และตรงตัวกรอง 1 ใบ แล้วเสื่อมสภาพ (ไม่ระบุ types = สปิริต/อัลติเมท) */
   | { do: 'exhaustOwn'; filter: CardFilter }
   /** สามารถอัญเชิญการ์ดในแทรชเรา 1 ใบที่ตรงตัวกรอง (จ่ายคอสต์ตามคอสต์ในแทรช) repeat = กี่ใบก็ได้ */
-  | { do: 'summonFromTrash'; filter: CardFilter; repeat?: true }
+  | { do: 'summonFromTrash'; filter: CardFilter; repeat?: true; /** ถ้าเงื่อนไขจริง การลดคอสต์ถือว่าลดจนครบแล้ว */ fullReductionIf?: Condition }
   /** ส่งคอร์ไลฟ์คู่แข่ง N เม็ดไปที่รีเสิร์ฟคู่แข่ง */
   | { do: 'opponentLifeToReserve'; count: number }
   /** ส่ง Core บนสปิริตนี้ N ดวงลงแทรชเรา (เลือก Core ธรรมดาก่อน) */
@@ -550,9 +577,9 @@ export type Step =
    * เซ็ทการ์ดที่มีเอฟเฟกต์เบิร์ส "ในมือ" (ไม่รวมการ์ดนอกมือ กติกา 06 Q5)
    * then = ทำต่อเฉพาะเมื่อเซ็ทจริง ("สามารถ X เพื่อ Y": มี then = ต้องเลือก 1 ใบ ไม่มีปุ่มไม่เลือก เพราะเลือกใช้มาแล้วจาก may)
    */
-  | { do: 'setBurstFromHand'; then?: Step[] }
+  | { do: 'setBurstFromHand'; then?: Step[]; /** "ในมือ/นอกมือ" */ withShown?: true }
   /** [Catalyze]: สั่งใช้ Soul Burst สีนี้ของเราที่เซ็ทอยู่ (ไม่ต้องรอเงื่อนไข) */
-  | { do: 'catalyze'; /** ไม่ระบุ = ทุกสี */ color?: Color; /** "หลังจากเบิร์สนั้นถูกสั่งใช้": ทำต่อหลังเบิร์สทำงานจบ */ then?: Step[] }
+  | { do: 'catalyze'; /** ไม่ระบุ = ทุกสี */ color?: Color; /** BS10: สีใดสีหนึ่งในนี้ */ colors?: Color[]; /** BS10 มิโคโตะ: เอฟเฟกต์เลือกเป้า 1 ตัวของเบิร์สนั้น = ทั้งหมดแทน */ allTargets?: true; /** "หลังจากเบิร์สนั้นถูกสั่งใช้": ทำต่อหลังเบิร์สทำงานจบ */ then?: Step[] }
   /** (engine ใช้ภายใน) ไล่วางการ์ดที่เหลือไว้ใต้สุดเด็คตามลำดับที่เลือก */
   | { do: 'toDeckBottom'; cardIds: string[] }
   /** (engine ใช้ภายใน) การ์ดที่แสดง (ยังอยู่บนสุดเด็ค) เรียงลำดับใหม่บนสุดเด็ค: ใบที่เลือกทีหลังอยู่บนกว่า */
@@ -566,6 +593,12 @@ export type Step =
       asSpirit?: true;
       /** (engine ใช้ภายใน) เบรฟที่อยู่ต่อหลังร่างต้น (id นี้) ออกจากสนาม: ถ้าร่างต้นกำลังโจมตีอยู่ในแฟลชหลังโจมตี เบรฟโจมตีต่อ */
       continuesAttackOf?: string;
+      /** (engine ใช้ภายใน) Bunshin: วางเป็นสปิริตร่างแยก (คอร์จากรีเสิร์ฟ ไม่ใช่การอัญเชิญ) */
+      clone?: true;
+      /** (engine ใช้ภายใน) จ่ายคอสต์เพิ่มของสิงโตควันม่วงแล้ว */
+      taxPaid?: true;
+      /** (engine ใช้ภายใน) ถามทิ้งเด็คลดคอสต์ (สิงโตควันม่วง) แล้ว */
+      millAsked?: true;
     }
   /** (engine ใช้ภายใน) Brave ที่อัญเชิญด้วยเอฟเฟกต์: เลือกสปิริตที่จะร่วมร่าง หรือไม่เลือก = ลงเป็นสปิริต */
   | { do: 'braveOrSpirit'; cardId: string }
@@ -780,7 +813,64 @@ export type Step =
   /** อัญเชิญไม่จ่ายคอสต์การ์ดในมือ/แทรชเราที่ตรงตัวกรองได้ไม่เกิน max ใบ */
   | { do: 'summonFreeHandOrTrash'; filter: CardFilter; max: number }
   /** (engine ใช้ภายใน) จินเบร์: จ่ายคอสต์เพิ่ม cost เพื่อสั่งใช้เบิร์ส แล้วทำ then (ไม่จ่าย = ไม่เปิด) */
-  | { do: 'payBurstTax'; cost: number; then: Step[] };
+  | { do: 'payBurstTax'; cost: number; then: Step[]; /** ข้อความที่ถาม (ไม่ระบุ = จ่ายเพื่อสั่งใช้เบิร์ส) */ label?: string }
+  // ---------------- BS10
+  /** เลือกสี 1 สี แล้วเสื่อมสภาพการ์ดสีนั้นที่ตรงตัวกรองทั้งหมด (ทั้งสองฝ่าย) */
+  | { do: 'exhaustAllChosenColor'; filter: CardFilter }
+  /** เบิร์ส "หลังจาก [เมื่ออัญเชิญ] ของคู่แข่งทำงาน" สั่งใช้จากเอฟเฟกต์นี้ไม่ได้ */
+  | { do: 'blockSummonBurst'; if?: Condition }
+  /** ในเทิร์นนี้ สปิริตของเราที่ตรงตัวกรองได้รับ "[เมื่อสปิริตนี้โจมตี] คู่แข่งสั่งใช้เบิร์สไม่ได้" */
+  | { do: 'grantAttackNoBurstThisTurn'; filter: CardFilter }
+  /** ในเทิร์นนี้ สปิริตนี้ไม่ถูกป้องกัน */
+  | { do: 'unblockableSelfThisTurn'; if?: Condition }
+  /** ในเทิร์นนี้ สปิริตของเรา 1 ตัว (เลือก) ได้รับเจ็มสีนี้เพิ่ม */
+  | { do: 'symbolChosenAllyThisTurn'; color: Color; count: number }
+  /** ในการต่อสู้นี้ เมื่อสปิริตที่ต่อสู้กับสปิริตนี้ถูกทำลาย/สูญสลาย สปิริตนี้ฟื้นสภาพ */
+  | { do: 'refreshOnBattlerGone' }
+  /** สปิริตที่คู่แข่งเพิ่งเลือกเสื่อมสภาพ (opponentExhaustsOwn) มี BP ไม่เกินสปิริตต้นเหตุ (ผู้โจมตี): ส่งคอร์ไลฟ์คู่แข่ง 1 เม็ดลงรีเสิร์ฟ */
+  | { do: 'lifeIfChosenBpAtMostSubject' }
+  /** พลิกหงายการ์ดใบบนสุดเด็คของเราหรือคู่แข่ง (เลือก) ให้ทั้งสองฝ่ายเห็น */
+  | { do: 'flipDeckTop'; /** (engine ใช้ภายใน) เด็คของใคร */ whose?: 'me' | 'opp' }
+  /** ในการต่อสู้นี้ เทียบ Lv แทน BP */
+  | { do: 'battleCompareLevel' }
+  /** ในเทิร์นนี้ สปิริตของคู่แข่ง 1 ตัว (เลือก) เจ็มกลายเป็น 0 */
+  | { do: 'symbolsZeroChosen'; filter: CardFilter }
+  /** นำคอร์ที่ไม่ใช่โซลคอร์ในแทรชเรา count เม็ดไปวางไลฟ์ */
+  | { do: 'trashCoreToLife'; count: number }
+  /** เทนเซย์: ต่อจำนวนคอร์ในรีเสิร์ฟ+บนสปิริต/อัลติเมทของเรา 1 เม็ด วางคอร์วอยด์ 1 เม็ดบนสปิริต/อัลติเมทของเราตามใจชอบ (left: engine ใช้ภายใน) */
+  | { do: 'voidCoresSpread'; left?: number }
+  /** นำคอร์วอยด์มาวางไลฟ์เราจนกระทั่งไลฟ์เป็น max */
+  | { do: 'lifeUpTo'; max: number }
+  /** ดูใบบนสุดเด็คเรา count ใบ เลือกไปไว้ใต้สุดเด็คกี่ใบก็ได้ ที่เหลือกลับบนสุดเรียงลำดับได้ */
+  | { do: 'scry'; count: number; /** (engine ใช้ภายใน) การ์ดที่ดูอยู่ */ cards?: string[] }
+  /** นำการ์ดเมจิคที่เราใช้งานในการต่อสู้นี้ทั้งหมดในแทรชเรากลับขึ้นมือ */
+  | { do: 'returnBattleMagic' }
+  /** ในเทิร์นนี้ สปิริตของเรา 1 ตัว (เลือก) ไม่ถูกทำลาย */
+  | { do: 'noDestroyChosenThisTurn'; filter: CardFilter }
+  /** ในเทิร์นนี้ สปิริตทั้งหมดของคู่แข่งถือว่าเป็น Lv1 */
+  | { do: 'opponentLevelOneThisTurn' }
+  /** ในเทิร์นนี้ คู่แข่งโจมตี/ป้องกันได้ต่อเมื่อส่งคอร์ 1 เม็ดบนตัวนั้นไปวอยด์ */
+  | { do: 'battleCoreTaxThisTurn' }
+  /** ในการต่อสู้นี้ ถ้าสปิริตเผ่านี้ของเราที่โจมตีไม่ถูกป้องกัน: เจ็มกลายเป็นสีนี้ count เม็ด */
+  | { do: 'symbolIfUnblocked'; family: string; color: Color; count: number }
+  /** ในเทิร์นนี้ สปิริตของเรา 1 ตัว (เลือก): ทำความเสียหายไลฟ์คู่แข่งจากการโจมตี → ส่งคอร์ไลฟ์คู่แข่ง 1 เม็ดลงรีเสิร์ฟ */
+  | { do: 'lifeOnHitChosenThisTurn'; filter: CardFilter }
+  /** (engine ใช้ภายใน) มิคาเนะ: นำคอร์ไลฟ์ count เม็ดมาวางบนการ์ดนี้ */
+  | { do: 'lifeCoreOnto'; cardId: string; count: number }
+  /** (engine ใช้ภายใน) ส่งคอร์ n เม็ดในรีเสิร์ฟ/แทรชของคู่แข่งไป to */
+  | { do: 'opponentPileCores'; from: 'reserve' | 'trash'; n: number; to: 'reserve' | 'trash' | 'void' }
+  /** ส่งคอร์ count เม็ดบนการ์ดต้นเหตุ (subject) ของเราลงแทรชเรา (คอร์ปกติก่อน) */
+  | { do: 'subjectCoresToTrash'; count: number }
+  /** Bunshin: สามารถนำใบบนสุดเด็คเราไม่เกิน max ใบไปวางคว่ำบนฟิลด์ (วางคอร์จากรีเสิร์ฟใบละ 1 เม็ด) กลายเป็นสปิริตร่างแยก (n: engine ใช้ภายใน) */
+  | { do: 'bunshin'; max: number; n?: number }
+  /** หงายสปิริตร่างแยกของเรา 1 ตัว: เป็นการ์ดสปิริต = อัญเชิญไม่จ่ายคอสต์ / การ์ดอื่น = ทิ้ง */
+  | { do: 'flipClone' }
+  /** (engine ใช้ภายใน) ส่งโซลคอร์บนการ์ดนี้ลงแทรชของเจ้าของ */
+  | { do: 'cardSoulToTrash'; cardId: string }
+  /** (engine ใช้ภายใน) สิงโตควันม่วง: ทิ้งใบบนสุดเด็คเรา n ใบ */
+  | { do: 'millSelfN'; n: number }
+  /** คำสาปบงการชีพ: ถ้าเบิร์สนี้ถูกสั่งใช้โดย Catalyze ในเทิร์นนี้การ์ดนี้ถือว่าไร้สี */
+  | { do: 'colorlessIfCatalyzed' };
 
 /** ขอบเขตของ BP+ ถาวร */
 export type StaticScope =
@@ -891,7 +981,16 @@ export type TriggerEvent =
   /** สปิริตของเรา (subject) ถูกนำกลับขึ้นมือโดยเอฟเฟกต์ของคู่แข่ง */
   | 'allyBouncedByOpponent'
   /** (การ์ดในมือ) โซลคอร์ของคู่แข่งถูกนำไปวางที่แทรชของคู่แข่ง */
-  | 'oppSoulToTrash';
+  | 'oppSoulToTrash'
+  // ---------------- BS10
+  /** สปิริต/อัลติเมทของคู่แข่งสูญสลาย */
+  | 'oppDepleted'
+  /** เอฟเฟกต์ Soul Drive ของเราทำงาน (ทำงานหลังเอฟเฟกต์นั้น) */
+  | 'allySoulDrive'
+  /** จบการต่อสู้ของสปิริต/อัลติเมทของเรา (subject = ตัวที่ต่อสู้ ยังอยู่บนสนาม) */
+  | 'allyBattleEnd'
+  /** (การ์ดในมือ) คู่แข่งได้คอร์จากวอยด์ (ไม่นับคอร์สเต็ป) */
+  | 'oppVoidGain';
 
 /** เงื่อนไขของสปิริตที่ทำให้ trigger แบบ ally* ทำงาน */
 export interface SubjectFilter {
@@ -1018,6 +1117,10 @@ export type Ability =
       battle?: true;
       /** ไม่ถาม: ทำงานเองเมื่อเงื่อนไขครบ */
       auto?: true;
+      /** BS10 มิคาเนะ: จ่ายด้วยการนำคอร์ไลฟ์ N เม็ดมาวางบนการ์ดนี้ */
+      life?: number;
+      /** BS10 นาเดชิโกะ: กลับขึ้นมือแทนการถูกทำลาย */
+      toHand?: true;
       if?: Condition;
     }
   /** "ถ้าเรามี <name> อยู่, การลดคอสต์ทั้งหมดของการ์ดนี้ถือว่าลดจนครบแล้ว" */
@@ -1252,7 +1355,7 @@ export type Ability =
   | { kind: 'noLifeFromVoid'; source: number; levels: number[] }
   // ---------------- BS09
   /** ถ้าเงื่อนไขจริง สปิริตนี้ได้รับเผ่านี้ */
-  | { kind: 'familyAlso'; source: number; levels: number[]; if?: Condition; family: string }
+  | { kind: 'familyAlso'; source: number; levels: number[]; if?: Condition; family: string; /** BS10: การ์ดของเราที่ตรงตัวกรองได้รับแทน (ไม่ใช่ตัวการ์ดนี้) */ allies?: CardFilter }
   /** การ์ดของเราที่ตรงตัวกรอง ใช้โซลคอร์ร่วมจ่ายคอสต์อัญเชิญ เพื่ออัญเชิญโดยไม่สนเงื่อนไข (《เงื่อนไขอัญเชิญ》) ได้ */
   | { kind: 'ignoreSummonCondition'; source: number; levels: number[]; filter: CardFilter }
   /** [เอฟเฟกต์ทำลายคอสต์] (ทำลายคอสต์ไม่เกิน N) ของสปิริต/อัลติเมทของเราที่ตรงตัวกรอง ทำลายได้เพิ่ม +amount คอสต์ */
@@ -1268,7 +1371,20 @@ export type Ability =
   /** แอทแท็คสเต็ปของคู่แข่ง: คู่แข่งโจมตีได้ต่อเมื่อส่งคอร์ cores เม็ดบนตัวที่สั่งโจมตีลงแทรช */
   | { kind: 'attackTax'; source: number; levels: number[]; cores: number }
   /** แอทแท็คสเต็ปของเรา: คู่แข่งจะใช้งานการ์ดเมจิค/สั่งใช้เบิร์สได้ต่อเมื่อจ่ายคอสต์เพิ่ม amount (จินเบร์) */
-  | { kind: 'magicBurstTax'; source: number; levels: number[]; if?: Condition; amount: number };
+  | { kind: 'magicBurstTax'; source: number; levels: number[]; if?: Condition; amount: number }
+  // ---------------- BS10
+  /** แอทแท็คสเต็ปของผู้เล่นทุกคน: เบิร์สของเราถูกทิ้งไม่ได้ */
+  | { kind: 'burstProtect'; source: number; levels: number[] }
+  /** แอทแท็คสเต็ปของผู้เล่นทุกคน: สปิริตทั้งหมดของคู่แข่งที่ต่อสู้อยู่ BP+amount (ลบ = ลด) */
+  | { kind: 'oppBattleBp'; source: number; levels: number[]; amount: number }
+  /** สิงโตควันม่วง: เมื่ออัญเชิญการ์ดนี้ (จากมือ) ทิ้งใบบนสุดเด็คเราได้ไม่เกิน max ใบ ใบละ คอสต์ -1 */
+  | { kind: 'millCostReduce'; source: number; max: number }
+  /** ผู้เล่นทุกคน: อัญเชิญการ์ดสปิริต/เบรฟที่ไม่ใช่สีม่วงโดยเอฟเฟกต์ ต้องจ่ายคอสต์เพิ่ม cost */
+  | { kind: 'effectSummonTax'; source: number; levels: number[]; cost: number }
+  /** โฮเนะสุมิ: เอฟเฟกต์ "จบแอทแท็คสเต็ป" ของเมจิคคู่แข่ง → ส่งโซลคอร์บนการ์ดนี้ลงแทรช = ไร้ผล ถ้าคู่แข่งไม่จ่ายเพิ่ม cost */
+  | { kind: 'counterEndAttackStep'; source: number; levels: number[]; cost: number }
+  /** อิกคาคุ Lv3: เบิร์สที่ถูกทิ้งโดยเอฟเฟกต์ของสปิริตนี้ → สั่งใช้เอฟเฟกต์เบิร์สนั้นได้ (ห้ามอัญเชิญ/วาง/จ่ายแฟลช) */
+  | { kind: 'useDiscardedBurst'; source: number; levels: number[] };
 
 /** สคริปต์ของการ์ดหนึ่งใบ เรียงตาม effects (null = ยังไม่รองรับ, array = บรรทัดเดียวมีหลายความสามารถ) */
 export type CardScript = (DistributiveOmit<Ability, 'source'> | DistributiveOmit<Ability, 'source'>[] | null)[];

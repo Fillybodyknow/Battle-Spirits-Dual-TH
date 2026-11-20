@@ -382,7 +382,7 @@ export function canSelectCore(s: GameState, evolveCard: string | null, coreId: s
   // อัญเชิญด้วยเอฟเฟกต์: Core ในรีเสิร์ฟ หรือบนการ์ดในสนามของผู้เลือก
   // เบรฟที่คงอยู่หลังร่างต้นออกจากสนาม: วาง Core จากรีเสิร์ฟเท่านั้น (กติกา 04 ข้อ 2.2)
   if (s.choice?.kind === 'placeCores')
-    return core.owner === s.choice.player && loc.player === s.choice.player && (loc.area === 'reserve' || (loc.area === 'card' && !(s.choice.step.do === 'placeCores' && s.choice.step.noSummon)));
+    return core.owner === s.choice.player && loc.player === s.choice.player && (loc.area === 'reserve' || (loc.area === 'card' && !(s.choice.step.do === 'placeCores' && (s.choice.step.noSummon || s.choice.step.clone))));
   return canMoveCore(s, coreId);
 }
 

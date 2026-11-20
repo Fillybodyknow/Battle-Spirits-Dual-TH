@@ -94,9 +94,15 @@ export function endGame(ctx: Ctx, winner: PlayerId, reason: EndReason): void {
  * การ์ดออกจากสนามไป Trash หรือมือ: Core บนการ์ดกลับ Reserve ของเจ้าของ
  * Brave ที่ร่วมร่างอยู่: เจ้าของเลือกให้อยู่บนสนามต่อหรือลง Trash (เข้าคิวเอฟเฟกต์)
  */
-export function leaveField(ctx: Ctx, cardId: string, to: 'trash' | 'hand'): void {
+export function leaveField(ctx: Ctx, cardId: string, to: 'trash' | 'hand', opts: { cloneToHand?: boolean } = {}): 'trash' | 'hand' {
   const card = ctx.s.cards[cardId]!;
   const p = ctx.s.players[card.owner];
+  // Bunshin: สปิริตร่างแยกออกจากสนาม = กลับเป็นการ์ดจริง · จะกลับขึ้นมือ/เข้าเด็ค = ถูกทิ้งแทน (กติกา 14 Bunshin ข้อ 2)
+  if (card.realCardNo) {
+    card.cardNo = card.realCardNo;
+    delete card.realCardNo;
+    if (!opts.cloneToHand) to = 'trash';
+  }
   const hostState = card.state;
   removeFrom(p.field, cardId);
   // ออกจากสนามระหว่างการต่อสู้: ถ้าถูกอัญเชิญกลับมา (เช่น ชิคิงามิออฟเดอะเดด) ถือเป็นการ์ดใหม่ ไม่ได้โจมตี/ป้องกันอยู่
@@ -128,12 +134,23 @@ export function leaveField(ctx: Ctx, cardId: string, to: 'trash' | 'hand'): void
     });
   }
   card.braves = [];
+  return to;
 }
 
 export function sendToTrash(ctx: Ctx, cardId: string): void {
   const battle = ctx.s.battle;
   const gone = !!battle?.lifeOnBattlerGone && battle.blockers.includes(cardId) && ctx.s.players[ctx.s.cards[cardId]!.owner].field.includes(cardId);
+  // BS10 บลานโบอา: ตัวที่ต่อสู้กับสปิริตนี้ถูกทำลาย/สูญสลาย → สปิริตนี้ฟื้นสภาพ
+  const fighting = battle && ctx.s.players[ctx.s.cards[cardId]!.owner].field.includes(cardId) && (battle.attackerId === cardId || battle.blockers.includes(cardId));
+  const refresh = fighting
+    ? (battle!.refreshOnGone ?? []).filter((id) => id !== cardId && ctx.s.cards[id] && ctx.s.cards[id]!.owner !== ctx.s.cards[cardId]!.owner && ctx.s.players[ctx.s.cards[id]!.owner].field.includes(id))
+    : [];
   leaveField(ctx, cardId, 'trash');
+  for (const id of refresh) {
+    if (ctx.s.cards[id]!.state !== 'exhausted') continue;
+    ctx.s.cards[id]!.state = 'refresh';
+    emit(ctx, { type: 'cardRefreshed', cardId: id });
+  }
   // "เมื่อสปิริตของคู่แข่งที่ต่อสู้อยู่ถูกทำลาย/สูญสลาย" (ดุ๊คคิงเทารอส)
   if (gone && battle?.lifeOnBattlerGone && !ctx.s.winner) {
     const owner = ctx.s.cards[cardId]!.owner;

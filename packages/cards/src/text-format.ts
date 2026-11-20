@@ -420,9 +420,10 @@ function parseEffectLine(line: Line, type: CardDefInput['type'] | undefined, err
   // หรือ "สปิริตนี้/การ์ดสปิริตนี้ถือว่ามีคำว่า ... ในชื่อการ์ดด้วย"
   // "เบรฟนี้/การ์ดเบรฟนี้ จะไม่ถูกนับ..." · "Immortality: ..." (อัญเชิญจากแทรชได้เมื่อ...) · "Kagemusha: ..." (อัญเชิญจากมือเมื่อสปิริตเราตกเป็นเป้า)
   // "เมื่อ "<ชื่อ>" ของเรา..., จะสามารถอัญเชิญการ์ดสปิริตนี้ในแทรช..." (BS09 เซ็นคิ: ทำงานขณะอยู่ในแทรช)
-  if (/^(การ์ด|ถ้า|สปิริตนี้|เบรฟนี้|Immortality\b|Kagemusha\b|เมื่อ\s*")/.test(rest)) return { text: rest };
+  if (/^(การ์ด|ถ้า|สปิริตนี้|เบรฟนี้|Immortality\b|Kagemusha\b|เมื่อ\s*"|เมื่อทำการอัญเชิญการ์ด)/.test(rest)) return { text: rest };
   // การ์ดสปิริตที่ "ถือว่าเป็นการ์ดเมจิคด้วย": "Flash (เอฟเฟกต์นี้, ถ้าอยู่บนฟิลด์, จะใช้งานไม่ได้): ..." = ใช้จากมือแบบ Magic [Flash]
-  const asMagic = rest.match(/^Flash\s*\([^)]*\)\s*:\s*/);
+  // BS10: "[Flash] (เอฟเฟกต์นี้, ถ้าอยู่บนฟิลด์, จะใช้งานไม่ได้) ..." แบบมีวงเล็บเหลี่ยม ไม่มี ":"
+  const asMagic = rest.match(/^Flash\s*\([^)]*\)\s*:\s*/) ?? (type !== 'magic' ? rest.match(/^\[Flash\]\s*\([^)]*\)\s*:?\s*/) : null);
   if (asMagic) return { timing: 'flash', text: rest.slice(asMagic[0].length) };
 
   // "Flash [Quick] : ..." / "Flash Quick: ..." / "Flash Soul Quick ..." (คีย์เวิร์ดภาษาอังกฤษ มีหรือไม่มีวงเล็บก็ได้)

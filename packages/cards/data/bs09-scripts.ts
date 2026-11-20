@@ -134,7 +134,7 @@ export const BS09_SCRIPTS: Record<string, CardScript> = {
       kind: 'trigger',
       on: 'attack',
       levels: [2],
-      steps: [when({ allyHas: { nameIncludes: ['หกขุนศึกเซ็นโงคุ มุโดว'] } }, [{ do: 'removeOpponentCores', count: 3, to: 'trash', filter: { types: [...SPIRITISH!, 'nexus'] } }])],
+      steps: [when({ allyHas: { nameIncludes: ['หกขุนศึกเซ็นโงคุ มุโดว'] } }, [{ do: 'removeOpponentCores', count: 3, to: 'trash', filter: { types: [...SPIRITISH!, 'nexus'] }, withReserve: true }])],
     },
   ],
   'จอมมารสวรรค์ ก็อด-เซคส์ -รูปแบบที่ศูนย์-': [
@@ -147,8 +147,19 @@ export const BS09_SCRIPTS: Record<string, CardScript> = {
   ],
   'เหล่าคนใกล้ชิด อุซชน': [
     SENGOKU6,
-    // ยังไม่รองรับ: "เมื่อจบการต่อสู้ของสปิริต/อัลติเมทสีเขียวของเรา" (การ์ดที่อ้างถึง "หกขุนศึกเซ็นโงคุ เทนเซย์" ยังไม่มีในเกม)
-    null,
+    {
+      kind: 'trigger',
+      on: 'allyBattleEnd',
+      levels: [2],
+      attackStepOnly: true,
+      if: { allyHas: { nameIncludes: ['หกขุนศึกเซ็นโงคุ เทนเซย์'] } },
+      subject: { color: 'green', types: SPIRITISH },
+      steps: [
+        may('ส่งคอร์ 3 เม็ดบนสปิริต/อัลติเมทนั้นลงแทรช เพื่อฟื้นสภาพ', [{ do: 'subjectCoresToTrash', count: 3 }, { do: 'refreshSubject' }], {
+          subjectIs: { state: 'exhausted', minCores: 4 },
+        }),
+      ],
+    },
   ],
   'ข้ารับใช้ผู้ภักดี เอโสะวูล์ฟ': [
     { kind: 'trigger', on: 'allyAttack', levels: ALL3, ownTurnOnly: true, attackStepOnly: true, subject: { family: 'ศาสตราสมิง' }, steps: [{ do: 'voidCore', to: 'reserve', count: 1 }] },
@@ -223,8 +234,8 @@ export const BS09_SCRIPTS: Record<string, CardScript> = {
   'ขุนศึกมังกรทะเล อิกคาคุ': [
     { kind: 'trigger', on: 'attack', levels: ALL3, steps: [{ do: 'destroyChosenOpponent', filter: { types: SPIRIT, maxCost: 4 } }] },
     { kind: 'trigger', on: 'attack', levels: L23, steps: [{ do: 'peekOpponentBurst', filter: { types: ['spirit', 'magic'] } }] },
-    // ยังไม่รองรับ: สั่งใช้เอฟเฟกต์เบิร์สของเบิร์สที่ถูกทิ้ง (โดยไม่อัญเชิญ/วาง)
-    null,
+    // ทำงานใน peekOpponentBurst (Lv2) ตอนทิ้งเบิร์สได้
+    { kind: 'useDiscardedBurst', levels: [3] },
   ],
   ดาร์ควิช: [
     { kind: 'staticBp', levels: ALL3, if: soulOnSelf, scope: { ownFamily: 'มารต้องสาป' }, amount: 5000 },
@@ -466,8 +477,8 @@ export const BS09_SCRIPTS: Record<string, CardScript> = {
     },
   ],
   คำสาปบงการชีพ: [
-    // "ถ้าเบิร์สนี้ถูกสั่งใช้โดย Catalyze การ์ดเมจิคนี้ถือว่าไร้สี": ยังไม่รองรับ (มีผลกับชีลด์ตามสีเท่านั้น)
-    { kind: 'burst', soul: true, on: 'afterOpponentAttack', steps: [{ do: 'removeOpponentCores', count: 1, perPick: 2, filter: { types: SPIRIT } }, { do: 'payToUseFlash' }] },
+    // "ถ้าเบิร์สนี้ถูกสั่งใช้โดย Catalyze การ์ดเมจิคนี้ถือว่าไร้สี" (ชีลด์ตามสีกันไม่ได้)
+    { kind: 'burst', soul: true, on: 'afterOpponentAttack', steps: [{ do: 'colorlessIfCatalyzed' }, { do: 'removeOpponentCores', count: 1, perPick: 2, filter: { types: SPIRIT } }, { do: 'payToUseFlash' }] },
     {
       kind: 'magic',
       timing: 'flash',

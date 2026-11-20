@@ -27,6 +27,8 @@ export function getPlayerView(state: GameState, viewer: PlayerId): PlayerView {
   const cards: Record<string, CardView> = {};
   for (const [id, card] of Object.entries(state.cards)) {
     cards[id] = { ...card, cores: [...card.cores], cardNo: hidden.has(id) ? null : card.cardNo };
+    // สปิริตร่างแยก: เจ้าของดูการ์ดที่คว่ำอยู่ได้ (กติกา 14 Bunshin ข้อ 3) คู่แข่งไม่เห็น
+    if (card.realCardNo && card.owner !== viewer) delete cards[id]!.realCardNo;
   }
 
   const { rng: _rng, cards: _cards, ...rest } = structuredClone(state);

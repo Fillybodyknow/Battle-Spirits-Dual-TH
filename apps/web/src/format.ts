@@ -84,6 +84,10 @@ export function formatEvent(e: GameEvent, s: GameState): string | null {
       return `${playerLabel(e.player)} ใช้ Magic ${name(e.cardId)} [${e.timing === 'main' ? 'Main' : 'Flash'}] (จ่าย ${e.paid})`;
     case 'coresMoved':
       return `${playerLabel(e.player)} ย้าย Core ${e.count} ดวง`;
+    case 'bunshin':
+      return `${playerLabel(e.player)} Bunshin: นำใบบนสุดเด็ค ${e.cardIds.length} ใบมาเป็นสปิริตร่างแยก`;
+    case 'cloneDiscarded':
+      return `สปิริตร่างแยกของ${playerLabel(e.player)}ถูกทิ้ง (${name(e.cardId)})`;
     case 'burstSet':
       return `${playerLabel(e.player)} เซ็ท Burst${e.replacedCardId ? ' (ใบเก่าลง Trash)' : ''}`;
     case 'burstDiscarded':

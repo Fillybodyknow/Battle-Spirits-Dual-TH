@@ -4,6 +4,8 @@ import { destroyCard, enqueue, fireTriggers, refreshByEffect, newBatch, queueExh
 import { nextRandom, shuffle } from './rng';
 import {
   attackTaxFor,
+  coreTaxed,
+  symbolsZeroCard,
   magicBanned,
   magicBurstTax,
   ignoreSummonConditionSource,
@@ -416,7 +418,7 @@ function cardInHand(ctx: Ctx, player: PlayerId, cardId: string): CardDef {
 type Handler<T extends Action['type']> = (ctx: Ctx, action: Extract<Action, { type: T }>) => void;
 
 const handlers: { [T in Action['type']]: Handler<T> } = {
-  summon(ctx, { player, cardId, payment, placement, braveOnto }) {
+  summon(ctx, { player, cardId, payment, placement, braveOnto, mill }) {
     const { s, db } = ctx;
     const flash = s.battle?.flash;
     if (!flash) requireMain(ctx, player);
@@ -496,11 +498,22 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
       paid = 1;
       placed = placement;
     } else {
+      // BS10 สิงโตควันม่วง: ทิ้งใบบนสุดเด็คเราไม่เกิน N ใบ ใบละคอสต์ -1
+      let milled = 0;
+      if (mill && mill > 0) {
+        const ab = def.abilities.find((a) => a.kind === 'millCostReduce');
+        if (ab?.kind !== 'millCostReduce') fail('NO_SUCH_EFFECT', 'การ์ดนี้ทิ้งเด็คเพื่อลดคอสต์ไม่ได้');
+        const ids = p.deck.slice(0, Math.min(mill, ab.max));
+        for (const id of ids) removeFrom(p.deck, id);
+        p.trashCards.push(...ids);
+        milled = ids.length;
+        if (ids.length > 0) emit(ctx, { type: 'milled', player, cardIds: ids });
+      }
       // ฮาคุโดวโทคาเงะ: สัญลักษณ์บนสนามลดคอสต์ได้แต่ถูกห้าม = จ่ายแพงขึ้นจริง → เรืองแสงก่อนการ์ดลงสนาม
       emitStatic(ctx, noReductionBlocked(s, db, player, def, baseCost(s, db, cardId)));
       ({ paid, placed } = payCost(ctx, player, def, payment, placement, {
         reserveOnly: !!flash && !trashRule && !quickAnyCores(s, db, player),
-        baseCost: baseCost(s, db, cardId),
+        baseCost: Math.max(0, baseCost(s, db, cardId) - milled),
         minPlacement: summonMinCores(s, db, cardId),
       }));
     }
@@ -617,7 +630,9 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
       const added = s.queue.splice(at + 1);
       s.queue.splice(at, 0, ...added);
     }
-    queueMagicUsedTriggers(ctx, player, cardId, !fromShown);
+    // BS10 เฟรกรันส์รีเวอร์: จดเมจิคที่ใช้งานในการต่อสู้นี้
+    if (s.battle) s.battleMagic = [...(s.battleMagic ?? []), { cardId, player }];
+    queueMagicUsedTriggers(ctx, player, cardId, !fromShown, paidWithSoul);
     runQueue(ctx);
   },
 
@@ -709,6 +724,10 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
         return;
       }
     }
+    if (coreTaxed(s, player) && !payCoreTax(ctx, attackerId)) {
+      runQueue(ctx);
+      return;
+    }
     beginAttack(ctx, player, attackerId, fa);
   },
 
@@ -747,6 +766,10 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
       fail('CANNOT_BLOCK', battle.consecutiveBlade ? 'ต้องป้องกันด้วยสปิริตที่ไม่มีชีลด์ให้ครบก่อน ([Consecutive Blade])' : 'ป้องกันด้วยการ์ดนี้ไม่ได้');
     }
 
+    if (coreTaxed(ctx.s, player) && !payCoreTax(ctx, blockerId)) {
+      runQueue(ctx);
+      return;
+    }
     payBlockTax(ctx, player, battle.attackerId);
     card.state = battle.exhaustedBlock ? 'refresh' : 'exhausted';
     battle.blockers.push(blockerId);
@@ -1070,6 +1093,19 @@ function requireBlockStep(ctx: Ctx, player: PlayerId) {
   return battle;
 }
 
+/** BS10 ผ่าวิบัติไร้ผนึก: ส่งคอร์ปกติ 1 เม็ดบนตัวที่โจมตี/ป้องกันไปวอยด์ (โซลคอร์ไปวอยด์ไม่ได้) · คืน false ถ้าตัวนั้นสูญสลาย */
+function payCoreTax(ctx: Ctx, cardId: string): boolean {
+  const { s } = ctx;
+  const card = s.cards[cardId]!;
+  const core = card.cores.find((c) => !s.cores[c]!.isSoul);
+  if (!core) return true;
+  card.cores = card.cores.filter((c) => c !== core);
+  delete s.cores[core];
+  emit(ctx, { type: 'coresRemoved', cardId, count: 1, to: 'void' });
+  checkDepletion(ctx);
+  return s.players[card.owner].field.includes(cardId);
+}
+
 /** ประกาศโจมตีต่อหลังผ่านเงื่อนไข (และจ่ายคอร์ของสุสานของจักรพรรดิมารแล้ว): เสื่อมสภาพผู้โจมตี + เริ่มการต่อสู้ */
 function beginAttack(ctx: Ctx, player: PlayerId, attackerId: string, fa: { attackerId: string; holderId: string } | null | undefined): void {
   const { s } = ctx;
@@ -1095,6 +1131,9 @@ function beginAttack(ctx: Ctx, player: PlayerId, attackerId: string, fa: { attac
       s.battle.levelBlock = lb;
       s.battle.maxBlockers = 99;
     }
+    s.battleMagic = [];
+    // BS10 เฮียคุเตะ: ในเทิร์นนี้สปิริตที่ได้รับ "[เมื่อสปิริตนี้โจมตี] คู่แข่งสั่งใช้เบิร์สไม่ได้"
+    if ((s.attackNoBurstGrants ?? []).some((g) => g.player === player && g.turn === s.turn && matchesFilter(s, ctx.db, attackerId, g.filter))) s.battle.noBurst = opponentOf(player);
     emit(ctx, { type: 'attackDeclared', attackerId });
     // อิจิโกะฮิโทฟุริ: ผู้ร่วมร่างที่ระบุไว้เข้าป้องกันเองถ้าป้องกันได้
     if (fa) {
@@ -1146,11 +1185,15 @@ function resolveBattle(ctx: Ctx): void {
   let lostLife = false;
   const blockers = battle.blockers.filter((id) => inBattle(s, id));
   if (blockers.length === 0) {
+    // BS10 เพลิงจิ้งจอกอิมแพ็ค: สปิริตเผ่าที่ระบุของผู้ใช้ไม่ถูกป้องกัน → เจ็มกลายเป็นสีนั้น N เม็ด
+    const siu = battle.symbolIfUnblocked;
+    if (siu && siu.player === attacker.owner && attackerDef.family.includes(siu.family)) battle.symbolOverride = { cardId: attacker.id, color: siu.color as never, count: siu.count };
     const extra = Object.values(extraSymbols(s, db, attacker.id)).reduce<number>((n, v) => n + (v ?? 0), 0);
     const override = battle.symbolOverride?.cardId === attacker.id ? battle.symbolOverride.count : null;
     let dmg = override ?? symbolCount(attackerDef) + braveSymbols(ctx, attacker.id) + extra;
     // ทิพบอล: ในเทิร์นนี้การ์ดที่มีเจ็มตั้งแต่ N เม็ดถือว่ามีเจ็ม 0
     if (s.symbolsZero?.turn === s.turn && dmg >= s.symbolsZero.minSymbols) dmg = 0;
+    if (symbolsZeroCard(s, attacker.id)) dmg = 0;
     // ลิมิเต็ดบาเรีย: ไลฟ์ไม่ได้รับความเสียหายจากการโจมตีของสปิริตคอสต์ตั้งแต่ N
     if ((s.lifeShields ?? []).some((l) => l.player === defender && l.turn === s.turn && fieldCost(s, db, attacker.id) >= l.minCost)) dmg = 0;
     // ลองเคพ: เสียหายได้ 1 เม็ดต่อสปิริต 1 ตัวต่อเทิร์น
@@ -1168,8 +1211,10 @@ function resolveBattle(ctx: Ctx): void {
     }
   } else {
     // เทียบ BP กับผู้ป้องกันทีละตัว โดยใช้ BP ก่อนมีใครถูกทำลาย (ต่อสู้พร้อมกัน)
-    const bpA = currentBp(s, db, attacker.id);
-    const results = blockers.map((id) => ({ id, bp: currentBp(s, db, id) }));
+    // BS10 เจเนอรัล เซโตะไดโช: ในการต่อสู้นี้เทียบ Lv แทน BP
+    const power = (id: string) => (battle.compareLevel ? cardLevel(s, db, id) : currentBp(s, db, id));
+    const bpA = power(attacker.id);
+    const results = blockers.map((id) => ({ id, bp: power(id) }));
     const destroyedBlockers = results.filter((r) => r.bp <= bpA).map((r) => r.id);
     const attackerLoses = results.some((r) => bpA <= r.bp);
     for (const id of destroyedBlockers) destroyCard(ctx, id, attacker.owner, { bySource: attacker.id });
@@ -1209,6 +1254,9 @@ function resolveBattle(ctx: Ctx): void {
 
   // เอฟเฟกต์ "เมื่อการโจมตีทำให้คู่แข่งเสียไลฟ์" (ผู้โจมตียังอยู่บนสนาม)
   if (lostLife && inBattle(s, attacker.id)) {
+    if ((s.hitLifeTurn ?? []).some((t) => t.cardId === attacker.id && t.turn === s.turn)) {
+      enqueue(ctx, { controller: attacker.owner, sourceId: attacker.id, steps: [{ do: 'opponentLifeToReserve', count: 1 }], paidWithSoul: false, trashWhenDone: false, announce: false });
+    }
     const batch = newBatch(ctx);
     queueTriggers(ctx, attacker.id, 'attackHitLife', batch);
     for (const id of [...s.players[attacker.owner].field]) queueTriggers(ctx, id, 'allyAttackHitLife', batch, { subject: attacker.id });
@@ -1230,8 +1278,21 @@ function braveSymbols(ctx: Ctx, cardId: string): number {
 
 function endBattle(ctx: Ctx): void {
   const battle = ctx.s.battle!;
+  // BS09 อุซชน: "เมื่อจบการต่อสู้ของสปิริต/อัลติเมทของเรา" (ตัวที่ต่อสู้และยังอยู่บนสนาม)
+  let ended = false;
+  if (!battle.endTriggersDone) {
+    battle.endTriggersDone = true;
+    const batch = newBatch(ctx);
+    const before = ctx.s.queue.length;
+    for (const id of [battle.attackerId, ...battle.blockers]) {
+      const c = ctx.s.cards[id];
+      if (!c || !inBattle(ctx.s, id)) continue;
+      for (const f of [...ctx.s.players[c.owner].field]) queueTriggers(ctx, f, 'allyBattleEnd', batch, { subject: id });
+    }
+    ended = ctx.s.queue.length > before;
+  }
   // เอฟเฟกต์ "เมื่อจบการต่อสู้นี้" (ไฮวินด์)
-  if (battle.endEffects.length > 0) {
+  if (battle.endEffects.length > 0 || ended) {
     ctx.s.queue.push(...battle.endEffects);
     battle.endEffects = [];
     runQueue(ctx);

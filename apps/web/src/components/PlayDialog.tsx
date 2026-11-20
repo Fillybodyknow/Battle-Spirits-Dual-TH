@@ -90,7 +90,11 @@ function PlayDialogInner({ cardId, kind, timing, braveOnto }: { cardId: string; 
   // อัลติเมทที่เงื่อนไขอัญเชิญไม่ครบ แต่อัญเชิญได้เพราะใช้โซลคอร์ร่วมจ่าย (เหล่าคนใกล้ชิด)
   const ignoreCond = kind === 'summon' && def.type === 'ultimate' && !summonConditionOk(state, db, cardId, { paidWithSoul: false });
   const mustSoul = (fromTrash && !!trashSummonRule(state, db, player, cardId)?.soulPayment) || ignoreCond;
-  const base = baseCost(state, db, cardId);
+  // BS10 สิงโตควันม่วง: ทิ้งใบบนสุดเด็คเราไม่เกิน N ใบ ใบละคอสต์ -1
+  const millAb = kind === 'summon' && !braveOnto ? def.abilities.find((a) => a.kind === 'millCostReduce') : undefined;
+  const millMax = millAb?.kind === 'millCostReduce' ? Math.min(millAb.max, p.deck.length) : 0;
+  const [mill, setMill] = useState(0);
+  const base = Math.max(0, baseCost(state, db, cardId) - Math.min(mill, millMax));
   // จินเบร์: แอทแท็คสเต็ปของคู่แข่ง ใช้เมจิคต้องจ่ายคอสต์เพิ่ม
   const tax = kind === 'useMagic' ? magicBurstTax(state, db, player).amount : 0;
   const cost = soulQuick ? 0 : payableCost(state, db, player, def, base) + tax;
@@ -169,6 +173,7 @@ function PlayDialogInner({ cardId, kind, timing, braveOnto }: { cardId: string; 
     if (kind === 'useMagic') dispatch({ type: 'useMagic', player, cardId, payment, timing });
     else if (braveOnto) dispatch({ type: 'summon', player, cardId, payment, placement: [], braveOnto });
     else if (soulQuick && reserveSoul) dispatch({ type: 'summon', player, cardId, payment: [reserveSoul], placement });
+    else if (kind === 'summon' && mill > 0 && millMax > 0) dispatch({ type: 'summon', player, cardId, payment, placement, mill: Math.min(mill, millMax) });
     else dispatch({ type: kind, player, cardId, payment, placement });
   };
 
@@ -219,6 +224,22 @@ function PlayDialogInner({ cardId, kind, timing, braveOnto }: { cardId: string; 
               </>
             )}
           </div>
+
+          {millMax > 0 && (
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="text-[11px] text-slate-400">ทิ้งเด็คลดคอสต์</span>
+              {Array.from({ length: millMax + 1 }, (_, n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setMill(n)}
+                  className={`rounded px-1.5 py-0.5 text-[11px] font-black transition ${n === mill ? 'bg-violet-400 text-slate-950' : 'bg-slate-700 text-slate-200 hover:bg-slate-600'}`}
+                >
+                  {n === 0 ? 'ไม่ทิ้ง' : `${n} ใบ`}
+                </button>
+              ))}
+            </div>
+          )}
 
           {!manual && allowPlace && (
             <div className="flex flex-wrap gap-1">

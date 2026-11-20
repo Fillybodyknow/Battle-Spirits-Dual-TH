@@ -53,6 +53,8 @@ export function braveFits(braveDef: CardDef, hostDef: CardDef): boolean {
   const c = braveDef.braveCondition;
   return (
     hostDef.type === 'spirit' &&
+    // กติกา 14 Bunshin ข้อ 1: สปิริตร่างแยกรวมร่างไม่ได้
+    hostDef.cardNo !== 'SMP-BUNSHIN' &&
     hostDef.cost >= (c?.minCost ?? 0) &&
     (!c?.family || hostDef.family.includes(c.family)) &&
     // BS09 ไดกิว-อาร์มส์: ร่วมร่างกับสปิริตที่ไม่มีข้อความเอฟเฟกต์
@@ -112,6 +114,8 @@ export function cardLevel(state: GameState, db: CardDatabase, cardId: string): n
     }
     // BS09 โอวาริโนะเซได / วัดอรุณ: สปิริตของเราที่ตรงตัวกรองถือว่าเป็น Lv สูงสุด
     if (state.players[card.owner].field.includes(cardId) && maxLevelAllySource(state, db, cardId)) return def.levels.at(-1)?.level ?? level;
+    // BS10 สวนลอยฟ้าของเหล่าเจ้าหญิง: ในเทิร์นนี้สปิริตทั้งหมดของผู้เล่นนี้ถือว่าเป็น Lv1
+    if ((def.type === 'spirit' || def.type === 'brave') && (state.levelOneTurn ?? []).some((t) => t.player === card.owner && t.turn === state.turn)) return 1;
   }
   return level;
 }
@@ -376,6 +380,11 @@ export function conditionHolds(
   // ---------------- BS09
   if ('any' in cond) return cond.any.some((c) => conditionHolds(state, sourceId, c, paidWithSoul, catalyzed, db));
   if ('trashAtLeast' in cond) return owner.trashCards.length >= cond.trashAtLeast;
+  // ---------------- BS10
+  if ('ownGemColor' in cond) return !!db && ownGemColors(state, db, card.owner).has(cond.ownGemColor);
+  if ('trashCoreAtLeast' in cond) return owner.trashCores.filter((c) => !state.cores[c]!.isSoul).length >= cond.trashCoreAtLeast;
+  // ตรวจได้เฉพาะตอนประมวลผลเอฟเฟกต์ในคิว (ดู holds ใน effects.ts)
+  if ('subjectIs' in cond || 'lifeLostByOpponentEffect' in cond) return false;
   if ('ownGemColorsAtLeast' in cond) return !!db && gemColorCount(state, db, card.owner) >= cond.ownGemColorsAtLeast;
   if ('selfIs' in cond) return !!db && matchesFilter(state, db, sourceId, cond.selfIs);
   if ('onceFree' in cond) return !(state.usedOncePerTurn ?? []).includes(`${sourceId}:${cond.onceFree}`);
@@ -428,7 +437,7 @@ export function currentBp(state: GameState, db: CardDatabase, cardId: string): n
             : 'ownNamed' in scope
               ? isSpirit && nameHas(def, scope.ownNamed)
               : 'own' in scope
-                ? isSpirit && matchesFilter(state, db, cardId, scope.own)
+                ? (isSpirit || (def.type === 'ultimate' && !!scope.own.types?.includes('ultimate'))) && matchesFilter(state, db, cardId, scope.own)
                 : 'sameTeam' in scope
                   ? isSpirit && (holder === cardId || shareTeam(db.get(state.cards[holder]!.cardNo), def))
                   : isSpirit &&
@@ -437,6 +446,13 @@ export function currentBp(state: GameState, db: CardDatabase, cardId: string): n
                     (!scope.ownSpirits.soul || card.cores.some((x) => state.cores[x]!.isSoul));
       const perAllies = ab.perAllies ? ownerP.field.filter((x) => matchesFilter(state, db, x, ab.perAllies!)).length : 1;
       if (applies) bp += ab.amount * (ab.perSongs ? (ownerP.songs ?? []).length : 1) * perAllies;
+    }
+  }
+  // BS10 สวนลอยฟ้า Lv2: แอทแท็คสเต็ป สปิริตของคู่แข่งที่ต่อสู้อยู่ BP-N
+  if (state.phase === 'attack' && state.battle && (state.battle.attackerId === cardId || state.battle.blockers.includes(cardId)) && (def.type === 'spirit' || def.type === 'brave')) {
+    for (const src of staticSources(state, db, [card.owner === 'p1' ? 'p2' : 'p1'], 'oppBattleBp')) {
+      const ab = db.get(state.cards[src.cardId]!.cardNo).abilities.find((a) => a.kind === 'oppBattleBp' && a.source === src.source);
+      if (ab?.kind === 'oppBattleBp') bp += ab.amount;
     }
   }
   return Math.max(0, bp);
@@ -517,6 +533,8 @@ export function matchesFilter(state: GameState, db: CardDatabase, cardId: string
   if (filter.noEffectText && effectText(def).trim() !== '') return false;
   if (filter.notInBattle && state.battle && (state.battle.attackerId === cardId || state.battle.blockers.includes(cardId))) return false;
   // ---------------- BS09
+  if (filter.minCores !== undefined && card.cores.length < filter.minCores) return false;
+  if (filter.notColors && cardColors(state, db, cardId).some((c) => filter.notColors!.includes(c))) return false;
   if (filter.inBattle && !(state.battle && (state.battle.attackerId === cardId || state.battle.blockers.includes(cardId)))) return false;
   if (filter.highestBp) {
     const owner = state.players[card.owner];
@@ -531,9 +549,24 @@ export function matchesFilter(state: GameState, db: CardDatabase, cardId: string
 export function cardFamilies(state: GameState, db: CardDatabase, cardId: string): string[] {
   const card = state.cards[cardId]!;
   const def = db.get(card.cardNo);
-  if (!def.abilities.some((a) => a.kind === 'familyAlso') || !state.players[card.owner].field.includes(cardId) || effectsNegated(state, db, cardId)) return def.family;
+  if (!state.players[card.owner].field.includes(cardId)) return def.family;
+  // BS10 ไยบะโนะคามิ: การ์ดอื่นของเราให้เผ่ากับการ์ดที่ตรงตัวกรอง
+  const given: string[] = [];
+  for (const src of state.players[card.owner].field) {
+    if (src === cardId) continue;
+    const sdef = db.get(state.cards[src]!.cardNo);
+    if (!sdef.abilities.some((a) => a.kind === 'familyAlso' && a.allies)) continue;
+    if (effectsNegated(state, db, src)) continue;
+    const slv = levelOf(sdef, state.cards[src]!.cores.length - levelCostBoost(state, db, src));
+    for (const a of sdef.abilities) {
+      if (a.kind !== 'familyAlso' || !a.allies || !a.levels.includes(slv) || !conditionHolds(state, src, a.if, false, false, db)) continue;
+      if (def.type === a.allies.types?.[0] || (!a.allies.types && isSpiritLike(def))) given.push(a.family);
+    }
+  }
+  if (given.length) return [...new Set([...def.family, ...given])];
+  if (!def.abilities.some((a) => a.kind === 'familyAlso') || effectsNegated(state, db, cardId)) return def.family;
   const lv = levelOf(def, card.cores.length - levelCostBoost(state, db, cardId));
-  const extra = def.abilities.flatMap((a) => (a.kind === 'familyAlso' && a.levels.includes(lv) && conditionHolds(state, cardId, a.if, false, false, db) ? [a.family] : []));
+  const extra = def.abilities.flatMap((a) => (a.kind === 'familyAlso' && !a.allies && a.levels.includes(lv) && conditionHolds(state, cardId, a.if, false, false, db) ? [a.family] : []));
   return extra.length ? [...def.family, ...extra.filter((f) => !def.family.includes(f))] : def.family;
 }
 
@@ -697,7 +730,7 @@ export function fieldSymbols(
   const override = state.battle?.symbolOverride;
   // Brave ที่ร่วมร่าง: ผู้ร่วมร่างได้รับ gem symbol ของ Brave ด้วย
   for (const f of state.players[player].field) {
-    if (zeroed(f)) continue;
+    if (zeroed(f) || symbolsZeroCard(state, f)) continue;
     if (override?.cardId === f) {
       out[override.color as SymbolColor] = (out[override.color as SymbolColor] ?? 0) + override.count;
       continue;
@@ -890,7 +923,9 @@ export function effectBlocker(state: GameState, db: CardDatabase, sourceId: stri
   const srcType = db.get(hostCard.cardNo).type;
   // ในการต่อสู้นี้ผู้โจมตีถือว่าไร้สี (ไลท์นิ่ง-ชิออน): ชีลด์ตามสีกันไม่ได้
   const colorless = !!state.battle?.colorless && state.battle.attackerId === srcHost;
-  const srcColors = new Set(colorless ? [] : [hostCard, ...hostCard.braves.map((b) => state.cards[b]!)].flatMap((c) => db.get(c.cardNo).colors));
+  // คำสาปบงการชีพ (Catalyze): ในเทิร์นนี้การ์ดนี้ถือว่าไร้สี
+  const turnColorless = (state.colorlessTurn ?? []).some((t) => t.cardId === srcHost && t.turn === state.turn);
+  const srcColors = new Set(colorless || turnColorless ? [] : [hostCard, ...hostCard.braves.map((b) => state.cards[b]!)].flatMap((c) => db.get(c.cardNo).colors));
   // ฮิสะมารุ บัสเตอร์: ในการต่อสู้นี้ไม่รับผลเอฟเฟกต์เมจิคของคู่แข่ง
   if ((state.battle?.immune ?? []).some((im) => im.cardId === targetId && im.types.includes(srcType))) return 'battle';
   // BS09 เฟเธอร์บาเรีย: ในเทิร์นนี้ไม่รับเอฟเฟกต์ทั้งหมดของคู่แข่ง
@@ -1031,6 +1066,61 @@ export function magicBurstTax(state: GameState, db: CardDatabase, player: Player
     out.amount += ab.amount;
     out.sources.push(src);
   }
+  return out;
+}
+
+/** BS10 สิงโตควันม่วง: คอสต์ที่ต้องจ่ายเพิ่มเพื่ออัญเชิญการ์ดนี้โดยเอฟเฟกต์ (สปิริต/เบรฟที่ไม่ใช่สีม่วง) */
+export function effectSummonTax(state: GameState, db: CardDatabase, cardId: string): { cost: number; sources: StaticSource[] } {
+  const def = db.get(state.cards[cardId]!.cardNo);
+  const out = { cost: 0, sources: [] as StaticSource[] };
+  if ((def.type !== 'spirit' && def.type !== 'brave') || def.colors.includes('purple')) return out;
+  for (const src of staticSources(state, db, ['p1', 'p2'], 'effectSummonTax')) {
+    const ab = db.get(state.cards[src.cardId]!.cardNo).abilities.find((a) => a.kind === 'effectSummonTax' && a.source === src.source);
+    if (ab?.kind !== 'effectSummonTax') continue;
+    out.cost += ab.cost;
+    out.sources.push(src);
+  }
+  return out;
+}
+
+/** BS10 โฮเนะสุมิ: การ์ดของ player ที่ทำให้เอฟเฟกต์ "จบแอทแท็คสเต็ป" ของเมจิคคู่แข่งไร้ผลได้ (มีโซลคอร์วางอยู่) */
+export function endStepCounter(state: GameState, db: CardDatabase, player: PlayerId): { cardId: string; cost: number } | null {
+  for (const src of staticSources(state, db, [player], 'counterEndAttackStep')) {
+    const card = state.cards[src.cardId]!;
+    if (!card.cores.some((c) => state.cores[c]!.isSoul)) continue;
+    const ab = db.get(card.cardNo).abilities.find((a) => a.kind === 'counterEndAttackStep' && a.source === src.source);
+    if (ab?.kind === 'counterEndAttackStep') return { cardId: src.cardId, cost: ab.cost };
+  }
+  return null;
+}
+
+/** BS10 โทฟุบอย: ในเทิร์นนี้เจ็มของการ์ดนี้เป็น 0 */
+export function symbolsZeroCard(state: GameState, cardId: string): boolean {
+  return (state.symbolsZeroCards ?? []).some((t) => t.cardId === cardId && t.turn === state.turn);
+}
+
+/** BS10 ผ่าวิบัติไร้ผนึก: ในเทิร์นนี้ผู้เล่นนี้ต้องส่งคอร์ 1 เม็ดของตัวที่โจมตี/ป้องกันไปวอยด์ */
+export function coreTaxed(state: GameState, player: PlayerId): boolean {
+  return (state.coreTaxTurn ?? []).some((t) => t.player === player && t.turn === state.turn);
+}
+
+/** BS10 ทันโปโปะ: แอทแท็คสเต็ป เบิร์สของผู้เล่นนี้ถูกทิ้งไม่ได้ */
+export function burstProtectSource(state: GameState, db: CardDatabase, player: PlayerId): StaticSource | null {
+  if (state.phase !== 'attack') return null;
+  return staticSources(state, db, [player], 'burstProtect')[0] ?? null;
+}
+
+/** สีเจ็มทั้งหมดบนฟิลด์ของผู้เล่น (รวม "เจ็มถือว่าเป็นสี...ด้วย") */
+export function ownGemColors(state: GameState, db: CardDatabase, player: PlayerId): Set<string> {
+  const out = new Set<string>();
+  for (const id of state.players[player].field) {
+    const card = state.cards[id]!;
+    let n = 0;
+    for (const x of [id, ...card.braves]) for (const [color, k] of Object.entries(db.get(state.cards[x]!.cardNo).symbols)) if ((k ?? 0) > 0) (out.add(color), (n += k ?? 0));
+    for (const [color, k] of Object.entries(extraSymbols(state, db, id))) if ((k ?? 0) > 0) (out.add(color), (n += k ?? 0));
+    if (n > 0 && !effectsNegated(state, db, id)) for (const a of db.get(card.cardNo).abilities) if (a.kind === 'symbolAlsoColor' && a.levels.includes(cardLevel(state, db, id))) out.add(a.color);
+  }
+  out.delete('ultimate');
   return out;
 }
 
@@ -1323,6 +1413,7 @@ export function attackLifeDamage(state: GameState, db: CardDatabase, attackerId:
   const braves = attacker.braves.reduce((n, b) => n + symbolCount(db.get(state.cards[b]!.cardNo)), 0);
   let dmg = override ?? symbolCount(db.get(attacker.cardNo)) + braves + extra;
   if (state.symbolsZero?.turn === state.turn && dmg >= state.symbolsZero.minSymbols) dmg = 0;
+  if (symbolsZeroCard(state, attackerId)) dmg = 0;
   if ((state.lifeShields ?? []).some((l) => l.player === defender && l.turn === state.turn && fieldCost(state, db, attackerId) >= l.minCost)) dmg = 0;
   // กำแพงผลึกขาว: ในเทิร์นนี้ไลฟ์เสียหายได้ไม่เกิน 1
   if (dmg > 1 && (state.lifeCapOne ?? []).some((l) => l.player === defender && l.turn === state.turn)) dmg = 1;
@@ -1471,6 +1562,7 @@ export function canAttackWith(state: GameState, db: CardDatabase, cardId: string
   // BS09 สุสานของจักรพรรดิมาร: คอร์ 1 เม็ดโจมตีไม่ได้ / ต้องส่งคอร์ 2 เม็ดลงแทรชเพื่อโจมตี
   if (oneCoreLocked(state, db, cardId)) return false;
   if (card.cores.length < attackTaxFor(state, db, card.owner)) return false;
+  if (coreTaxed(state, card.owner) && !card.cores.some((c) => !state.cores[c]!.isSoul)) return false;
   return !(state.attackBans ?? []).some((b) => b.player === card.owner && b.turn === state.turn && b.types.includes(def.type));
 }
 
@@ -1506,6 +1598,7 @@ export function blockersFor(state: GameState, db: CardDatabase, defender: Player
     if (attacker && attackerUnblockable(state, attacker.id, def.type)) return false;
     if (turnLocked(state, id)) return false;
     if (oneCoreLocked(state, db, id)) return false;
+    if (coreTaxed(state, defender) && !card.cores.some((c) => !state.cores[c]!.isSoul)) return false;
     // ไทรซอร์ดอน: ป้องกันสปิริตที่ BP น้อยกว่าสปิริตนี้ไม่ได้
     if (attacker && cannotBlockLowerBp(state, db, id) && currentBp(state, db, attacker.id) < currentBp(state, db, id)) return false;
     // โนอา-เฟลอร์: ไม่ถูกป้องกันโดยสปิริต/อัลติเมทคอสต์ไม่เกิน N

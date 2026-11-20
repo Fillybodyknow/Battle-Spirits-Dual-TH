@@ -37,6 +37,8 @@ import bs08 from '../data/bs08.json';
 import { BS08_SCRIPTS } from '../data/bs08-scripts';
 import bs09 from '../data/bs09.json';
 import { BS09_SCRIPTS } from '../data/bs09-scripts';
+import bs10 from '../data/bs10.json';
+import { BS10_SCRIPTS } from '../data/bs10-scripts';
 import { attachScripts } from './abilities';
 import { createCardDatabase, type CardDatabase } from './database';
 import type { DeckEntry } from './deck';
@@ -73,8 +75,28 @@ export function loadSD04Cards(): CardDatabase {
  * การ์ดทุกชุดในฐานข้อมูลเดียว (Starter Deck + Booster Set)
  * ใช้เล่นจริง: รายการเด็คของชุดหนึ่งอาจมีการ์ดที่เขียนไว้ในอีกชุด
  */
+/** การ์ดเสมือน "สปิริตร่างแยก" (Bunshin): การ์ดคว่ำบนสนามใช้ข้อมูลนี้แทนการ์ดจริง (ขึ้นต้น SMP = ไม่แสดงในหน้าจัดเด็ค) */
+export const CLONE_CARD_NO = 'SMP-BUNSHIN';
+const CLONE_DEF = {
+  cardNo: CLONE_CARD_NO,
+  name: 'สปิริตร่างแยก',
+  type: 'spirit',
+  cost: 0,
+  colors: ['green'],
+  reduction: {},
+  symbols: { green: 1 },
+  family: ['ร่างแยก'],
+  teams: [],
+  magicTypes: [],
+  levels: [{ level: 1, cores: 1, bp: 3000 }],
+  burst: false,
+  effects: [],
+  abilities: [],
+};
+
 export function loadAllCards(): CardDatabase {
   return createCardDatabase([
+    CLONE_DEF,
     ...loadSD01Cards().all(),
     ...loadSD02Cards().all(),
     ...loadSD03Cards().all(),
@@ -88,6 +110,7 @@ export function loadAllCards(): CardDatabase {
     ...loadBS07Cards().all(),
     ...loadBS08Cards().all(),
     ...loadBS09Cards().all(),
+    ...loadBS10Cards().all(),
   ]);
 }
 
@@ -121,6 +144,11 @@ export function loadBS08Cards(): CardDatabase {
 /** การ์ดชุด Booster Set 09 (assets/files/BS09/*.text + data/bs09-scripts.ts) */
 export function loadBS09Cards(): CardDatabase {
   return createCardDatabase(attachScripts(bs09, BS09_SCRIPTS));
+}
+
+/** การ์ดชุด Booster Set 10 (assets/files/BS10/*.text + data/bs10-scripts.ts) */
+export function loadBS10Cards(): CardDatabase {
+  return createCardDatabase(attachScripts(bs10, BS10_SCRIPTS));
 }
 
 /** การ์ดชุด Booster Set 05 (assets/files/BS05/*.text + data/bs05-scripts.ts) */

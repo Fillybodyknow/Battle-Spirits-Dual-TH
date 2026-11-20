@@ -71,9 +71,7 @@ const summon = (s: GameState, cardId: string, place = 1) => {
 describe('Booster Set 09', () => {
   it('การ์ดทุกใบผูกสคริปต์ได้ และทุกบรรทัดมีสคริปต์ (ยกเว้นที่ยังไม่รองรับ)', () => {
     const skip: Record<string, number[]> = {
-      'เหล่าคนใกล้ชิด อุซชน': [1],
       'เหล่าคนใกล้ชิด จินเบร์': [1],
-      'ขุนศึกมังกรทะเล อิกคาคุ': [2],
     };
     const cards = loadBS09Cards().all();
     expect(cards).toHaveLength(54);

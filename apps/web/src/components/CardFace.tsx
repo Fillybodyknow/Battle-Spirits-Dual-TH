@@ -56,6 +56,17 @@ function CardArt({ def, art, level, payCost }: { def: CardDef; art: string; leve
 
 /** หน้าการ์ด: ใช้ภาพการ์ดถ้ามี (assets/images/cards) ไม่งั้นแสดงแบบข้อความ */
 export function CardFace({ def, level, size = 'md', payCost }: CardFaceProps) {
+  // BS10 Bunshin: สปิริตร่างแยก = การ์ดคว่ำ + ป้าย "ร่างแยก"
+  if (def.cardNo === 'SMP-BUNSHIN') {
+    return (
+      <div className="relative h-full w-full">
+        <CardBack />
+        <span className="absolute inset-x-0 bottom-1 mx-auto w-fit rounded bg-emerald-700/90 px-1.5 text-[10px] font-black text-white ring-1 ring-emerald-300/70">
+          ร่างแยก
+        </span>
+      </div>
+    );
+  }
   const art = cardArt(def.cardNo);
   if (art) return <CardArt def={def} art={art} level={level} payCost={payCost} />;
   if (size === 'xs') return <CardChip def={def} />;

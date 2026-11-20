@@ -254,6 +254,8 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
   const picked = useGame((s) => pickedOf(s).includes(cardId));
   /** แบ่งคอร์ที่จะส่งออก: จำนวนที่เลือกจากการ์ดนี้ */
   const allocN = useGame((s) => allocOf(s)[cardId] ?? 0);
+  // เทนเซย์: แบ่งคอร์วอยด์ไปวาง (ไม่ใช่ส่งออก)
+  const allocPlace = useGame((s) => s.state.choice?.kind === 'distribute' && s.state.choice.to === 'place');
   const matTop = useContext(MatTopCtx);
   /** กำลังเลือก Core สำหรับ [Evolution] ของการ์ดนี้ */
   const evolving = useGame((s) => s.evolveCard === cardId);
@@ -486,7 +488,7 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
             >
               −
             </button>
-            <span className="rounded-md bg-fuchsia-500 px-2 py-0.5 text-sm font-black whitespace-nowrap text-white shadow-lg">ส่ง {allocN}</span>
+            <span className="rounded-md bg-fuchsia-500 px-2 py-0.5 text-sm font-black whitespace-nowrap text-white shadow-lg">{allocPlace ? 'วาง' : 'ส่ง'} {allocN}</span>
           </div>
         )}
         {/* มีเอฟเฟกต์ Flash / [Evolution] ที่กดใช้ได้: ป้ายบอกให้คลิกการ์ด (Main Step มีแค่ Evolution = ป้าย Evolution สีเขียว) */}

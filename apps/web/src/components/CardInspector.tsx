@@ -150,7 +150,13 @@ export function CardInspector() {
     <div className="m-2 flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-sky-400/40 bg-gradient-to-b from-slate-800 to-slate-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
       {/* แถบชื่อ */}
       <div className="flex items-center gap-2 border-b border-sky-400/30 bg-gradient-to-r from-slate-700 via-slate-800 to-slate-700 px-3 py-2">
-        <h2 className="min-w-0 flex-1 truncate text-lg font-bold text-white [text-shadow:0_1px_2px_#000]">{def.name}</h2>
+        <h2 className="min-w-0 flex-1 truncate text-lg font-bold text-white [text-shadow:0_1px_2px_#000]">
+          {def.name}
+          {/* Bunshin: เจ้าของดูการ์ดที่คว่ำอยู่ได้ (กติกา 14 Bunshin ข้อ 3) */}
+          {card.realCardNo && !hiddenFrom(useGame.getState(), card.owner) && (
+            <span className="block truncate text-xs font-normal text-emerald-300">การ์ดที่คว่ำอยู่: {db.get(card.realCardNo).name}</span>
+          )}
+        </h2>
         <span
           className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-white/60 text-sm font-black shadow ${COLOR_BG[main]} ${
             main === 'white' || main === 'yellow' ? 'text-slate-900' : 'text-white'

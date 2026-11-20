@@ -45,6 +45,8 @@ export interface CardInstance {
   cores: string[];
   /** BP+ จากเอฟเฟกต์ "ในเทิร์นนี้" (ล้างตอนจบเทิร์น และเมื่อออกจากสนาม) */
   turnBp: number;
+  /** BS10 Bunshin: การ์ดจริงที่คว่ำอยู่ (cardNo = สปิริตร่างแยก ระหว่างอยู่บนสนาม) */
+  realCardNo?: string;
   /** BS08: ถูกอัญเชิญโดย Kagemusha ในเทิร์นนี้ (โชวเอ็น) */
   kageTurn?: number;
   /** BP+ จากเอฟเฟกต์ที่ไม่บอกระยะเวลา ([เมื่อสปิริตนี้โจมตี]): มีผลจนจบการต่อสู้นั้น */
@@ -150,6 +152,14 @@ export interface Battle {
   levelBlock?: number;
   /** BS09 ไดบีท: ต้องป้องกันด้วยสปิริต 2 ตัว หรืออัลติเมท 2 ตัว (ใช้กลไกเดียวกับ levelBlock: levelBlock = 2) */
   pairBlock?: boolean;
+  /** BS10 เจเนอรัล: ในการต่อสู้นี้เทียบ Lv แทน BP */
+  compareLevel?: boolean;
+  /** ปลุก trigger "เมื่อจบการต่อสู้ของสปิริตเรา" แล้ว (endBattle ถูกเรียกซ้ำหลังผู้เล่นเลือก) */
+  endTriggersDone?: boolean;
+  /** BS10 บลานโบอา: เมื่อตัวที่ต่อสู้กับการ์ดเหล่านี้ถูกทำลาย/สูญสลาย การ์ดนี้ฟื้นสภาพ */
+  refreshOnGone?: string[];
+  /** BS10 เพลิงจิ้งจอก: ผู้โจมตีเผ่านี้ของ player ไม่ถูกป้องกัน → เจ็มกลายเป็นสีนี้ count เม็ด */
+  symbolIfUnblocked?: { player: PlayerId; family: string; color: string; count: number };
 }
 
 /** เอฟเฟกต์ที่รอประมวลผล (หัวคิวคือที่กำลังทำ) */
@@ -179,6 +189,14 @@ export interface QueuedEffect {
   destroyedByThis?: { bp: number; type: string; opponent: boolean; /** เจ็มรวมตอนถูกทำลาย */ symbols?: number }[];
   /** BS09 refreshAllAllies: การ์ดที่ฟื้นสภาพโดยเอฟเฟกต์นี้ */
   refreshedByThis?: string[];
+  /** BS10 สปิริตที่คู่แข่งเลือกเสื่อมสภาพด้วยเอฟเฟกต์นี้ (ไยบะโนะคามิ) */
+  exhaustedChosen?: string;
+  /** BS10 trigger lifeLost: ไลฟ์ลดเพราะเอฟเฟกต์ของคู่แข่ง */
+  lifeLostByEffect?: boolean;
+  /** BS10 มิโคโตะ: เอฟเฟกต์เลือกเป้า 1 ตัวของเบิร์สนี้ = ทั้งหมด */
+  allTargets?: boolean;
+  /** BS10 บิรันบะ: จำนวนคอร์ที่คู่แข่งได้จากวอยด์ */
+  voidGain?: number;
   /** ตำแหน่งใน log ตอนเอฟเฟกต์เริ่ม (นับการ์ดที่ถูกทำลายโดยเอฟเฟกต์นี้) */
   logStart?: number;
   /** สปิริตที่เป็นต้นเหตุของ trigger นี้ */
@@ -296,7 +314,8 @@ export type PendingChoice =
       candidates: string[];
       caps: Record<string, number>;
       total: number;
-      to: 'reserve' | 'trash' | 'void';
+      /** place = วางคอร์วอยด์บนการ์ดของเรา (เทนเซย์) */
+      to: 'reserve' | 'trash' | 'void' | 'place';
       step: Step;
     }
   /** เอฟเฟกต์หลายอันเกิดพร้อมกัน: เลือกอันที่จะทำงานก่อน (pick = index ใน effects) ที่เหลือจะถามต่อ */
@@ -391,6 +410,25 @@ export interface GameState {
   noEndAttackStep?: { player: PlayerId; turn: number; filter: import('@bs/cards').CardFilter }[];
   /** โซลคอร์ที่อยู่ในแทรชของแต่ละฝ่ายตอนตรวจครั้งล่าสุด (trigger oppSoulToTrash) */
   soulInTrashSeen?: Partial<Record<PlayerId, boolean>>;
+  // ---------------- BS10
+  /** ในเทิร์นนี้ เจ็มของการ์ดนี้เป็น 0 (โทฟุบอย) */
+  symbolsZeroCards?: { cardId: string; turn: number }[];
+  /** ในเทิร์นนี้ สปิริตทั้งหมดของ player ถือว่าเป็น Lv1 (สวนลอยฟ้า) */
+  levelOneTurn?: { player: PlayerId; turn: number }[];
+  /** ในเทิร์นนี้ การ์ดนี้ไม่ถูกทำลาย */
+  noDestroyTurn?: { cardId: string; turn: number }[];
+  /** ในเทิร์นนี้ player โจมตี/ป้องกันได้ต่อเมื่อส่งคอร์ 1 เม็ดบนตัวนั้นไปวอยด์ (ผ่าวิบัติไร้ผนึก) */
+  coreTaxTurn?: { player: PlayerId; turn: number }[];
+  /** ในเทิร์นนี้ การโจมตีของการ์ดนี้ที่ทำความเสียหายไลฟ์ = ส่งคอร์ไลฟ์คู่แข่งเพิ่ม 1 เม็ด */
+  hitLifeTurn?: { cardId: string; turn: number }[];
+  /** ในเทิร์นนี้ สปิริตของ player ที่ตรงตัวกรอง: เมื่อโจมตี คู่แข่งสั่งใช้เบิร์สไม่ได้ (เฮียคุเตะ) */
+  attackNoBurstGrants?: { player: PlayerId; turn: number; filter: import('@bs/cards').CardFilter }[];
+  /** การ์ดเมจิคที่ใช้งานในการต่อสู้ปัจจุบัน (เฟรกรันส์รีเวอร์) */
+  battleMagic?: { cardId: string; player: PlayerId }[];
+  /** คอร์ที่แต่ละฝ่ายได้จากวอยด์โดยเอฟเฟกต์ ตั้งแต่ตรวจครั้งล่าสุด (บิรันบะ) */
+  voidGained?: Partial<Record<PlayerId, number>>;
+  /** ในเทิร์นนี้การ์ดนี้ถือว่าไร้สี (คำสาปบงการชีพที่ถูกสั่งใช้โดย Catalyze) */
+  colorlessTurn?: { cardId: string; turn: number }[];
   /** ในเทิร์นนี้ เจ็มของสปิริต/อัลติเมทของ player ที่ตรงตัวกรองเปลี่ยน count เม็ด (ลบได้) */
   turnSymbolBuffs?: { player: PlayerId; turn: number; filter?: CardFilter; color: string; count: number }[];
   /** player ข้ามสเต็ปเหล่านี้ในเทิร์น turn */
@@ -424,7 +462,7 @@ export type Action =
    * อัญเชิญจากมือ: Main Step หรือ (การ์ดที่มี [Quick]) ใน Flash timing
    * braveOnto = Brave ร่วมร่างกับสปิริตนี้ (ไม่วาง Core บน Brave)
    */
-  | { type: 'summon'; player: PlayerId; cardId: string; payment: string[]; placement: string[]; braveOnto?: string }
+  | { type: 'summon'; player: PlayerId; cardId: string; payment: string[]; placement: string[]; braveOnto?: string; /** สิงโตควันม่วง: ทิ้งใบบนสุดเด็คก่อนจ่าย ใบละคอสต์ -1 */ mill?: number }
   | { type: 'deployNexus'; player: PlayerId; cardId: string; payment: string[]; placement: string[] }
   /** timing: เอฟเฟกต์ที่จะใช้ ([Main] หรือ [Flash]) ไม่ระบุ = [Main] ถ้ามี ไม่งั้น [Flash]; ระหว่าง Flash timing ใช้ได้แค่ [Flash] */
   | { type: 'useMagic'; player: PlayerId; cardId: string; payment: string[]; timing?: 'main' | 'flash' }
@@ -482,6 +520,10 @@ export type GameEvent =
   | { type: 'nexusDeployed'; player: PlayerId; cardId: string; paid: number }
   | { type: 'magicUsed'; player: PlayerId; cardId: string; paid: number; timing: 'main' | 'flash' }
   | { type: 'coresMoved'; player: PlayerId; count: number }
+  /** BS10 Bunshin: การ์ดบนสุดเด็คกลายเป็นสปิริตร่างแยก */
+  | { type: 'bunshin'; player: PlayerId; cardIds: string[] }
+  /** สปิริตร่างแยกถูกทิ้ง (จะกลับขึ้นมือ/เข้าเด็ค / หงายแล้วไม่ใช่การ์ดสปิริต) */
+  | { type: 'cloneDiscarded'; player: PlayerId; cardId: string }
   | { type: 'burstSet'; player: PlayerId; replacedCardId: string | null }
   | { type: 'burstDiscarded'; player: PlayerId; cardId: string; /** ถูกเอฟเฟกต์ของคู่แข่งทำลาย (ไม่ใช่เจ้าของทิ้งเอง) */ byEffect?: true }
   | { type: 'depleted'; cardId: string }
