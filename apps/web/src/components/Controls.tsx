@@ -280,9 +280,17 @@ export function PromptBar() {
     } else if (choice.kind === 'multiCard') {
       // เลือกหลายใบทีเดียว: คลิกการ์ด = เลือก/ยกเลิก · ครบแล้วยืนยัน ผลเกิดกับทุกใบพร้อมกัน
       tag = 'target';
+      if (choice.budget) {
+        // ฟง-นีด: เลือกกี่ตัวก็ได้ ค่ารวมไม่เกินงบ แล้วยืนยันทีเดียว
+        const sum = picked.reduce((n, id) => n + (choice.budget!.values[id] ?? 0), 0);
+        detail = `${src} · คลิกการ์ดที่เรืองแสงสีชมพูเพื่อเลือก/ยกเลิก · ${choice.budget.label} รวม ${sum.toLocaleString()}/${choice.budget.max.toLocaleString()}`;
+        add('reset', 'ล้าง', () => useGame.getState().clearPicks(), 'secondary', picked.length === 0);
+        add('ok', picked.length === 0 ? 'ไม่เลือก' : `ยืนยัน ${picked.length} ตัว`, () => choose({ cards: picked }), 'primary', sum > choice.budget.max);
+      } else {
       detail = `${src} · คลิกการ์ดที่เรืองแสงสีชมพูเพื่อเลือก/ยกเลิก · เลือกแล้ว ${picked.length}/${choice.count}`;
       add('reset', 'ล้าง', () => useGame.getState().clearPicks(), 'secondary', picked.length === 0);
       add('ok', `ยืนยัน ${picked.length}/${choice.count}`, () => choose({ cards: picked }), 'primary', picked.length !== choice.count, `เลือกอีก ${choice.count - picked.length} ใบ`);
+      }
     } else if (choice.kind === 'distribute') {
       // แบ่งคอร์ที่จะส่งออก: คลิกการ์ด = +1 เม็ด · ปุ่ม − บนการ์ด = ลด · ครบแล้วยืนยันทีเดียว
       tag = 'target';

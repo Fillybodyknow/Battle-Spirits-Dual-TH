@@ -616,10 +616,13 @@ describe('สปิริตอื่น ๆ', () => {
     expect(s.cards[fong]!.cores).toHaveLength(4);
     const [a, b, c] = [put(s, 'p2', DARIU, 3), put(s, 'p2', DARIU, 1), put(s, 'p2', DARIU, 1)]; // 6000 / 3000 / 3000
     s = attack(toAttack(s), fong);
-    s = choose(s, a);
-    expect(s.choice).toMatchObject({ kind: 'card', candidates: [b, c] });
-    s = choose(s, b);
-    expect(s.choice).toBeNull(); // เหลือ 1000
+    // เลือกทีเดียว: 6000 + 3000 = 9000 (เกินงบถ้าเลือกครบ 3 ตัว)
+    expect(s.choice).toMatchObject({ kind: 'multiCard', candidates: [a, b, c] });
+    expect(applyAction(s, { type: 'choose', player: 'p1', pick: { cards: [a, b, c] } }, db).ok).toBe(false);
+    s = choose(s, { cards: [a, b] });
+    expect(s.cards[a]!.state).toBe('exhausted');
+    expect(s.cards[b]!.state).toBe('exhausted');
+    expect(s.choice).toBeNull();
     s = passBoth(s);
     s = act(s, { type: 'noBlock', player: 'p2' });
     s = choose(s, 0);

@@ -582,8 +582,8 @@ describe('ชีลด์กันเอฟเฟกต์ (แก้บั๊�
     const shimo = put(s, 'p2', no('เสนาธิการเครื่องกล ชิโมะคาเสะ'), 1);
     const plain = put(s, 'p2', DARIU, 1);
     s = attack(s, fong);
-    expect(s.choice).toMatchObject({ kind: 'card', candidates: [plain] });
-    s = choose(s, plain);
+    expect(s.choice).toMatchObject({ kind: 'multiCard', candidates: [plain] });
+    s = choose(s, { cards: [plain] });
     expect(s.cards[shimo]!.state).toBe('refresh');
   });
 });
@@ -611,8 +611,8 @@ describe('Kagemusha / Consecutive Blade ตามกติกา 14 (แก้�
     const target = put(s, 'p2', DARIU, 1, true);
     inHand(s, 'p2', no('นักรบเครื่องกล S23'));
     s = attack(s, fong);
-    expect(s.choice).toMatchObject({ kind: 'card', player: 'p1' });
-    s = choose(s, target);
+    expect(s.choice).toMatchObject({ kind: 'multiCard', player: 'p1' });
+    s = choose(s, { cards: [target] });
     expect(s.choice).toMatchObject({ kind: 'option', player: 'p2' });
     expect(optionIndex(s, 'อัญเชิญ')).toBeGreaterThanOrEqual(0);
   });

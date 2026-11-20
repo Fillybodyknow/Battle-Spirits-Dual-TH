@@ -440,7 +440,7 @@ export type Step =
       anySide?: true;
     }
   /** เสื่อมสภาพสปิริตคู่แข่งกี่ตัวก็ได้ BP รวมไม่เกิน maxTotal */
-  | { do: 'exhaustOpponentTotalBp'; maxTotal: number }
+  | { do: 'exhaustOpponentTotalBp'; maxTotal: number; /** (engine ใช้ภายใน) เลือกครบแล้ว ไม่ถามต่อ */ final?: true }
   /** นำการ์ดคู่แข่ง 1 ใบที่ตรงตัวกรองกลับขึ้นมือ (Core บนการ์ดไปรีเสิร์ฟของเจ้าของ) */
   | {
       do: 'bounceOpponent';
@@ -685,7 +685,7 @@ export type Step =
   /** นำ Soul Core ในแทรชเรามาวางบนสปิริตนี้ เมื่อเป็นเช่นนั้น ทำ then */
   | { do: 'soulFromTrashToSelf'; then?: Step[] }
   /** เสื่อมสภาพสปิริต/อัลติเมทของคู่แข่งกี่ตัวก็ได้ คอสต์รวมไม่เกิน maxTotal */
-  | { do: 'exhaustOpponentTotalCost'; maxTotal: number }
+  | { do: 'exhaustOpponentTotalCost'; maxTotal: number; /** (engine ใช้ภายใน) เลือกครบแล้ว ไม่ถามต่อ */ final?: true }
   /** (เบรฟที่ให้เอฟเฟกต์) สามารถนำเบรฟนี้ไปรวมร่างกับสปิริตของเราใบอื่นที่รวมร่างได้ */
   | { do: 'moveSourceBrave' }
   /** สามารถเลือกสปิริตของคู่แข่ง 1 ตัว: ตัวนั้นต้องโจมตีมาที่สปิริตนี้เป็นใบแรกสุดของสเต็ป ถ้าทำได้ */
@@ -718,7 +718,7 @@ export type Step =
   /** แสดงใบบนสุดเด็ค count ใบ นำการ์ดที่ตรงตัวกรองแต่ละตัวอย่างละ 1 ใบขึ้นมือ ที่เหลือลงแทรช (picked: engine ใช้ภายใน) */
   | { do: 'revealPickEach'; count: number; filters: CardFilter[]; revealed?: string[]; index?: number }
   /** นำสปิริตคู่แข่งกี่ตัวก็ได้ BP รวมไม่เกิน maxTotal กลับขึ้นมือ / ทำลาย */
-  | { do: 'opponentTotalBp'; maxTotal: number; action: 'bounce' | 'destroy'; used?: number }
+  | { do: 'opponentTotalBp'; maxTotal: number; action: 'bounce' | 'destroy'; used?: number; /** (engine ใช้ภายใน) เลือกครบแล้ว ไม่ถามต่อ */ final?: true }
   /** ในเทิร์นนี้ สปิริตนี้เจ็มสี color เพิ่ม count เม็ด */
   | { do: 'symbolThisTurn'; color: Color; count: number; per?: CountPer; /** มีผลจนจบการต่อสู้นั้น */ untilBattleEnd?: true }
   /** ทำให้เอฟเฟกต์ของการ์ดเมจิคต้นเหตุ (subject) ไร้ผล */

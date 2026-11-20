@@ -118,8 +118,8 @@ describe('Booster Set 07', () => {
     s = choose(s, big);
     s = choose(s, { pay: normalCores(s).slice(0, 1) });
     // โมโมะ M003 ถูกอัญเชิญโดย On Stage: ทำลาย (ไม่ใช่กลับขึ้นมือ)
-    expect(s.choice).toMatchObject({ kind: 'card', candidates: [opp] });
-    s = choose(s, opp);
+    expect(s.choice).toMatchObject({ kind: 'multiCard', candidates: [opp] });
+    s = choose(s, { cards: [opp] });
     expect(s.players.p2.trashCards).toContain(opp);
   });
 

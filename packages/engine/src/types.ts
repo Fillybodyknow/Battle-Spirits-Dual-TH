@@ -301,7 +301,17 @@ export type PendingChoice =
    * เลือกการ์ดหลายใบทีเดียว (เอฟเฟกต์ที่เล็งหลายเป้า เช่น ทำลาย/เสื่อมสภาพ/BP- 2 ตัว): ตอบด้วย pick: { cards: [...] }
    * ต้องเลือกครบ count ใบ (ไม่ซ้ำ) · ผลเกิดกับทุกใบต่อกันในครั้งเดียว (ถาม Kagemusha ของทุกเป้าก่อน)
    */
-  | { kind: 'multiCard'; player: PlayerId; sourceId: string; prompt: string; candidates: string[]; count: number; step: Step }
+  | {
+      kind: 'multiCard';
+      player: PlayerId;
+      sourceId: string;
+      prompt: string;
+      candidates: string[];
+      count: number;
+      step: Step;
+      /** เลือกกี่ใบก็ได้ (0 ถึง count) โดยค่ารวมไม่เกิน max (ฟง-นีด: BP รวมไม่เกิน 10000) */
+      budget?: { max: number; values: Record<string, number>; label: string };
+    }
   /**
    * แบ่งจำนวนคอร์ที่จะส่งออกจากสปิริต/อัลติเมทหลายตัวทีเดียว (removeOpponentCores หลายเม็ด): ตอบด้วย pick: { alloc: { [cardId]: n } }
    * แต่ละตัวไม่เกิน caps[cardId] · รวมต้องเท่ากับ total พอดี (บังคับ ทำเท่าที่ทำได้)

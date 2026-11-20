@@ -23,7 +23,7 @@ jobs:
     # ผูกกับ environment นี้ทั้ง job เพื่อให้ขั้น build อ่าน Environment variables ได้
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url || steps.deployment_retry.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -49,5 +49,13 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: apps/web/dist
+      # บางครั้ง GitHub ยังหา artifact ที่เพิ่งอัปโหลดไม่เจอ ("No artifacts named github-pages")
+      # = ปัญหาชั่วคราวฝั่ง GitHub: รอสักครู่แล้ว deploy ซ้ำเองอีกครั้ง
       - id: deployment
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
+      - if: steps.deployment.outcome == 'failure'
+        run: sleep 45
+      - id: deployment_retry
+        if: steps.deployment.outcome == 'failure'
         uses: actions/deploy-pages@v4

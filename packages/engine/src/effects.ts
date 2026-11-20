@@ -921,6 +921,13 @@ function ask(ctx: Ctx, item: QueuedEffect, choice: DistributiveOmit<PendingChoic
   ctx.s.choice = { ...choice, player, sourceId: item.sourceId } as PendingChoice;
 }
 
+/** เลือกหลายตัวทีเดียวโดยค่ารวม (BP / คอสต์) ไม่เกินงบ แล้วกดยืนยัน (choice multiCard แบบ budget) */
+function askBudget(ctx: Ctx, item: QueuedEffect, candidates: string[], step: Step, prompt: string, label: string, max: number, value: (id: string) => number): void {
+  const values: Record<string, number> = {};
+  for (const id of candidates) values[id] = value(id);
+  ask(ctx, item, { kind: 'multiCard', prompt, candidates, count: candidates.length, step, budget: { max, values, label } });
+}
+
 /** step ที่เลือกหลายเป้า (count > 1) ได้ทีเดียว: choice multiCard → applyPicks */
 const MULTI_STEPS = new Set<Step['do']>([
   'destroyChosenOpponent',
@@ -1202,14 +1209,8 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
         // ตัวที่ไม่รับผลเอฟเฟกต์ของการ์ดนี้ (ชิโมะคาเสะ ฯลฯ) เลือกไม่ได้
         (id) => spiritLike(id) && s.cards[id]!.state === 'refresh' && currentBp(s, db, id) <= step.maxTotal && hits(id),
       );
-      if (candidates.length === 0) return;
-      ask(ctx, item, {
-        kind: 'card',
-        prompt: `เลือกสปิริตของคู่แข่งที่จะเสื่อมสภาพ (BP รวมเหลือ ${step.maxTotal}) หรือหยุด`,
-        candidates,
-        optional: true,
-        step,
-      });
+      if (candidates.length === 0 || step.final) return;
+      askBudget(ctx, item, candidates, step, `เลือกสปิริตของคู่แข่งที่จะเสื่อมสภาพ (BP รวมไม่เกิน ${step.maxTotal.toLocaleString()})`, 'BP', step.maxTotal, (id) => currentBp(s, db, id));
       return;
     }
 
@@ -3212,15 +3213,8 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
 
     case 'opponentTotalBp': {
       const candidates = s.players[opp].field.filter((id) => spiritLike(id) && currentBp(s, db, id) <= step.maxTotal && hits(id));
-      if (candidates.length === 0) return;
-      ask(ctx, item, {
-        kind: 'card',
-        prompt: `เลือกสปิริตของคู่แข่งที่จะ${step.action === 'bounce' ? 'กลับขึ้นมือ' : 'ทำลาย'} (BP รวมเหลือ ${step.maxTotal.toLocaleString()}) หรือหยุด`,
-        candidates,
-        optional: true,
-        skipLabel: 'พอแล้ว',
-        step,
-      });
+      if (candidates.length === 0 || step.final) return;
+      askBudget(ctx, item, candidates, step, `เลือกสปิริตของคู่แข่งที่จะ${step.action === 'bounce' ? 'กลับขึ้นมือ' : 'ทำลาย'} (BP รวมไม่เกิน ${step.maxTotal.toLocaleString()})`, 'BP', step.maxTotal, (id) => currentBp(s, db, id));
       return;
     }
 
@@ -3516,8 +3510,8 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       const candidates = s.players[opp].field.filter(
         (id) => spiritLike(id) && s.cards[id]!.state === 'refresh' && fieldCost(s, db, id) <= step.maxTotal && hits(id),
       );
-      if (candidates.length === 0) return;
-      ask(ctx, item, { kind: 'card', prompt: `เลือกสปิริตของคู่แข่งที่จะเสื่อมสภาพ (คอสต์รวมเหลือ ${step.maxTotal}) หรือหยุด`, candidates, optional: true, step });
+      if (candidates.length === 0 || step.final) return;
+      askBudget(ctx, item, candidates, step, `เลือกสปิริตของคู่แข่งที่จะเสื่อมสภาพ (คอสต์รวมไม่เกิน ${step.maxTotal})`, 'คอสต์', step.maxTotal, (id) => fieldCost(s, db, id));
       return;
     }
 
@@ -3858,6 +3852,19 @@ export function resolveChoice(ctx: Ctx, player: PlayerId, pick: ChoicePick): voi
     return;
   }
 
+  if (choice.kind === 'multiCard' && choice.budget) {
+    // ฟง-นีด: เลือกกี่ตัวก็ได้ ค่ารวมไม่เกินงบ แล้วผลเกิดกับทุกตัวพร้อมกัน
+    const cards = typeof pick === 'object' && pick !== null && 'cards' in pick ? pick.cards : null;
+    if (!cards || new Set(cards).size !== cards.length || !cards.every((id) => choice.candidates.includes(id))) fail('INVALID_PICK', 'เลือกการ์ดไม่ถูกต้อง');
+    const budget = choice.budget;
+    const sum = cards.reduce((n, id) => n + (budget.values[id] ?? 0), 0);
+    if (sum > budget.max) fail('INVALID_PICK', `${budget.label} รวมเกิน ${budget.max}`);
+    const picks = choice.candidates.filter((id) => cards.includes(id));
+    if (picks.length > 0) cur.steps.unshift({ do: 'applyPicks', picks, step: { ...choice.step, final: true } as Step, player, kage: player === cur.controller && KAGE_STEPS.has(choice.step.do) });
+    s.choice = null;
+    runQueue(ctx);
+    return;
+  }
   if (choice.kind === 'multiCard') {
     const cards = typeof pick === 'object' && pick !== null && 'cards' in pick ? pick.cards : null;
     if (!cards || cards.length !== choice.count || new Set(cards).size !== cards.length || !cards.every((id) => choice.candidates.includes(id))) {
@@ -4217,7 +4224,7 @@ function applyCardPick(ctx: Ctx, cur: QueuedEffect, choice: Extract<PendingChoic
       const bp = currentBp(s, ctx.db, pick);
       s.cards[pick]!.state = 'exhausted';
       emit(ctx, { type: 'exhausted', cardId: pick });
-      cur.steps.unshift({ do: 'exhaustOpponentTotalBp', maxTotal: step.maxTotal - bp });
+      if (!step.final) cur.steps.unshift({ do: 'exhaustOpponentTotalBp', maxTotal: step.maxTotal - bp });
       break;
     }
     case 'bounceOpponent':
@@ -4450,7 +4457,7 @@ function applyCardPick(ctx: Ctx, cur: QueuedEffect, choice: Extract<PendingChoic
       const bp = currentBp(s, ctx.db, pick);
       if (step.action === 'bounce') returnCard(ctx, pick, 'hand');
       else destroyCard(ctx, pick, player, { bySource: cur.sourceId, effect: true });
-      cur.steps.unshift({ ...step, maxTotal: step.maxTotal - bp });
+      if (!step.final) cur.steps.unshift({ ...step, maxTotal: step.maxTotal - bp });
       break;
     }
     case 'braveFromField': {
@@ -4513,7 +4520,7 @@ function applyCardPick(ctx: Ctx, cur: QueuedEffect, choice: Extract<PendingChoic
       s.cards[pick]!.state = 'exhausted';
       emit(ctx, { type: 'exhausted', cardId: pick });
       queueExhaustTriggers(ctx, pick);
-      cur.steps.unshift({ do: 'exhaustOpponentTotalCost', maxTotal: step.maxTotal - cost });
+      if (!step.final) cur.steps.unshift({ do: 'exhaustOpponentTotalCost', maxTotal: step.maxTotal - cost });
       break;
     }
     case 'moveSourceBrave': {

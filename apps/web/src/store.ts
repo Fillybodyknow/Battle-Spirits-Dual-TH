@@ -1455,6 +1455,8 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
             mode: 'move',
             shrink: true,
             faceDown: true,
+            // การ์ดที่แสดงอยู่ในพัด: เริ่มแบบหงาย (ไม่บังพัด) แล้วพลิกคว่ำกลางทาง
+            ...(revealed.has(id) ? { revealFirst: true } : {}),
             delay: t + i * 120,
             hideTarget: false,
           }),
@@ -1562,8 +1564,8 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
           mode: 'move',
           delay: t,
           hideTarget: true,
-          // การ์ดในแทรชเป็นข้อมูลเปิด: บินแบบหงายให้ทั้งสองฝ่ายเห็น แล้วค่อยพลิกคว่ำตอนเข้ามือที่อีกฝ่ายมองไม่เห็น
-          ...(e.from === 'trash' ? { revealFirst: true, revealLate: true } : {}),
+          // การ์ดในแทรช / การ์ดที่แสดงจากเด็ค เป็นข้อมูลเปิด: บินแบบหงายให้ทั้งสองฝ่ายเห็น แล้วค่อยพลิกคว่ำตอนเข้ามือที่อีกฝ่ายมองไม่เห็น
+          ...(e.from === 'trash' || revealed.has(e.cardId) ? { revealFirst: true, revealLate: true } : {}),
         });
         break;
       case 'burstDiscarded': {
@@ -3232,7 +3234,9 @@ export const useGame = create<Store>((set, get) => {
       const c = get().state.choice;
       if (c?.kind !== 'multiCard' || !mine(c.player) || !c.candidates.includes(cardId)) return;
       const ids = pickedOf(get());
-      const next = ids.includes(cardId) ? ids.filter((x) => x !== cardId) : ids.length < c.count ? [...ids, cardId] : ids;
+      // ฟง-นีด: เลือกได้จนกว่าค่ารวมจะเกินงบ
+      const fits = (list: string[]) => (c.budget ? list.reduce((n, x) => n + (c.budget!.values[x] ?? 0), 0) <= c.budget.max : list.length <= c.count);
+      const next = ids.includes(cardId) ? ids.filter((x) => x !== cardId) : fits([...ids, cardId]) ? [...ids, cardId] : ids;
       if (next === ids) return;
       sfx('click');
       set({ picked: { key: multiCardKey(c), ids: next } });
