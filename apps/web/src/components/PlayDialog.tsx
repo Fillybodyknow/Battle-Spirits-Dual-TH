@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { baseCost, bpOf, handCostDeltaSources, levelBoostSources, levelOf, minCores, noReductionBlocked, payableCost, quickAbility, quickAnyCores, summonLevelCostBoost, trashSummonRule } from '@bs/engine';
+import { baseCost, bpOf, magicBurstTax, summonConditionOk, handCostDeltaSources, levelBoostSources, levelOf, minCores, noReductionBlocked, payableCost, quickAbility, quickAnyCores, summonLevelCostBoost, trashSummonRule } from '@bs/engine';
 import { cardName, playerLabel } from '../format';
 import { db, flashPlayer, layoutRect, useGame, type MagicTiming, type PlayKind } from '../store';
 import { CardFace } from './CardFace';
@@ -87,9 +87,13 @@ function PlayDialogInner({ cardId, kind, timing, braveOnto }: { cardId: string; 
   const reserveSoul = p.reserve.find((id) => state.cores[id]!.isSoul);
   // อัญเชิญจากแทรช: คอสต์ตาม "ถือว่ามีคอสต์" ในแทรช และบางเอฟเฟกต์ต้องใช้ Soul Core ร่วมจ่าย
   const fromTrash = p.trashCards.includes(cardId);
-  const mustSoul = fromTrash && !!trashSummonRule(state, db, player, cardId)?.soulPayment;
+  // อัลติเมทที่เงื่อนไขอัญเชิญไม่ครบ แต่อัญเชิญได้เพราะใช้โซลคอร์ร่วมจ่าย (เหล่าคนใกล้ชิด)
+  const ignoreCond = kind === 'summon' && def.type === 'ultimate' && !summonConditionOk(state, db, cardId, { paidWithSoul: false });
+  const mustSoul = (fromTrash && !!trashSummonRule(state, db, player, cardId)?.soulPayment) || ignoreCond;
   const base = baseCost(state, db, cardId);
-  const cost = soulQuick ? 0 : payableCost(state, db, player, def, base);
+  // จินเบร์: แอทแท็คสเต็ปของคู่แข่ง ใช้เมจิคต้องจ่ายคอสต์เพิ่ม
+  const tax = kind === 'useMagic' ? magicBurstTax(state, db, player).amount : 0;
+  const cost = soulQuick ? 0 : payableCost(state, db, player, def, base) + tax;
   const allowPlace = kind !== 'useMagic' && !braveOnto;
   // [Quick] + ไซเลนท์ฮิล: ใช้คอร์บนการ์ดในสนามได้ด้วย (ใช้คอร์ในรีเสิร์ฟก่อน)
   const fieldPool = quickAb && !soulQuick && quickAnyCores(state, db, player) ? p.field.flatMap((id) => state.cards[id]!.cores) : [];
@@ -195,6 +199,8 @@ function PlayDialogInner({ cardId, kind, timing, braveOnto }: { cardId: string; 
               {timing && <span className="ml-1 text-yellow-300">[{timing === 'main' ? 'Main' : 'Flash'}]</span>}
               {quickAb && <span className="ml-1 text-emerald-200">[{soulQuick ? 'Soul Quick' : 'Quick'}]</span>}
               {fromTrash && <span className="ml-1 text-purple-300">[จากแทรช{mustSoul ? ' · ต้องใช้ Soul Core จ่าย' : ''}]</span>}
+              {ignoreCond && <span className="ml-1 text-purple-300">[ไม่สนเงื่อนไขอัญเชิญ · ต้องใช้ Soul Core จ่าย]</span>}
+              {tax > 0 && <span className="ml-1 text-rose-300">[จ่ายเพิ่ม {tax}]</span>}
             </div>
             <div className="truncate text-sm font-black text-white">{def.name}</div>
             {braveOnto && <div className="truncate text-emerald-300">→ {cardName(state, braveOnto)}</div>}

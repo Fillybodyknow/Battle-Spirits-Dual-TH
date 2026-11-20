@@ -4,6 +4,8 @@ import { destroyCard, enqueue, fireTriggers, refreshByEffect, newBatch, queueExh
 import { nextRandom, shuffle } from './rng';
 import {
   attackTaxFor,
+  magicBanned,
+  magicBurstTax,
   ignoreSummonConditionSource,
   hasEvolutionNow,
   summonBanned,
@@ -549,7 +551,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     }
     const def = cardInHand(ctx, player, cardId);
     // BS09 วัดอรุณ: ในเทิร์นนี้ใช้งานการ์ดเมจิคไม่ได้
-    if ((s.magicBans ?? []).some((b) => b.player === player && b.turn === s.turn)) fail('MAGIC_BANNED', 'ในเทิร์นนี้ใช้งานการ์ดเมจิคไม่ได้ (เอฟเฟกต์ของคู่แข่ง)');
+    if (magicBanned(s, player)) fail('MAGIC_BANNED', 'ในเทิร์นนี้ใช้งานการ์ดเมจิคไม่ได้ (เอฟเฟกต์ของคู่แข่ง)');
     // เมจิค / การ์ดสปิริตที่ "ถือว่าเป็นการ์ดเมจิคด้วย" / การ์ดที่ได้รับเอฟเฟกต์เมจิคจากการ์ดบนสนาม (คาฉะเนโกะ-อิคุสะ)
     const asMagic = handMagic(s, ctx.db, cardId);
     if (def.type !== 'magic' && asMagic.length === 0) fail('WRONG_CARD_TYPE', 'ใช้ได้เฉพาะ Magic');
@@ -567,7 +569,10 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     // คอสต์ในมือ (ทริคสเตอร์: แอทแท็คสเต็ปของเรา เมจิคในมือคอสต์ -1) ต้องใช้ตอนจ่ายจริงด้วย ไม่ใช่แค่ตอนแสดง
     const handCost = baseCost(s, ctx.db, cardId);
     emitStatic(ctx, handCost !== def.cost ? handCostDeltaSources(s, ctx.db, cardId) : []);
-    const { paid } = payCost(ctx, player, def, payment, [], { noPlacement: true, baseCost: handCost });
+    // BS09 จินเบร์: แอทแท็คสเต็ปของคู่แข่ง ต้องจ่ายคอสต์เพิ่ม
+    const tax = magicBurstTax(s, ctx.db, player);
+    emitStatic(ctx, tax.sources);
+    const { paid } = payCost(ctx, player, def, payment, [], { noPlacement: true, baseCost: handCost, extra: tax.amount });
     const once = def.abilities.find((a) => a.kind === 'magic' && a.timing === use && a.oncePerTurn);
     if (once) s.usedOncePerTurn = [...(s.usedOncePerTurn ?? []), `${player}:${def.cardNo}:${once.source}`];
     // ใช้จากการ์ดที่วางแสดงนอกมือ (ไม่ใช่ "จากในมือ")

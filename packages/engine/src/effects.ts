@@ -33,6 +33,8 @@ import { cardColors,
   trashImmune,
   trashLockSource,
   trashReturnBlocker,
+  magicBurstTax,
+  magicBanned,
   cardFamilies,
   cardSymbolTotal,
   dispersionCount,
@@ -178,6 +180,9 @@ export function queueTriggers(
       if (trashLockSource(s, db)) continue;
     } else {
       if (inHand) continue;
+      // การ์ดในแทรช: ทำงานเฉพาะเอฟเฟกต์ zone 'trash' (เน็กซัสในแทรชมีคอร์ 0 = นับเป็น Lv1 ได้: No.1 นอร์ธซีโรด)
+      // ยกเว้น "เมื่อถูกทำลาย/สูญสลาย" ที่ส่งเลเวลตอนอยู่บนสนามมา (opts.level)
+      if (inTrash && opts.level === undefined) continue;
       if (!isGranted && !ab.levels.includes(level)) continue;
     }
     {
@@ -667,6 +672,10 @@ function flushBursts(ctx: Ctx): boolean {
     );
     if (!ab || ab.kind !== 'burst') continue;
     const subjectId = pending.find((p) => p.player === player && (p.on === ab.on || (ab.alsoDepleted && p.on === 'afterAllyDepletedByOpponent')))?.subjectId;
+    // BS09 จินเบร์: ต้องจ่ายคอสต์เพิ่มเพื่อสั่งใช้เบิร์ส (คอร์ไม่พอ = เปิดไม่ได้)
+    const tax = magicBurstTax(s, ctx.db, player).amount;
+    const openSteps: Step[] = [{ do: 'openBurst' }, ...ab.steps];
+    if (tax > 0 && usableCores(ctx, player).length < tax) continue;
     enqueue(ctx, {
       ...(subjectId ? { subjectId } : {}),
       controller: player,
@@ -675,7 +684,7 @@ function flushBursts(ctx: Ctx): boolean {
         {
           do: 'chooseOne',
           options: [
-            { label: 'เปิด Burst', steps: [{ do: 'openBurst' }, ...ab.steps] },
+            tax > 0 ? { label: `เปิด Burst (จ่ายคอสต์เพิ่ม ${tax})`, steps: [{ do: 'payBurstTax', cost: tax, then: openSteps }] } : { label: 'เปิด Burst', steps: openSteps },
             { label: 'ไม่เปิด', steps: [] },
           ],
         },
@@ -1176,7 +1185,7 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
 
     case 'useMagicFromHandFree': {
       // กติกา 14 ห้ามเมจิค: ร่ายเมจิคจากในมือ/นอกมือไม่ได้เลย (วัดอรุณ)
-      if ((s.magicBans ?? []).some((b) => b.player === me && b.turn === s.turn)) return;
+      if (magicBanned(s, me)) return;
       const candidates = handPool(me, step).filter((id) => {
         const d = db.get(s.cards[id]!.cardNo);
         return d.type === 'magic' && d.abilities.some((a) => a.kind === 'magic' && a.timing === 'flash');
@@ -2306,6 +2315,13 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       return;
     }
 
+    case 'payBurstTax': {
+      emitStatic(ctx, magicBurstTax(s, db, me).sources);
+      if (usableCores(ctx, me).length < step.cost) return;
+      ask(ctx, item, { kind: 'payCost', prompt: `จ่ายคอสต์เพิ่ม ${step.cost} เพื่อสั่งใช้เบิร์ส (ไม่จ่าย = ไม่เปิด)`, cost: step.cost, step });
+      return;
+    }
+
     case 'payForSummon': {
       if (!s.players[me].hand.includes(step.cardId) && !s.players[me].trashCards.includes(step.cardId)) return;
       if (step.cost === 0) {
@@ -3393,7 +3409,21 @@ export function resolveChoice(ctx: Ctx, player: PlayerId, pick: ChoicePick): voi
     return;
   }
 
-  if (choice.kind === 'payCost' && step.do === 'payForSummon') {
+  if (choice.kind === 'payCost' && step.do === 'payBurstTax') {
+    // จินเบร์: จ่ายแล้วเปิดเบิร์ส · ไม่จ่าย = ไม่เปิด (เบิร์สยังเซ็ทอยู่)
+    if (pick !== null) {
+      if (typeof pick !== 'object' || !('pay' in pick)) fail('INVALID_PICK', 'ต้องส่ง Core ที่จะจ่าย หรือ null เพื่อไม่จ่าย');
+      if (pick.pay.length !== step.cost) fail('WRONG_PAYMENT', `ต้องจ่าย Core ${step.cost} ดวง`);
+      if (new Set(pick.pay).size !== pick.pay.length) fail('DUPLICATE_CORE', 'ใช้ Core ดวงเดียวกันซ้ำ');
+      for (const id of pick.pay) assertUsableCore(ctx, player, id);
+      for (const id of pick.pay) {
+        removeCore(s, id);
+        s.players[player].trashCores.push(id);
+      }
+      emit(ctx, { type: 'costPaid', player, cardId: choice.sourceId, paid: step.cost });
+      cur.steps.unshift(...step.then);
+    }
+  } else if (choice.kind === 'payCost' && step.do === 'payForSummon') {
     if (pick !== null) {
       if (typeof pick !== 'object' || !('pay' in pick)) fail('INVALID_PICK', 'ต้องส่ง Core ที่จะจ่าย หรือ null เพื่อไม่จ่าย');
       if (pick.pay.length !== step.cost) fail('WRONG_PAYMENT', `ต้องจ่าย Core ${step.cost} ดวง`);

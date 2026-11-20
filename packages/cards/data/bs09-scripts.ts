@@ -173,8 +173,7 @@ export const BS09_SCRIPTS: Record<string, CardScript> = {
   ],
   'เหล่าคนใกล้ชิด จินเบร์': [
     SENGOKU6,
-    // ยังไม่รองรับ: บังคับคู่แข่งจ่ายคอสต์เพิ่ม 3 เพื่อใช้เมจิค/สั่งใช้เบิร์ส
-    null,
+    { kind: 'magicBurstTax', levels: [2], if: { allyHas: { nameIncludes: ['หกขุนศึกเซ็นโงคุ ไทดัล-บลู'] } }, amount: 3 },
   ],
 
   // ---------------------------------------------------------------- Spirit R

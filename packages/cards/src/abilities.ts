@@ -778,7 +778,9 @@ export type Step =
   /** อัญเชิญการ์ดในแทรชเรา 1 ใบที่ตรงตัวกรอง (สามารถ, จ่ายคอสต์) · then = ทำต่อเมื่ออัญเชิญสำเร็จ */
   | { do: 'summonFromTrashThen'; filter: CardFilter; then: Step[] }
   /** อัญเชิญไม่จ่ายคอสต์การ์ดในมือ/แทรชเราที่ตรงตัวกรองได้ไม่เกิน max ใบ */
-  | { do: 'summonFreeHandOrTrash'; filter: CardFilter; max: number };
+  | { do: 'summonFreeHandOrTrash'; filter: CardFilter; max: number }
+  /** (engine ใช้ภายใน) จินเบร์: จ่ายคอสต์เพิ่ม cost เพื่อสั่งใช้เบิร์ส แล้วทำ then (ไม่จ่าย = ไม่เปิด) */
+  | { do: 'payBurstTax'; cost: number; then: Step[] };
 
 /** ขอบเขตของ BP+ ถาวร */
 export type StaticScope =
@@ -1264,7 +1266,9 @@ export type Ability =
   /** แอทแท็คสเต็ปของผู้เล่นทุกคน: สปิริต/อัลติเมทที่มีคอร์ 1 เม็ดโจมตี/ป้องกันไม่ได้ */
   | { kind: 'oneCoreNoBattle'; source: number; levels: number[] }
   /** แอทแท็คสเต็ปของคู่แข่ง: คู่แข่งโจมตีได้ต่อเมื่อส่งคอร์ cores เม็ดบนตัวที่สั่งโจมตีลงแทรช */
-  | { kind: 'attackTax'; source: number; levels: number[]; cores: number };
+  | { kind: 'attackTax'; source: number; levels: number[]; cores: number }
+  /** แอทแท็คสเต็ปของเรา: คู่แข่งจะใช้งานการ์ดเมจิค/สั่งใช้เบิร์สได้ต่อเมื่อจ่ายคอสต์เพิ่ม amount (จินเบร์) */
+  | { kind: 'magicBurstTax'; source: number; levels: number[]; if?: Condition; amount: number };
 
 /** สคริปต์ของการ์ดหนึ่งใบ เรียงตาม effects (null = ยังไม่รองรับ, array = บรรทัดเดียวมีหลายความสามารถ) */
 export type CardScript = (DistributiveOmit<Ability, 'source'> | DistributiveOmit<Ability, 'source'>[] | null)[];

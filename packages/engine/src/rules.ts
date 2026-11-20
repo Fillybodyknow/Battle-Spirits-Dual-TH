@@ -1020,6 +1020,25 @@ export function trashLockSource(state: GameState, db: CardDatabase): StaticSourc
   return staticSources(state, db, ['p1', 'p2'], 'trashLock')[0] ?? null;
 }
 
+/** BS09 จินเบร์: คอสต์ที่ผู้เล่นนี้ต้องจ่ายเพิ่มเพื่อใช้งานเมจิค/สั่งใช้เบิร์สตอนนี้ (แอทแท็คสเต็ปของคู่แข่งที่มีจินเบร์) */
+export function magicBurstTax(state: GameState, db: CardDatabase, player: PlayerId): { amount: number; sources: StaticSource[] } {
+  const opp = player === 'p1' ? 'p2' : 'p1';
+  const out = { amount: 0, sources: [] as StaticSource[] };
+  if (state.turnPlayer !== opp || state.phase !== 'attack') return out;
+  for (const src of staticSources(state, db, [opp], 'magicBurstTax')) {
+    const ab = db.get(state.cards[src.cardId]!.cardNo).abilities.find((a) => a.kind === 'magicBurstTax' && a.source === src.source);
+    if (ab?.kind !== 'magicBurstTax' || !conditionHolds(state, src.cardId, ab.if, false, false, db)) continue;
+    out.amount += ab.amount;
+    out.sources.push(src);
+  }
+  return out;
+}
+
+/** BS09 วัดอรุณ: ในเทิร์นนี้ผู้เล่นนี้ใช้งานการ์ดเมจิคไม่ได้ */
+export function magicBanned(state: GameState, player: PlayerId): boolean {
+  return (state.magicBans ?? []).some((b) => b.player === player && b.turn === state.turn);
+}
+
 /** BS09 วัดอรุณ: ผู้เล่นนี้นำการ์ดในแทรชกลับขึ้นมือไม่ได้ (เน็กซัสของคู่แข่ง) */
 export function trashReturnBlocker(state: GameState, db: CardDatabase, player: PlayerId): StaticSource | null {
   return staticSources(state, db, [player === 'p1' ? 'p2' : 'p1'], 'opponentNoTrashReturn')[0] ?? null;

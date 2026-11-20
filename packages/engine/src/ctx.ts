@@ -211,9 +211,9 @@ export function payCost(
   def: CardDef,
   payment: string[],
   placement: string[],
-  opts: { noPlacement?: boolean; reserveOnly?: boolean; /** คอสต์ก่อนลด (การ์ดในแทรช) */ baseCost?: number; /** Core ขั้นต่ำที่ต้องวาง (รวม Lv คอสต์ +N) */ minPlacement?: number } = {},
+  opts: { noPlacement?: boolean; reserveOnly?: boolean; /** คอสต์ก่อนลด (การ์ดในแทรช) */ baseCost?: number; /** Core ขั้นต่ำที่ต้องวาง (รวม Lv คอสต์ +N) */ minPlacement?: number; /** คอสต์ที่ต้องจ่ายเพิ่ม (จินเบร์) */ extra?: number } = {},
 ): { paid: number; placed: string[] } {
-  const cost = payableCost(ctx.s, ctx.db, player, def, opts.baseCost ?? def.cost);
+  const cost = payableCost(ctx.s, ctx.db, player, def, opts.baseCost ?? def.cost) + (opts.extra ?? 0);
   if (payment.length !== cost) {
     fail('WRONG_PAYMENT', `ต้องจ่าย Core ${cost} ดวง แต่ส่งมา ${payment.length} ดวง`);
   }

@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { activatableOptions, blockForced, onStageAbilities, baseCost, braveToSwap, canAttackWith, cardLevel, currentBp, isSpiritLike, payableCost, summonConditionOk, trashSummonRule, type CoreTarget, type GameState, type PlayerId } from '@bs/engine';
+import { activatableOptions, blockForced, onStageAbilities, baseCost, braveToSwap, canAttackWith, cardLevel, currentBp, isSpiritLike, magicBanned, payableCost, summonConditionOk, trashSummonRule, type CoreTarget, type GameState, type PlayerId } from '@bs/engine';
 import { playerLabel } from '../format';
 import { IMG } from '../assets';
 import type { Fx } from '../store';
@@ -1308,7 +1308,11 @@ export function playOptions(state: GameState, cardId: string): { label: string; 
   }
   if (quick) options.push({ label: 'อัญเชิญ [Quick]', run: () => openPlay(cardId, 'summon') });
   if (main && def.type === 'nexus') options.push({ label: 'วาง Nexus', run: () => openPlay(cardId, 'deployNexus') });
-  if (def.type === 'magic') {
+  // วัดอรุณ: ในเทิร์นนี้ใช้งานการ์ดเมจิคไม่ได้ (รวมสปิริตที่ใช้เป็นเมจิค)
+  const noMagic = magicBanned(state, card.owner);
+  if (noMagic) {
+    // ไม่แสดงตัวเลือกใช้เมจิค
+  } else if (def.type === 'magic') {
     if (main && timings.length === 0) options.push({ label: 'ใช้ Magic', run: () => openPlay(cardId, 'useMagic') });
     if (main && timings.includes('main')) options.push({ label: 'ใช้ [Main]', run: () => openPlay(cardId, 'useMagic', 'main') });
     if ((main || flash) && timings.includes('flash')) options.push({ label: 'ใช้ [Flash]', run: () => openPlay(cardId, 'useMagic', 'flash') });

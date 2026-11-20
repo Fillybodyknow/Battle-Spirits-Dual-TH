@@ -30,6 +30,8 @@ import {
   minCores,
   summonMinCores,
   payableCost,
+  magicBanned,
+  magicBurstTax,
   createGame,
   isSpiritLike,
   locateCore,
@@ -211,8 +213,10 @@ export function responseOptions(
     const def = db.get(s.cards[id]!.cardNo);
     return (
       handMagicTimings(s, id).includes('flash') &&
-      // คอสต์ในมือ (ทริคสเตอร์ -1) ตรงกับที่ engine เรียกเก็บตอนใช้จริง
-      payableCost(s, db, player, def, baseCost(s, db, id)) <= cores &&
+      // วัดอรุณ: ในเทิร์นนี้ใช้งานการ์ดเมจิคไม่ได้
+      !magicBanned(s, player) &&
+      // คอสต์ในมือ (ทริคสเตอร์ -1) + จ่ายเพิ่ม (จินเบร์) ตรงกับที่ engine เรียกเก็บตอนใช้จริง
+      payableCost(s, db, player, def, baseCost(s, db, id)) + magicBurstTax(s, db, player).amount <= cores &&
       !magicUsedUp(s, db, player, def.cardNo, 'flash')
     );
   });

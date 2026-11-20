@@ -171,6 +171,60 @@ describe('Booster Set 09', () => {
     expect(s.cards[victim]!.cores.length).toBe(3);
   });
 
+  it('เหล่าคนใกล้ชิด: อัลติเมทหกขุนศึกเซ็นโงคุอัญเชิญได้โดยไม่สนเงื่อนไข เมื่อใช้โซลคอร์ร่วมจ่าย', () => {
+    const s = setup();
+    put(s, 'p1', no('เหล่าคนใกล้ชิด เฮล-สคัล'), 1);
+    const tidal = card(s, 'p1', no('หกขุนศึกเซ็นโงคุ ไทดัล-บลู'), 'hand');
+    const cost = payableCost(s, db, 'p1', db.get(s.cards[tidal]!.cardNo));
+    const res = normalCores(s);
+    const soul = s.players.p1.reserve.find((id) => s.cores[id]!.isSoul)!;
+    // ไลฟ์ 5 (เงื่อนไข: ไลฟ์ไม่เกิน 3) ไม่ใช้โซลคอร์ = อัญเชิญไม่ได้
+    expect(fails(s, { type: 'summon', player: 'p1', cardId: tidal, payment: res.slice(0, cost), placement: res.slice(cost, cost + 1) })).toBe('SUMMON_CONDITION');
+    const t = act(s, { type: 'summon', player: 'p1', cardId: tidal, payment: [soul, ...res.slice(0, cost - 1)], placement: res.slice(cost - 1, cost) });
+    expect(t.players.p1.field).toContain(tidal);
+  });
+
+  it('จินเบร์ Lv2 (มีไทดัล-บลู): แอทแท็คสเต็ปของเรา คู่แข่งต้องจ่ายเพิ่ม 3 เพื่อสั่งใช้เบิร์ส/ใช้เมจิค', () => {
+    let s = setup();
+    put(s, 'p1', no('เหล่าคนใกล้ชิด จินเบร์'), 2);
+    put(s, 'p1', no('หกขุนศึกเซ็นโงคุ ไทดัล-บลู'), 3);
+    const atk = put(s, 'p1', DARIU, 1);
+    const decoy = put(s, 'p1', DARIU, 3); // เป้าของคำสาปบงการชีพ
+    const burst = `t9-burst-${++seq}`;
+    s.cards[burst] = { id: burst, cardNo: no('คำสาปบงการชีพ'), owner: 'p2', state: 'refresh', cores: [], turnBp: 0, usedThisTurn: [], braves: [] };
+    s.players.p2.burst = burst;
+    const reserve = s.players.p2.reserve.length;
+    s = attack(s, atk);
+    expect(s.choice).toMatchObject({ kind: 'option', player: 'p2' });
+    expect((s.choice as { options: string[] }).options.some((o) => o.includes('จ่ายคอสต์เพิ่ม 3'))).toBe(true);
+    s = choose(s, optionIndex(s, 'เปิด Burst'));
+    expect(s.choice).toMatchObject({ kind: 'payCost', player: 'p2', cost: 3 });
+    s = choose(s, { pay: normalCores(s, 'p2').slice(0, 3) });
+    expect(s.players.p2.reserve.length).toBe(reserve - 3);
+    expect(s.players.p2.burst).toBeNull();
+    // เมจิคในช่วงแฟลช: จ่ายแค่คอสต์ปกติไม่ได้
+    // ทำเบิร์สให้จบ (เลือกเป้าตัวแรก / ไม่จ่ายแฟลชต่อ)
+    for (let i = 0; i < 10 && s.choice; i++) {
+      const c = s.choice as { kind: string; candidates?: string[]; options?: string[] };
+      s = choose(s, c.kind === 'card' ? (c.candidates!.includes(decoy) ? decoy : c.candidates![0]!) : c.kind === 'option' ? c.options!.length - 1 : null);
+    }
+    const m = card(s, 'p2', no('เฟลมมังกรคลั่ง'), 'hand');
+    const c = payableCost(s, db, 'p2', db.get(s.cards[m]!.cardNo));
+    expect(s.battle?.flash?.priority).toBe('p2');
+    {
+      expect(fails(s, { type: 'useMagic', player: 'p2', cardId: m, payment: normalCores(s, 'p2').slice(0, c), timing: 'flash' })).toBe('WRONG_PAYMENT');
+    }
+  });
+
+  it('เน็กซัสในแทรช (No.1 นอร์ธซีโรด) ไม่ทำงานเมื่อสปิริตของเราถูกอัญเชิญ', () => {
+    let s = setup();
+    card(s, 'p1', no('No.1 นอร์ธซีโรด'), 'trashCards');
+    const white = db.all().find((c) => c.type === 'spirit' && c.colors.includes('white') && c.cost <= 3 && c.effects.length === 0)!;
+    const id = card(s, 'p1', white.cardNo, 'hand');
+    s = summon(s, id);
+    expect(s.cards[id]!.cores).toHaveLength(1);
+  });
+
   it('เมียวโอสยบมาร: การ์ดในแทรชไม่รับผลเอฟเฟกต์ (นำกลับขึ้นมือไม่ได้)', () => {
     const run = (lock: boolean) => {
       let s = setup();
