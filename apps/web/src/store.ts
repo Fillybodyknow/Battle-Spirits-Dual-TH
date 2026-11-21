@@ -541,6 +541,8 @@ export type Fx =
       cardId: string;
       from: Rect | string | null;
       to: string;
+      /** ตำแหน่งปลายทางสำรองเมื่อหา to ไม่เจอ (การ์ดที่ลงสนามแล้วออกไปใน action เดียวกัน เช่น Kagemusha) */
+      toRect?: Rect;
       /** move = ย้ายโซน (ลง Trash / ขึ้นมือ / เซ็ท Burst), shrink = ย่อลงกลางปลายทาง (ช่อง Trash) */
       /** brave = ลอยขึ้นเหนือผู้ร่วมร่าง (via) แล้วหมุนเข้าช่องเบรฟ */
       mode: 'draw' | 'play' | 'magic' | 'burst' | 'move' | 'brave';
@@ -640,6 +642,24 @@ export function layoutRect(el: Element | null): Rect | null {
 export function fieldScaleOf(el: Element): number {
   const k = Number(el.closest<HTMLElement>('[data-field-scale]')?.dataset.fieldScale);
   return k > 0 ? k : 1;
+}
+
+/**
+ * ช่องสมมติบนสนามของการ์ดที่ลงสนามแล้วออกจากสนามไปใน action เดียวกัน (เช่น Kagemusha ที่ลงมารับเอฟเฟกต์แล้วถูกทำลาย)
+ * ใน state สุดท้ายไม่มีช่องของการ์ดใบนี้ → วางต่อท้ายสปิริตตัวสุดท้ายของเจ้าของ (ฝั่งคู่แข่งหมุน 180° = ต่อไปทางซ้ายของจอ)
+ */
+function virtualFieldRect(prev: GameState, owner: PlayerId, rects: Record<string, Rect>): Rect | null {
+  if (typeof document === 'undefined') return null;
+  const mat = layoutRect(document.querySelector(`[data-mat="${owner}"]`));
+  const anyCard = Object.entries(rects).find(([k]) => k.startsWith('field:'))?.[1];
+  const w = anyCard?.w ?? 112;
+  const h = anyCard?.h ?? 156;
+  const spirits = prev.players[owner].field.filter((id) => db.get(prev.cards[id]!.cardNo).type !== 'nexus').map((id) => rects[`field:${id}`]).filter((r): r is Rect => !!r);
+  const top = mat ? mat.y + mat.h / 2 < window.innerHeight / 2 : false;
+  if (spirits.length === 0) return mat ? { x: mat.x + mat.w / 2 - w / 2, y: mat.y + mat.h / 2 - h / 2, w, h } : null;
+  const dir = top ? -1 : 1;
+  const edge = dir > 0 ? spirits.reduce((a, b) => (b.x > a.x ? b : a)) : spirits.reduce((a, b) => (b.x < a.x ? b : a));
+  return { x: edge.x + dir * (edge.w + 12), y: edge.y, w, h };
 }
 
 function snapRects(): Record<string, Rect> {
@@ -1098,7 +1118,11 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
             out.push({ kind: 'fly', cardId: e.cardId, from, to: `[data-brave-card="${e.cardId}"]`, via: `[data-field-card="${host.id}"] > div:first-child`, mode: 'brave', delay: t, hideTarget: true });
             t += T.braveJoin;
           } else {
-            out.push({ kind: 'fly', cardId: e.cardId, from, to, mode: 'play', heavy, rare: rank === 3, delay: t, hideTarget: true });
+            // ลงสนามแล้วออกไปใน action เดียวกัน (Kagemusha): ลงช่องสมมติ แล้วแอนิเมชันออกจากสนาม (แตก/กลับมือ) ใช้ตำแหน่งเดียวกัน
+            const gone = !s.players[card.owner].field.includes(e.cardId) && !rects[`field:${e.cardId}`];
+            const toRect = gone ? virtualFieldRect(prev, card.owner, rects) : null;
+            if (toRect) rects[`field:${e.cardId}`] = toRect;
+            out.push({ kind: 'fly', cardId: e.cardId, from, to, ...(toRect ? { toRect } : {}), mode: 'play', heavy, rare: rank === 3, delay: t, hideTarget: true });
             t += heavy ? T.landHeavy : T.land;
           }
         }

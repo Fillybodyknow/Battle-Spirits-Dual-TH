@@ -1482,7 +1482,7 @@ function FlyCard({ fx, onDone }: { fx: Extract<Fx, { kind: 'fly' }>; onDone: () 
         { duration: 900, delay: fx.delay, fill: 'both' },
       );
     } else {
-      const slot = rectOf(document.querySelector(fx.to));
+      const slot = rectOf(document.querySelector(fx.to)) ?? fx.toRect ?? null;
       if (!slot) return onDone();
       // ลง Trash: ย่อเป็นการ์ดเล็กกลางช่อง
       const to = fx.shrink ? { x: slot.x + slot.w / 2 - 22, y: slot.y + slot.h / 2 - 31, w: 44, h: 62 } : slot;

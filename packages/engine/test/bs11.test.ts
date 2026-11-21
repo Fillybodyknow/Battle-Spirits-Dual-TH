@@ -15,7 +15,7 @@ import {
   type GameState,
   type PlayerId,
 } from '../src';
-import { coreFloorOf } from '../src/rules';
+import { cardSymbolTotal, coreFloorOf } from '../src/rules';
 
 const db = loadAllCards();
 const no = (name: string) => db.all().find((c) => c.name === name)!.cardNo;
@@ -366,6 +366,18 @@ describe('Booster Set 11', () => {
     // BP 16000 + เก็นตะ: +3000 ต่อสปิริตเก็นจิ 2 ตัว
     expect(currentBp(s, db, genta)).toBe(22000);
     expect(extraSymbols(s, db, genta).white).toBe(1); // เจ็มขาว 1 + 1 = 2
+  });
+
+  it('ฮะจิริวมีเบรฟร่วมร่าง: เจ็มของเบรฟนับในเจ็มที่เก็นจิตัวอื่นก๊อปปี้ (ขาว 2 + แดง 1 = 3 เจ็ม)', () => {
+    const s = setup();
+    const genta = put(s, 'p1', no('แปดอัศวินเก็นจิ เก็นตะ'), 1); // เจ็มขาว 1
+    const hachi = put(s, 'p1', no('แปดอัศวินเก็นจิ ฮะจิริว'), 3, true); // Lv2 เจ็มขาว 2
+    const brave = `t11-brave-${++seq}`;
+    s.cards[brave] = { id: brave, cardNo: no('ดาบมังกรเกราะ โกวเท็น'), owner: 'p1', state: 'refresh', cores: [], turnBp: 0, usedThisTurn: [], braves: [] }; // เจ็มแดง 1
+    s.cards[hachi]!.braves.push(brave);
+    expect(cardSymbolTotal(s, db, hachi)).toBe(3);
+    expect(cardSymbolTotal(s, db, genta)).toBe(3);
+    expect(extraSymbols(s, db, genta)).toMatchObject({ white: 1, red: 1 });
   });
 
   it('กู๊ดลัคฮิล Lv2: สปิริตคู่แข่งที่กลับขึ้นมือโดยเอฟเฟกต์ของเรา → ส่งโซลคอร์ลงแทรช ไปใต้สุดเด็คแทน', () => {

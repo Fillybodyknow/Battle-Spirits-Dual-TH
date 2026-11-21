@@ -269,11 +269,15 @@ function extraSymbolsRaw(state: GameState, db: CardDatabase, cardId: string): Pa
     }
   }
   // BS11 ฮะจิริว: เจ็มเหมือนฮะจิริว (ส่วนต่างจากเจ็มที่พิมพ์ของการ์ดนี้)
+  // เจ็มของฮะจิริว = เจ็มที่พิมพ์ + เจ็มของเบรฟที่ร่วมร่างกับฮะจิริว (เจ้าของโปรเจกต์กำหนด)
   {
     const copy = statCopySource(state, db, cardId);
     if (copy) {
       const mine = db.get(state.cards[cardId]!.cardNo).symbols;
-      const theirs = db.get(state.cards[copy]!.cardNo).symbols;
+      const theirs: Partial<Record<SymbolColor, number>> = {};
+      for (const id of [copy, ...state.cards[copy]!.braves]) {
+        for (const [c, n] of Object.entries(db.get(state.cards[id]!.cardNo).symbols) as [SymbolColor, number][]) theirs[c] = (theirs[c] ?? 0) + n;
+      }
       for (const c of new Set([...Object.keys(mine), ...Object.keys(theirs)]) as Set<SymbolColor>) {
         const d = (theirs[c] ?? 0) - (mine[c] ?? 0);
         if (d !== 0) out[c] = (out[c] ?? 0) + d;
