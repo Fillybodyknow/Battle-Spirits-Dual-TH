@@ -167,8 +167,8 @@ export interface CountPer {
   gemColors?: true | CardFilter;
   /** BS11: จำนวนการ์ดของคู่แข่งที่เอฟเฟกต์นี้นำกลับขึ้นมือ/เด็ค */
   bouncedByThis?: true;
-  /** BS12 มิสึรุกิ: สปิริตของคู่แข่งที่จดไว้ตอนสั่ง Catalyze (catalyze.watchOpponents) แล้วลงแทรชไป (ถูกทำลาย/สูญสลาย) */
-  watchedToTrash?: true;
+  /** BS12 มิสึรุกิ: สปิริต/อัลติเมทของคู่แข่งที่ถูกทำลาย/สูญสลายโดยเอฟเฟกต์ของเบิร์สที่ Catalyze สั่งใช้ (catalyze.countKills · ใช้ใน then) */
+  burstKills?: true;
   /** BS12 โดจิ ห้ามงคล: การ์ดที่ mill ล่าสุดของเอฟเฟกต์นี้ทิ้งไป ที่ตรงตัวกรอง */
   milledByThis?: CardFilter;
   /** หารด้วย (ต่อ 2 ตัว = 2) ไม่ระบุ = 1 */
@@ -619,7 +619,7 @@ export type Step =
    */
   | { do: 'setBurstFromHand'; then?: Step[]; /** "ในมือ/นอกมือ" */ withShown?: true }
   /** [Catalyze]: สั่งใช้ Soul Burst สีนี้ของเราที่เซ็ทอยู่ (ไม่ต้องรอเงื่อนไข) */
-  | { do: 'catalyze'; /** ไม่ระบุ = ทุกสี */ color?: Color; /** BS10: สีใดสีหนึ่งในนี้ */ colors?: Color[]; /** BS10 มิโคโตะ: เอฟเฟกต์เลือกเป้า 1 ตัวของเบิร์สนั้น = ทั้งหมดแทน */ allTargets?: true; /** "หลังจากเบิร์สนั้นถูกสั่งใช้": ทำต่อหลังเบิร์สทำงานจบ (subject = เบิร์สนั้น) */ then?: Step[]; /** BS11 สุโอว: เบิร์สที่ชื่อมีคำเหล่านี้ ไลฟ์เราถือว่าเป็น life */ lifeAs?: { names: string[]; life: number }; /** BS12 มิสึรุกิ: จดสปิริตคู่แข่งบนสนามไว้ ให้ then นับตัวที่ลงแทรช (CountPer watchedToTrash) */ watchOpponents?: true }
+  | { do: 'catalyze'; /** ไม่ระบุ = ทุกสี */ color?: Color; /** BS10: สีใดสีหนึ่งในนี้ */ colors?: Color[]; /** BS10 มิโคโตะ: เอฟเฟกต์เลือกเป้า 1 ตัวของเบิร์สนั้น = ทั้งหมดแทน */ allTargets?: true; /** "หลังจากเบิร์สนั้นถูกสั่งใช้": ทำต่อหลังเบิร์สทำงานจบ (subject = เบิร์สนั้น) */ then?: Step[]; /** BS11 สุโอว: เบิร์สที่ชื่อมีคำเหล่านี้ ไลฟ์เราถือว่าเป็น life */ lifeAs?: { names: string[]; life: number }; /** BS12 มิสึรุกิ: นับสปิริตของคู่แข่งที่เบิร์สนั้นทำลาย/ทำให้สูญสลาย ให้ then ใช้ (CountPer burstKills) */ countKills?: true }
   /** (engine ใช้ภายใน) ไล่วางการ์ดที่เหลือไว้ใต้สุดเด็คตามลำดับที่เลือก */
   | { do: 'toDeckBottom'; cardIds: string[] }
   /** (engine ใช้ภายใน) การ์ดที่แสดง (ยังอยู่บนสุดเด็ค) เรียงลำดับใหม่บนสุดเด็ค: ใบที่เลือกทีหลังอยู่บนกว่า */

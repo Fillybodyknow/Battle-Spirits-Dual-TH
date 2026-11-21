@@ -626,6 +626,9 @@ function depleteByOpponent(ctx: Ctx, item: QueuedEffect, cardId: string, level: 
   }
   sendToTrash(ctx, cardId);
   emit(ctx, { type: 'depleted', cardId });
+  // BS12 มิสึรุกิ: สูญสลายโดยเอฟเฟกต์ของเบิร์สที่นับอยู่
+  const bk = ctx.s.burstKills;
+  if (bk && item.sourceId === bk.burstId && owner !== bk.controller) bk.count++;
   if (hadSoul) item.depletedSoul = true;
   item.depleted = true;
   // กติกา 10: สูญสลายไม่ใช่การถูกทำลาย → เปิดได้เฉพาะเบิร์สที่เขียน "ถูกทำลาย/สูญสลาย"
@@ -1862,6 +1865,8 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       const ab = def.abilities.find((x) => x.kind === 'burst');
       if (!ab || ab.kind !== 'burst' || !ab.soul || (step.color && !def.colors.includes(step.color)) || (step.colors && !step.colors.some((c) => def.colors.includes(c)))) return;
       emit(ctx, { type: 'catalyze', cardId: item.sourceId, burstId });
+      // BS12 มิสึรุกิ: นับสปิริตคู่แข่งที่เบิร์สนี้ทำลาย/ทำให้สูญสลาย (นับใน destroy ของ ctx.ts และ depleteByOpponent)
+      if (step.countKills) s.burstKills = { burstId, controller: me, count: 0 };
       // สั่งใช้ทันทีหลังเอฟเฟกต์นี้
       s.queue.splice(1, 0, {
         controller: me,
@@ -1886,7 +1891,6 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
           started: true,
           subjectId: burstId,
           ...(item.source !== undefined ? { source: item.source } : {}),
-          ...(step.watchOpponents ? { watched: s.players[opp].field.filter((id) => spiritLike(id)) } : {}),
         });
       }
       return;
@@ -4147,7 +4151,7 @@ function countPer(ctx: Ctx, item: QueuedEffect, per: CountPer): number {
   else if (per.handIncrease) n = item.handIncrease ?? 0;
   else if (per.bouncedByThis) n = item.bouncedCount ?? 0;
   // ---------------- BS12
-  else if (per.watchedToTrash) n = (item.watched ?? []).filter((id) => s.players[opponentOf(me)].trashCards.includes(id)).length;
+  else if (per.burstKills) n = s.burstKills && s.burstKills.burstId === item.subjectId ? s.burstKills.count : 0;
   else if (per.milledByThis) n = (item.milled ?? []).filter((id) => matchesFilter(s, db, id, per.milledByThis!)).length;
   else if (per.gemColors) {
     if (per.gemColors === true) n = gemColorCount(s, db, me);

@@ -167,6 +167,9 @@ export function destroy(ctx: Ctx, cardId: string, by?: PlayerId, bySource?: stri
   // ตรวจก่อนลงแทรช (ร่างแยก Bunshin ถูกคืนเป็นการ์ดจริงตอนออกจากสนาม)
   const spirit = isSpiritLike(ctx.db.get(ctx.s.cards[cardId]!.cardNo));
   sendToTrash(ctx, cardId);
+  // BS12 มิสึรุกิ: ถูกทำลายโดยเอฟเฟกต์ของเบิร์สที่นับอยู่
+  const bk = ctx.s.burstKills;
+  if (bk && spirit && bySource === bk.burstId && owner !== bk.controller) bk.count++;
   emit(ctx, { type: 'destroyed', cardId, cost, ...(bySource ? { bySource } : {}) });
   if (by && by !== owner && spirit) pendBurst(ctx, owner, 'afterAllyDestroyedByOpponent');
 }

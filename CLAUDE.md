@@ -160,7 +160,7 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
   `nexusExhaustPay` (คาเมะมิสึ: action summon `exhaustNexus` + ปุ่มใน PlayDialog, `nexusExhaustPayMax`) · `attackReserveTax` (แคพิทัลแคพิทัล: `attackReserveTaxFor` ใน canAttackWith / declareAttack) ·
   `millBoost` (Charge ทิ้งเด็ค: `millBoostFor` ใน step mill) · `bpDestroyBoost` ไม่ต้องมี nameIncludes ได้ + `if` / `fromTypes` / `granted` และมีผลกับ `opponentTotalBp` (BP รวม) ด้วย ·
   `opponentTotalBp.metric: 'cost'` / `.filter` · `maxLevelIf.granted` · ในเทิร์นนี้ Lv สูงสุด = step `maxLevelThisTurn` (`state.maxLevelTurn`) · `extraSymbol.perAllies` ·
-  step `trashSoulToAlly` / `destroyAllOpponentBraves` / `peekHandDiscard` · `catalyze.watchOpponents` + CountPer `watchedToTrash` (มิสึรุกิ) · CountPer `milledByThis` · `destroyChosenOpponent.bpFrom: 'chosen'` (soulToAlly / refreshChosenAlly ตั้ง chosenId) ·
+  step `trashSoulToAlly` / `destroyAllOpponentBraves` / `peekHandDiscard` · `catalyze.countKills` + CountPer `burstKills` (มิสึรุกิ: นับเฉพาะสปิริตคู่แข่งที่เอฟเฟกต์ของเบิร์สนั้นทำลาย/ทำให้สูญสลาย = `state.burstKills` นับใน `destroy` ของ ctx.ts และ `depleteByOpponent`) · CountPer `milledByThis` · `destroyChosenOpponent.bpFrom: 'chosen'` (soulToAlly / refreshChosenAlly ตั้ง chosenId) ·
   `summonFreeHandOrTrash.zones` / `.per` · `opponentLifeToReserve.per` · SubjectFilter `cost` · เงื่อนไข `ownBurstSet`
 - **สูญสลายไม่ใช่การถูกทำลาย** (กติกา 10): สูญสลายโดยคู่แข่ง = trigger `depletedByOpponent` + เบิร์ส `afterAllyDepletedByOpponent` เท่านั้น
   ข้อความ "ถูกทำลาย/สูญสลาย" = trigger `on: ['destroyedByOpponent', 'depletedByOpponent']` / เบิร์ส `alsoDepleted: true` · "ถูกทำลายโดยเอฟเฟกต์ของคู่แข่ง" (ไม่นับแพ้เทียบ BP) = `destroyedByOpponentEffect`

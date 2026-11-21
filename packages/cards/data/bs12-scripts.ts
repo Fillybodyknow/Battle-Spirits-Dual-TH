@@ -345,7 +345,11 @@ export const BS12_SCRIPTS: Record<string, CardScript> = {
     { kind: 'bpDestroyBoost', levels: L23, if: soulOnSelf, amount: 10000, fromTypes: ['spirit', 'brave', 'magic'] },
   ],
   'โดจิ นาคาเหลือง': [
-    { kind: 'trigger', on: 'allyDestroyed', levels: ALL2, subject: { types: ['nexus'], byOpponent: true }, steps: [{ do: 'voidCore', to: 'self', count: 2 }] },
+    [
+      { kind: 'trigger', on: 'allyDestroyed', levels: ALL2, subject: { types: ['nexus'], byOpponent: true }, steps: [{ do: 'voidCore', to: 'self', count: 2 }] },
+      // "ถูกทำลาย/สูญสลายโดยคู่แข่ง": ดักการสูญสลายด้วย (กติกา 10: สูญสลายไม่ใช่การถูกทำลาย)
+      { kind: 'trigger', on: 'allyDepletedByOpponent', levels: ALL2, subject: { types: ['nexus'] }, steps: [{ do: 'voidCore', to: 'self', count: 2 }] },
+    ],
   ],
   'ปรมาจารย์ช่างตีเหล็ก คาเมะมิสึ': [{ kind: 'nexusExhaustPay', levels: ALL2, names: ['ราชันดอกบัว เซ็นจู'] }],
   'โดจิ ห้ามงคล': [
@@ -375,7 +379,7 @@ export const BS12_SCRIPTS: Record<string, CardScript> = {
   ],
   'มังกรยุทธ์ดาบศักดิ์สิทธิ์ มิสึรุกิ-ดราก้อน': [
     { kind: 'trigger', on: 'endStep', levels: ALL3, ownTurnOnly: true, steps: [{ do: 'setBurstFromHand' }] },
-    catalyze(L23, null, '', { watchOpponents: true, then: [{ do: 'opponentLifeToReserve', count: 1, per: { watchedToTrash: true } }] }),
+    catalyze(L23, null, '', { countKills: true, then: [{ do: 'opponentLifeToReserve', count: 1, per: { burstKills: true } }] }),
   ],
   'เมียวโอดาบศักดิ์สิทธิ์ ชูร่า': [
     { kind: 'trigger', on: 'summon', levels: ALL3, steps: [{ do: 'summonFromHandFree', filter: { types: ['brave'], family: 'ดาบกระบี่' } }] },

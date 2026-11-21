@@ -250,8 +250,7 @@ export interface QueuedEffect {
   chosenId?: string;
   /** (BS08) จำนวนการ์ดของคู่แข่งที่เอฟเฟกต์นี้นำกลับขึ้นมือ/เด็ค */
   bouncedCount?: number;
-  /** BS12 มิสึรุกิ: สปิริตของคู่แข่งบนสนามตอนสั่ง Catalyze (CountPer watchedToTrash นับตัวที่ลงแทรชไป) */
-  watched?: string[];
+
   /** (BS07) trigger allyDestroyed: การ์ดของคู่แข่งที่ทำลาย subject */
   destroyerId?: string;
   /** เอฟเฟกต์ "เมื่อสปิริต/เบรฟนี้ถูกอัญเชิญ" */
@@ -435,6 +434,8 @@ export interface GameState {
   levelOneTurn?: { player: PlayerId; turn: number }[];
   /** BS12 อาบิส-อโพคาลิพส์ / พันหัตถ์คันนนจู่โจม: ในเทิร์นนี้ถือว่าเป็น Lv สูงสุด (cardId ว่าง = สปิริตทั้งหมดของผู้เล่นนี้) */
   maxLevelTurn?: { player: PlayerId; turn: number; cardId?: string }[];
+  /** BS12 มิสึรุกิ: จำนวนสปิริต/อัลติเมทของคู่แข่ง (ของ controller) ที่เบิร์ส burstId ทำลาย/ทำให้สูญสลาย */
+  burstKills?: { burstId: string; controller: PlayerId; count: number };
   /** ในเทิร์นนี้ การ์ดนี้ไม่ถูกทำลาย */
   noDestroyTurn?: { cardId: string; turn: number }[];
   // ---------------- BS11
