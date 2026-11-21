@@ -136,6 +136,14 @@ export type Condition =
   | { assaultAlt: true }
   /** การ์ดนี้ใช้ "เทิร์นละไม่เกิน max ครั้ง" ชื่อนี้ไปน้อยกว่า max ครั้ง (นับจาก step markOnce) */
   | { usedFewerThan: { key: string; max: number } }
+  // ---------------- BS13
+  /**
+   * Rush (กติกา 14 Rush): มีเจ็มสี color บนฟิลด์เราอย่างน้อย count เม็ด
+   * (เบรฟที่ให้ "Rush ไม่สนเงื่อนไข" กับผู้ร่วมร่าง = rushIgnore ทำให้เป็นจริงเสมอ)
+   */
+  | { rush: { color: Color; count: number } }
+  /** "เมนสเต็ปของเรา" */
+  | { ownMainStep: true }
   /** กลับเงื่อนไข */
   | { not: Condition };
 
@@ -256,6 +264,8 @@ export interface CardFilter {
   highestBp?: true;
   /** BS10: ไม่ใช่สีใดเลยในสีเหล่านี้ */
   notColors?: Color[];
+  /** BS13: มีสีตั้งแต่ N สีขึ้นไป (นับสีบนสนามรวม "ถือว่าเป็นสี...ด้วย") */
+  minColors?: number;
   /** มีคอร์วางอยู่อย่างน้อย N เม็ด (เฉพาะบนสนาม) */
   minCores?: number;
   // ---------------- BS11
@@ -476,6 +486,8 @@ export type Step =
   | {
       do: 'bounceOpponent';
       filter: CardFilter;
+      /** BS13 ดาร์คเนส-กริฟฟอน: ถ้าเงื่อนไขจริง คอร์บนการ์ดที่กลับขึ้นมือลงแทรชของเจ้าของแทนรีเสิร์ฟ */
+      coresToTrashIf?: Condition;
       /** ปลายทาง (ไม่ระบุ = กลับขึ้นมือ) */
       to?: 'hand' | 'deckBottom' | 'deckTop';
       /** เลือกการ์ดฝ่ายไหนก็ได้ (รวมของเรา) */
@@ -863,6 +875,9 @@ export type Step =
   | { do: 'peekHandDiscard'; count: number; filter?: CardFilter }
   /** (engine ใช้ภายใน) จินเบร์: จ่ายคอสต์เพิ่ม cost เพื่อสั่งใช้เบิร์ส แล้วทำ then (ไม่จ่าย = ไม่เปิด) */
   | { do: 'payBurstTax'; cost: number; then: Step[]; /** ข้อความที่ถาม (ไม่ระบุ = จ่ายเพื่อสั่งใช้เบิร์ส) */ label?: string }
+  // ---------------- BS13
+  /** ฟื้นสภาพสปิริตที่เพิ่งเลือกในเอฟเฟกต์นี้ (voidCore to ally) */
+  | { do: 'refreshChosen' }
   // ---------------- BS10
   /** เลือกสี 1 สี แล้วเสื่อมสภาพการ์ดสีนั้นที่ตรงตัวกรองทั้งหมด (ทั้งสองฝ่าย) */
   | { do: 'exhaustAllChosenColor'; filter: CardFilter }
@@ -1352,7 +1367,7 @@ export type Ability =
    */
   | { kind: 'activated'; source: number; levels: number[]; timing: 'attackFlash'; label: string; steps: Step[]; if?: Condition; maxPerTurn?: number; /** Brave: ผู้ร่วมร่างได้รับ (เงื่อนไขดูที่ผู้ร่วมร่าง) */ granted?: true }
   /** "รีเฟรชสเต็ปของคู่แข่ง: การ์ดของคู่แข่งที่ตรงตัวกรองทั้งหมดจะฟื้นสภาพไม่ได้" */
-  | { kind: 'opponentNoRefresh'; source: number; levels: number[]; filter: CardFilter }
+  | { kind: 'opponentNoRefresh'; source: number; levels: number[]; filter: CardFilter; if?: Condition; /** BS13 ก็อด-เซคส์: "ฟื้นสภาพไม่ได้" ทุกทาง (รวมฟื้นสภาพด้วยเอฟเฟกต์) ไม่ใช่แค่รีเฟรชสเต็ป */ anyRefresh?: true }
   /** "ถ้า... การ์ดของเราที่ตรงตัวกรองบนสนามทั้งหมดคอสต์ +amount" */
   | { kind: 'costBoost'; source: number; levels: number[]; if?: Condition; filter: CardFilter; amount: number }
   /** เอฟเฟกต์ Magic: [Main] หรือ [Flash] (การ์ดสปิริตที่ "ถือว่าเป็นการ์ดเมจิคด้วย" ใช้จากมือได้เช่นกัน) */
@@ -1364,6 +1379,8 @@ export type Ability =
       oncePerTurn?: true;
       /** เล็งหลายเป้าพร้อมกัน ("อย่างละ 1 ตัว" / "เลือก 1 ตัว. นอกจากนั้น เลือกอีก 1 ตัว"): กระจายด้วย Dispersion ไม่ได้ (กติกา 14 Dispersion ข้อ 11) */
       noDispersion?: true;
+      /** BS13 เดรมาซาดาร์: "เอฟเฟกต์นี้ ทำงานในเมนสเต็ปไม่ได้" */
+      notMain?: true;
     }
   /** "การ์ดสปิริตนี้ ถือว่าเป็นการ์ดเมจิคด้วย" (ตัวกรอง types magic นับการ์ดนี้ด้วย) */
   | { kind: 'alsoMagic'; source: number }
@@ -1513,7 +1530,14 @@ export type Ability =
   /** โอคุริดาระ: [ร่วมร่าง] เบรฟนี้ถือว่ามีคอสต์ cost */
   | { kind: 'braveCostAs'; source: number; levels: number[]; cost: number; granted: true }
   /** แคพิทัลแคพิทัล: แอทแท็คสเต็ปของคู่แข่ง สปิริต/อัลติเมทที่ไม่มีโซลคอร์จะโจมตีได้ต่อเมื่อส่งคอร์ในรีเสิร์ฟ cores เม็ดลงแทรช (+soulBonus ถ้าการ์ดนี้มีโซลคอร์) */
-  | { kind: 'attackReserveTax'; source: number; levels: number[]; cores: number; soulBonus: number };
+  | { kind: 'attackReserveTax'; source: number; levels: number[]; cores: number; soulBonus: number }
+  // ---------------- BS13
+  /** อิจิบันสเปียร์: การ์ดในมือเราที่ตรงตัวกรองทั้งหมดถือว่ามีคอสต์ cost */
+  | { kind: 'handCostSet'; source: number; levels: number[]; filter: CardFilter; cost: number }
+  /** สถานที่ศักดิ์สิทธิ์ต้องห้าม: ต่อ 1 เทิร์น เด็คเราถูกทิ้งโดยเอฟเฟกต์ของคู่แข่งได้มากสุด max ใบ */
+  | { kind: 'millCap'; source: number; levels: number[]; max: number }
+  /** มิดไนท์-ซัน: [ร่วมร่าง] Rush ของผู้ร่วมร่างไม่สนเงื่อนไข */
+  | { kind: 'rushIgnore'; source: number; levels: number[]; granted: true };
 
 /** สคริปต์ของการ์ดหนึ่งใบ เรียงตาม effects (null = ยังไม่รองรับ, array = บรรทัดเดียวมีหลายความสามารถ) */
 export type CardScript = (DistributiveOmit<Ability, 'source'> | DistributiveOmit<Ability, 'source'>[] | null)[];

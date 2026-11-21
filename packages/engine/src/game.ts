@@ -60,6 +60,7 @@ import {
   trashSummonRule,
   activatableAbilities,
   activatableOptions,
+  noRefreshSource,
 } from './rules';
 import {
   DEFAULT_CONFIG,
@@ -308,14 +309,8 @@ function refreshStep(ctx: Ctx): void {
   const locks = s.refreshLocks ?? [];
   const opp = s.players[opponentOf(player)];
   /** การ์ดของคู่แข่งที่ทำให้การ์ดนี้ฟื้นสภาพไม่ได้ (โซอุม) */
-  const noRefreshBy = (id: string) => {
-    for (const src of opp.field) {
-      const level = cardLevel(s, ctx.db, src);
-      const a = ctx.db.get(s.cards[src]!.cardNo).abilities.find((a) => a.kind === 'opponentNoRefresh' && a.levels.includes(level) && matchesFilter(s, ctx.db, id, a.filter));
-      if (a) return { cardId: src, source: a.source };
-    }
-    return null;
-  };
+  // BS13: ตรวจเงื่อนไข (Six Heaven's Rush) และเอฟเฟกต์ที่ถูกลบล้างด้วย
+  const noRefreshBy = (id: string) => noRefreshSource(s, ctx.db, id, false);
   for (const id of p.field) {
     if (locks.includes(id)) continue;
     const by = noRefreshBy(id);
@@ -605,6 +600,8 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     if ((def.effects.length > 0 || def.type !== 'magic') && !has(use)) fail('NO_SUCH_EFFECT', `การ์ดนี้ไม่มีเอฟเฟกต์ [${use === 'main' ? 'Main' : 'Flash'}]`);
     if (flash && def.type === 'magic' && def.effects.length === 0) fail('NO_SUCH_EFFECT', 'การ์ดนี้ไม่มีเอฟเฟกต์ [Flash]');
 
+    // BS13 เดรมาซาดาร์: "เอฟเฟกต์นี้ ทำงานในเมนสเต็ปไม่ได้"
+    if (s.phase === 'main' && def.abilities.some((a) => a.kind === 'magic' && a.timing === use && a.notMain)) fail('WRONG_TIMING', 'เอฟเฟกต์นี้ใช้ในเมนสเต็ปไม่ได้');
     if (magicUsedUp(s, ctx.db, player, def.cardNo, use)) fail('ONCE_PER_TURN', 'เอฟเฟกต์นี้ใช้ได้เทิร์นละ 1 ครั้ง');
     const paidWithSoul = payment.some((id) => s.cores[id]?.isSoul);
     // ใช้เป็นเมจิค: จ่ายคอสต์อย่างเดียว ไม่วาง Core (การ์ดสปิริตที่ใช้เป็นเมจิคก็เช่นกัน)

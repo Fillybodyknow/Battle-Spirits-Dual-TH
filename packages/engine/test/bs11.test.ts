@@ -378,6 +378,9 @@ describe('Booster Set 11', () => {
     expect(cardSymbolTotal(s, db, hachi)).toBe(3);
     expect(cardSymbolTotal(s, db, genta)).toBe(3);
     expect(extraSymbols(s, db, genta)).toMatchObject({ white: 1, red: 1 });
+    // BP+ ของเบรฟ (โกวเท็น +3000) ก๊อปปี้ด้วย: 16000 + 3000 + เก็นตะ +3000 ต่อสปิริตเก็นจิ 2 ตัว
+    expect(currentBp(s, db, hachi)).toBe(19000);
+    expect(currentBp(s, db, genta)).toBe(16000 + 3000 + 6000);
   });
 
   it('กู๊ดลัคฮิล Lv2: สปิริตคู่แข่งที่กลับขึ้นมือโดยเอฟเฟกต์ของเรา → ส่งโซลคอร์ลงแทรช ไปใต้สุดเด็คแทน', () => {

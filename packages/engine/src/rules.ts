@@ -435,6 +435,14 @@ export function conditionHolds(
   // ---------------- BS11
   // ---------------- BS12
   if ('ownBurstSet' in cond) return owner.burst !== null && owner.burst !== undefined;
+  // ---------------- BS13
+  if ('rush' in cond) {
+    if (!db) return false;
+    // มิดไนท์-ซัน: [ร่วมร่าง] Rush ไม่สนเงื่อนไข
+    if (owner.field.includes(sourceId) && card.braves.some((b) => db.get(state.cards[b]!.cardNo).abilities.some((a) => a.kind === 'rushIgnore'))) return true;
+    return (fieldSymbols(state, db, card.owner)[cond.rush.color] ?? 0) >= cond.rush.count;
+  }
+  if ('ownMainStep' in cond) return state.phase === 'main' && state.turnPlayer === card.owner;
   if ('assaultAlt' in cond) return !!db && state.phase === 'attack' && state.turnPlayer === card.owner && staticSources(state, db, [card.owner], 'assaultTrashNexus').length > 0;
   if ('onlyGemColor' in cond) {
     if (!db) return false;
@@ -476,6 +484,8 @@ function currentBpRaw(state: GameState, db: CardDatabase, cardId: string): numbe
   }
   // เอฟเฟกต์ติดตัวที่ Brave ให้ผู้ร่วมร่าง
   for (const b of card.braves) bp += db.get(state.cards[b]!.cardNo).braveCondition?.bp ?? 0;
+  // BS11 ฮะจิริว: BP+ ที่เบรฟให้ฮะจิริวก็ก๊อปปี้ด้วย (เหมือนเจ็ม: เจ้าของโปรเจกต์กำหนด)
+  if (copy) for (const b of state.cards[copy]!.braves) bp += db.get(state.cards[b]!.cardNo).braveCondition?.bp ?? 0;
   const ownerP = state.players[card.owner];
   // การ์ดบนสนาม + เบรฟที่ร่วมร่างอยู่ (ความสามารถที่ผู้ร่วมร่างได้รับ: "สปิริตนี้" = ผู้ร่วมร่าง)
   const sources = ownerP.field.flatMap((f) => [{ srcId: f, holder: f }, ...state.cards[f]!.braves.map((b) => ({ srcId: b, holder: f }))]);
@@ -607,6 +617,7 @@ export function matchesFilter(state: GameState, db: CardDatabase, cardId: string
   // ---------------- BS09
   if (filter.minCores !== undefined && card.cores.length < filter.minCores) return false;
   if (filter.notColors && cardColors(state, db, cardId).some((c) => filter.notColors!.includes(c))) return false;
+  if (filter.minColors && cardColors(state, db, cardId).length < filter.minColors) return false;
   // ---------------- BS11
   if (filter.hasUltraShield && !hasUltraShield(state, db, cardId)) return false;
   if (filter.minReductionColors !== undefined && Object.values(def.reduction).filter((v) => (v ?? 0) > 0).length < filter.minReductionColors) return false;
@@ -837,10 +848,14 @@ function fieldSymbolsRaw(state: GameState, db: CardDatabase, player: PlayerId): 
   // "เจ็มของสปิริตนี้ถือว่าเป็นเจ็มสี...ด้วย" (คานิคอง)
   for (const id of state.players[player].field) {
     const def = db.get(state.cards[id]!.cardNo);
-    const also = def.abilities.find((a) => a.kind === 'symbolAlsoColor' && a.levels.includes(cardLevel(state, db, id)));
-    if (!also || also.kind !== 'symbolAlsoColor' || effectsNegated(state, db, id) || zeroed(id)) continue;
-    const own = Object.entries(def.symbols).reduce((n, [c, v]) => n + (c === also.color ? 0 : (v ?? 0)), 0);
-    if (own > 0) out[also.color] = (out[also.color] ?? 0) + own;
+    if (effectsNegated(state, db, id) || zeroed(id)) continue;
+    const lv = cardLevel(state, db, id);
+    // BS13: ถือว่าเป็นหลายสีได้ (อิเทะคาชะ "สีแดง/ม่วงด้วย") = เจ็มนับเป็นทุกสีที่ระบุ
+    for (const also of def.abilities) {
+      if (also.kind !== 'symbolAlsoColor' || !also.levels.includes(lv)) continue;
+      const own = Object.entries(def.symbols).reduce((n, [c, v]) => n + (c === also.color ? 0 : (v ?? 0)), 0);
+      if (own > 0) out[also.color] = (out[also.color] ?? 0) + own;
+    }
   }
   return out;
 }
@@ -894,6 +909,17 @@ function baseCostInner(state: GameState, db: CardDatabase, cardId: string, zone:
       if (ab.mainStepOnly && (state.phase !== 'main' || state.turnPlayer !== card.owner)) continue;
       if (!matchesFilter(state, db, cardId, ab.filter)) continue;
       cost = cost === null ? ab.cost : Math.min(cost, ab.cost);
+    }
+  }
+  // BS13 อิจิบันสเปียร์: "การ์ด...ในมือเราถือว่ามีคอสต์ N"
+  if (zone === 'hand') {
+    for (const id of owner.field) {
+      if (effectsNegated(state, db, id)) continue;
+      const level = cardLevel(state, db, id);
+      for (const ab of db.get(state.cards[id]!.cardNo).abilities) {
+        if (ab.kind !== 'handCostSet' || !ab.levels.includes(level) || !matchesFilter(state, db, cardId, ab.filter)) continue;
+        cost = cost === null ? ab.cost : Math.min(cost, ab.cost);
+      }
     }
   }
   if (cost !== null) return cost;
@@ -2256,4 +2282,40 @@ export function fieldSymbols(state: GameState, db: CardDatabase, player: PlayerI
 }
 export function payableCost(state: GameState, db: CardDatabase, player: PlayerId, def: CardDef, base: number = def.cost): number {
   return memo(state, db, 'payableCost|' + player + '|' + def.cardNo + '|' + base, () => payableCostRaw(state, db, player, def, base));
+}
+
+// ---------------------------------------------------------------- BS13
+/**
+ * การ์ดของคู่แข่งที่ทำให้การ์ดนี้ฟื้นสภาพไม่ได้ (opponentNoRefresh: โซอุม = รีเฟรชสเต็ป, ก็อด-เซคส์ Six Heaven's Rush = ทุกทาง)
+ * byEffect = ฟื้นสภาพด้วยเอฟเฟกต์ (นับเฉพาะ anyRefresh)
+ */
+export function noRefreshSource(state: GameState, db: CardDatabase, cardId: string, byEffect: boolean): StaticSource | null {
+  const card = state.cards[cardId];
+  if (!card) return null;
+  const opp = card.owner === 'p1' ? 'p2' : 'p1';
+  for (const src of state.players[opp].field) {
+    if (effectsNegated(state, db, src)) continue;
+    const level = cardLevel(state, db, src);
+    for (const a of db.get(state.cards[src]!.cardNo).abilities) {
+      if (a.kind !== 'opponentNoRefresh' || !a.levels.includes(level) || (byEffect && !a.anyRefresh)) continue;
+      if (!matchesFilter(state, db, cardId, a.filter) || !conditionHolds(state, src, a.if, false, false, db)) continue;
+      return { cardId: src, source: a.source };
+    }
+  }
+  return null;
+}
+
+/** สถานที่ศักดิ์สิทธิ์ต้องห้าม: เด็คของผู้เล่นนี้ถูกทิ้งโดยเอฟเฟกต์ของคู่แข่งได้อีกกี่ใบในเทิร์นนี้ (null = ไม่จำกัด) */
+export function millCapLeft(state: GameState, db: CardDatabase, player: PlayerId): { left: number; src: StaticSource } | null {
+  let best: { max: number; src: StaticSource } | null = null;
+  for (const id of state.players[player].field) {
+    if (effectsNegated(state, db, id)) continue;
+    const level = cardLevel(state, db, id);
+    for (const a of db.get(state.cards[id]!.cardNo).abilities) {
+      if (a.kind === 'millCap' && a.levels.includes(level) && (!best || a.max < best.max)) best = { max: a.max, src: { cardId: id, source: a.source } };
+    }
+  }
+  if (!best) return null;
+  const used = state.milledByOpponent?.turn === state.turn ? (state.milledByOpponent[player] ?? 0) : 0;
+  return { left: Math.max(0, best.max - used), src: best.src };
 }

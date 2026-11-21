@@ -117,8 +117,10 @@ export function magicTimings(cardNo: string): MagicTiming[] {
  */
 export function handMagicTimings(s: GameState, cardId: string): MagicTiming[] {
   const def = db.get(s.cards[cardId]!.cardNo);
-  if (def.type === 'magic') return magicTimings(def.cardNo);
-  return [...new Set(handMagic(s, db, cardId).map((m) => m.timing))];
+  // BS13 เดรมาซาดาร์: "เอฟเฟกต์นี้ ทำงานในเมนสเต็ปไม่ได้" (notMain)
+  const notMainNow = (t: MagicTiming) => s.phase === 'main' && def.abilities.some((a) => a.kind === 'magic' && a.timing === t && a.notMain);
+  if (def.type === 'magic') return magicTimings(def.cardNo).filter((t) => !notMainNow(t));
+  return [...new Set(handMagic(s, db, cardId).map((m) => m.timing))].filter((t) => !notMainNow(t));
 }
 
 /** Core นี้ลาก/ย้ายได้ตอนนี้หรือไม่ (Main Step ของเจ้าของ, อยู่ใน Reserve หรือบนการ์ดในสนาม) */

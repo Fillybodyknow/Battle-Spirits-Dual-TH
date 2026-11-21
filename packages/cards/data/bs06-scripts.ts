@@ -226,8 +226,8 @@ export const BS06_SCRIPTS: Record<string, CardScript> = {
   'ดาบสมบัติแห่งรัตติกาลสีขาว มิดไนท์-ซัน': [
     // Heavy Shield: ไม่รับผลเอฟเฟกต์สปิริต/เบรฟ/เน็กซัส/เมจิคสีเขียว/ขาว/เหลือง/ฟ้าของคู่แข่ง
     { kind: 'effectImmune', granted: true, levels: [], scope: 'self', colors: ['green', 'white', 'yellow', 'blue'], types: ['spirit', 'brave', 'nexus', 'magic'] },
-    // Rush ไม่สนเงื่อนไข: ยังไม่มีการ์ดที่มี Rush ในเกม
-    null,
+    // [ร่วมร่าง] Rush ไม่สนเงื่อนไข (BS13: rush ในเงื่อนไขของผู้ร่วมร่างเป็นจริงเสมอ)
+    { kind: 'rushIgnore', granted: true, levels: [] },
   ],
   'ดาบเทพธรณี โอเทนตะ': [
     { kind: 'burst', soul: true, on: 'afterOpponentAttack', steps: [{ do: 'bounceOpponent', filter: { types: SPIRIT, maxBp: 15000 } }, { do: 'summonThisFree' }] },

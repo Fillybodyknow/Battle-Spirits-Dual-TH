@@ -1,5 +1,5 @@
 import type { CardDatabase, CardDef } from '@bs/cards';
-import { cardLevel, fail, fieldCost, isSpiritLike, levelOf, locateCore, minCores, levelBoostSources, payableCost, removeCore, removeFrom, summonLevelCostBoost, type StaticSource } from './rules';
+import { cardLevel, fail, noRefreshSource, fieldCost, isSpiritLike, levelOf, locateCore, minCores, levelBoostSources, payableCost, removeCore, removeFrom, summonLevelCostBoost, type StaticSource } from './rules';
 import { PLAYERS, opponentOf, type EndReason, type GameEvent, type GameState, type Phase, type PlayerId } from './types';
 import { newBatch, queueLifeLostTriggers, queueTriggers } from './effects';
 
@@ -147,7 +147,7 @@ export function sendToTrash(ctx: Ctx, cardId: string): void {
     : [];
   leaveField(ctx, cardId, 'trash');
   for (const id of refresh) {
-    if (ctx.s.cards[id]!.state !== 'exhausted') continue;
+    if (ctx.s.cards[id]!.state !== 'exhausted' || noRefreshSource(ctx.s, ctx.db, id, true)) continue;
     ctx.s.cards[id]!.state = 'refresh';
     emit(ctx, { type: 'cardRefreshed', cardId: id });
   }

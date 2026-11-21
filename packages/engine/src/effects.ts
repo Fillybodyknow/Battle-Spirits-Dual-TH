@@ -28,6 +28,8 @@ import { cardColors,
   withTeamOf,
   chargeBonus,
   millBlocked,
+  millCapLeft,
+  noRefreshSource,
   multiDrawPunished,
   kagemushaOptions,
   kagemushaFreeNexus,
@@ -85,6 +87,12 @@ import type { Ability, Color } from '@bs/cards';
 export function refreshByEffect(ctx: Ctx, cardId: string, sourceId?: string): void {
   const { s, db } = ctx;
   const card = s.cards[cardId]!;
+  // BS13 ก็อด-เซคส์ Six Heaven's Rush: การ์ดของคู่แข่งที่ "ฟื้นสภาพไม่ได้" (ทุกทาง)
+  const locked = noRefreshSource(s, db, cardId, true);
+  if (locked) {
+    if (card.state === 'exhausted') emitStatic(ctx, locked);
+    return;
+  }
   card.state = 'refresh';
   emit(ctx, { type: 'cardRefreshed', cardId });
   // เอฟเฟกต์ของเน็กซัสไม่นับ
@@ -2705,9 +2713,19 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
           n += boost.amount;
         }
       }
+      // BS13 สถานที่ศักดิ์สิทธิ์ต้องห้าม: ต่อเทิร์น เด็คถูกทิ้งโดยเอฟเฟกต์สปิริต/เน็กซัส/เมจิค(/เบรฟ)ของคู่แข่งได้มากสุด N ใบ (อัลติเมทไม่นับ)
+      const capped = s.cards[self] && db.get(s.cards[self]!.cardNo).type !== 'ultimate' ? millCapLeft(s, db, opp) : null;
+      if (capped && n > capped.left) {
+        if (s.players[opp].deck.length > capped.left) emitStatic(ctx, capped.src);
+        n = capped.left;
+      }
       const ids = s.players[opp].deck.slice(0, n);
       item.milled = ids;
       if (ids.length === 0) return;
+      if (capped) {
+        const rec = s.milledByOpponent?.turn === s.turn ? s.milledByOpponent : { turn: s.turn };
+        s.milledByOpponent = { ...rec, [opp]: (rec[opp] ?? 0) + ids.length };
+      }
       mill(ctx, opp, ids);
       queueMillTriggers(ctx, item, ids);
       // การ์ดที่ถูกทิ้ง: "เมื่อถูกทิ้งโดยเอฟเฟกต์ทิ้งเด็คของคู่แข่ง" (วันโคมะ)
@@ -3678,7 +3696,7 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
     }
 
     case 'unexhaustSelf':
-      if (onField(ctx, self) && s.cards[self]!.state === 'exhausted') {
+      if (onField(ctx, self) && s.cards[self]!.state === 'exhausted' && !noRefreshSource(s, db, self, true)) {
         s.cards[self]!.state = 'refresh';
         emit(ctx, { type: 'cardRefreshed', cardId: self });
       }
@@ -3886,6 +3904,11 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
 
     case 'symbolsZeroThisTurn':
       s.symbolsZero = { turn: s.turn, minSymbols: step.minSymbols };
+      return;
+
+    // ---------------- BS13
+    case 'refreshChosen':
+      if (item.chosenId && onField(ctx, item.chosenId) && s.cards[item.chosenId]!.state === 'exhausted') refreshByEffect(ctx, item.chosenId, self);
       return;
 
     case 'destroyOwnForReturn': {
@@ -4644,6 +4667,17 @@ function applyCardPick(ctx: Ctx, cur: QueuedEffect, choice: Extract<PendingChoic
       break;
     }
     case 'bounceOpponent': {
+      // BS13 ดาร์คเนส-กริฟฟอน: ใช้โซลคอร์จ่ายคอสต์อัญเชิญ = คอร์บนการ์ดที่กลับขึ้นมือลงแทรชของเจ้าของแทนรีเสิร์ฟ
+      if (step.coresToTrashIf && conditionHolds(s, cur.sourceId, step.coresToTrashIf, cur.paidWithSoul, !!cur.catalyzed, ctx.db)) {
+        const card = s.cards[pick]!;
+        const moved = [...card.cores, ...card.braves.flatMap((b) => s.cards[b]!.cores)];
+        if (moved.length > 0) {
+          card.cores = [];
+          for (const b of card.braves) s.cards[b]!.cores = [];
+          s.players[card.owner].trashCores.push(...moved);
+          emit(ctx, { type: 'coresToTrash', cardId: pick, count: moved.length });
+        }
+      }
       const redirected = !step.to || step.to === 'hand' ? bounceRedirect(ctx, cur, player, [pick], null) : false;
       if (!redirected) returnCard(ctx, pick, step.to === 'deckBottom' ? 'deckBottom' : step.to === 'deckTop' ? 'deckTop' : 'hand');
       cur.bouncedCount = (cur.bouncedCount ?? 0) + 1;
@@ -4708,6 +4742,8 @@ function applyCardPick(ctx: Ctx, cur: QueuedEffect, choice: Extract<PendingChoic
     }
     case 'voidCore':
       addVoidCores(ctx, player, pick, step.count);
+      // BS13 เนก้า-ไทฟอน: "...วางบนสปิริตสีม่วงของเรา, ฟื้นสภาพสปิริตนั้น" (refreshChosen)
+      cur.chosenId = pick;
       break;
     case 'returnSubjectToDeck':
       returnToDeckBottomAny(ctx, pick);

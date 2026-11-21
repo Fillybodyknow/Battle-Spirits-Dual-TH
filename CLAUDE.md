@@ -166,6 +166,11 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
   `opponentTotalBp.metric: 'cost'` / `.filter` · `maxLevelIf.granted` · ในเทิร์นนี้ Lv สูงสุด = step `maxLevelThisTurn` (`state.maxLevelTurn`) · `extraSymbol.perAllies` ·
   step `trashSoulToAlly` / `destroyAllOpponentBraves` / `peekHandDiscard` · `catalyze.countKills` + CountPer `burstKills` (มิสึรุกิ: นับเฉพาะสปิริตคู่แข่งที่เอฟเฟกต์ของเบิร์สนั้นทำลาย/ทำให้สูญสลาย = `state.burstKills` นับใน `destroy` ของ ctx.ts และ `depleteByOpponent`) · CountPer `milledByThis` · `destroyChosenOpponent.bpFrom: 'chosen'` (soulToAlly / refreshChosenAlly ตั้ง chosenId) ·
   `summonFreeHandOrTrash.zones` / `.per` · `opponentLifeToReserve.per` · SubjectFilter `cost` · เงื่อนไข `ownBurstSet`
+- **BS13**: Rush = เงื่อนไข `rush: { color, count }` (นับ `fieldSymbols` ของเรา · หลายขั้น "(เจ็ม 1 เม็ด) / (2 เม็ด)" = `when` ซ้อนตามจำนวน สะสม) · เบรฟ `rushIgnore` (มิดไนท์-ซัน: Rush ของผู้ร่วมร่างเป็นจริงเสมอ) ·
+  "สีและเจ็มถือว่าเป็นสี...ด้วย" หลายสีได้ (`colorAlso` + `symbolAlsoColor` ทุกสี: ตัวช่วย `alsoColor` ใน bs13-scripts) · ตัวกรอง `minColors` (สีตั้งแต่ N สี) · เงื่อนไข `ownMainStep` ·
+  `handCostSet` (การ์ดในมือถือว่ามีคอสต์ N) · `millCap` (ต่อเทิร์นถูกทิ้งเด็คโดยเอฟเฟกต์ของคู่แข่งได้ไม่เกิน N: `millCapLeft` + `state.milledByOpponent`) ·
+  `opponentNoRefresh.if` / `.anyRefresh` ("ฟื้นสภาพไม่ได้" ทุกทาง: `noRefreshSource` ตรวจในรีเฟรชสเต็ป, `refreshByEffect`, `unexhaustSelf`, `refreshOnBattlerGone`) ·
+  magic `notMain` ("ทำงานในเมนสเต็ปไม่ได้": engine useMagic + `handMagicTimings` ในเว็บ) · step `refreshChosen` (ตัวที่ `voidCore to: 'ally'` เพิ่งเลือก) · `bounceOpponent.coresToTrashIf`
 - **สูญสลายไม่ใช่การถูกทำลาย** (กติกา 10): สูญสลายโดยคู่แข่ง = trigger `depletedByOpponent` + เบิร์ส `afterAllyDepletedByOpponent` เท่านั้น
   ข้อความ "ถูกทำลาย/สูญสลาย" = trigger `on: ['destroyedByOpponent', 'depletedByOpponent']` / เบิร์ส `alsoDepleted: true` · "ถูกทำลายโดยเอฟเฟกต์ของคู่แข่ง" (ไม่นับแพ้เทียบ BP) = `destroyedByOpponentEffect`
   · เอฟเฟกต์ "เมื่อถูกทำลาย" ทำงานขณะยังอยู่บนสนาม (engine ส่งลงแทรชก่อน: "วางคอร์บนสปิริตนี้" = คอร์กลับรีเสิร์ฟ)
