@@ -343,6 +343,27 @@ export function setSfxTimeScale(rate: number) {
   for (const s of playing) s.playbackRate.setValueAtTime(timeScale, ctx.currentTime);
 }
 
+/**
+ * ถอดรหัสไฟล์เสียงทุกไฟล์ไว้ล่วงหน้า (หน้าโหลดหลังแตะเริ่ม) · เดิมถอดรหัสตอนเล่นครั้งแรก = เสียงแรกของแต่ละแบบช้ากว่าภาพ
+ * ต้องเรียกจาก event ที่ผู้ใช้กด (สร้าง AudioContext ได้) · onEach เรียกทุกไฟล์ที่เสร็จ (สำเร็จหรือไม่ก็ตาม)
+ */
+export function sfxPreloadList(): string[] {
+  return [...new Set(Object.values(FILE).flat())] as string[];
+}
+export async function preloadSfx(urls: string[], onEach: () => void): Promise<void> {
+  const c = audio();
+  await Promise.all(
+    urls.map(async (url) => {
+      try {
+        if (c && !buffers.has(url)) buffers.set(url, await c.decodeAudioData(await (await fetch(url)).arrayBuffer()));
+      } catch {
+        /* ไฟล์เสียหาย/โหลดไม่ได้: ตอนเล่นจะลองใหม่ หรือใช้เสียงสังเคราะห์ */
+      }
+      onEach();
+    }),
+  );
+}
+
 async function playFile(name: SfxName, url: string) {
   const c = audio();
   if (!c) return;

@@ -5,7 +5,7 @@
  *  มุมซ้ายบน Ver + Player ID · มุมขวาล่าง ตั้งค่า / บัญชี
  * แตะ (หรือกดคีย์ใดก็ได้): ล็อกอินอยู่ = แสงวาบเข้าเกม · ยังไม่ล็อกอิน = แผงเข้าสู่ระบบกลางจอ
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isXRare } from '@bs/cards';
 import { playerId, useAccount } from '../account/account';
 import { cardArt, IMG } from '../assets';
@@ -21,6 +21,14 @@ import { BTN } from '../components/Modal';
 import { useNeedsWelcome } from '../tutorial/TutorialMenu';
 import { markPrompted, startTutorial } from '../tutorial/tutorial';
 import { LESSONS } from '../tutorial/lessons';
+import { preloadAll, type PreloadProgress } from '../preload';
+
+/** ฉากวาร์ปยาวอย่างน้อยเท่าเดิม (แสงวาบเดิมเริ่มที่ 2.8 วิ) แม้โหลดเสร็จเร็ว */
+const MIN_WARP_MS = 2800;
+/** ID ใหม่: แผงชวนเล่นบทเรียนขึ้นไม่เร็วกว่านี้หลังแตะเริ่ม (เดิม 1.4 วิ) */
+const WELCOME_AT_MS = 1400;
+/** เพดานเวลาหน้าโหลดรวม (ms) */
+const MAX_LOAD_MS = 20000;
 
 /** ประกายลอยขึ้น (ตำแหน่ง/ความเร็วตายตัวตามลำดับ ไม่สุ่มทุกครั้งที่วาด) */
 const MOTES = Array.from({ length: 36 }, (_, i) => ({
@@ -109,7 +117,7 @@ function Emblem() {
  * hold = ค้างฉากนี้ไว้ (ID ใหม่: รอเลือกเริ่มบทเรียน/ข้าม) การ์ดพุ่งวนไม่หยุด ไม่มีแสงวาบ
  * leaving = แสงวาบทันที (ออกจากฉากค้าง)
  */
-function WarpOut({ hold = false, leaving = false }: { hold?: boolean; leaving?: boolean }) {
+function WarpOut({ hold = false, leaving = false, progress = null }: { hold?: boolean; leaving?: boolean; progress?: PreloadProgress | null }) {
   // การ์ดน้อย ใหญ่ ช้า ให้มองเห็นแต่ละใบชัด (เจ้าของโปรเจกต์ปรับ: เดิม 28 ใบ เล็กและเร็วเกินไป)
   const count = effects().blur ? 12 : 7;
   const fronts = useMemo(
@@ -202,15 +210,29 @@ function WarpOut({ hold = false, leaving = false }: { hold?: boolean; leaving?: 
           />
         ))}
       </div>
-      {/* มุมขวาล่าง: กำลังเชื่อมต่อ */}
-      {!hold && (
-      <div className="absolute right-8 bottom-6 flex items-center gap-2 text-white" style={{ animation: 'login-tap 1.2s ease-in-out infinite' }}>
-        <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-          <rect x="6" y="3" width="12" height="18" rx="2" transform="rotate(-14 12 12)" />
-          <rect x="9" y="7" width="6" height="7" rx="1" transform="rotate(-14 12 12)" strokeWidth="1.5" />
-        </svg>
-        <span className="text-xl font-black tracking-wider italic [text-shadow:0_0_10px_rgba(255,255,255,0.6)]">CONNECTING</span>
-      </div>
+      {/* มุมขวาล่าง: กำลังโหลดจริง (preload.ts) · แถบ + เปอร์เซ็นต์ + สิ่งที่กำลังโหลด */}
+      {progress && !leaving && (
+        <div className="absolute right-8 bottom-6 flex w-72 flex-col items-end gap-1.5 text-white">
+          <div className="flex items-center gap-2" style={{ animation: 'login-tap 1.2s ease-in-out infinite' }}>
+            <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+              <rect x="6" y="3" width="12" height="18" rx="2" transform="rotate(-14 12 12)" />
+              <rect x="9" y="7" width="6" height="7" rx="1" transform="rotate(-14 12 12)" strokeWidth="1.5" />
+            </svg>
+            <span className="text-xl font-black tracking-wider italic [text-shadow:0_0_10px_rgba(255,255,255,0.6)]">
+              {progress.done >= progress.total ? 'READY' : 'CONNECTING'}
+            </span>
+            <span className="w-12 text-right text-lg font-black tabular-nums [text-shadow:0_0_10px_rgba(255,255,255,0.6)]">
+              {Math.floor((progress.done / Math.max(1, progress.total)) * 100)}%
+            </span>
+          </div>
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/15 ring-1 ring-white/25">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-sky-300 via-white to-amber-200 shadow-[0_0_10px_rgba(186,230,253,0.9)] transition-[width] duration-300 ease-out"
+              style={{ width: `${(progress.done / Math.max(1, progress.total)) * 100}%` }}
+            />
+          </div>
+          <div className="text-xs font-bold text-white/70">{progress.label}</div>
+        </div>
       )}
       {/* ปิดท้าย: แสงวาบ (ค้างฉาก = วาบตอนเลือกแล้วเท่านั้น) */}
       {(!hold || leaving) && <div className="absolute inset-0 bg-white" style={{ animation: hold ? 'login-flash 0.5s ease-in both' : 'login-flash 0.5s ease-in 2.8s both' }} />}
@@ -304,17 +326,36 @@ export function Login({ onEnter }: { onEnter: () => void }) {
   };
   const [dialog, setDialog] = useState<'settings' | 'account' | null>(null);
 
-  // เข้าเกม: ฉากการ์ดพุ่งออกจากอุโมงค์ (~3.3 วิ) แล้วแสงวาบเข้าหน้าหลัก
+  // เข้าเกม: ฉากการ์ดพุ่งออกจากอุโมงค์ วนไประหว่างโหลดของจริง (preload.ts) · โหลดเสร็จ = แสงวาบเข้าหน้าหลัก
+  // (ID ใหม่: โหลดเสร็จแล้วค่อยขึ้นแผงชวนเล่นบทเรียน) · ฉากวาร์ปยาวอย่างน้อยเท่าเดิม (MIN_WARP_MS) แม้โหลดเร็ว
+  const [progress, setProgress] = useState<PreloadProgress | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const enteredAt = useRef(0);
   const enter = useCallback(() => {
     setPhase('entering');
     sfx('whoosh');
-    if (needsWelcome) {
-      setHold(true);
-      return;
-    }
-    setTimeout(() => sfx('impact'), 2750);
-    setTimeout(onEnter, 3300);
-  }, [onEnter, needsWelcome]);
+    setHold(true);
+    enteredAt.current = Date.now();
+    // เรียกในจังหวะที่ผู้เล่นแตะ: สร้าง AudioContext สำหรับถอดรหัสเสียงได้
+    // เพดานรวม: เน็ตช้ามากก็เข้าหน้าหลักได้ภายใน MAX_LOAD_MS (ส่วนที่ค้างโหลดต่อเบื้องหลัง)
+    void Promise.race([preloadAll(setProgress), new Promise<void>((r) => setTimeout(r, MAX_LOAD_MS))]).then(() => setLoaded(true));
+  }, []);
+  // ID ใหม่: แผงชวนเล่นบทเรียนขึ้นเมื่อโหลดเสร็จ และไม่เร็วกว่าเดิม (1.4 วิหลังแตะเริ่ม)
+  const [welcomeReady, setWelcomeReady] = useState(false);
+  useEffect(() => {
+    if (!loaded || !needsWelcome) return;
+    const t = setTimeout(() => setWelcomeReady(true), Math.max(0, WELCOME_AT_MS - (Date.now() - enteredAt.current)));
+    return () => clearTimeout(t);
+  }, [loaded, needsWelcome]);
+  useEffect(() => {
+    if (!loaded || needsWelcome) return;
+    const t = setTimeout(() => {
+      setLeaving(true);
+      sfx('impact');
+      setTimeout(onEnter, 520);
+    }, Math.max(0, MIN_WARP_MS - (Date.now() - enteredAt.current)));
+    return () => clearTimeout(t);
+  }, [loaded, needsWelcome, onEnter]);
 
   const start = useCallback(() => {
     if (!ready || phase !== 'title' || dialog) return;
@@ -479,12 +520,12 @@ export function Login({ onEnter }: { onEnter: () => void }) {
       )}
 
       {/* เข้าเกม: การ์ดพุ่งออกจากอุโมงค์ แล้วแสงวาบ */}
-      {phase === 'entering' && <WarpOut hold={hold} leaving={leaving} />}
-      {phase === 'entering' && hold && !leaving && (
+      {phase === 'entering' && <WarpOut hold={hold} leaving={leaving} progress={welcomeReady ? null : progress} />}
+      {phase === 'entering' && welcomeReady && !leaving && (
         <div className="absolute inset-0 z-[60] flex items-center justify-center p-6" onClick={(e) => e.stopPropagation()}>
           <div
             className="hud-panel flex w-[min(560px,92vw)] flex-col gap-4 rounded-2xl border border-yellow-300/50 p-6 shadow-[0_0_60px_rgba(167,139,250,0.45)]"
-            style={{ animation: 'fx-slide-up 0.45s cubic-bezier(.2,.9,.3,1) 1.4s both' }}
+            style={{ animation: 'fx-slide-up 0.45s cubic-bezier(.2,.9,.3,1) 0.2s both' }}
           >
             <div>
               <div className="text-xs font-bold tracking-[0.3em] text-yellow-200/80">WELCOME</div>
