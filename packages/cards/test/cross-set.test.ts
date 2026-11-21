@@ -71,10 +71,14 @@ describe('รหัส Booster Set: <ชุด>-<ประเภท>-<ระด�
     expect([...a.cards, ...b.cards].map((c) => c.cardNo)).toEqual(['BS01-SP-R001', 'BS01-SP-C001', 'BS01-SP-R002', 'BS01-MG-C001', 'BS01-SP-R003', 'BS01-MG-U001']);
   });
 
-  it('ใส่รหัสเองต้องตรงประเภท/ระดับ, ไม่มีระดับความหายาก = error', () => {
-    expect(parseCardText(spirit('ก', 'X', 'รหัส: BS01-SP-X010\n'), { setCode: 'BS01', typeCounters: {} }).cards[0]!.cardNo).toBe('BS01-SP-X010');
-    expect(() => parseCardText(spirit('ก', 'R', 'รหัส: BS01-MG-R001\n'), { setCode: 'BS01', typeCounters: {} })).toThrow(/ไม่ตรงประเภท\/ระดับ/);
-    expect(() => parseCardText(spirit('ก', 'R', 'รหัส: BS01-001\n'), { setCode: 'BS01', typeCounters: {} })).toThrow(/BS01-SP-R001/);
+  it('รหัสที่พิมพ์บนการ์ด <ชุด>-<ระดับ><เลข>: ระดับต้องตรง, ชุดในเกมเก็บใน set, ไม่มีระดับความหายาก = error', () => {
+    const x = parseCardText(spirit('ก', 'X', 'รหัส: BS19-X08\n'), { setCode: 'BS12', typeCounters: {} }).cards[0]!;
+    expect(x.cardNo).toBe('BS19-X08');
+    expect(x.set).toBe('BS12');
+    expect(parseCardText(spirit('ก', 'C', 'รหัส: BS31-C003\n'), { setCode: 'BS01', typeCounters: {} }).cards[0]!.cardNo).toBe('BS31-C003');
+    expect(parseCardText(spirit('ก', 'X', 'รหัส: BSC23-XCP01-2\n'), { setCode: 'BS07', typeCounters: {} }).cards[0]!.cardNo).toBe('BSC23-XCP01-2');
+    expect(() => parseCardText(spirit('ก', 'R', 'รหัส: BS31-C003\n'), { setCode: 'BS01', typeCounters: {} })).toThrow(/รหัสที่พิมพ์บนการ์ด/);
+    expect(() => parseCardText(spirit('ก', 'R', 'รหัส: BS01-SP-R001\n'), { setCode: 'BS01', typeCounters: {} })).toThrow(/BS31-R003/);
     expect(() => parseCardText(spirit('ก', 'R').replace('การ์ดระดับ R\n', ''), { setCode: 'BS01', typeCounters: {} })).toThrow(/ต้องมีระดับความหายาก/);
   });
 });
@@ -100,11 +104,11 @@ describe('การ์ดข้ามชุด (Starter Deck ที่มีก�
     expect(() => parseCardText(`${card('ก')}\nไม่มีใบนี้ 1`, { setCode: 'SD09', otherCards: other })).toThrow(/ไม่พบการ์ดชื่อ/);
   });
 
-  it('SD3: เบิร์สวอลล์เขียนไว้ที่ SD1 ที่เดียว เด็ค SD03 อ้างการ์ด SD01-009', () => {
+  it('SD3: เบิร์สวอลล์เขียนไว้ที่ SD1 ที่เดียว เด็ค SD03 อ้างการ์ด SD06-U016', () => {
     const parsed = parseCardText(sd3Text, { setCode: 'SD03', otherCards: loadAllCards().all().filter((c) => !c.cardNo.startsWith('SD03')) });
     expect(parsed.cards).toEqual(sd03Json);
     expect(parsed.deck).toEqual(sd03DeckJson);
-    expect(SD03_DECK.find((e) => e.cardNo === 'SD01-009')?.count).toBe(3);
+    expect(SD03_DECK.find((e) => e.cardNo === 'SD06-U016')?.count).toBe(3);
     expect(validateDeck([...SD03_DECK], loadAllCards())).toMatchObject({ valid: true, total: 40 });
   });
 

@@ -3,7 +3,7 @@ import { loadAllCards, loadBS01Cards } from '@bs/cards';
 import { applyAction, attackLifeDamage, cardLevel, createGame, currentBp, matchesFilter, payableCost, type Action, type GameState, type PlayerId } from '../src';
 
 const db = loadAllCards();
-const no = (name: string) => db.all().find((c) => c.name === name && c.cardNo.startsWith('BS01'))!.cardNo;
+const no = (name: string) => db.all().find((c) => c.name === name && c.set === 'BS01')!.cardNo;
 
 const DARIU = no('มุฉะดาริว'); // คอสต์ 1 BP 3000/6000/8000 (1/3/5) ไม่มีเอฟเฟกต์
 const TOKAGE = no('มุฉะโทคาเงะ'); // ไม่มีเอฟเฟกต์
@@ -183,7 +183,7 @@ describe('Booster Set 01', () => {
 
   it('หมอผีดรัคโน่ (จ่ายด้วย Soul Core): อัญเชิญสปิริตเผ่ามังกรโบราณในแทรชไม่จ่ายคอสต์', () => {
     const s = setup();
-    const ancient = db.all().find((c) => c.cardNo.startsWith('BS01') && c.type === 'spirit' && c.family.includes('มังกรโบราณ') && c.cost <= 3)!;
+    const ancient = db.all().find((c) => c.set === 'BS01' && c.type === 'spirit' && c.family.includes('มังกรโบราณ') && c.cost <= 3)!;
     const target = inZone(s, 'p1', ancient.cardNo, 'trashCards');
     const card = inZone(s, 'p1', DRAKNO, 'hand');
     const soul = s.players.p1.reserve.find((id) => s.cores[id]!.isSoul)!;

@@ -129,7 +129,8 @@ function useLatestBoosters(n: number): { set: string; count: number; highlights:
   return useMemo(() => {
     const bySet = new Map<string, string[]>();
     for (const c of db.all()) {
-      const m = /^BS(\d+)-/.exec(c.cardNo);
+      // ชุดในเกม (BS01…) จากข้อมูลการ์ด: รหัสการ์ดเป็นรหัสที่พิมพ์บนการ์ดจริง (BS31-C003 ฯลฯ) ใช้แยกชุดไม่ได้
+      const m = /^BS(\d+)$/.exec(c.set ?? '');
       if (m) bySet.set(m[1]!, [...(bySet.get(m[1]!) ?? []), c.cardNo]);
     }
     return [...bySet.keys()]

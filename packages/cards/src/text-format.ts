@@ -57,6 +57,9 @@ export interface ParseOptions {
   typeCounters?: Record<string, number>;
 }
 
+/** รหัสที่พิมพ์บนการ์ดจริง: <ชุด>-<ระดับ><เลข> (BS31-C003, BS19-X08, BSC23-XCP01) · ต่างอาร์ตรหัสเดียวกัน = ต่อท้าย -2 */
+const PRINTED_CODE = /^[A-Z]+\d*-[A-Z]+\d+(-\d+)?$/;
+
 /** ตัวย่อประเภทการ์ดในรหัส (Booster Set) */
 export const TYPE_CODE: Record<CardDefInput['type'], string> = { spirit: 'SP', ultimate: 'UL', brave: 'BR', nexus: 'NX', magic: 'MG' };
 
@@ -145,12 +148,14 @@ export function parseCardText(text: string, options: ParseOptions): ParsedCardSe
           const n = (options.typeCounters[key] ?? 0) + 1;
           options.typeCounters[key] = n;
           card.cardNo = `${options.setCode}-${type}-${rarity}${String(n).padStart(3, '0')}`;
-        } else if (!card.cardNo.startsWith(`${options.setCode}-${type}-${rarity}`) || !/\d+$/.test(card.cardNo)) {
+        } else if (!PRINTED_CODE.test(card.cardNo) || !card.cardNo.split('-')[1]!.startsWith(rarity)) {
+          // รหัสที่พิมพ์บนการ์ดจริง (ล่างขวา) เช่น "BS31 C 003/114" → BS31-C003, "BS19 X 08" → BS19-X08
           errors.push(
-            `บรรทัด ${block[0]!.no}: (${card.name}) รหัส ${card.cardNo} ไม่ตรงประเภท/ระดับ ต้องเป็นรูปแบบ ${options.setCode}-${type}-${rarity}001 (หรือไม่ต้องใส่ ระบบนับให้)`,
+            `บรรทัด ${block[0]!.no}: (${card.name}) รหัส ${card.cardNo} ต้องเป็นรหัสที่พิมพ์บนการ์ด รูปแบบ <ชุด>-<ระดับ><เลข> เช่น BS31-${rarity}003 (ระดับต้องตรงกับ "การ์ดระดับ ${rarity}")`,
           );
         }
       }
+      if (card && options.typeCounters) card.set = options.setCode;
       if (card) {
         const dup = cards.find((c) => c.cardNo === card.cardNo);
         if (dup) errors.push(`บรรทัด ${block[0]!.no}: รหัสการ์ด ${card.cardNo} ซ้ำกับ "${dup.name}"`);

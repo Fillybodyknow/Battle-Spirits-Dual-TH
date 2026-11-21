@@ -73,8 +73,6 @@ const KEYWORDS: { id: string; label: string; test: (c: CardDef, text: string) =>
 ];
 const cardText = (c: CardDef) => (c.effects as { text?: string }[]).map((e) => e.text ?? '').join(' ');
 
-/** ชุดการ์ดจากรหัส (BS01-SP-R001 → BS01) */
-const setOf = (cardNo: string) => cardNo.split('-')[0]!;
 /** เรียงการ์ด: ประเภท → คอสต์ → รหัส */
 export const byTypeCost = (a: CardDef, b: CardDef) =>
   TYPE_ORDER.indexOf(a.type) - TYPE_ORDER.indexOf(b.type) || a.cost - b.cost || a.cardNo.localeCompare(b.cardNo);
@@ -167,7 +165,6 @@ export function useCardFilters(cards: CardDef[], nameCounts: Map<string, number>
 
   const texts = useMemo(() => new Map(cards.map((c) => [c.cardNo, cardText(c)])), [cards]);
   const names = useMemo(() => new Map(cards.map((c) => [c.cardNo, [c.name, ...c.family, ...c.teams, c.cardNo].join(' ').toLowerCase()])), [cards]);
-  const sets = useMemo(() => [...new Set(cards.map((c) => setOf(c.cardNo)))].sort(), [cards]);
   const families = useMemo(() => [...new Set(cards.flatMap((c) => c.family))].filter(Boolean).sort((a, b) => a.localeCompare(b, 'th')), [cards]);
   const teams = useMemo(() => [...new Set(cards.flatMap((c) => c.teams))].filter(Boolean).sort((a, b) => a.localeCompare(b, 'th')), [cards]);
   const keywords = useMemo(() => KEYWORDS.filter((k) => cards.some((c) => k.test(c, texts.get(c.cardNo) ?? ''))), [cards, texts]);
@@ -179,7 +176,8 @@ export function useCardFilters(cards: CardDef[], nameCounts: Map<string, number>
       query: (c) => terms.every((w) => names.get(c.cardNo)!.includes(w) || (f.inText && texts.get(c.cardNo)!.toLowerCase().includes(w))),
       colors: (c) => !f.colors.length || c.colors.some((x) => f.colors.includes(x)),
       types: (c) => !f.types.length || f.types.includes(c.type),
-      sets: (c) => !f.sets.length || f.sets.includes(setOf(c.cardNo)),
+      // ตัวกรองชุดถูกเอาออก (รหัสการ์ดเป็นรหัสที่พิมพ์บนการ์ดจริง): ค่าที่บันทึกไว้เดิมไม่มีผล
+      sets: () => true,
       costs: (c) => !f.costs.length || f.costs.includes(costBucket(c)),
       bps: (c) => !f.bps.length || f.bps.includes(bpBucket(c)),
       symbols: (c) => !f.symbols.length || f.symbols.includes(symbolCount(c)),
@@ -214,7 +212,7 @@ export function useCardFilters(cards: CardDef[], nameCounts: Map<string, number>
   const clear = () => setState((s) => ({ ...s, f: { ...EMPTY, sort: s.f.sort, desc: s.f.desc } }));
   const setOpen = (open: boolean) => setState((s) => ({ ...s, open }));
 
-  return { f, open: state.open, setOpen, update, clear, pool, count, sets, families, teams, keywords, texts, max };
+  return { f, open: state.open, setOpen, update, clear, pool, count, families, teams, keywords, texts, max };
 }
 
 type FilterState = ReturnType<typeof useCardFilters>;
@@ -278,7 +276,6 @@ export function FilterBar({ fl }: { fl: FilterState }) {
   if (f.query.trim()) active.push({ key: 'q', label: `ค้นหา "${f.query.trim()}"${f.inText ? ' (รวมเอฟเฟกต์)' : ''}`, off: () => update({ query: '' }) });
   f.colors.forEach((x) => active.push({ key: `c${x}`, label: `สี${COLOR_LABEL[x]}`, off: () => update({ colors: toggle(f.colors, x) }) }));
   f.types.forEach((x) => active.push({ key: `t${x}`, label: TYPE_LABEL[x], off: () => update({ types: toggle(f.types, x) }) }));
-  f.sets.forEach((x) => active.push({ key: `s${x}`, label: x, off: () => update({ sets: toggle(f.sets, x) }) }));
   f.costs.forEach((x) => active.push({ key: `k${x}`, label: `คอสต์ ${x === 7 ? '7+' : x}`, off: () => update({ costs: toggle(f.costs, x) }) }));
   f.bps.forEach((x) => active.push({ key: `b${x}`, label: `BP ${BP_BUCKETS[x]?.label ?? ''}`, off: () => update({ bps: toggle(f.bps, x) }) }));
   f.symbols.forEach((x) => active.push({ key: `y${x}`, label: `สัญลักษณ์ ${x === 2 ? '2+' : x}`, off: () => update({ symbols: toggle(f.symbols, x) }) }));
@@ -409,16 +406,6 @@ export function FilterPanel({ fl }: { fl: FilterState }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg bg-black/30 ring-1 ring-white/10">
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-3">
-        <Section title="ชุดการ์ด" picked={f.sets.length} onClear={() => update({ sets: [] })}>
-          <Grid cols={5}>
-            {fl.sets.map((s) => (
-              <Chip key={s} on={f.sets.includes(s)} n={count('sets', (x) => setOf(x.cardNo) === s)} onClick={() => update({ sets: toggle(f.sets, s) })}>
-                {s}
-              </Chip>
-            ))}
-          </Grid>
-        </Section>
-
         <Section title="คอสต์" picked={f.costs.length} onClear={() => update({ costs: [] })}>
           <Grid cols={8}>
             {COSTS.map((c) => (

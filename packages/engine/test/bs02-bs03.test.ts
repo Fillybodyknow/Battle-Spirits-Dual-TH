@@ -69,7 +69,7 @@ function magic(s: GameState, name: string, soul = false): GameState {
 
 describe('Booster Set 02 / 03', () => {
   it('สคริปต์ของการ์ดใหม่ผูกได้ทุกใบ (จำนวนช่องตรงกับบรรทัดเอฟเฟกต์)', () => {
-    const cards = db.all().filter((c) => c.cardNo.startsWith('BS02') || c.cardNo.startsWith('BS03'));
+    const cards = db.all().filter((c) => c.set === 'BS02' || c.set === 'BS03');
     expect(cards.length).toBeGreaterThan(60);
     expect(cards.filter((c) => c.abilities.length > 0).length).toBeGreaterThan(40);
   });

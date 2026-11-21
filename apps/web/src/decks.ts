@@ -105,9 +105,13 @@ export function decodeDeck(token: string): { label: string; entries: DeckEntry[]
   }
   const entries: DeckEntry[] = [];
   // ส่งผ่านแอปแชต: ช่องว่าง/ขึ้นบรรทัดแทรก · "*...*" / "~...~" ถูกตีความเป็นตัวหนา/ขีดฆ่าแล้วเครื่องหมายหาย
-  // (รหัสการ์ดลงท้ายด้วยเลข 3 หลักเสมอ: BS06-SP-U004 / SD01-009 จึงแยกจำนวนที่ตามมาติดกันได้)
+  // แยกรหัสออกจากจำนวนที่ตามมาติดกันด้วยรูปแบบรหัส:
+  //  รหัสที่พิมพ์บนการ์ด BS31-C003 (ระดับ + เลข 3 หลัก) / BS19-X08 · BSC23-XCP01 (X + เลข 2 หลัก) / ต่างอาร์ต -2
+  //  รหัสเดิม BS06-SP-U004 / SD01-009 (แปลงด้วย migrateEntries)
+  const CODE = '(?:[A-Z]+\\d+-[A-Z]{2}-[A-Z]+\\d{3}|[A-Z]+\\d+-\\d{3}|[A-Z]+\\d*-(?:X[A-Z]*\\d{2}|[A-Z]+\\d{3})(?:-\\d)?)';
+  const loose = new RegExp(`^(${CODE})\\*?(\\d+)~?([rw-]+)?$`, 'i');
   for (const part of token.slice(bar + 1).replace(/\s+/g, '').split(',').filter(Boolean)) {
-    const m = part.match(/^([A-Z0-9-]+)\*(\d+)(?:~([rw-]+))?$/i) ?? part.match(/^((?:[A-Z0-9]+-)+[A-Z]*\d{3})\*?(\d+)~?([rw-]+)?$/i);
+    const m = part.match(/^([A-Z0-9-]+)\*(\d+)(?:~([rw-]+))?$/i) ?? part.match(loose);
     if (!m) return null;
     const foils = m[3] ? [...m[3]].map((c) => (c === 'r' ? 'rainbow' : c === 'w' ? 'white' : null)) : undefined;
     entries.push({ cardNo: m[1]!, count: Number(m[2]), ...(foils ? { foils } : {}) });

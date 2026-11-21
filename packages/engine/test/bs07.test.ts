@@ -64,7 +64,7 @@ describe('Booster Set 07', () => {
     expect(db.get(no('เซ็นโงคุฮิเมะ โมนากะ')).teams).toEqual(['เฮียกกะเรียวรัน', 'พริตตี้เอนิมอลส์']);
     expect(db.get(no('จงคุกเข่า เอฟวรี่วัน')).magicTypes).toEqual(['เพลง']);
     expect(db.get(no('ชุดตุ๊กตาฟูริน')).braveCondition).toMatchObject({ family: 'ดีว่า', bp: 3000 });
-    expect(db.all().filter((c) => c.name === 'ขุนพลน่ารักที่สุดรุ่นที่เจ็ด มาโกะอิจิ').map((c) => c.cardNo)).toEqual(['BS07-SP-X008', 'BS07-SP-X009']);
+    expect(db.all().filter((c) => c.name === 'ขุนพลน่ารักที่สุดรุ่นที่เจ็ด มาโกะอิจิ').map((c) => c.cardNo)).toEqual(['BSC23-XCP02', 'BSC23-XCP02-2']);
   });
 
   it('On Stage: กลับใต้เด็คแทนการโจมตี → อัญเชิญร่างสเตจสไตล์จากมือไม่จ่ายคอสต์ + จั่ว 1 ใบ แล้ว "เมื่อสปิริตเรา On Stage" ทำงาน', () => {

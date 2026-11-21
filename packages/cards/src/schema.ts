@@ -63,6 +63,8 @@ export const CardDefSchema = z
     summonCondition: z.unknown().optional(),
     braveCondition: BraveConditionSchema.optional(),
     rarity: z.string().optional(),
+    /** ชุดในเกม (BS01, BS02 …): โฟลเดอร์/ไฟล์ใน assets/files · รหัสการ์ดเป็นรหัสที่พิมพ์บนการ์ดจริงซึ่งอาจมาจากชุดอื่น */
+    set: z.string().optional(),
     illustrator: z.string().optional(),
     flavorText: z.string().optional(),
   })
