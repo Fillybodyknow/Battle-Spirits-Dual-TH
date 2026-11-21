@@ -1205,8 +1205,6 @@ export function PlayerMat({ player, top }: { player: PlayerId; top?: boolean }) 
         {/* มิติ: แสงจากกลางกระดาน (ขอบบนของแผ่นในพิกัดตัวเอง = ด้านกลางกระดานทั้งสองฝั่ง) · ขอบไกลมืดลง */}
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_70%_80%_at_50%_0%,rgba(255,255,255,0.15),rgba(255,255,255,0.04)_45%,transparent_75%)]" />
         <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_35%,rgba(0,0,0,0.55))]" />
-        {/* มิติระดับ 3: แสงไฟฉายบนโต๊ะตามเมาส์ (ตำแหน่งจาก liveTable.ts) */}
-        <div className="live-light absolute inset-0" />
         {/* แสงฝั่งที่ต้องตัดสินใจ (สีเดียวกับออร่าขอบจอ) ฉายจากขอบนอกเข้ามาบนพื้นสนาม: อยู่ใต้การ์ดทุกอย่าง */}
         {acting && !fxBlocking && !state.winner && (
           <div

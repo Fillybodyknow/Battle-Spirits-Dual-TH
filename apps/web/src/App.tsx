@@ -26,7 +26,6 @@ import { Home } from './screens/Home';
 import { Lobby } from './screens/Lobby';
 import { useBgmDirector } from './bgmDirector';
 import { usePrefs } from './prefs';
-import { installLiveTable } from './liveTable';
 
 const ICON_BTN =
   'flex h-10 w-10 items-center justify-center rounded-full border border-sky-300/50 bg-gradient-to-b from-slate-700 to-slate-900 text-lg text-sky-200 shadow-[0_0_12px_rgba(56,189,248,0.25),inset_0_1px_0_rgba(255,255,255,0.15)] transition hover:scale-105 hover:text-white hover:shadow-[0_0_16px_rgba(56,189,248,0.55)] disabled:opacity-40';
@@ -325,7 +324,6 @@ function GameScreen() {
   const bottom = useGame(viewPlayer);
   const top = opponentOf(bottom);
   const tilt = usePrefs((p) => p.boardTilt);
-  useEffect(installLiveTable, []);
 
   return (
     <div className="game-bg relative flex h-screen min-w-[1200px] overflow-hidden">

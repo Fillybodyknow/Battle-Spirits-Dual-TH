@@ -382,7 +382,7 @@ body {
   box-shadow:
     0 calc(var(--ly) * 3px) 3px rgba(0, 0, 0, 0.7),
     0 calc(var(--ly) * 12px) 16px rgba(0, 0, 0, 0.65);
-  transition: box-shadow 0.2s ease, translate 0.2s ease, transform 0.15s ease-out, height 0.3s, width 0.3s;
+  transition: box-shadow 0.2s ease, translate 0.2s ease, height 0.3s, width 0.3s;
 }
 .card-lift:hover {
   translate: 0 calc(var(--ly) * -6px);
@@ -399,35 +399,6 @@ body {
 }
 
 /* Core: เม็ดนูนมีเงาตกบนพื้น */
-/*
- * มิติระดับ 3: สนามมีชีวิต (ตั้งค่า → กราฟิก → สนามมีชีวิต · ปิด = html.gfx-live-off)
- * liveTable.ts ตั้งค่าตำแหน่งเมาส์เป็นสัดส่วนของกรอบบนจอ: --fx/--fy (-0.5..0.5) ที่การ์ด, --lx/--lt ที่แผ่นสนาม
- * แผ่นคู่แข่งหมุน 180° → แปลงเป็นพิกัดของแผ่นด้วย --ly
- */
-.live-light {
-  pointer-events: none;
-  background: radial-gradient(circle 340px at calc(50% + var(--ly) * var(--lx, -9) * 100%) calc(50% + var(--ly) * var(--lt, -9) * 100%), rgba(186, 230, 253, 0.38), rgba(186, 230, 253, 0.14) 45%, transparent 72%);
-}
-.card-lift::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: 5;
-  border-radius: inherit;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.25s ease;
-  background: radial-gradient(circle at calc(50% + var(--ly) * var(--fx, 0) * 100%) calc(50% + var(--ly) * var(--fy, 0) * 100%), rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0.1) 40%, transparent 65%);
-}
-/* ชี้การ์ด = กดด้านที่ชี้ลง (เอียงไม่เกิน ±12°) + แสงสะท้อนที่จุดชี้ · ไม่ใส่ transform ค้างไว้ตอนไม่ชี้ (การ์ดทุกใบเป็นเลเยอร์ 3D = กินหน่วยความจำ และเคยวาดการ์ดหาย) */
-.card-lift:hover {
-  transform: perspective(700px) rotateX(calc(var(--ly) * var(--fy, 0) * -24deg)) rotateY(calc(var(--ly) * var(--fx, 0) * 24deg));
-}
-.card-lift:hover::after { opacity: 1; }
-html.gfx-live-off .live-light,
-html.gfx-live-off .card-lift::after { display: none; }
-html.gfx-live-off .card-lift:hover { transform: none; }
-
 .core-3d { filter: drop-shadow(0 calc(var(--ly) * 3px) 2px rgba(0, 0, 0, 0.85)); }
 
 /* ช่องบนแผ่นรองเล่น: กรอบโลหะ กดลึกลงในแผ่น (เงาในขอบบน + ไฮไลต์ขอบล่าง) */

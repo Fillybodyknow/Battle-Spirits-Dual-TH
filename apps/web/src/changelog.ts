@@ -16,6 +16,11 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '29.1.1',
+    date: '2026-11-21',
+    items: ['เอา "สนามมีชีวิต" ออก: ไม่มีแสงบนโต๊ะเลื่อนตามเมาส์ และชี้การ์ดบนสนามแล้วการ์ดไม่เอียงตามแล้ว (ยังยกขึ้นพร้อมเงาเหมือนเดิม)'],
+  },
+  {
     version: '29.1.0',
     date: '2026-11-21',
     items: [
