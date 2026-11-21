@@ -438,6 +438,8 @@ export function Login({ onEnter }: { onEnter: () => void }) {
             <div
               className="text-[clamp(2.6rem,5.6vw,5.4rem)] leading-none font-black tracking-tight italic"
               style={{
+                // ตัวเอียงยื่นเลยกรอบ: background-clip:text ระบายได้แค่ในกรอบ → เผื่อขอบ (ซ้าย-ขวาเท่ากัน ยังอยู่กึ่งกลาง)
+                padding: '0.06em 0.16em',
                 background: 'linear-gradient(180deg, #fffbeb 0%, #fde68a 38%, #f59e0b 62%, #92400e 100%)',
                 WebkitBackgroundClip: 'text',
                 backgroundClip: 'text',

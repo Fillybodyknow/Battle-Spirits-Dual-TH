@@ -16,6 +16,11 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '35.0.1',
+    date: '2026-11-22',
+    items: ['แก้: ตัว S ท้ายโลโก้ BATTLE SPIRITS หน้าไตเติลถูกตัดขอบ'],
+  },
+  {
     version: '35.0.0',
     date: '2026-11-22',
     items: [
