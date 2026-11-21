@@ -82,6 +82,7 @@ function GraphicsTab() {
   const animations = useGame((s) => s.animations);
   const cutIn = useGame((s) => s.cutIn);
   const { toggleAnimations, setCutIn } = useGame.getState();
+  const tiltOn = usePrefs((p) => p.boardTilt);
   const qualityHint =
     settings.quality === 'auto'
       ? `เลือกให้ตามความแรงเครื่อง · ตอนนี้ใช้ชุด "${autoPreset === 'low' ? 'ต่ำ' : 'สูง'}"`
@@ -116,6 +117,9 @@ function GraphicsTab() {
             ]}
             onChange={(v) => setEffect('foil', v)}
           />
+        </Row>
+        <Row title="สนามมีชีวิต" hint="แสงบนโต๊ะเลื่อนตามเมาส์ · ชี้การ์ดบนสนามแล้วการ์ดเอียงตามพร้อมแสงสะท้อน" cost="ต่ำ">
+          <Segmented value={effects.liveTable ? 'on' : 'off'} options={[{ v: 'on', label: 'เปิด' }, { v: 'off', label: 'ปิด' }]} onChange={(v) => setEffect('liveTable', v === 'on')} />
         </Row>
         <Row title="เบลอพื้นหลังหน้าต่าง" hint="หน้าต่าง/แผงที่ลอยอยู่เบลอสิ่งที่อยู่ข้างหลัง" cost="สูง">
           <Segmented value={effects.blur ? 'on' : 'off'} options={[{ v: 'on', label: 'เปิด' }, { v: 'off', label: 'ปิด' }]} onChange={(v) => setEffect('blur', v === 'on')} />
@@ -155,6 +159,9 @@ function GraphicsTab() {
       </Section>
 
       <Section title="หน้าจอ">
+        <Row title="เอียงกระดาน" hint="มองสนามแบบนั่งอยู่หน้าโต๊ะ: ฝั่งไกลเล็กลง ฝั่งใกล้ใหญ่ขึ้น · ปิด = มองจากด้านบนตรง ๆ · มือถือ/iPad ตัวหนังสือบนกระดานอาจไม่คม (ค่าเริ่มต้นปิด)" cost="ต่ำ">
+          <Segmented value={tiltOn ? 'on' : 'off'} options={[{ v: 'on', label: 'เปิด' }, { v: 'off', label: 'ปิด' }]} onChange={(v) => setPrefs({ boardTilt: v === 'on' })} />
+        </Row>
         <Row title="แสดง FPS" hint="ตัวเลขเฟรมต่อวินาทีที่ขอบขวาของจอ (ใช้บอกอาการกระตุก)">
           <Segmented value={settings.showFps ? 'on' : 'off'} options={[{ v: 'off', label: 'ปิด' }, { v: 'on', label: 'เปิด' }]} onChange={(v) => setComfort({ showFps: v === 'on' })} />
         </Row>

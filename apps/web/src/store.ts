@@ -623,7 +623,13 @@ export function layoutRect(el: Element | null): Rect | null {
   if (!el) return null;
   const r = el.getBoundingClientRect();
   if (r.width <= 0) return null;
-  const k = fieldScaleOf(el);
+  let k = fieldScaleOf(el);
+  // กระดานเอียง (ตั้งค่า → เอียงกระดาน): ฝั่งไกลดูเล็กลง ฝั่งใกล้ดูใหญ่ขึ้น → ปรับขนาดตามที่เห็นจริง
+  // ใช้อัตราส่วนพื้นที่กรอบ (ไม่ขึ้นกับการหมุน 90° ของการ์ดเสื่อมสภาพ) จำกัดช่วงกันค่าแปลกตอนการ์ดหมุนเฉียง
+  if (el instanceof HTMLElement && el.offsetWidth > 0 && el.offsetHeight > 0 && el.closest('.board-tilt.tilted')) {
+    const ratio = Math.sqrt((r.width * r.height) / (el.offsetWidth * el.offsetHeight * k * k));
+    k *= Math.min(1.1, Math.max(0.85, ratio));
+  }
   const w = el instanceof HTMLElement && el.offsetWidth > 0 ? el.offsetWidth * k : r.width;
   const h = el instanceof HTMLElement && el.offsetHeight > 0 ? el.offsetHeight * k : r.height;
   return { x: r.left + r.width / 2 - w / 2, y: r.top + r.height / 2 - h / 2, w, h };

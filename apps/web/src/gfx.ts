@@ -24,6 +24,8 @@ export interface Effects {
   foil: FoilMode;
   /** เบลอพื้นหลังหน้าต่าง/แผง */
   blur: boolean;
+  /** สนามมีชีวิต: แสงบนโต๊ะตามเมาส์ + การ์ดบนสนามเอียงตามเมาส์พร้อมแสงสะท้อน */
+  liveTable: boolean;
 }
 export interface GfxSettings {
   quality: Quality;
@@ -35,10 +37,10 @@ export interface GfxSettings {
 }
 
 export const PRESETS: Record<'low' | 'medium' | 'high', Effects> = {
-  high: { bgMotion: true, matMotion: true, glowPulse: true, foil: 'anim', blur: true },
+  high: { bgMotion: true, matMotion: true, glowPulse: true, foil: 'anim', blur: true, liveTable: true },
   // กลาง: ตัดตัวที่กินเครื่องสูง (ฉากหลัง + แสงกระพริบ) แต่เก็บกรอบวิ่งรอบสนามและเบลอไว้
-  medium: { bgMotion: false, matMotion: true, glowPulse: false, foil: 'static', blur: true },
-  low: { bgMotion: false, matMotion: false, glowPulse: false, foil: 'static', blur: false },
+  medium: { bgMotion: false, matMotion: true, glowPulse: false, foil: 'static', blur: true, liveTable: true },
+  low: { bgMotion: false, matMotion: false, glowPulse: false, foil: 'static', blur: false, liveTable: false },
 };
 
 const KEY = 'bs-gfx';
@@ -98,6 +100,7 @@ function apply() {
     c.toggle('gfx-foil-static', e.foil === 'static');
     c.toggle('gfx-foil-off', e.foil === 'off');
     c.toggle('gfx-no-blur', !e.blur);
+    c.toggle('gfx-live-off', !e.liveTable);
   }
   listeners.forEach((f) => f());
 }

@@ -442,7 +442,7 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
           clickFieldCard(cardId);
         }}
         ref={boxRef}
-        className={`relative flex items-center justify-center transition-[height,width] duration-300 ${exhausted ? 'h-28 w-40' : 'h-40 w-28'} ${draggingThis ? 'opacity-40' : ''}`}
+        className={`card-lift relative flex items-center justify-center ${exhausted ? 'h-28 w-40' : 'h-40 w-28'} ${draggingThis ? 'opacity-40' : ''}`}
         draggable={def.type === 'brave' && ownTurnMain && !fxBlocking && !state.choice}
         onDragStart={(e) => {
           e.dataTransfer.effectAllowed = 'move';
@@ -682,7 +682,7 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
       {/* ถาด Core: ลากออกไปได้ วางเข้ามาได้ */}
       <div
         onClick={() => clickFieldCard(cardId)}
-        className={`flex h-8 w-full items-center justify-center rounded-md border px-1 py-0.5 ${
+        className={`tray-well flex h-8 w-full items-center justify-center rounded-md border px-1 py-0.5 ${
           over ? 'border-emerald-400 bg-emerald-400/20' : 'border-white/10 bg-black/40'
         }`}
       >
@@ -940,6 +940,28 @@ function BurstSlot({ player }: { player: PlayerId }) {
   );
 }
 
+/** ความหนาของกองการ์ด (px): ยิ่งมากยิ่งหนา สูงสุด 6 */
+function pileDepth(count: number): number {
+  return count <= 0 ? 0 : Math.min(6, Math.ceil(count / 7));
+}
+
+/** ขอบกองการ์ดซ้อนกันตามความหนา (แสงจากด้านบน: ขอบล่างของกองเห็นเป็นชั้น ๆ) · face = กองหงาย (แทรช) */
+function PileEdge({ count, face }: { count: number; face?: boolean }) {
+  const n = pileDepth(count);
+  return (
+    <>
+      <div className="absolute inset-0 rounded-lg" style={{ boxShadow: '0 calc(var(--ly) * 6px) 8px rgba(0,0,0,0.55)' }} />
+      {Array.from({ length: n }, (_, i) => (
+        <div
+          key={i}
+          className={`absolute inset-0 rounded-lg ${face ? 'bg-slate-800 ring-1 ring-white/10' : 'bg-slate-900 ring-1 ring-slate-400/25'}`}
+          style={{ translate: `0 calc(var(--ly) * ${-i}px)` }}
+        />
+      ))}
+    </>
+  );
+}
+
 function DeckSlot({ player }: { player: PlayerId }) {
   const count = useGame((s) => s.state.players[player].deck.length);
   return (
@@ -947,8 +969,8 @@ function DeckSlot({ player }: { player: PlayerId }) {
       <div data-deck={player} className="relative mx-auto h-16 w-11">
         {count > 0 ? (
           <>
-            <div className="absolute inset-0 translate-x-0.5 translate-y-0.5 rounded-lg bg-black/70" />
-            <div className="absolute inset-0">
+            <PileEdge count={count} />
+            <div className="absolute inset-0" style={{ translate: `0 calc(var(--ly) * ${-pileDepth(count)}px)` }}>
               <CardBack />
             </div>
           </>
@@ -1021,8 +1043,8 @@ function TrashSlot({ player }: { player: PlayerId }) {
         >
           {top ? (
             <>
-              {p.trashCards.length > 1 && <div className="absolute inset-0 translate-x-0.5 translate-y-0.5 rounded bg-slate-950 ring-1 ring-white/10" />}
-              <div className="relative h-full w-full" key={top} style={{ animation: 'fx-chain-pop 0.35s ease-out both' }}>
+              {p.trashCards.length > 1 && <PileEdge count={p.trashCards.length - 1} face />}
+              <div className="relative h-full w-full" key={top} style={{ animation: 'fx-chain-pop 0.35s ease-out both', translate: `0 calc(var(--ly) * ${-pileDepth(p.trashCards.length - 1)}px)` }}>
                 <CardFace def={db.get(state.cards[top]!.cardNo)} size="xs" />
               </div>
             </>
@@ -1146,9 +1168,10 @@ export function PlayerMat({ player, top }: { player: PlayerId; top?: boolean }) 
     <MatTopCtx.Provider value={!!top}>
     <section
       data-mat={player}
-      className={`mat-sheen relative isolate flex min-h-fit flex-1 gap-2 overflow-hidden rounded-xl border-2 p-2 shadow-[0_10px_30px_rgba(0,0,0,0.55)] flex-row ${top ? 'rotate-180' : ''} ${
-        acting ? 'mat-active border-transparent shadow-[0_0_24px_rgba(250,204,21,0.25)]' : 'border-slate-500/30'
+      className={`mat-sheen mat-slab relative isolate flex min-h-fit flex-1 gap-2 overflow-hidden rounded-xl border-2 p-2 flex-row ${top ? 'rotate-180' : ''} ${
+        acting ? 'mat-active border-transparent' : 'border-slate-500/30'
       }`}
+      style={{ '--ly': top ? -1 : 1 } as React.CSSProperties}
     >
       {/* กรอบเรืองแสงวิ่งรอบ (ตาของผู้เล่นนี้): ชั้นไล่สีหมุนด้วย transform ใต้ mask เส้นขอบ */}
       {acting && (
@@ -1179,6 +1202,11 @@ export function PlayerMat({ player, top }: { player: PlayerId; top?: boolean }) 
             <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_55%,rgba(0,0,0,0.55)_100%)]" />
           </div>
         )}
+        {/* มิติ: แสงจากกลางกระดาน (ขอบบนของแผ่นในพิกัดตัวเอง = ด้านกลางกระดานทั้งสองฝั่ง) · ขอบไกลมืดลง */}
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_70%_80%_at_50%_0%,rgba(255,255,255,0.15),rgba(255,255,255,0.04)_45%,transparent_75%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_35%,rgba(0,0,0,0.55))]" />
+        {/* มิติระดับ 3: แสงไฟฉายบนโต๊ะตามเมาส์ (ตำแหน่งจาก liveTable.ts) */}
+        <div className="live-light absolute inset-0" />
         {/* แสงฝั่งที่ต้องตัดสินใจ (สีเดียวกับออร่าขอบจอ) ฉายจากขอบนอกเข้ามาบนพื้นสนาม: อยู่ใต้การ์ดทุกอย่าง */}
         {acting && !fxBlocking && !state.winner && (
           <div
@@ -1202,7 +1230,7 @@ export function PlayerMat({ player, top }: { player: PlayerId; top?: boolean }) 
 
       {/* Field */}
       <div
-        className={`relative flex min-w-0 flex-1 gap-2 rounded-md border bg-black/15 p-2 transition ${col} ${
+        className={`field-well relative flex min-w-0 flex-1 gap-2 rounded-md border bg-black/15 p-2 transition ${col} ${
           fieldDrop ? (fieldOver ? 'border-yellow-300 bg-yellow-300/15' : 'border-dashed border-yellow-300/80') : 'border-slate-300/15'
         }`}
         {...(handAction

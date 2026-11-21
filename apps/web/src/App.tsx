@@ -25,6 +25,8 @@ import { DeckBuilder } from './screens/DeckBuilder';
 import { Home } from './screens/Home';
 import { Lobby } from './screens/Lobby';
 import { useBgmDirector } from './bgmDirector';
+import { usePrefs } from './prefs';
+import { installLiveTable } from './liveTable';
 
 const ICON_BTN =
   'flex h-10 w-10 items-center justify-center rounded-full border border-sky-300/50 bg-gradient-to-b from-slate-700 to-slate-900 text-lg text-sky-200 shadow-[0_0_12px_rgba(56,189,248,0.25),inset_0_1px_0_rgba(255,255,255,0.15)] transition hover:scale-105 hover:text-white hover:shadow-[0_0_16px_rgba(56,189,248,0.55)] disabled:opacity-40';
@@ -322,6 +324,8 @@ function GameScreen() {
   // ผู้เล่นที่ถือเทิร์นอยู่ด้านล่าง (มือใหญ่ กดง่าย) เว้นแต่ตั้งมุมมองคงที่
   const bottom = useGame(viewPlayer);
   const top = opponentOf(bottom);
+  const tilt = usePrefs((p) => p.boardTilt);
+  useEffect(installLiveTable, []);
 
   return (
     <div className="game-bg relative flex h-screen min-w-[1200px] overflow-hidden">
@@ -333,11 +337,14 @@ function GameScreen() {
         <main className="mx-auto flex min-h-0 w-full max-w-[1380px] flex-1 flex-col gap-1.5 overflow-y-auto px-3 pt-0 pb-0">
           {/* เว้นที่ให้มือคู่แข่งแบบพัดที่ลอยอยู่ขอบบน */}
           <div className="h-[56px] shrink-0" />
-          <PlayerMat player={top} top />
-          <div data-setup="bar" className="sticky top-0 bottom-0 z-30 shrink-0">
-            <PromptBar />
+          {/* โต๊ะ: สนามสองฝั่ง + แถบกลาง เอียงเป็นระนาบเดียว (ตั้งค่า → กราฟิก → เอียงกระดาน) */}
+          <div className={`board-tilt flex flex-1 flex-col gap-1.5 ${tilt ? 'tilted' : ''}`}>
+            <PlayerMat player={top} top />
+            <div data-setup="bar" className="sticky top-0 bottom-0 z-30 shrink-0">
+              <PromptBar />
+            </div>
+            <PlayerMat player={bottom} />
           </div>
-          <PlayerMat player={bottom} />
           {/* เว้นที่ให้มือแบบพัดที่ลอยอยู่ขอบล่าง */}
           <div className="h-[104px] shrink-0" />
         </main>

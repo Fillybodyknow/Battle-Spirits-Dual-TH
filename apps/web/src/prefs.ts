@@ -11,11 +11,13 @@ export type HandLayout = 'fan' | 'row' | 'spread';
 /** หยิบการ์ดไปเล่น: คลิกเปิดเมนู / คลิกเดียวเล่นเลย (ถ้ามีทางเล่นทางเดียว) */
 export type PlayMode = 'menu' | 'direct';
 
-/** skipAnim: แสดงปุ่ม "ข้าม ▸▸" ระหว่างแอนิเมชัน (ปิด = ดูแอนิเมชันจนจบเสมอ) */
-export type Prefs = { confirmAttack: boolean; handSort: HandSort; handLayout: HandLayout; playMode: PlayMode; skipAnim: boolean };
+/** skipAnim: แสดงปุ่ม "ข้าม ▸▸" ระหว่างแอนิเมชัน (ปิด = ดูแอนิเมชันจนจบเสมอ) · boardTilt: เอียงกระดานแบบมองจากที่นั่ง (มิติ) */
+export type Prefs = { confirmAttack: boolean; handSort: HandSort; handLayout: HandLayout; playMode: PlayMode; skipAnim: boolean; boardTilt: boolean };
 
 const KEY = 'bs-play-prefs';
-const DEFAULTS: Prefs = { confirmAttack: true, handSort: 'draw', handLayout: 'fan', playMode: 'menu', skipAnim: true };
+/** จอสัมผัส (มือถือ/iPad): หน้าเว็บถูกย่อทั้งหน้า เลเยอร์ 3D ถูกวาดที่ความละเอียดต่ำ ตัวหนังสือบนกระดานเบลอ → ปิดเอียงเป็นค่าเริ่มต้น */
+const COARSE = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
+const DEFAULTS: Prefs = { confirmAttack: true, handSort: 'draw', handLayout: 'fan', playMode: 'menu', skipAnim: true, boardTilt: !COARSE };
 
 function load(): Prefs {
   try {

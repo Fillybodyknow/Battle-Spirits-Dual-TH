@@ -74,7 +74,7 @@ export function Core({ coreId, size = 'md', board, onClick, mark: markProp, noFl
       src={core.isSoul ? IMG.soulCore : IMG.core}
       alt={core.isSoul ? 'Soul Core' : 'Core'}
       draggable={false}
-      className={`${SIZE[size]} shrink-0 drop-shadow transition ${core.isSoul && !mark ? 'soul-glow' : ''} ${ring} ${dragging || dimmed ? 'opacity-40' : ''}`}
+      className={`${SIZE[size]} shrink-0 core-3d transition ${core.isSoul && !mark ? 'soul-glow' : ''} ${ring} ${dragging || dimmed ? 'opacity-40' : ''}`}
     />
   );
   // ป้ายบอกหน้าที่: - = จ่าย, + = วางบนการ์ด (บนกระดานเท่านั้น ในแผงมีคำอธิบายอยู่แล้ว)
