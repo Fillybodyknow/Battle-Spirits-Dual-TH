@@ -682,8 +682,22 @@ input:-webkit-autofill:focus {
 @keyframes intro-trail-a { from { transform: translateX(40%) rotate(-12deg); opacity: 0; } 40% { opacity: 1; } to { transform: translateX(-90%) rotate(-12deg); opacity: 0; } }
 @keyframes intro-trail-b { from { transform: translateX(-40%) rotate(-12deg); opacity: 0; } 40% { opacity: 1; } to { transform: translateX(90%) rotate(-12deg); opacity: 0; } }
 @keyframes intro-fade-io { 0% { opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { opacity: 0; } }
-@keyframes intro-duel { 0% { transform: scale(2.8); opacity: 0; letter-spacing: 0.4em; } 60% { transform: scale(0.95); opacity: 1; } 100% { transform: scale(1); letter-spacing: -0.02em; } }
 @keyframes intro-rgb { 0% { opacity: 0.9; } 100% { opacity: 0.35; } }
+/* GATE OPEN → KAIHO!! (MatchIntro) */
+@keyframes intro-gate-seam { 0% { transform: translateY(-50%) scaleX(0); opacity: 1; } 45% { transform: translateY(-50%) scaleX(1); opacity: 1; } 100% { transform: translateY(-50%) scaleX(1); opacity: 0; } }
+@keyframes intro-gate-l { 0% { transform: translateX(45%); opacity: 0; filter: blur(6px); } 100% { transform: translateX(0); opacity: 1; filter: blur(0); } }
+@keyframes intro-gate-r { 0% { transform: translateX(-45%); opacity: 0; filter: blur(6px); } 100% { transform: translateX(0); opacity: 1; filter: blur(0); } }
+/* ทุบลง: ใหญ่มากจากด้านหน้า → ลงกระแทกที่ ~35% (ยุบเกินนิดหนึ่ง) → เด้งกลับ */
+@keyframes intro-kaiho { 0% { transform: scale(3.4); opacity: 0; } 35% { transform: scale(0.9); opacity: 1; } 55% { transform: scale(1.05); } 100% { transform: scale(1); } }
+@keyframes intro-kaiho-flash { 0% { opacity: calc(0.85 * var(--flash, 1)); } 100% { opacity: 0; } }
+@keyframes intro-kaiho-shake {
+  0% { transform: translate(0, 0); }
+  15% { transform: translate(calc(-14px * var(--shake, 1)), calc(10px * var(--shake, 1))); }
+  30% { transform: translate(calc(12px * var(--shake, 1)), calc(-8px * var(--shake, 1))); }
+  48% { transform: translate(calc(-7px * var(--shake, 1)), calc(5px * var(--shake, 1))); }
+  70% { transform: translate(calc(4px * var(--shake, 1)), calc(-2px * var(--shake, 1))); }
+  100% { transform: translate(0, 0); }
+}
 @keyframes intro-fade-out { 0%, 65% { opacity: 1; } 100% { opacity: 0; } }
 
 /* ---------------------------------------------------------------- ฉากจบเกม */

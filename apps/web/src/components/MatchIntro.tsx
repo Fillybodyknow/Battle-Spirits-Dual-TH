@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { sfx } from '../sfx';
+import { flashScale, shakeScale } from '../gfx';
 import { useGame, type Fx } from '../store';
 import { playerId } from '../account/account';
 import { IMG } from '../assets';
@@ -34,11 +35,13 @@ export function CoinFace({ gold }: { gold: boolean }) {
   );
 }
 
-type Phase = 'ready' | 'vs' | 'coin' | 'result' | 'choose' | 'final' | 'warp' | 'setup' | 'duel';
+type Phase = 'ready' | 'vs' | 'coin' | 'result' | 'choose' | 'final' | 'warp' | 'setup' | 'gate' | 'kaiho';
 /** เวลาเริ่มของแต่ละช่วง (ms) */
 const AT = { vs: 1100, coin: 2700, result: 4400, choose: 5500 };
-/** เวลาหลังเลือกผู้เริ่มก่อนแล้ว (ms นับจากตอนเลือก): ... วาร์ป → ประกอบกระดาน → DUEL */
-const AFTER = { warp: 1300, setup: 2250, duel: 4150, end: 5400 };
+/** เวลาหลังเลือกผู้เริ่มก่อนแล้ว (ms นับจากตอนเลือก): ... วาร์ป → ประกอบกระดาน → GATE OPEN → KAIHO!! */
+const AFTER = { warp: 1300, setup: 2250, gate: 4150, kaiho: 5050, end: 6300 };
+/** KAIHO!! กระแทกลงที่ ~35% ของแอนิเมชัน 0.46 วิ (จุดที่เสียง kaiho ต้องลง) */
+const KAIHO_HIT = 160;
 
 /**
  * สถานะแอนิเมชันประกอบกระดาน ใส่ไว้ที่ <html data-board-setup>
@@ -140,7 +143,7 @@ function Warp() {
   );
 }
 
-/** ฉากเปิดเกม: READY → VS → โยนเหรียญ → ผล → คนชนะเลือกเริ่มก่อน/หลัง → ประกาศผู้เริ่มก่อน → วาร์ป → DUEL! */
+/** ฉากเปิดเกม: READY → VS → โยนเหรียญ → ผล → คนชนะเลือกเริ่มก่อน/หลัง → ประกาศผู้เริ่มก่อน → วาร์ป → GATE OPEN → KAIHO!! */
 export function MatchIntro({ fx, onDone }: { fx: Extract<Fx, { kind: 'intro' }>; onDone: () => void }) {
   const pregame = useGame((s) => s.pregame);
   const online = useGame((s) => s.online);
@@ -157,7 +160,7 @@ export function MatchIntro({ fx, onDone }: { fx: Extract<Fx, { kind: 'intro' }>;
     return () => setBoardSetup(null);
   }, []);
   useEffect(() => {
-    if (phase === 'setup' || phase === 'duel') setBoardSetup('run');
+    if (phase === 'setup' || phase === 'gate' || phase === 'kaiho') setBoardSetup('run');
   }, [phase]);
 
   // ช่วงก่อนเลือก: เวลาตายตัว
@@ -177,7 +180,7 @@ export function MatchIntro({ fx, onDone }: { fx: Extract<Fx, { kind: 'intro' }>;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // เลือกแล้ว (และถึงช่วงเลือกแล้ว): ประกาศผู้เริ่มก่อน → วาร์ป → DUEL → จบ
+  // เลือกแล้ว (และถึงช่วงเลือกแล้ว): ประกาศผู้เริ่มก่อน → วาร์ป → GATE OPEN → KAIHO!! → จบ
   // ผูกกับค่าที่ไม่กลับเป็นเท็จ: ไม่งั้นพอเปลี่ยนช่วง ตัวจับเวลาจะถูกยกเลิก
   const afterChoose = reached && chosen !== null;
   useEffect(() => {
@@ -189,7 +192,9 @@ export function MatchIntro({ fx, onDone }: { fx: Extract<Fx, { kind: 'intro' }>;
       setTimeout(() => (setPhase('setup'), sfx('place')), AFTER.setup),
       setTimeout(() => sfx('swish'), AFTER.setup + 950),
       setTimeout(() => sfx('draw'), AFTER.setup + 1200),
-      setTimeout(() => (setPhase('duel'), sfx('duelStart')), AFTER.duel),
+      setTimeout(() => (setPhase('gate'), sfx('duelStart')), AFTER.gate),
+      // kaiho.wav ดังสุดที่ ~0.16 วิของไฟล์ = ตรงจังหวะทุบ (KAIHO_HIT) พอดี จึงเริ่มเล่นพร้อมป้าย
+      setTimeout(() => (setPhase('kaiho'), sfx('kaiho')), AFTER.kaiho),
       setTimeout(onDone, AFTER.end),
     ];
     return () => timers.forEach(clearTimeout);
@@ -236,7 +241,7 @@ export function MatchIntro({ fx, onDone }: { fx: Extract<Fx, { kind: 'intro' }>;
   return (
     <div className="fixed inset-0 z-[70] overflow-hidden">
       {/* พื้นหลังฉาก (หายตอนประกอบกระดาน/DUEL ให้เห็นกระดาน) */}
-      {phase !== 'setup' && phase !== 'duel' && (
+      {phase !== 'setup' && phase !== 'gate' && phase !== 'kaiho' && (
         <div className="absolute inset-0 bg-[#05040d]">
           <div className="absolute inset-0" style={{ background: 'radial-gradient(ellipse at 15% 80%, rgba(56,189,248,0.25), transparent 50%), radial-gradient(ellipse at 85% 80%, rgba(244,63,94,0.25), transparent 50%)' }} />
           <div className="absolute -top-1/4 left-[22%] h-[150%] w-[34%] rotate-[32deg] bg-gradient-to-b from-indigo-400/0 via-indigo-400/20 to-indigo-400/0" style={{ animation: 'intro-band 1.2s ease-out both' }} />
@@ -317,18 +322,34 @@ export function MatchIntro({ fx, onDone }: { fx: Extract<Fx, { kind: 'intro' }>;
 
       {phase === 'warp' && <Warp />}
 
-      {phase === 'duel' && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/45" style={{ animation: `intro-fade-out ${AFTER.end - AFTER.duel}ms ease-in both` }}>
-          <div className="relative text-[13rem] leading-none font-black tracking-tight italic select-none" style={{ animation: 'intro-duel 0.7s cubic-bezier(.2,1.3,.4,1) both' }}>
-            <span className="absolute inset-0 text-cyan-300/70" style={{ transform: 'translate(-8px, 2px)', animation: 'intro-rgb 0.9s ease-out both' }}>
-              DUEL
-            </span>
-            <span className="absolute inset-0 text-rose-400/70" style={{ transform: 'translate(8px, -2px)', animation: 'intro-rgb 0.9s ease-out both reverse' }}>
-              DUEL
-            </span>
-            <span className="relative text-white/90" style={{ WebkitTextStroke: '2px rgba(255,255,255,0.9)', textShadow: '0 0 30px rgba(255,255,255,0.6)' }}>
-              DUEL
-            </span>
+      {/* GATE OPEN: แสงแนวนอนตรงกลาง แล้วคำว่า GATE / OPEN แยกออกจากกลางเหมือนประตูเปิด */}
+      {phase === 'gate' && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/35">
+          <div className="absolute inset-x-0 top-1/2 h-[3px] bg-[linear-gradient(90deg,transparent,rgba(165,243,252,0.95)_30%,#fff_50%,rgba(165,243,252,0.95)_70%,transparent)] shadow-[0_0_24px_rgba(103,232,249,0.9)]" style={{ animation: 'intro-gate-seam 0.9s ease-out both' }} />
+          <div className="relative flex items-center text-[7.5rem] leading-none font-black tracking-[0.08em] italic text-white select-none" style={{ textShadow: '0 0 28px rgba(103,232,249,0.85)' }}>
+            <span style={{ animation: 'intro-gate-l 0.7s cubic-bezier(.2,.9,.3,1) both' }}>GATE</span>
+            <span className="w-[0.45em]" />
+            <span style={{ animation: 'intro-gate-r 0.7s cubic-bezier(.2,.9,.3,1) both' }}>OPEN</span>
+          </div>
+        </div>
+      )}
+
+      {/* KAIHO!!: ตัวอักษรใหญ่ทุบลงจอ + แสงวาบ + จอสั่น (ตามตั้งค่า กราฟิก → จอสั่น / แสงวาบ) */}
+      {phase === 'kaiho' && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/45" style={{ animation: `intro-fade-out ${AFTER.end - AFTER.kaiho}ms ease-in both` }}>
+          <div className="absolute inset-0 bg-white" style={{ opacity: 0, animation: `intro-kaiho-flash 0.5s ${KAIHO_HIT}ms ease-out both`, ['--flash' as string]: flashScale() }} />
+          <div style={{ animation: `intro-kaiho-shake 0.42s ${KAIHO_HIT}ms linear both`, ['--shake' as string]: shakeScale() }}>
+            <div className="relative text-[11rem] leading-none font-black tracking-tight italic select-none" style={{ animation: 'intro-kaiho 0.46s cubic-bezier(.55,0,.3,1) both' }}>
+              <span className="absolute inset-0 text-cyan-300/70" style={{ transform: 'translate(-9px, 3px)', animation: 'intro-rgb 0.9s ease-out both' }}>
+                KAIHO!!
+              </span>
+              <span className="absolute inset-0 text-rose-400/70" style={{ transform: 'translate(9px, -3px)', animation: 'intro-rgb 0.9s ease-out both reverse' }}>
+                KAIHO!!
+              </span>
+              <span className="relative text-white/90" style={{ WebkitTextStroke: '2px rgba(255,255,255,0.9)', textShadow: '0 0 40px rgba(255,255,255,0.7)' }}>
+                KAIHO!!
+              </span>
+            </div>
           </div>
         </div>
       )}

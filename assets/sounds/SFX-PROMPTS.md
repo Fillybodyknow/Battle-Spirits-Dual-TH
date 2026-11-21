@@ -17,6 +17,43 @@ Fantasy trading card game sound effect, polished mobile game quality, punchy and
 - สร้าง 3–4 แบบต่อ prompt แล้วเลือกแบบที่เข้ากับเสียงอื่นที่สุด
 - Prompt Influence: ยาวเกิน/มีดนตรีปน → เพิ่ม 10–20% · จืด/เหมือนกันทุกรอบ → ลดลง
 
+## ยังไม่มีไฟล์ (ทำชุดนี้ก่อน · ตรวจเมื่อ 2026-11-21)
+
+มีไฟล์แล้ว 25 ชื่อ ส่วนชื่อด้านล่างยังใช้เสียงสังเคราะห์อยู่ (เรียงตามความถี่ที่ได้ยินในเกม)
+
+| # | ไฟล์ | ยาว | Influence | Prompt | เล่นเมื่อ |
+|---|---|---|---|---|---|
+| 1 | `hover` | 0.04s | 80% | Extremely subtle soft UI tick, barely audible, airy and high | ชี้การ์ด/ปุ่มเมนู (ได้ยินบ่อยมาก ต้องเบาที่สุด) |
+| 2 | `swish` | 0.2s | 55% | Quick sword-like swish, declaring an attack, sharp and energetic | ประกาศโจมตี / ป้องกัน |
+| 3 | `error` | 0.3s | 75% | Soft negative UI buzz, two short low tones, not harsh | ทำ action ไม่ได้ |
+| 4 | `buff` | 0.3s | 40% | Power up, quick three-note ascending sparkle | BP+ / ได้ไลฟ์ |
+| 5 | `burst` | 1.0s | 35% | Hidden trap card bursts open, sudden dark explosive whoomp with a dramatic brass-like stab | ป้ายใหญ่ CATALYZE ฯลฯ / Final Blow |
+| 6 | `duelStart` | 0.9s | 40% | Massive magical gate unlocking and opening, deep mechanical rumble rising into a bright energy shimmer, anticipation building, no final hit | ฉากเปิดเกม ป้าย "GATE OPEN" (ประตูเปิด · เสียงต้องค้างความตื่นเต้นไว้ให้ KAIHO!! ทุบต่อ) |
+| 6.1 | `kaiho` | 1.2s | 45% | Colossal cinematic impact slam, huge low boom with explosive crack at the very start, shockwave whoosh and deep rumble tail, battle has begun | ฉากเปิดเกม ป้าย "KAIHO!!" กระแทกลง (จุดกระแทกต้องอยู่ต้นไฟล์ · ไม่มีไฟล์ = ใช้ bigdamage) |
+| 7 | `win` | 1.5s | 35% | Short victory fanfare sting, triumphant bright brass and chime | ป้ายชนะ / หน้าผลการแข่ง |
+| 8 | `resolve` | 0.5s | 40% | Effect resolves, quick magical swoosh rising up and releasing | ป้าย RESOLVE |
+| 9 | `chain` | 0.25s | 60% | Short metallic chain clink | ป้าย CHAIN |
+| 10 | `tick` | 0.12s | 75% | Tiny soft notification tick | ป้ายเล็ก |
+
+### ยืมไฟล์อื่นอยู่ (ไม่ใช่เสียงสังเคราะห์ · ทำเพิ่มได้ถ้าอยากให้แต่ละแบบฟังต่างกัน)
+
+ไม่มีไฟล์ของตัวเอง = เล่นไฟล์ของเสียงอื่นแทน (`ALIAS` ใน `apps/web/src/sfx.ts`)
+
+| ไฟล์ | ตอนนี้ใช้ | ยาว | Influence | Prompt | เล่นเมื่อ |
+|---|---|---|---|---|---|
+| `magic` | `activate` | 0.8s | 35% | Casting a spell card, magical energy swelling up then a bright arcane chord | ใช้เมจิก [Main] |
+| `flash` | `activate` | 0.5s | 35% | Instant counter-spell, sharp electric zap with a fast bright shimmer, urgent | ใช้ [Flash] |
+| `burstCard` | `activate` | 0.8s | 40% | Face-down trap card flipping open, sharp paper snap followed by a dark magical surge | การ์ด Burst ทำงาน |
+
+**แนะนำ:** `hover` / `tick` / `click` ได้ยินบ่อยที่สุด ให้ทั้งสามฟังเป็นชุดเดียวกัน (เสียงแก้วใสคล้ายกัน คนละความดัง)
+
+### เสียงใหม่ที่เสนอ (ต้องแก้โค้ดก่อนถึงจะได้ยิน)
+
+| ไฟล์ | ยาว | Influence | Prompt | เล่นเมื่อ |
+|---|---|---|---|---|
+| `lose` | 1.5s | 35% | Short defeat sting, low descending brass and soft fading choir, somber but not depressing | หน้าผลการแข่งตอนแพ้ (ตอนนี้ใช้ `fade`) |
+| `block` | 0.35s | 55% | Fantasy shield raised to block, solid metal clang with a short magical barrier hum | ประกาศป้องกัน (ตอนนี้ใช้ `swish` เหมือนประกาศโจมตี) |
+
 ## รายการ (เรียงจากสำคัญมากไปน้อย)
 
 | # | ไฟล์ | ยาว | Influence | Prompt | เล่นเมื่อ |

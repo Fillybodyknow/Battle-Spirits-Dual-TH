@@ -49,8 +49,10 @@ export type SfxName =
   | 'bigdamage'
   | 'buff'
   | 'xrare'
-  /** ฉากเปิดเกม: ขึ้น "DUEL!" */
+  /** ฉากเปิดเกม: ป้าย "GATE OPEN" (ประตูเปิด) */
   | 'duelStart'
+  /** ฉากเปิดเกม: ป้าย "KAIHO!!" กระแทกลง (ไม่มีไฟล์ = ใช้ไฟล์ bigdamage) */
+  | 'kaiho'
   /** โยนเหรียญตัดสินใครเริ่มก่อน (จุดเหรียญตกอยู่ที่ ~780ms) */
   | 'coin'
   | 'win'
@@ -64,7 +66,7 @@ for (const [path, url] of Object.entries(files)) {
   (FILE[name] ??= []).push(url);
 }
 /** ไม่มีไฟล์ของเสียงนี้ = ใช้ไฟล์ของอีกเสียงแทน (ถ้ามี) ก่อนตกไปใช้เสียงสังเคราะห์ */
-const ALIAS: Partial<Record<SfxName, SfxName>> = { magic: 'activate', flash: 'activate', burstCard: 'activate', attackHit: 'impact' };
+const ALIAS: Partial<Record<SfxName, SfxName>> = { magic: 'activate', flash: 'activate', burstCard: 'activate', attackHit: 'impact', kaiho: 'bigdamage' };
 const lastPick = new Map<SfxName, number>();
 function fileFor(name: SfxName): string | undefined {
   const list = FILE[name] ?? (ALIAS[name] ? FILE[ALIAS[name]!] : undefined);
@@ -311,6 +313,7 @@ const SYNTH: Record<SfxName, (t: number) => void> = {
   },
   attackHit: (t) => SYNTH.impact(t),
   duelStart: (t) => SYNTH.xrare(t),
+  kaiho: (t) => SYNTH.bigdamage(t),
   coin: (t) => {
     // เหรียญหมุนกลางอากาศ แล้วตกกระทบ (ที่ ~0.78s)
     for (let i = 0; i < 6; i++) tone(t + i * 0.11, 3200 + (i % 2) * 400, 0.05, { type: 'sine', gain: 0.025 });
