@@ -351,6 +351,133 @@ describe('Booster Set 12', () => {
     expect(life - s.players.p2.life.length).toBe(2);
   });
 
+  it('มิสึรุกิ Catalyze กิวมอนจิ (ทำลาย แล้วอัญเชิญตัวเอง): ส่งไลฟ์ตามจำนวนที่ทำลาย · คุจาคุเมียวโอของคู่แข่งไม่เปิด', () => {
+    let s = setup();
+    const mitsu = put(s, 'p1', no('มังกรยุทธ์ดาบศักดิ์สิทธิ์ มิสึรุกิ-ดราก้อน'), 2, true); // Lv2
+    const burst = card(s, 'p1', no('จอมราชันเซ็นโงคุ กิวมอนจิ'), 'hand');
+    s.players.p1.hand = s.players.p1.hand.filter((id) => id !== burst);
+    s.players.p1.burst = burst;
+    const oppBurst = card(s, 'p2', no('คุจาคุเมียวโอ'), 'hand');
+    s.players.p2.hand = s.players.p2.hand.filter((id) => id !== oppBurst);
+    s.players.p2.burst = oppBurst;
+    const a = put(s, 'p2', DARIU, 1);
+    const b = put(s, 'p2', DARIU, 3);
+    const life = s.players.p2.life.length;
+    s = attack(s, mitsu);
+    s = choose(s, optionIndex(s, 'Catalyze'));
+    const seen: string[] = [];
+    for (let i = 0; i < 20 && s.choice; i++) {
+      const c = s.choice;
+      seen.push(`${c.player}:${c.kind}:${'prompt' in c ? c.prompt : ''}`);
+      if (c.kind === 'multiCard') s = choose(s, { cards: (c as { candidates: string[] }).candidates.filter((x) => x === a || x === b) });
+      else if (c.kind === 'card' && c.player === 'p1' && c.candidates.includes(a)) s = choose(s, a);
+      else if (c.kind === 'card' && c.player === 'p1' && c.candidates.includes(b)) s = choose(s, b);
+      else if (c.kind === 'card') s = choose(s, null);
+      else if (c.kind === 'placeCores') s = choose(s, { pay: normalCores(s).slice(0, c.min) });
+      else if (c.kind === 'option' && c.player === 'p2') s = choose(s, 0);
+      else break;
+    }
+    expect(s.players.p2.trashCards, seen.join('\n')).toEqual(expect.arrayContaining([a, b]));
+    expect(life - s.players.p2.life.length, seen.join('\n')).toBe(2);
+    expect(s.players.p2.burst, seen.join('\n')).toBe(oppBurst);
+  });
+
+  it('มิสึรุกิ Catalyze เจย์ดีห้าชั้นแห่งบัวบาน (เน็กซัส: ทำลายคอสต์ไม่เกิน 4): ส่งไลฟ์ตามจำนวนที่ทำลาย · คุจาคุเมียวโอของคู่แข่งไม่เปิด', () => {
+    let s = setup();
+    const mitsu = put(s, 'p1', no('มังกรยุทธ์ดาบศักดิ์สิทธิ์ มิสึรุกิ-ดราก้อน'), 2, true); // Lv2
+    const burst = card(s, 'p1', no('เจย์ดีห้าชั้นแห่งบัวบาน'), 'hand');
+    s.players.p1.hand = s.players.p1.hand.filter((id) => id !== burst);
+    s.players.p1.burst = burst;
+    const oppBurst = card(s, 'p2', no('คุจาคุเมียวโอ'), 'hand');
+    s.players.p2.hand = s.players.p2.hand.filter((id) => id !== oppBurst);
+    s.players.p2.burst = oppBurst;
+    const a = put(s, 'p2', DARIU, 1);
+    const b = put(s, 'p2', DARIU, 3);
+    const life = s.players.p2.life.length;
+    s = attack(s, mitsu);
+    s = choose(s, optionIndex(s, 'Catalyze'));
+    const seen: string[] = [];
+    for (let i = 0; i < 20 && s.choice; i++) {
+      const c = s.choice;
+      seen.push(`${c.player}:${c.kind}:${'prompt' in c ? c.prompt : ''}`);
+      if (c.kind === 'multiCard') s = choose(s, { cards: (c as { candidates: string[] }).candidates.filter((x) => x === a || x === b) });
+      else if (c.kind === 'card' && c.player === 'p1' && c.candidates.includes(a)) s = choose(s, a);
+      else if (c.kind === 'card' && c.player === 'p1' && c.candidates.includes(b)) s = choose(s, b);
+      else if (c.kind === 'card') s = choose(s, null);
+      else if (c.kind === 'placeCores') s = choose(s, { pay: normalCores(s).slice(0, c.min) });
+      else if (c.kind === 'option' && c.player === 'p2') s = choose(s, 0);
+      else break;
+    }
+    expect(s.players.p2.trashCards, seen.join('\n')).toContain(a);
+    expect(life - s.players.p2.life.length, seen.join('\n')).toBe(1);
+    expect(s.players.p2.burst, seen.join('\n')).toBe(oppBurst);
+  });
+
+  it('มิสึรุกิ Catalyze โกวเท็น (ทำลาย แล้วอัญเชิญเบรฟร่วมร่าง): ส่งไลฟ์ 1 · คุจาคุเมียวโอของคู่แข่งไม่เปิด', () => {
+    let s = setup();
+    const mitsu = put(s, 'p1', no('มังกรยุทธ์ดาบศักดิ์สิทธิ์ มิสึรุกิ-ดราก้อน'), 2, true); // Lv2
+    const burst = card(s, 'p1', no('ดาบมังกรเกราะ โกวเท็น'), 'hand');
+    s.players.p1.hand = s.players.p1.hand.filter((id) => id !== burst);
+    s.players.p1.burst = burst;
+    const oppBurst = card(s, 'p2', no('คุจาคุเมียวโอ'), 'hand');
+    s.players.p2.hand = s.players.p2.hand.filter((id) => id !== oppBurst);
+    s.players.p2.burst = oppBurst;
+    const a = put(s, 'p2', DARIU, 1);
+    const life = s.players.p2.life.length;
+    s = attack(s, mitsu);
+    s = choose(s, optionIndex(s, 'Catalyze'));
+    const seen: string[] = [];
+    for (let i = 0; i < 20 && s.choice; i++) {
+      const c = s.choice;
+      seen.push(`${c.player}:${c.kind}:${'prompt' in c ? c.prompt : ''}:${JSON.stringify((c as { options?: unknown }).options ?? (c as { candidates?: unknown }).candidates ?? '')}`);
+      if (c.kind === 'option' && c.player === 'p1') s = choose(s, optionIndex(s, 'ทำลายสปิริต') >= 0 ? optionIndex(s, 'ทำลายสปิริต') : 0);
+      else if (c.kind === 'card' && c.player === 'p1' && c.candidates.includes(a)) s = choose(s, a);
+      else if (c.kind === 'card' && c.player === 'p1' && c.candidates.includes(mitsu)) s = choose(s, mitsu);
+      else if (c.kind === 'card') s = choose(s, null);
+      else if (c.kind === 'placeCores') s = choose(s, { pay: normalCores(s).slice(0, c.min) });
+      else if (c.kind === 'option' && c.player === 'p2') s = choose(s, 0);
+      else break;
+    }
+    seen.push('remaining choice: ' + JSON.stringify(s.choice));
+    expect(s.players.p2.trashCards, seen.join('\n')).toContain(a);
+    expect(life - s.players.p2.life.length, seen.join('\n')).toBe(1);
+    // ไลฟ์ที่หายจากเอฟเฟกต์ "เมื่อโจมตี" ไม่ใช่ความเสียหายจากการโจมตี (หน้าเว็บไม่เล่นท่าวิ่งชน)
+    expect(s.log.filter((e) => e.type === 'lifeLost').every((e) => e.type === 'lifeLost' && !e.attack)).toBe(true);
+    expect(s.battle?.step).not.toBe(undefined);
+    expect(s.players.p2.burst, seen.join('\n')).toBe(oppBurst);
+  });
+
+  it('โจมตีไม่ถูกป้องกันแล้วเสียไลฟ์: event lifeLost ติด attack', () => {
+    let s = setup();
+    const atk = put(s, 'p1', DARIU, 1);
+    s = attack(s, atk);
+    s = passAll(s);
+    if (s.battle) s = passAll(act(s, { type: 'noBlock', player: 'p2' }));
+    const lost = s.log.filter((e) => e.type === 'lifeLost');
+    expect(lost).toHaveLength(1);
+    expect(lost[0]).toMatchObject({ player: 'p2', amount: 1, attack: true });
+  });
+
+  it('กติกา 06 ข้อ 3.3: "เมื่อเน็กซัสนี้ถูกวาง" ไม่เปิดเบิร์ส "หลังจาก [เมื่อสปิริต/เบรฟนี้ถูกอัญเชิญ] ของคู่แข่งทำงาน" · สปิริตยังเปิดได้', () => {
+    const base = setup();
+    const oppBurst = card(base, 'p2', no('คุจาคุเมียวโอ'), 'hand');
+    base.players.p2.hand = base.players.p2.hand.filter((id) => id !== oppBurst);
+    base.players.p2.burst = oppBurst;
+    // วางเน็กซัส No.32 ไอส์แลนด์รูท (เมื่อเน็กซัสนี้ถูกวาง: จั่ว 1 ใบ)
+    let s = structuredClone(base);
+    const nx = card(s, 'p1', no('No.32 ไอส์แลนด์รูท'), 'hand');
+    const hand = s.players.p1.hand.length;
+    const cost = payableCost(s, db, 'p1', db.get(no('No.32 ไอส์แลนด์รูท')));
+    s = act(s, { type: 'deployNexus', player: 'p1', cardId: nx, payment: normalCores(s).slice(0, cost), placement: [] });
+    expect(s.players.p1.hand.length).toBe(hand); // ใช้ไป 1 จั่วมา 1
+    expect(s.choice?.player).not.toBe('p2');
+    expect(s.players.p2.burst).toBe(oppBurst);
+    // สปิริตที่มี "เมื่อสปิริตนี้ถูกอัญเชิญ" (ชูร่า): คู่แข่งได้ตัดสินใจเปิดเบิร์ส
+    s = structuredClone(base);
+    s = summon(s, card(s, 'p1', no('เมียวโอดาบศักดิ์สิทธิ์ ชูร่า'), 'hand'), 1);
+    expect(s.choice?.player).toBe('p2');
+  });
+
   it('No.6 เมาท์เทนเชพ Lv2: แอทแท็คสเต็ปของคู่แข่ง ย้ายโซลคอร์ไปสปิริตเรา แล้วทำลายสปิริตคู่แข่งที่ BP ไม่เกินตัวนั้น', () => {
     let s = setup();
     const nx = put(s, 'p2', no('No.6 เมาท์เทนเชพ'), 2, true); // Lv2 มีโซลคอร์

@@ -45,6 +45,7 @@ import {
   type GameState,
   type PlayerId,
   hasEvolutionNow,
+  freezeForCache,
 } from '@bs/engine';
 
 /** การ์ดทุกชุดที่ UI ใช้: Starter Deck 01–04 (SD01-…SD04-) */
@@ -904,7 +905,7 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
     const resolved =
       (blocked
         ? destroyedIds.has(attackerId) || blockers.some((b) => destroyedIds.has(b))
-        : events.some((e) => e.type === 'lifeLost' && e.player === defender)) || quietEnd;
+        : events.some((e) => e.type === 'lifeLost' && e.player === defender && e.attack)) || quietEnd;
     const from = rects[`field:${attackerId}`];
     if (resolved && from) {
       attackerDies = destroyedIds.has(attackerId);
@@ -930,7 +931,7 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
   const battleResult = (e: GameEvent) =>
     !!charge &&
     hitAt === null &&
-    ((e.type === 'destroyed' && (e.cardId === attackerId || blockers.includes(e.cardId))) || (e.type === 'lifeLost' && e.player === defender) || e.type === 'battleEnded');
+    ((e.type === 'destroyed' && (e.cardId === attackerId || blockers.includes(e.cardId))) || (e.type === 'lifeLost' && e.player === defender && (e.attack || blockers.length > 0)) || e.type === 'battleEnded');
 
   /** ภาพการ์ดแตก/สูญสลายเล่นจบเมื่อไหร่: ขั้นถัดไปต้องรอ ไม่งั้นเอฟเฟกต์ที่ตามมาจะยกเรืองแสงทับกับการ์ดที่กำลังแตก */
   let ghostsEnd = 0;
@@ -1359,7 +1360,7 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         // ต้องให้การ์ดพุ่ง/นอนลงก่อน แล้วเอฟเฟกต์ค่อยทำงาน แล้วจึงวิ่งชน (เริ่มจากท่านอน)
         if (charge) {
           const i0 = events.indexOf(e);
-          const iHit = events.findIndex((x, i) => i > i0 && ((x.type === 'destroyed' && (x.cardId === attackerId || blockers.includes(x.cardId))) || (x.type === 'lifeLost' && x.player === defender)));
+          const iHit = events.findIndex((x, i) => i > i0 && ((x.type === 'destroyed' && (x.cardId === attackerId || blockers.includes(x.cardId))) || (x.type === 'lifeLost' && x.player === defender && (x.attack || blockers.length > 0))));
           const effectFirst = events.some((x, i) => i > i0 && (iHit < 0 || i < iHit) && x.type === 'effectResolving');
           if (!effectFirst) break;
           if (charge.kind === 'charge' && !charge.fromExhausted) charge.startLying = true;
@@ -1405,7 +1406,8 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         if (e.amount > 0) {
           const direct = !!charge && e.player === defender && blockers.length === 0;
           // เสีย Life จากการโจมตีเอง = จังหวะชน, จากเอฟเฟกต์ที่ทำงานทีหลัง (เช่น ส่งไลฟ์ลงรีเสิร์ฟ) = ตามคิวเอฟเฟกต์
-          const fromBattle = e.player === defender && !effectAfterHit;
+          // ไม่ถูกป้องกัน: นับเป็นจังหวะชนเฉพาะไลฟ์ที่หายเพราะการโจมตีจริง (เอฟเฟกต์ "เมื่อโจมตี" ส่งไลฟ์ เช่น มิสึรุกิ = ตามคิวเอฟเฟกต์)
+          const fromBattle = e.player === defender && !effectAfterHit && (blockers.length > 0 || !!e.attack);
           out.push({ kind: 'damage', player: e.player, amount: e.amount, big: direct && fromBattle, delay: at(fromBattle) });
           if (!fromBattle) t += 700;
         }
@@ -3749,6 +3751,14 @@ export const useGame = create<Store>((set, get) => {
       }
     },
   };
+});
+
+// state ที่อยู่ใน store ไม่ถูกแก้อีก (แก้ = clone ก่อนเสมอ) → ให้ rules จำผลคำนวณ เลเวล/สี/เจ็ม/คอสต์ ต่อ state ได้
+// (listener นี้ลงทะเบียนก่อน component ทุกตัว: ทำงานก่อนหน้าจอจะอ่าน state ใหม่)
+freezeForCache(useGame.getState().state);
+useGame.subscribe((n, p) => {
+  if (n.state !== p.state) freezeForCache(n.state);
+  if (n.truth && n.truth !== p.truth) freezeForCache(n.truth);
 });
 
 // เครื่องมือทดสอบระหว่างพัฒนา (เฉพาะ dev server)

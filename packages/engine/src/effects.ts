@@ -261,7 +261,9 @@ export function queueTriggers(
       ...(opts.lifeLost !== undefined ? { lifeLost: opts.lifeLost } : {}),
       ...(opts.summonFrom ? { summonFrom: opts.summonFrom } : {}),
       ...(opts.handIncrease ? { handIncrease: opts.handIncrease } : {}),
-      ...(on === 'summon' ? { onSummon: true } : {}),
+      // เบิร์ส "หลังจาก [เมื่อสปิริต/เบรฟนี้ถูกอัญเชิญ] ของคู่แข่งทำงาน" (กติกา 06 ข้อ 3.3): เฉพาะสปิริต/เบรฟ
+      // ไม่นับ "เมื่อเน็กซัสนี้ถูกวาง" (trigger summon เหมือนกัน) และอัลติเมท
+      ...(on === 'summon' && ['spirit', 'brave'].includes(db.get(s.cards[src]!.cardNo).type) ? { onSummon: true } : {}),
       ...(on === 'summon' && opts.byOnStage ? { summonByOnStage: true } : {}),
       ...(on === 'summon' && opts.bySource ? { summonBySource: opts.bySource } : {}),
       ...(opts.destroyerId ? { destroyerId: opts.destroyerId } : {}),

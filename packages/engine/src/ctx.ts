@@ -175,11 +175,11 @@ export function destroy(ctx: Ctx, cardId: string, by?: PlayerId, bySource?: stri
 }
 
 /** ไลฟ์ไปรีเสิร์ฟของเจ้าของ; คืน true ถ้าไลฟ์หมดแล้วจบเกม */
-export function loseLife(ctx: Ctx, player: PlayerId, amount: number, winner: PlayerId, to: 'reserve' | 'trash' = 'reserve'): boolean {
+export function loseLife(ctx: Ctx, player: PlayerId, amount: number, winner: PlayerId, to: 'reserve' | 'trash' = 'reserve', attack = false): boolean {
   const p = ctx.s.players[player];
   const n = Math.min(amount, p.life.length);
   (to === 'trash' ? p.trashCores : p.reserve).push(...p.life.splice(p.life.length - n, n));
-  emit(ctx, { type: 'lifeLost', player, amount: n });
+  emit(ctx, { type: 'lifeLost', player, amount: n, ...(attack ? { attack: true } : {}) });
   if (n > 0 && !(ctx.s.lifeDamagedThisTurn ?? []).includes(player)) ctx.s.lifeDamagedThisTurn = [...(ctx.s.lifeDamagedThisTurn ?? []), player];
   if (n > 0) pendBurst(ctx, player, 'afterLifeLost');
   if (p.life.length > 0) return false;

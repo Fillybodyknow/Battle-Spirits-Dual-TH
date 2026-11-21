@@ -1251,7 +1251,7 @@ function resolveBattle(ctx: Ctx): void {
       s.lifeDamageBy = { ...rec, ids: [...rec.ids, attacker.id] };
     }
     if (dmg > 0) {
-      if (loseLife(ctx, defender, dmg, attacker.owner)) return;
+      if (loseLife(ctx, defender, dmg, attacker.owner, 'reserve', true)) return;
       lostLife = true;
       queueLifeLostTriggers(ctx, defender, dmg);
     }

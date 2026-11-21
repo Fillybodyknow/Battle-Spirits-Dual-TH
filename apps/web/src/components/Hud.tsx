@@ -244,7 +244,8 @@ export function FinalBlowWarning() {
   const dmg = symbolCount(db.get(attacker.cardNo)) + attacker.braves.reduce((n, b) => n + symbolCount(db.get(state.cards[b]!.cardNo)), 0);
   const life = state.players[defender].life.length;
   if (dmg <= 0 || dmg < life) return null;
-  const text = Array.from({ length: 14 }, () => 'Final Blow !').join('  ');
+  // ข้อความสองท่อนเหมือนกัน (7 + 7): เลื่อนไปครึ่งความยาวพอดี = วนต่อกันเนียน
+  const text = Array.from({ length: 14 }, () => 'Final Blow !').join('  ') + '  ';
   const band = (side: 'left' | 'right') => (
     <div
       className={`absolute inset-y-[-10%] w-14 overflow-hidden ${side === 'left' ? 'left-0' : 'right-0'}`}
@@ -255,15 +256,14 @@ export function FinalBlowWarning() {
         animation: `fb-band-in-${side} 0.45s cubic-bezier(.2,.9,.3,1) both`,
       }}
     >
-      <div
-        className="absolute top-0 left-1/2 text-[2.1rem] font-black whitespace-nowrap text-rose-600 italic [text-shadow:0_2px_0_rgba(255,255,255,0.6)]"
-        style={{
-          writingMode: 'vertical-rl',
-          transform: `translateX(-50%) ${side === 'left' ? 'rotate(180deg)' : ''}`,
-          animation: `fb-band-scroll-${side} 9s linear infinite`,
-        }}
-      >
-        {text}
+      {/* เลื่อนด้วย transform (การ์ดจอทำเอง ไม่ต้องจัดเลย์เอาต์/วาดข้อความใหม่ทุกเฟรม) */}
+      <div className="absolute top-0 left-1/2 will-change-transform" style={{ animation: `fb-band-scroll-${side} 22s linear infinite` }}>
+        <div
+          className="text-[2.1rem] font-black whitespace-nowrap text-rose-600 italic [text-shadow:0_2px_0_rgba(255,255,255,0.6)]"
+          style={{ writingMode: 'vertical-rl', transform: side === 'left' ? 'rotate(180deg)' : undefined }}
+        >
+          {text}
+        </div>
       </div>
     </div>
   );

@@ -100,7 +100,7 @@ export function braveHostOf(state: GameState, braveId: string): string | null {
 }
 
 /** เลเวลปัจจุบันของการ์ดบนสนาม (Brave ที่ร่วมร่างอยู่ = เลเวลต่ำสุดของตัวเอง) */
-export function cardLevel(state: GameState, db: CardDatabase, cardId: string): number {
+function cardLevelRaw(state: GameState, db: CardDatabase, cardId: string): number {
   const card = state.cards[cardId]!;
   const def = db.get(card.cardNo);
   if (def.type === 'brave' && braveHostOf(state, cardId)) return def.levels[0]?.level ?? 0;
@@ -139,7 +139,7 @@ export function cardLevel(state: GameState, db: CardDatabase, cardId: string): n
 }
 
 /** การ์ดของเราที่ทำให้สปิริตนี้ถือว่าเป็น Lv สูงสุด (maxLevelAllies) */
-export function maxLevelAllySource(state: GameState, db: CardDatabase, cardId: string): StaticSource | null {
+function maxLevelAllySourceRaw(state: GameState, db: CardDatabase, cardId: string): StaticSource | null {
   // BS11 ตราแห่งเพลิงรบ: ตัวกรอง "สีเดียวกัน" อ่านสีการ์ด ซึ่งอ่านเลเวลต่อ → กันวนซ้ำ (ระหว่างตรวจ = ใช้เลเวลจากคอร์)
   if (checkingMaxLevel) return null;
   checkingMaxLevel = true;
@@ -246,7 +246,7 @@ export function nameHas(def: CardDef, words: readonly string[]): boolean {
 }
 
 /** เจ็มที่เพิ่มจากเอฟเฟกต์ของการ์ดบนสนาม ("สปิริตนี้เจ็มแดงเพิ่ม 1 เม็ด") */
-export function extraSymbols(state: GameState, db: CardDatabase, cardId: string): Partial<Record<SymbolColor, number>> {
+function extraSymbolsRaw(state: GameState, db: CardDatabase, cardId: string): Partial<Record<SymbolColor, number>> {
   const out: Partial<Record<SymbolColor, number>> = {};
   if (effectsNegated(state, db, cardId)) return out;
   const level = cardLevel(state, db, cardId);
@@ -456,7 +456,7 @@ export function conditionHolds(
 /**
  * BP ปัจจุบันบนสนาม = BP ตามเลเวล + BP+ ในเทิร์นนี้ + BP+ ถาวรจากการ์ดของเจ้าของ
  */
-export function currentBp(state: GameState, db: CardDatabase, cardId: string): number {
+function currentBpRaw(state: GameState, db: CardDatabase, cardId: string): number {
   const card = state.cards[cardId]!;
   const def = db.get(card.cardNo);
   if (!isSpiritLike(def)) return 0;
@@ -622,7 +622,7 @@ export function matchesFilter(state: GameState, db: CardDatabase, cardId: string
 }
 
 /** เผ่าของการ์ด รวมเผ่าที่ได้รับจากเอฟเฟกต์ (BS09 โอโทโนะซามะ: มีโซลคอร์ = ได้รับเผ่า [ผู้เป็นนาย]) */
-export function cardFamilies(state: GameState, db: CardDatabase, cardId: string): string[] {
+function cardFamiliesRaw(state: GameState, db: CardDatabase, cardId: string): string[] {
   const card = state.cards[cardId]!;
   const def = db.get(card.cardNo);
   if (!state.players[card.owner].field.includes(cardId)) return def.family;
@@ -730,7 +730,7 @@ export function distinctTeams(state: GameState, db: CardDatabase, player: Player
  * เอฟเฟกต์ของการ์ดบนสนามนี้ถูกปิดหรือไม่ (เมียวโอดาบแดง: "แอทแท็คสเต็ปของเรา: สปิริต/อัลติเมทคอสต์ไม่เกิน N ของคู่แข่ง เอฟเฟกต์จะไม่ทำงาน")
  * การ์ดที่ปิดได้คือของฝ่ายที่ไม่ใช่ผู้เล่นเทิร์น จึงไม่วนตรวจกันเอง
  */
-export function effectsNegated(state: GameState, db: CardDatabase, cardId: string): boolean {
+function effectsNegatedRaw(state: GameState, db: CardDatabase, cardId: string): boolean {
   // BS11 นปเปะระเกิร์ล: ในเทิร์นนี้การ์ดนี้สูญเสียเอฟเฟกต์ทั้งหมด
   if ((state.negatedCards ?? []).some((e) => e.cardId === cardId && e.turn === state.turn)) return true;
   // "ในเทิร์นนี้ สปิริต/เน็กซัสคู่แข่งทั้งหมดจะสูญเสียเอฟเฟกต์ทั้งหมด" (ดาบชีพอัสนี มิคาซึกิ)
@@ -795,11 +795,7 @@ export function symbolCount(def: CardDef): number {
 }
 
 /** gem symbol บนสนามของผู้เล่น แยกตามสี */
-export function fieldSymbols(
-  state: GameState,
-  db: CardDatabase,
-  player: PlayerId,
-): Partial<Record<SymbolColor, number>> {
+function fieldSymbolsRaw(state: GameState, db: CardDatabase, player: PlayerId): Partial<Record<SymbolColor, number>> {
   const out: Partial<Record<SymbolColor, number>> = {};
   // ทิพบอล: ในเทิร์นนี้การ์ดที่มีเจ็มตั้งแต่ N เม็ด ถือว่ามีเจ็ม 0
   const zero = state.symbolsZero?.turn === state.turn ? state.symbolsZero.minSymbols : null;
@@ -1079,7 +1075,7 @@ export function bounceBottomSource(state: GameState, db: CardDatabase, cardId: s
  * สีของการ์ดบนสนาม: สีของตัวเอง + สีของเบรฟที่ร่วมร่างอยู่ (กติกา 04: สปิริต/อัลติเมทได้รับสีจากเบรฟ)
  * การ์ดนอกสนาม / เบรฟที่ร่วมร่างอยู่ = สีของตัวเอง
  */
-export function cardColors(state: GameState, db: CardDatabase, cardId: string): CardDef['colors'] {
+function cardColorsRaw(state: GameState, db: CardDatabase, cardId: string): CardDef['colors'] {
   const card = state.cards[cardId];
   if (!card) return [];
   // BS11 ยาเท็นโดว: แอทแท็คสเต็ป สีของสปิริต/อัลติเมท/เน็กซัสทั้งหมดบนสนามกลายเป็นสีขาว
@@ -1463,7 +1459,7 @@ export function trashSummonRule(state: GameState, db: CardDatabase, player: Play
   return rule;
 }
 
-export function payableCost(state: GameState, db: CardDatabase, player: PlayerId, def: CardDef, base: number = def.cost): number {
+function payableCostRaw(state: GameState, db: CardDatabase, player: PlayerId, def: CardDef, base: number): number {
   const n = payableCostInner(state, db, player, def, base);
   // BS12 ทรูธ-อีเด็น: อัญเชิญไม่ได้ถ้าไม่จ่ายอย่างน้อย N คอสต์
   const min = def.abilities.find((a) => a.kind === 'minSummonPay');
@@ -1631,7 +1627,7 @@ export function hasUltraShield(state: GameState, db: CardDatabase, cardId: strin
 
 let checkingCopy = false;
 /** BS11 ฮะจิริว: การ์ดที่สปิริตนี้ก๊อปปี้ Lv / BP / เจ็ม (null = ไม่มี) · การ์ดที่ให้ผลเองไม่ก๊อปปี้ (กันวนซ้ำ) */
-export function statCopySource(state: GameState, db: CardDatabase, cardId: string): string | null {
+function statCopySourceRaw(state: GameState, db: CardDatabase, cardId: string): string | null {
   if (checkingCopy) return null;
   const card = state.cards[cardId];
   if (!card) return null;
@@ -2200,4 +2196,60 @@ export function ignoreSummonConditionSource(state: GameState, db: CardDatabase, 
 /** ฟุทสึโนะมิทามะ: ผู้เล่นทุกคนนำคอร์จากวอยด์มาวางที่ไลฟ์ไม่ได้ */
 export function noLifeFromVoidSource(state: GameState, db: CardDatabase): StaticSource | null {
   return staticSources(state, db, ['p1', 'p2'], 'noLifeFromVoid')[0] ?? null;
+}
+
+// ---------------------------------------------------------------- แคชผลคำนวณ (หน้าเว็บ)
+/*
+ * หน้าเว็บวาดจอใหม่ทีไรต้องคำนวณเลเวล/สี/เจ็ม/คอสต์ของการ์ดทุกใบซ้ำหลายร้อยครั้ง (ฟังก์ชันพวกนี้เรียกกันเองเป็นทอด ๆ)
+ * state ที่หน้าเว็บถืออยู่ไม่ถูกแก้อีกแล้ว (engine สร้าง state ใหม่ทุก action) → จำผลไว้ต่อ state หนึ่งก้อน
+ * - ใช้เฉพาะ state ที่ถูกประกาศด้วย freezeForCache (engine ระหว่างทำ action แก้ state ไปเรื่อย ๆ = ไม่ใช้แคช ผลการเล่นไม่เปลี่ยน)
+ * - ใช้เฉพาะตอนไม่มีตัวกันวนซ้ำตัวไหนทำงานอยู่ (ระหว่างนั้นผลขึ้นกับบริบท เช่น checkingMaxLevel)
+ */
+const frozenStates = new WeakSet<object>();
+const memoStore = new WeakMap<object, { db: CardDatabase; map: Map<string, unknown> }>();
+/** ประกาศว่า state นี้จะไม่ถูกแก้อีก (ให้ฟังก์ชันใน rules จำผลคำนวณได้) */
+export function freezeForCache(state: GameState): void {
+  frozenStates.add(state);
+}
+function memo<T>(state: GameState, db: CardDatabase, key: string, compute: () => T): T {
+  if (!frozenStates.has(state) || checkingMaxLevel || boostingLevel.size > 0 || levelBoostDepth > 0 || checkingNegation || checkingAllColor || checkingCopy) return compute();
+  let entry = memoStore.get(state);
+  if (!entry || entry.db !== db) {
+    entry = { db, map: new Map() };
+    memoStore.set(state, entry);
+  }
+  if (entry.map.has(key)) return entry.map.get(key) as T;
+  const v = compute();
+  entry.map.set(key, v);
+  return v;
+}
+export function cardLevel(state: GameState, db: CardDatabase, cardId: string): number {
+  return memo(state, db, 'cardLevel|' + cardId, () => cardLevelRaw(state, db, cardId));
+}
+export function maxLevelAllySource(state: GameState, db: CardDatabase, cardId: string): StaticSource | null {
+  return memo(state, db, 'maxLevelAllySource|' + cardId, () => maxLevelAllySourceRaw(state, db, cardId));
+}
+export function effectsNegated(state: GameState, db: CardDatabase, cardId: string): boolean {
+  return memo(state, db, 'effectsNegated|' + cardId, () => effectsNegatedRaw(state, db, cardId));
+}
+export function currentBp(state: GameState, db: CardDatabase, cardId: string): number {
+  return memo(state, db, 'currentBp|' + cardId, () => currentBpRaw(state, db, cardId));
+}
+export function statCopySource(state: GameState, db: CardDatabase, cardId: string): string | null {
+  return memo(state, db, 'statCopySource|' + cardId, () => statCopySourceRaw(state, db, cardId));
+}
+export function cardFamilies(state: GameState, db: CardDatabase, cardId: string): string[] {
+  return [...memo(state, db, 'cardFamilies|' + cardId, () => cardFamiliesRaw(state, db, cardId))];
+}
+export function cardColors(state: GameState, db: CardDatabase, cardId: string): CardDef['colors'] {
+  return [...memo(state, db, 'cardColors|' + cardId, () => cardColorsRaw(state, db, cardId))];
+}
+export function extraSymbols(state: GameState, db: CardDatabase, cardId: string): Partial<Record<SymbolColor, number>> {
+  return { ...memo(state, db, 'extraSymbols|' + cardId, () => extraSymbolsRaw(state, db, cardId)) };
+}
+export function fieldSymbols(state: GameState, db: CardDatabase, player: PlayerId): Partial<Record<SymbolColor, number>> {
+  return { ...memo(state, db, 'fieldSymbols|' + player, () => fieldSymbolsRaw(state, db, player)) };
+}
+export function payableCost(state: GameState, db: CardDatabase, player: PlayerId, def: CardDef, base: number = def.cost): number {
+  return memo(state, db, 'payableCost|' + player + '|' + def.cardNo + '|' + base, () => payableCostRaw(state, db, player, def, base));
 }

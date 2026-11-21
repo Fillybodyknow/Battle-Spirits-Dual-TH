@@ -561,7 +561,8 @@ export type GameEvent =
   | { type: 'blockDeclared'; blockerId: string }
   | { type: 'noBlock' }
   | { type: 'flashPassed'; player: PlayerId }
-  | { type: 'lifeLost'; player: PlayerId; amount: number }
+  /** attack: ผู้โจมตีที่ไม่ถูกป้องกันทำความเสียหายแก่ไลฟ์ (หน้าเว็บใช้เล่นท่าวิ่งชน · เสียไลฟ์จากเอฟเฟกต์ระหว่างการต่อสู้ไม่มี) */
+  | { type: 'lifeLost'; player: PlayerId; amount: number; attack?: true }
   /** bySource = การ์ดที่เป็นเจ้าของเอฟเฟกต์ที่ทำลาย */
   /** cost = คอสต์บนสนามตอนถูกทำลาย (รวมคอสต์ Brave ที่ร่วมร่าง: Brave แยกออกไปแล้วหลังทำลาย จึงต้องจดไว้ตอนนั้น) */
   | { type: 'destroyed'; cardId: string; bySource?: string; stays?: true; cost?: number }

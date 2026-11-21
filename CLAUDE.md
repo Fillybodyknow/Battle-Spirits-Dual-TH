@@ -207,6 +207,8 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
 - **เล็งหลายเป้า = เลือกทีเดียว** (เจ้าของโปรเจกต์กำหนด): `ask()` แปลง choice `card` ของ step ใน `MULTI_STEPS` ที่ count > 1 เป็น `multiCard` (pick `{ cards }`)
   → step ภายใน `applyPicks` (ถาม Kagemusha ทุกเป้าก่อน แล้วเรียก `applyCardPick` ทีละใบต่อกัน) · ส่งคอร์หลายเม็ด = choice `distribute` (pick `{ alloc }`) → `coresOffBatch`
   · Kagemusha ที่ใช้แล้ว = เป้าทั้งหมดย้ายไปที่การ์ด Kagemusha (กติกา 14) · step ใหม่ที่เล็งหลายตัวด้วย count: เพิ่มใน `MULTI_STEPS`
+- **แคชผลคำนวณ (`freezeForCache` ใน rules.ts)**: store ประกาศทุก state ที่ถืออยู่ → `cardLevel` / `currentBp` / `cardColors` / `cardFamilies` / `extraSymbols` / `fieldSymbols` / `payableCost` / `effectsNegated` / `maxLevelAllySource` / `statCopySource` จำผลต่อ state
+  (engine ระหว่างทำ action ไม่ใช้แคช · ข้ามแคชเมื่อตัวกันวนซ้ำทำงานอยู่) · หน้าเว็บ **ห้ามแก้ state ใน store ตรง ๆ** (clone ก่อนเสมอ) · ตัวกันวนซ้ำใหม่ใน rules.ts ต้องเพิ่มในเงื่อนไขของ `memo` · เทสต์ `memo.test.ts`
 - `config.manualDraw` (หน้าเว็บเปิดไว้): Draw Step หยุดรอ action `drawStep` · เทสต์ใช้ค่าเริ่มต้น (จั่วเอง)
 - เปลี่ยนลำดับ action ที่ engine คาดหวัง = ห้องออนไลน์ที่เล่นค้างอยู่จะเล่นต่อไม่ได้ (บอกเจ้าของโปรเจกต์ด้วย)
 - ความสามารถถาวร (ไม่ผ่านคิว) ไม่มี `effectResolving` → ตรงจุดที่มัน "ลงมือจริง" ให้เรียก `emitStatic(ctx, { cardId, source })` (event `staticApplied`)

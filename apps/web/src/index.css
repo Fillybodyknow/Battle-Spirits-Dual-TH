@@ -802,8 +802,8 @@ input:-webkit-autofill:focus {
 /* ---------------------------------------------------------------- แถบเตือน Final Blow */
 @keyframes fb-band-in-left { from { transform: translateX(-120%) rotate(4deg); } to { transform: translateX(0) rotate(4deg); } }
 @keyframes fb-band-in-right { from { transform: translateX(120%) rotate(-4deg); } to { transform: translateX(0) rotate(-4deg); } }
-@keyframes fb-band-scroll-left { from { top: -50%; } to { top: 0%; } }
-@keyframes fb-band-scroll-right { from { top: 0%; } to { top: -50%; } }
+@keyframes fb-band-scroll-left { from { transform: translate(-50%, -50%); } to { transform: translate(-50%, 0); } }
+@keyframes fb-band-scroll-right { from { transform: translate(-50%, 0); } to { transform: translate(-50%, -50%); } }
 
 /* ---------------------------------------------------------------- ฟอยการ์ด (ฟอยขาว / ฟอยรุ้ง)
  * ::before = ประกายพื้นจาง ๆ ตลอดเวลา, ::after = แถบแสงสะท้อนวิ่งผ่าน

@@ -77,7 +77,9 @@ let slow = read(SLOW_KEY) === '1';
 let autoJustLowered = false;
 const listeners = new Set<() => void>();
 
-const reducedMotion = () => typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+// สร้าง MediaQueryList ครั้งเดียว (เรียก matchMedia ใหม่ทุกครั้ง = แพง: ถูกเรียกทุกเฟรมและทุกครั้งที่วาดการ์ด)
+const reducedMotionMq = typeof window !== 'undefined' ? window.matchMedia?.('(prefers-reduced-motion: reduce)') : undefined;
+const reducedMotion = () => !!reducedMotionMq?.matches;
 /** ชุดที่ auto เลือกตอนนี้ */
 export const autoPreset = (): 'low' | 'high' => (slow || reducedMotion() ? 'low' : 'high');
 
@@ -97,7 +99,7 @@ function apply() {
     c.toggle('gfx-glow-static', !e.glowPulse);
     c.toggle('gfx-foil-static', e.foil === 'static');
     c.toggle('gfx-foil-off', e.foil === 'off');
-    c.toggle('gfx-no-blur', !e.blur);
+    c.toggle('gfx-no-blur', !e.blur);
   }
   listeners.forEach((f) => f());
 }
