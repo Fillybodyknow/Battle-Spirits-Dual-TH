@@ -214,7 +214,7 @@ export function responseOptions(
     return (
       handMagicTimings(s, id).includes('flash') &&
       // วัดอรุณ: ในเทิร์นนี้ใช้งานการ์ดเมจิคไม่ได้
-      !magicBanned(s, player) &&
+      !magicBanned(s, player, db, def) &&
       // คอสต์ในมือ (ทริคสเตอร์ -1) + จ่ายเพิ่ม (จินเบร์) ตรงกับที่ engine เรียกเก็บตอนใช้จริง
       payableCost(s, db, player, def, baseCost(s, db, id)) + magicBurstTax(s, db, player).amount <= cores &&
       !magicUsedUp(s, db, player, def.cardNo, 'flash')

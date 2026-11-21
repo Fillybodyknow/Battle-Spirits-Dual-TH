@@ -4,6 +4,8 @@ import { destroyCard, enqueue, fireTriggers, refreshByEffect, newBatch, queueExh
 import { nextRandom, shuffle } from './rng';
 import {
   attackTaxFor,
+  attackReserveTaxFor,
+  nexusExhaustPayMax,
   effectSummonTax,
   coreTaxed,
   symbolsZeroCard,
@@ -421,7 +423,7 @@ function cardInHand(ctx: Ctx, player: PlayerId, cardId: string): CardDef {
 type Handler<T extends Action['type']> = (ctx: Ctx, action: Extract<Action, { type: T }>) => void;
 
 const handlers: { [T in Action['type']]: Handler<T> } = {
-  summon(ctx, { player, cardId, payment, placement, braveOnto, mill }) {
+  summon(ctx, { player, cardId, payment, placement, braveOnto, mill, exhaustNexus }) {
     const { s, db } = ctx;
     const flash = s.battle?.flash;
     if (!flash) requireMain(ctx, player);
@@ -520,6 +522,19 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
         milled = ids.length;
         if (ids.length > 0) emit(ctx, { type: 'milled', player, cardIds: ids });
       }
+      // BS12 คาเมะมิสึ: เสื่อมสภาพเน็กซัสของเรา ใบละ = จ่ายแล้ว 1 คอสต์
+      if (exhaustNexus && exhaustNexus > 0) {
+        if (inTrash || flash) fail('NO_SUCH_EFFECT', 'เสื่อมสภาพเน็กซัสแทนการจ่ายคอสต์ได้เฉพาะตอนอัญเชิญจากมือในเมนสเต็ป');
+        const { max, src } = nexusExhaustPayMax(s, db, player, cardId, Math.max(0, baseCost(s, db, cardId) - milled));
+        if (exhaustNexus > max) fail('NO_SUCH_EFFECT', `เสื่อมสภาพเน็กซัสแทนการจ่ายคอสต์ได้ไม่เกิน ${max} ใบ`);
+        const ids = p.field.filter((id) => db.get(s.cards[id]!.cardNo).type === 'nexus' && s.cards[id]!.state === 'refresh').slice(0, exhaustNexus);
+        for (const id of ids) {
+          s.cards[id]!.state = 'exhausted';
+          emit(ctx, { type: 'exhausted', cardId: id });
+        }
+        emitStatic(ctx, src);
+        milled += ids.length;
+      }
       // ฮาคุโดวโทคาเงะ: สัญลักษณ์บนสนามลดคอสต์ได้แต่ถูกห้าม = จ่ายแพงขึ้นจริง → เรืองแสงก่อนการ์ดลงสนาม
       emitStatic(ctx, noReductionBlocked(s, db, player, def, baseCost(s, db, cardId)));
       ({ paid, placed } = payCost(ctx, player, def, payment, placement, {
@@ -577,6 +592,8 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     const def = cardInHand(ctx, player, cardId);
     // BS09 วัดอรุณ: ในเทิร์นนี้ใช้งานการ์ดเมจิคไม่ได้
     if (magicBanned(s, player)) fail('MAGIC_BANNED', 'ในเทิร์นนี้ใช้งานการ์ดเมจิคไม่ได้ (เอฟเฟกต์ของคู่แข่ง)');
+    // BS12 เมียวโอบัวม่วง / อาบิส-อโพคาลิพส์: ห้ามเมจิคตามคอสต์/สี
+    if (magicBanned(s, player, ctx.db, def)) fail('MAGIC_BANNED', 'ใช้งานการ์ดเมจิคนี้ไม่ได้ (เอฟเฟกต์ของคู่แข่ง)');
     // เมจิค / การ์ดสปิริตที่ "ถือว่าเป็นการ์ดเมจิคด้วย" / การ์ดที่ได้รับเอฟเฟกต์เมจิคจากการ์ดบนสนาม (คาฉะเนโกะ-อิคุสะ)
     const asMagic = handMagic(s, ctx.db, cardId);
     if (def.type !== 'magic' && asMagic.length === 0) fail('WRONG_CARD_TYPE', 'ใช้ได้เฉพาะ Magic');
@@ -739,6 +756,19 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     if (coreTaxed(s, player) && !payCoreTax(ctx, attackerId)) {
       runQueue(ctx);
       return;
+    }
+    // BS12 แคพิทัลแคพิทัล: ตัวที่ไม่มีโซลคอร์ ต้องส่งคอร์ในรีเสิร์ฟลงแทรช (คอร์ธรรมดาก่อน)
+    {
+      const rtax = attackReserveTaxFor(s, ctx.db, attackerId);
+      if (rtax.cores > 0) {
+        const reserve = s.players[player].reserve;
+        if (reserve.length < rtax.cores) fail('CANNOT_ATTACK', `ต้องส่งคอร์ในรีเสิร์ฟ ${rtax.cores} เม็ดลงแทรชเพื่อโจมตี`);
+        emitStatic(ctx, rtax.src);
+        const pay = [...reserve].sort((x, y) => Number(s.cores[x]!.isSoul) - Number(s.cores[y]!.isSoul)).slice(0, rtax.cores);
+        s.players[player].reserve = reserve.filter((c) => !pay.includes(c));
+        s.players[player].trashCores.push(...pay);
+        emit(ctx, { type: 'coresMoved', player, count: pay.length });
+      }
     }
     beginAttack(ctx, player, attackerId, fa);
   },

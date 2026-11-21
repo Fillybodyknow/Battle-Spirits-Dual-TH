@@ -1381,7 +1381,8 @@ export function playOptions(state: GameState, cardId: string): { label: string; 
   if (quick) options.push({ label: 'อัญเชิญ [Quick]', run: () => openPlay(cardId, 'summon') });
   if (main && def.type === 'nexus') options.push({ label: 'วาง Nexus', run: () => openPlay(cardId, 'deployNexus') });
   // วัดอรุณ: ในเทิร์นนี้ใช้งานการ์ดเมจิคไม่ได้ (รวมสปิริตที่ใช้เป็นเมจิค)
-  const noMagic = magicBanned(state, card.owner);
+  // BS12 เมียวโอบัวม่วง / อาบิส-อโพคาลิพส์: ห้ามเมจิคตามคอสต์/สีของการ์ดใบนี้
+  const noMagic = magicBanned(state, card.owner, db, def);
   if (noMagic) {
     // ไม่แสดงตัวเลือกใช้เมจิค
   } else if (def.type === 'magic') {

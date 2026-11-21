@@ -250,6 +250,8 @@ export interface QueuedEffect {
   chosenId?: string;
   /** (BS08) จำนวนการ์ดของคู่แข่งที่เอฟเฟกต์นี้นำกลับขึ้นมือ/เด็ค */
   bouncedCount?: number;
+  /** BS12 มิสึรุกิ: สปิริตของคู่แข่งบนสนามตอนสั่ง Catalyze (CountPer watchedToTrash นับตัวที่ลงแทรชไป) */
+  watched?: string[];
   /** (BS07) trigger allyDestroyed: การ์ดของคู่แข่งที่ทำลาย subject */
   destroyerId?: string;
   /** เอฟเฟกต์ "เมื่อสปิริต/เบรฟนี้ถูกอัญเชิญ" */
@@ -431,6 +433,8 @@ export interface GameState {
   symbolsZeroCards?: { cardId: string; turn: number }[];
   /** ในเทิร์นนี้ สปิริตทั้งหมดของ player ถือว่าเป็น Lv1 (สวนลอยฟ้า) */
   levelOneTurn?: { player: PlayerId; turn: number }[];
+  /** BS12 อาบิส-อโพคาลิพส์ / พันหัตถ์คันนนจู่โจม: ในเทิร์นนี้ถือว่าเป็น Lv สูงสุด (cardId ว่าง = สปิริตทั้งหมดของผู้เล่นนี้) */
+  maxLevelTurn?: { player: PlayerId; turn: number; cardId?: string }[];
   /** ในเทิร์นนี้ การ์ดนี้ไม่ถูกทำลาย */
   noDestroyTurn?: { cardId: string; turn: number }[];
   // ---------------- BS11
@@ -487,7 +491,7 @@ export type Action =
    * อัญเชิญจากมือ: Main Step หรือ (การ์ดที่มี [Quick]) ใน Flash timing
    * braveOnto = Brave ร่วมร่างกับสปิริตนี้ (ไม่วาง Core บน Brave)
    */
-  | { type: 'summon'; player: PlayerId; cardId: string; payment: string[]; placement: string[]; braveOnto?: string; /** สิงโตควันม่วง: ทิ้งใบบนสุดเด็คก่อนจ่าย ใบละคอสต์ -1 */ mill?: number }
+  | { type: 'summon'; player: PlayerId; cardId: string; payment: string[]; placement: string[]; braveOnto?: string; /** สิงโตควันม่วง: ทิ้งใบบนสุดเด็คก่อนจ่าย ใบละคอสต์ -1 */ mill?: number; /** BS12 คาเมะมิสึ: เสื่อมสภาพเน็กซัสของเรา N ใบ ใบละ = จ่ายแล้ว 1 คอสต์ */ exhaustNexus?: number }
   | { type: 'deployNexus'; player: PlayerId; cardId: string; payment: string[]; placement: string[] }
   /** timing: เอฟเฟกต์ที่จะใช้ ([Main] หรือ [Flash]) ไม่ระบุ = [Main] ถ้ามี ไม่งั้น [Flash]; ระหว่าง Flash timing ใช้ได้แค่ [Flash] */
   | { type: 'useMagic'; player: PlayerId; cardId: string; payment: string[]; timing?: 'main' | 'flash' }

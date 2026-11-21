@@ -129,6 +129,13 @@ export type Condition =
   // ---------------- BS11
   /** เจ็มทั้งหมดบนฟิลด์เราเป็นสีนี้เท่านั้น (มีอย่างน้อย 1 เม็ด) */
   | { onlyGemColor: Color }
+  // ---------------- BS12
+  /** เรามีเบิร์สเซ็ทอยู่ */
+  | { ownBurstSet: true }
+  /** กันดาละ-ไฮดรา (assaultTrashNexus) มีผลอยู่: Assault นำเน็กซัสในแทรชกลับขึ้นมือแทนการเสื่อมสภาพเน็กซัสได้ */
+  | { assaultAlt: true }
+  /** การ์ดนี้ใช้ "เทิร์นละไม่เกิน max ครั้ง" ชื่อนี้ไปน้อยกว่า max ครั้ง (นับจาก step markOnce) */
+  | { usedFewerThan: { key: string; max: number } }
   /** กลับเงื่อนไข */
   | { not: Condition };
 
@@ -160,6 +167,10 @@ export interface CountPer {
   gemColors?: true | CardFilter;
   /** BS11: จำนวนการ์ดของคู่แข่งที่เอฟเฟกต์นี้นำกลับขึ้นมือ/เด็ค */
   bouncedByThis?: true;
+  /** BS12 มิสึรุกิ: สปิริตของคู่แข่งที่จดไว้ตอนสั่ง Catalyze (catalyze.watchOpponents) แล้วลงแทรชไป (ถูกทำลาย/สูญสลาย) */
+  watchedToTrash?: true;
+  /** BS12 โดจิ ห้ามงคล: การ์ดที่ mill ล่าสุดของเอฟเฟกต์นี้ทิ้งไป ที่ตรงตัวกรอง */
+  milledByThis?: CardFilter;
   /** หารด้วย (ต่อ 2 ตัว = 2) ไม่ระบุ = 1 */
   div?: number;
 }
@@ -368,7 +379,7 @@ export type Step =
       exclude?: string[];
       if?: Condition;
       /** BP ไม่เกิน: self = BP ปัจจุบันของสปิริตนี้, subjectLv1 = BP ที่ Lv1 ของสปิริตต้นเหตุ */
-      bpFrom?: 'self' | 'subjectLv1';
+      bpFrom?: 'self' | 'subjectLv1' | /** BS12 เมาท์เทนเชพ: BP ของสปิริตที่เพิ่งเลือก (soulToAlly) */ 'chosen';
       /** เลือกการ์ดของฝ่ายไหนก็ได้ (รวมของเรา) */
       anySide?: true;
       /** (engine ใช้ภายใน) ขยายจำนวนเป้าด้วย Dispersion แล้ว */
@@ -417,7 +428,7 @@ export type Step =
   /** นำการ์ดทั้งหมดในแทรชเราไปไว้ใต้สุดเด็ค (เรียงลำดับได้) */
   | { do: 'trashToDeckBottom' }
   /** สามารถอัญเชิญไม่จ่ายคอสต์การ์ดบนมือเรา 1 ใบที่ตรงตัวกรอง */
-  | { do: 'summonFromHandFree'; filter: CardFilter; if?: Condition; /** อัญเชิญได้ไม่เกิน max ใบ (ไม่ระบุ = 1) */ max?: number; /** BS11 ริวเซ็น: สีละ 1 ใบ */ distinctColors?: true }
+  | { do: 'summonFromHandFree'; filter: CardFilter; if?: Condition; /** อัญเชิญได้ไม่เกิน max ใบ (ไม่ระบุ = 1) */ max?: number; /** BS11 ริวเซ็น: สีละ 1 ใบ */ distinctColors?: true; /** BS12 ทรูธ-อีเด็น: เอฟเฟกต์ [เมื่อสปิริต/เบรฟนี้ถูกอัญเชิญ] ของการ์ดที่อัญเชิญจะไม่ทำงาน */ noTriggers?: true }
   /**
    * ในเทิร์นนี้ เลือกการ์ดของคู่แข่งที่ตรงตัวกรอง BP-amount แล้วทำลายตัวที่ BP กลายเป็น 0
    * count = จำนวนตัว (ไม่ระบุ = 1), countPerAllyFamily = จำนวนตัวเท่าสปิริตเราเผ่านี้
@@ -594,7 +605,7 @@ export type Step =
   /** สามารถอัญเชิญการ์ดในแทรชเรา 1 ใบที่ตรงตัวกรอง (จ่ายคอสต์ตามคอสต์ในแทรช) repeat = กี่ใบก็ได้ */
   | { do: 'summonFromTrash'; filter: CardFilter; repeat?: true; /** ถ้าเงื่อนไขจริง การลดคอสต์ถือว่าลดจนครบแล้ว */ fullReductionIf?: Condition }
   /** ส่งคอร์ไลฟ์คู่แข่ง N เม็ดไปที่รีเสิร์ฟคู่แข่ง */
-  | { do: 'opponentLifeToReserve'; count: number; /** ส่งลงแทรชคู่แข่งแทนรีเสิร์ฟ */ to?: 'trash' }
+  | { do: 'opponentLifeToReserve'; count: number; /** ส่งลงแทรชคู่แข่งแทนรีเสิร์ฟ */ to?: 'trash'; /** BS12: count × จำนวนนี้ */ per?: CountPer }
   /** ส่ง Core บนสปิริตนี้ N ดวงลงแทรชเรา (เลือก Core ธรรมดาก่อน) */
   | { do: 'selfCoresToTrash'; count: number; /** ส่งไปรีเสิร์ฟเราแทนแทรช */ to?: 'reserve' }
   /** เมื่อจบการต่อสู้นี้ ทำ steps */
@@ -608,7 +619,7 @@ export type Step =
    */
   | { do: 'setBurstFromHand'; then?: Step[]; /** "ในมือ/นอกมือ" */ withShown?: true }
   /** [Catalyze]: สั่งใช้ Soul Burst สีนี้ของเราที่เซ็ทอยู่ (ไม่ต้องรอเงื่อนไข) */
-  | { do: 'catalyze'; /** ไม่ระบุ = ทุกสี */ color?: Color; /** BS10: สีใดสีหนึ่งในนี้ */ colors?: Color[]; /** BS10 มิโคโตะ: เอฟเฟกต์เลือกเป้า 1 ตัวของเบิร์สนั้น = ทั้งหมดแทน */ allTargets?: true; /** "หลังจากเบิร์สนั้นถูกสั่งใช้": ทำต่อหลังเบิร์สทำงานจบ (subject = เบิร์สนั้น) */ then?: Step[]; /** BS11 สุโอว: เบิร์สที่ชื่อมีคำเหล่านี้ ไลฟ์เราถือว่าเป็น life */ lifeAs?: { names: string[]; life: number } }
+  | { do: 'catalyze'; /** ไม่ระบุ = ทุกสี */ color?: Color; /** BS10: สีใดสีหนึ่งในนี้ */ colors?: Color[]; /** BS10 มิโคโตะ: เอฟเฟกต์เลือกเป้า 1 ตัวของเบิร์สนั้น = ทั้งหมดแทน */ allTargets?: true; /** "หลังจากเบิร์สนั้นถูกสั่งใช้": ทำต่อหลังเบิร์สทำงานจบ (subject = เบิร์สนั้น) */ then?: Step[]; /** BS11 สุโอว: เบิร์สที่ชื่อมีคำเหล่านี้ ไลฟ์เราถือว่าเป็น life */ lifeAs?: { names: string[]; life: number }; /** BS12 มิสึรุกิ: จดสปิริตคู่แข่งบนสนามไว้ ให้ then นับตัวที่ลงแทรช (CountPer watchedToTrash) */ watchOpponents?: true }
   /** (engine ใช้ภายใน) ไล่วางการ์ดที่เหลือไว้ใต้สุดเด็คตามลำดับที่เลือก */
   | { do: 'toDeckBottom'; cardIds: string[] }
   /** (engine ใช้ภายใน) การ์ดที่แสดง (ยังอยู่บนสุดเด็ค) เรียงลำดับใหม่บนสุดเด็ค: ใบที่เลือกทีหลังอยู่บนกว่า */
@@ -747,7 +758,7 @@ export type Step =
   /** แสดงใบบนสุดเด็ค count ใบ นำการ์ดที่ตรงตัวกรองแต่ละตัวอย่างละ 1 ใบขึ้นมือ ที่เหลือลงแทรช (picked: engine ใช้ภายใน) */
   | { do: 'revealPickEach'; count: number; filters: CardFilter[]; revealed?: string[]; index?: number }
   /** นำสปิริตคู่แข่งกี่ตัวก็ได้ BP รวมไม่เกิน maxTotal กลับขึ้นมือ / ทำลาย */
-  | { do: 'opponentTotalBp'; maxTotal: number; action: 'bounce' | 'destroy'; used?: number; /** (engine ใช้ภายใน) เลือกครบแล้ว ไม่ถามต่อ */ final?: true }
+  | { do: 'opponentTotalBp'; maxTotal: number; action: 'bounce' | 'destroy'; used?: number; /** (engine ใช้ภายใน) เลือกครบแล้ว ไม่ถามต่อ */ final?: true; /** BS12: รวมคอสต์ (บนสนาม) แทน BP */ metric?: 'cost'; /** BS12: ตัวกรองเป้า (ไม่ระบุ = สปิริต/อัลติเมท) */ filter?: CardFilter; /** (engine ใช้ภายใน) บวกขอบเขตจาก [เอฟเฟกต์ทำลาย BP] แล้ว */ boosted?: true }
   /** ในเทิร์นนี้ สปิริตนี้เจ็มสี color เพิ่ม count เม็ด */
   | { do: 'symbolThisTurn'; color: Color; count: number; per?: CountPer; /** มีผลจนจบการต่อสู้นั้น */ untilBattleEnd?: true }
   /** ทำให้เอฟเฟกต์ของการ์ดเมจิคต้นเหตุ (subject) ไร้ผล */
@@ -840,7 +851,16 @@ export type Step =
   /** อัญเชิญการ์ดในแทรชเรา 1 ใบที่ตรงตัวกรอง (สามารถ, จ่ายคอสต์) · then = ทำต่อเมื่ออัญเชิญสำเร็จ */
   | { do: 'summonFromTrashThen'; filter: CardFilter; then: Step[] }
   /** อัญเชิญไม่จ่ายคอสต์การ์ดในมือ/แทรชเราที่ตรงตัวกรองได้ไม่เกิน max ใบ */
-  | { do: 'summonFreeHandOrTrash'; filter: CardFilter; max: number }
+  | { do: 'summonFreeHandOrTrash'; filter: CardFilter; max: number; /** BS12: เลือกจากโซนเหล่านี้เท่านั้น (ไม่ระบุ = มือและแทรช) */ zones?: ('hand' | 'trash')[]; /** BS12: max × จำนวนนี้ */ per?: CountPer }
+  // ---------------- BS12
+  /** ในเทิร์นนี้ ถือว่าเป็น Lv สูงสุด: allies = สปิริตเราทั้งหมด (รวมตัวที่ลงทีหลัง), chosen = สปิริตที่เพิ่งเลือก (refreshChosenAlly) */
+  | { do: 'maxLevelThisTurn'; target: 'allies' | 'chosen' }
+  /** BS12 โอนิมารุ: นำโซลคอร์ในแทรชเรามาวางที่สปิริตของเรา 1 ตัวที่ตรงตัวกรอง (เลือก) */
+  | { do: 'trashSoulToAlly'; filter: CardFilter }
+  /** ทำลายเบรฟที่ร่วมร่างอยู่ของคู่แข่งทั้งหมด */
+  | { do: 'destroyAllOpponentBraves' }
+  /** เราดูการ์ดในมือคู่แข่งทั้งหมด แล้วเลือกทิ้ง count ใบ (ที่ตรงตัวกรอง) */
+  | { do: 'peekHandDiscard'; count: number; filter?: CardFilter }
   /** (engine ใช้ภายใน) จินเบร์: จ่ายคอสต์เพิ่ม cost เพื่อสั่งใช้เบิร์ส แล้วทำ then (ไม่จ่าย = ไม่เปิด) */
   | { do: 'payBurstTax'; cost: number; then: Step[]; /** ข้อความที่ถาม (ไม่ระบุ = จ่ายเพื่อสั่งใช้เบิร์ส) */ label?: string }
   // ---------------- BS10
@@ -1082,6 +1102,8 @@ export interface SubjectFilter {
   fromHand?: true;
   /** คอสต์ที่พิมพ์บนการ์ดต้นเหตุตั้งแต่ค่านี้ */
   minCost?: number;
+  /** BS12 โอคุริดาระ: คอสต์ที่พิมพ์บนการ์ดต้นเหตุเท่ากับค่านี้ */
+  cost?: number;
   /** อยู่ในเผ่าใดเผ่าหนึ่งเหล่านี้ */
   families?: string[];
   /** สปิริตต้นเหตุมี Holy Life (ของตัวเอง หรือได้รับจากการ์ดอื่น) */
@@ -1244,6 +1266,8 @@ export type Ability =
       granted?: true;
       /** สปิริตของเราที่ตรงตัวกรองทั้งหมดได้รับ (แทนตัวการ์ดนี้) */
       allies?: CardFilter;
+      /** BS12 เซ็นจู: count × จำนวนการ์ดของเราที่ตรงตัวกรองนี้ (เช่น เน็กซัส) */
+      perAllies?: CardFilter;
     }
   /** "เจ็มของสปิริตนี้ถือว่าเป็นเจ็มสี color ด้วย" */
   | { kind: 'symbolAlsoColor'; source: number; levels: number[]; color: Color }
@@ -1295,7 +1319,7 @@ export type Ability =
   /** "เบิร์สของเราสั่งใช้ในเงื่อนไขเหล่านี้ได้ด้วย" */
   | { kind: 'burstAlsoOn'; source: number; levels: number[]; events: BurstEvent[] }
   /** "ถ้า...สปิริตนี้ถือว่าเป็น Lv สูงสุด" */
-  | { kind: 'maxLevelIf'; source: number; levels: number[]; if: Condition }
+  | { kind: 'maxLevelIf'; source: number; levels: number[]; if: Condition; /** BS12 จูซุมารุ: Brave ให้ผู้ร่วมร่าง */ granted?: true }
   /** "การ์ดนี้ในแทรชเราถือว่ามีคอสต์ N" */
   | { kind: 'trashCost'; source: number; cost: number }
   /** (บนสนาม) "การ์ดที่ตรงตัวกรองในแทรชเราทั้งหมดจะถือว่ามีคอสต์ N" attackStepOnly = เฉพาะ Attack Step */
@@ -1464,9 +1488,32 @@ export type Ability =
   /** แอทแท็คสเต็ปของผู้เล่นทุกคน: สปิริตคู่แข่งที่จะกลับขึ้นมือโดยเอฟเฟกต์ของเรา → ส่งโซลคอร์ลงแทรช เพื่อไปไว้บนสุด/ใต้สุดเด็คแทน (กู๊ดลัคฮิล) */
   | { kind: 'bounceRedirect'; source: number; levels: number[] }
   /** [เอฟเฟกต์ทำลาย BP] ของการ์ดเราที่ชื่อมีคำเหล่านี้ ขอบเขต +amount (pierceShield = Ultra Shield ป้องกันไม่ได้) */
-  | { kind: 'bpDestroyBoost'; source: number; levels: number[]; nameIncludes: string[]; amount: number; pierceShield?: true; ownAttackStepOnly?: true }
+  | { kind: 'bpDestroyBoost'; source: number; levels: number[]; /** ไม่ระบุ = ทุกการ์ดของเรา */ nameIncludes?: string[]; amount: number; pierceShield?: true; ownAttackStepOnly?: true; /** BS12 */ if?: Condition; /** BS12: เฉพาะเอฟเฟกต์ของการ์ดเราประเภทเหล่านี้ (Charge "ไม่ใช่ของอัลติเมท" / "ของสปิริต/เบรฟ/เมจิค") */ fromTypes?: CardType[]; /** BS12: Brave ให้ผู้ร่วมร่าง */ granted?: true }
   /** สปิริตของเราที่ตรงตัวกรองทั้งหมดมี Lv / BP / เจ็ม เหมือนการ์ดนี้ (ฮะจิริว) */
-  | { kind: 'copyStatsAllies'; source: number; levels: number[]; if?: Condition; filter: CardFilter };
+  | { kind: 'copyStatsAllies'; source: number; levels: number[]; if?: Condition; filter: CardFilter }
+  // ---------------- BS12
+  /** สปิริตของเราที่ตรงตัวกรองทั้งหมด จะไม่กลับขึ้นมือ/เข้ากองจากบนฟิลด์โดยเอฟเฟกต์ของคู่แข่ง */
+  | { kind: 'bounceImmuneAllies'; source: number; levels: number[]; filter: CardFilter }
+  /** คาเมะมิสึ: เมนสเต็ปของเรา เมื่ออัญเชิญการ์ดชื่อเหล่านี้ เสื่อมสภาพเน็กซัสของเรากี่ใบก็ได้ ใบละ = จ่ายแล้ว 1 คอสต์ */
+  | { kind: 'nexusExhaustPay'; source: number; levels: number[]; names: string[] }
+  /** โดจิ ห้ามงคล: เอฟเฟกต์ [เมื่อสปิริตนี้ถูกอัญเชิญ] ของสปิริตทั้งหมดของผู้เล่นทุกคนไม่ทำงาน */
+  | { kind: 'noSummonTriggers'; source: number; levels: number[] }
+  /** กันดาละ-ไฮดรา: แอทแท็คสเต็ปของเรา Assault ของสปิริตเรานำเน็กซัสในแทรชกลับขึ้นมือแทนการเสื่อมสภาพเน็กซัสได้ */
+  | { kind: 'assaultTrashNexus'; source: number; levels: number[] }
+  /**
+   * คู่แข่งสั่งใช้เบิร์ส/ใช้งานการ์ดเมจิคไม่ได้:
+   *  nexusCost = ที่คอสต์เท่ากับคอสต์ของเน็กซัสของเรา (เมียวโอบัวม่วง: แอทแท็คสเต็ปของเรา)
+   *  gemColor = นอกจากที่มีสีเดียวกับสีเจ็มบนฟิลด์ของคู่แข่งเอง (อาบิส-อโพคาลิพส์)
+   */
+  | { kind: 'burstMagicBan'; source: number; levels: number[]; mode: 'nexusCost' | 'gemColor'; ownAttackStepOnly?: true; granted?: true }
+  /** Charge: [เอฟเฟกต์ทิ้งเด็คคู่แข่ง] ที่ไม่ใช่ของอัลติเมทของเรา จำนวนทิ้ง +amount */
+  | { kind: 'millBoost'; source: number; levels: number[]; amount: number; granted?: true }
+  /** ทรูธ-อีเด็น: การ์ดนี้อัญเชิญไม่ได้ถ้าไม่จ่ายอย่างน้อย min คอสต์ (อัญเชิญไม่จ่ายคอสต์ไม่ได้) */
+  | { kind: 'minSummonPay'; source: number; min: number }
+  /** โอคุริดาระ: [ร่วมร่าง] เบรฟนี้ถือว่ามีคอสต์ cost */
+  | { kind: 'braveCostAs'; source: number; levels: number[]; cost: number; granted: true }
+  /** แคพิทัลแคพิทัล: แอทแท็คสเต็ปของคู่แข่ง สปิริต/อัลติเมทที่ไม่มีโซลคอร์จะโจมตีได้ต่อเมื่อส่งคอร์ในรีเสิร์ฟ cores เม็ดลงแทรช (+soulBonus ถ้าการ์ดนี้มีโซลคอร์) */
+  | { kind: 'attackReserveTax'; source: number; levels: number[]; cores: number; soulBonus: number };
 
 /** สคริปต์ของการ์ดหนึ่งใบ เรียงตาม effects (null = ยังไม่รองรับ, array = บรรทัดเดียวมีหลายความสามารถ) */
 export type CardScript = (DistributiveOmit<Ability, 'source'> | DistributiveOmit<Ability, 'source'>[] | null)[];

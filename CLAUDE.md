@@ -152,6 +152,16 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
   `bpDestroyBoost` (โฮมุระแมนดริล: `bpDestroyBoostFor` ใน destroyChosenOpponent / destroyAllOpponent + ทะลุ Shield ใน `hits`), `copyStatsAllies` (ฮะจิริว: `statCopySource` ใน cardLevel / currentBp / extraSymbols)
   · `toDeckBottom` ใช้เด็คของเจ้าของการ์ด (เหมือน toDeckTop) · trigger `allyDepletedByOpponent` (ข้อความ "ถูกทำลาย/สูญสลาย" ใช้คู่กับ allyDestroyed) · ตัวกรอง `hasUltraShield` (รวมที่ได้รับ) ·
   `chooseBlockers.max` + `direct` = True-Consecutive Blade (เลือกระบุ 2 ตัว แบบ Infinite Blade) · `symbolsZeroAllOpponent` มีผลทั้งเทิร์น (`state.symbolsZeroTurn`, กติกา 13 ข้อ 6)
+- **BS12**: Assault = trigger `attack` ("เมื่อสปิริตนี้โจมตี" **ไม่ใช่ Flash** เจ้าของโปรเจกต์กำหนด · เทิร์นละ N = เงื่อนไข `usedFewerThan` + step `markOnce` · ตัวช่วย `assault()` ใน bs12-scripts, BS03 มิซึมาตะโอโรจิแบบเดียวกัน) · กันดาละ-ไฮดรา `assaultTrashNexus` + เงื่อนไข `assaultAlt`,
+  เบรฟร่วมร่างกับอัลติเมทได้ = `braveCondition.ultimate` (ตัวแปลงอ่าน "สปิริต/อัลติเมท", ตรวจใน `braveFits`) · `braveCostAs` (คอสต์เบรฟที่ร่วมร่าง: `braveFieldCost`) ·
+  `bounceImmuneAllies` (ฮาคุไร: ตรวจใน `hits()` ของ step ใน `BOUNCE_STEPS`) · `noSummonTriggers` (ห้ามงคล: เฉพาะการ์ดประเภทสปิริต) / `summonFromHandFree.noTriggers` (ทรูธ-อีเด็น) ตรวจใน queueTriggers ·
+  `minSummonPay` (อัญเชิญไม่จ่ายคอสต์ไม่ได้: `payableCost` ขั้นต่ำ + กันใน placeCores / multiSummon / `freeSummonOk`) ·
+  `burstMagicBan` (`cardBanSource`: บัวม่วง = คอสต์เท่าเน็กซัสเรา, อาบิส = ไม่มีสีตรงกับเจ็มบนฟิลด์ตัวเอง) → `magicBanned(state, player, db, def)` / `burstBlocked(..., burstDef)` ·
+  `nexusExhaustPay` (คาเมะมิสึ: action summon `exhaustNexus` + ปุ่มใน PlayDialog, `nexusExhaustPayMax`) · `attackReserveTax` (แคพิทัลแคพิทัล: `attackReserveTaxFor` ใน canAttackWith / declareAttack) ·
+  `millBoost` (Charge ทิ้งเด็ค: `millBoostFor` ใน step mill) · `bpDestroyBoost` ไม่ต้องมี nameIncludes ได้ + `if` / `fromTypes` / `granted` และมีผลกับ `opponentTotalBp` (BP รวม) ด้วย ·
+  `opponentTotalBp.metric: 'cost'` / `.filter` · `maxLevelIf.granted` · ในเทิร์นนี้ Lv สูงสุด = step `maxLevelThisTurn` (`state.maxLevelTurn`) · `extraSymbol.perAllies` ·
+  step `trashSoulToAlly` / `destroyAllOpponentBraves` / `peekHandDiscard` · `catalyze.watchOpponents` + CountPer `watchedToTrash` (มิสึรุกิ) · CountPer `milledByThis` · `destroyChosenOpponent.bpFrom: 'chosen'` (soulToAlly / refreshChosenAlly ตั้ง chosenId) ·
+  `summonFreeHandOrTrash.zones` / `.per` · `opponentLifeToReserve.per` · SubjectFilter `cost` · เงื่อนไข `ownBurstSet`
 - **สูญสลายไม่ใช่การถูกทำลาย** (กติกา 10): สูญสลายโดยคู่แข่ง = trigger `depletedByOpponent` + เบิร์ส `afterAllyDepletedByOpponent` เท่านั้น
   ข้อความ "ถูกทำลาย/สูญสลาย" = trigger `on: ['destroyedByOpponent', 'depletedByOpponent']` / เบิร์ส `alsoDepleted: true` · "ถูกทำลายโดยเอฟเฟกต์ของคู่แข่ง" (ไม่นับแพ้เทียบ BP) = `destroyedByOpponentEffect`
   · เอฟเฟกต์ "เมื่อถูกทำลาย" ทำงานขณะยังอยู่บนสนาม (engine ส่งลงแทรชก่อน: "วางคอร์บนสปิริตนี้" = คอร์กลับรีเสิร์ฟ)

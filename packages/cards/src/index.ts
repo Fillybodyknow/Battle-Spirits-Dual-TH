@@ -41,6 +41,8 @@ import bs10 from '../data/bs10.json';
 import { BS10_SCRIPTS } from '../data/bs10-scripts';
 import bs11 from '../data/bs11.json';
 import { BS11_SCRIPTS } from '../data/bs11-scripts';
+import bs12 from '../data/bs12.json';
+import { BS12_SCRIPTS } from '../data/bs12-scripts';
 import { attachScripts } from './abilities';
 import { createCardDatabase, type CardDatabase } from './database';
 import type { DeckEntry } from './deck';
@@ -114,6 +116,7 @@ export function loadAllCards(): CardDatabase {
     ...loadBS09Cards().all(),
     ...loadBS10Cards().all(),
     ...loadBS11Cards().all(),
+    ...loadBS12Cards().all(),
   ]);
 }
 
@@ -152,6 +155,11 @@ export function loadBS09Cards(): CardDatabase {
 /** การ์ดชุด Booster Set 10 (assets/files/BS10/*.text + data/bs10-scripts.ts) */
 export function loadBS10Cards(): CardDatabase {
   return createCardDatabase(attachScripts(bs10, BS10_SCRIPTS));
+}
+
+/** การ์ดชุด Booster Set 12 (assets/files/BS12/*.text + data/bs12-scripts.ts) */
+export function loadBS12Cards(): CardDatabase {
+  return createCardDatabase(attachScripts(bs12, BS12_SCRIPTS));
 }
 
 /** การ์ดชุด Booster Set 11 (assets/files/BS11/*.text + data/bs11-scripts.ts) */

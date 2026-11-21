@@ -52,7 +52,7 @@ export function braveCounts(state: GameState, db: CardDatabase, hostId: string, 
 export function braveFits(braveDef: CardDef, hostDef: CardDef): boolean {
   const c = braveDef.braveCondition;
   return (
-    hostDef.type === 'spirit' &&
+    (hostDef.type === 'spirit' || (hostDef.type === 'ultimate' && !!c?.ultimate)) &&
     // กติกา 14 Bunshin ข้อ 1: สปิริตร่างแยกรวมร่างไม่ได้
     hostDef.cardNo !== 'SMP-BUNSHIN' &&
     hostDef.cost >= (c?.minCost ?? 0) &&
@@ -113,10 +113,23 @@ export function cardLevel(state: GameState, db: CardDatabase, cardId: string): n
   // จักรพรรดิมังกร ซีคฟรีด: มี Soul Core = ถือว่าเป็น Lv สูงสุด
   if (level > 0) {
     for (const ab of def.abilities) {
-      if (ab.kind === 'maxLevelIf' && ab.levels.includes(level) && conditionHolds(state, cardId, ab.if, false, false, db)) {
+      if (ab.kind === 'maxLevelIf' && !ab.granted && ab.levels.includes(level) && conditionHolds(state, cardId, ab.if, false, false, db)) {
         return def.levels.at(-1)?.level ?? level;
       }
     }
+    // BS12 จูซุมารุ: [ร่วมร่าง] "แอทแท็คสเต็ปของเรา: สปิริตนี้ถือว่าเป็น Lv สูงสุด"
+    for (const b of card.braves) {
+      for (const ab of db.get(state.cards[b]!.cardNo).abilities) {
+        if (ab.kind === 'maxLevelIf' && ab.granted && conditionHolds(state, cardId, ab.if, false, false, db)) return def.levels.at(-1)?.level ?? level;
+      }
+    }
+    // BS12 อาบิส-อโพคาลิพส์ / พันหัตถ์คันนนจู่โจม: ในเทิร์นนี้ถือว่าเป็น Lv สูงสุด
+    if (
+      (def.type === 'spirit' || def.type === 'brave') &&
+      state.players[card.owner].field.includes(cardId) &&
+      (state.maxLevelTurn ?? []).some((t) => t.player === card.owner && t.turn === state.turn && (!t.cardId || t.cardId === cardId))
+    )
+      return def.levels.at(-1)?.level ?? level;
     // BS09 โอวาริโนะเซได / วัดอรุณ: สปิริตของเราที่ตรงตัวกรองถือว่าเป็น Lv สูงสุด
     if (state.players[card.owner].field.includes(cardId) && maxLevelAllySource(state, db, cardId)) return def.levels.at(-1)?.level ?? level;
     // BS10 สวนลอยฟ้าของเหล่าเจ้าหญิง: ในเทิร์นนี้สปิริตทั้งหมดของผู้เล่นนี้ถือว่าเป็น Lv1
@@ -239,7 +252,10 @@ export function extraSymbols(state: GameState, db: CardDatabase, cardId: string)
   const level = cardLevel(state, db, cardId);
   for (const ab of db.get(state.cards[cardId]!.cardNo).abilities) {
     if (ab.kind !== 'extraSymbol' || ab.granted || ab.allies || !ab.levels.includes(level) || !conditionHolds(state, cardId, ab.if, false, false, db)) continue;
-    out[ab.color] = (out[ab.color] ?? 0) + ab.count;
+    // BS12 เซ็นจู: ต่อจำนวนการ์ดของเราที่ตรงตัวกรอง (เน็กซัส)
+    const k = ab.perAllies ? state.players[state.cards[cardId]!.owner].field.filter((id) => matchesFilter(state, db, id, ab.perAllies!)).length : 1;
+    if (k <= 0) continue;
+    out[ab.color] = (out[ab.color] ?? 0) + ab.count * k;
   }
   // การ์ดของเราที่ให้ผลกับสปิริตเราที่ตรงตัวกรองทั้งหมด (เซ็นโงคุฮิเมะ มาคินะ)
   const owner = state.cards[cardId]!.owner;
@@ -413,6 +429,9 @@ export function conditionHolds(
   if ('ownGemColor' in cond) return !!db && ownGemColors(state, db, card.owner).has(cond.ownGemColor);
   if ('trashCoreAtLeast' in cond) return owner.trashCores.filter((c) => !state.cores[c]!.isSoul).length >= cond.trashCoreAtLeast;
   // ---------------- BS11
+  // ---------------- BS12
+  if ('ownBurstSet' in cond) return owner.burst !== null && owner.burst !== undefined;
+  if ('assaultAlt' in cond) return !!db && state.phase === 'attack' && state.turnPlayer === card.owner && staticSources(state, db, [card.owner], 'assaultTrashNexus').length > 0;
   if ('onlyGemColor' in cond) {
     if (!db) return false;
     const colors = ownGemColors(state, db, card.owner);
@@ -422,6 +441,7 @@ export function conditionHolds(
   if ('subjectIs' in cond || 'lifeLostByOpponentEffect' in cond) return false;
   if ('ownGemColorsAtLeast' in cond) return !!db && gemColorCount(state, db, card.owner) >= cond.ownGemColorsAtLeast;
   if ('selfIs' in cond) return !!db && matchesFilter(state, db, sourceId, cond.selfIs);
+  if ('usedFewerThan' in cond) return (state.usedOncePerTurn ?? []).filter((k) => k === `${sourceId}:${cond.usedFewerThan.key}`).length < cond.usedFewerThan.max;
   if ('onceFree' in cond) return !(state.usedOncePerTurn ?? []).includes(`${sourceId}:${cond.onceFree}`);
   // ตรวจได้เฉพาะตอนประมวลผลเอฟเฟกต์ในคิว (ดู holds ใน effects.ts)
   if ('summonedByOnStage' in cond || 'summonedBy' in cond) return false;
@@ -506,7 +526,7 @@ export function fieldCost(state: GameState, db: CardDatabase, cardId: string, ig
   if (!owner.field.includes(cardId)) return def.cost;
   let cost = def.cost;
   // สปิริตที่ร่วมร่างกับ Brave: คอสต์ = คอสต์สปิริต + คอสต์ Brave
-  if (!ignoreBraveCost) for (const b of card.braves) cost += db.get(state.cards[b]!.cardNo).cost;
+  if (!ignoreBraveCost) for (const b of card.braves) cost += braveFieldCost(db, state.cards[b]!.cardNo);
   // ระหว่างคำนวณ Lv คอสต์ +N: ไม่นับ "คอสต์ +N" ที่ต้องใช้เลเวล (กันวนไม่จบ)
   if (levelBoostDepth > 0) return cost;
   for (const id of owner.field) {
@@ -520,6 +540,13 @@ export function fieldCost(state: GameState, db: CardDatabase, cardId: string, ig
     }
   }
   return cost;
+}
+
+/** คอสต์ของเบรฟที่ร่วมร่างอยู่ (BS12 โอคุริดาระ: "[ร่วมร่าง] เบรฟนี้ถือว่ามีคอสต์ 2") */
+export function braveFieldCost(db: CardDatabase, cardNo: string): number {
+  const def = db.get(cardNo);
+  const as = def.abilities.find((a) => a.kind === 'braveCostAs');
+  return as?.kind === 'braveCostAs' ? as.cost : def.cost;
 }
 
 /** การ์ดที่ทำให้คอสต์บนสนามของการ์ดนี้เปลี่ยน ("เน็กซัสของเราทั้งหมดคอสต์ +2" มิซึมาตะโอโรจิ) พร้อมจำนวน */
@@ -1197,8 +1224,37 @@ export function ownGemColors(state: GameState, db: CardDatabase, player: PlayerI
 }
 
 /** BS09 วัดอรุณ: ในเทิร์นนี้ผู้เล่นนี้ใช้งานการ์ดเมจิคไม่ได้ */
-export function magicBanned(state: GameState, player: PlayerId): boolean {
-  return (state.magicBans ?? []).some((b) => b.player === player && b.turn === state.turn);
+export function magicBanned(state: GameState, player: PlayerId, db?: CardDatabase, def?: CardDef): boolean {
+  if ((state.magicBans ?? []).some((b) => b.player === player && b.turn === state.turn)) return true;
+  return !!db && !!def && cardBanSource(state, db, player, def) !== null;
+}
+
+/**
+ * BS12 เมียวโอบัวม่วง / อาบิส-อโพคาลิพส์: การ์ดของคู่แข่งที่ห้ามผู้เล่นนี้สั่งใช้เบิร์ส/ใช้งานการ์ดเมจิคใบนี้ (คืนต้นเหตุ)
+ *  nexusCost = คอสต์เท่ากับคอสต์ของเน็กซัสของคู่แข่ง (เจ้าของเอฟเฟกต์) · gemColor = ไม่มีสีเดียวกับสีเจ็มบนฟิลด์ของผู้เล่นนี้
+ */
+export function cardBanSource(state: GameState, db: CardDatabase, player: PlayerId, def: CardDef): StaticSource | null {
+  const opp = player === 'p1' ? 'p2' : 'p1';
+  for (const id of state.players[opp].field) {
+    if (effectsNegated(state, db, id)) continue;
+    const level = cardLevel(state, db, id);
+    const entries = [
+      ...db.get(state.cards[id]!.cardNo).abilities.filter((a) => a.kind === 'burstMagicBan' && !a.granted && a.levels.includes(level)).map((ab) => ({ ab, src: id })),
+      ...state.cards[id]!.braves.flatMap((b) => db.get(state.cards[b]!.cardNo).abilities.filter((a) => a.kind === 'burstMagicBan' && a.granted).map((ab) => ({ ab, src: b }))),
+    ];
+    for (const { ab, src } of entries) {
+      if (ab.kind !== 'burstMagicBan') continue;
+      if (ab.ownAttackStepOnly && !(state.phase === 'attack' && state.turnPlayer === opp)) continue;
+      if (ab.mode === 'nexusCost') {
+        const costs = state.players[opp].field.filter((n) => db.get(state.cards[n]!.cardNo).type === 'nexus').map((n) => fieldCost(state, db, n));
+        if (costs.includes(def.cost)) return { cardId: src, source: ab.source };
+      } else {
+        const gems = ownGemColors(state, db, player);
+        if (!def.colors.some((c) => gems.has(c))) return { cardId: src, source: ab.source };
+      }
+    }
+  }
+  return null;
 }
 
 /** BS09 วัดอรุณ: ผู้เล่นนี้นำการ์ดในแทรชกลับขึ้นมือไม่ได้ (เน็กซัสของคู่แข่ง) */
@@ -1210,6 +1266,73 @@ export function trashReturnBlocker(state: GameState, db: CardDatabase, player: P
 export function oneCoreLocked(state: GameState, db: CardDatabase, cardId: string): boolean {
   if (state.phase !== 'attack' || state.cards[cardId]!.cores.length !== 1) return false;
   return staticSources(state, db, ['p1', 'p2'], 'oneCoreNoBattle').length > 0;
+}
+
+/** BS12 ฮาคุไร: การ์ดของเราที่ทำให้สปิริตนี้ไม่กลับขึ้นมือ/เข้ากองโดยเอฟเฟกต์ของคู่แข่ง */
+export function bounceImmuneSource(state: GameState, db: CardDatabase, cardId: string): StaticSource | null {
+  const card = state.cards[cardId];
+  if (!card || !state.players[card.owner].field.includes(cardId)) return null;
+  for (const src of staticSources(state, db, [card.owner], 'bounceImmuneAllies')) {
+    const ab = db.get(state.cards[src.cardId]!.cardNo).abilities.find((a) => a.kind === 'bounceImmuneAllies' && a.source === src.source);
+    if (ab?.kind === 'bounceImmuneAllies' && matchesFilter(state, db, cardId, ab.filter)) return src;
+  }
+  return null;
+}
+
+/** BS12 เมลสตอร์ม: Charge จำนวนทิ้งเด็คเพิ่มของผู้เล่นนี้ (การ์ดบนสนามตามเลเวล + เบรฟที่ให้ผู้ร่วมร่าง) */
+export function millBoostFor(state: GameState, db: CardDatabase, player: PlayerId): { amount: number; src: StaticSource[] } {
+  let amount = 0;
+  const src: StaticSource[] = [];
+  for (const id of state.players[player].field) {
+    if (effectsNegated(state, db, id)) continue;
+    const level = cardLevel(state, db, id);
+    for (const a of db.get(state.cards[id]!.cardNo).abilities) {
+      if (a.kind === 'millBoost' && !a.granted && a.levels.includes(level)) {
+        amount += a.amount;
+        src.push({ cardId: id, source: a.source });
+      }
+    }
+    for (const b of state.cards[id]!.braves) {
+      for (const a of db.get(state.cards[b]!.cardNo).abilities) {
+        if (a.kind === 'millBoost' && a.granted) {
+          amount += a.amount;
+          src.push({ cardId: b, source: a.source });
+        }
+      }
+    }
+  }
+  return { amount, src };
+}
+
+/**
+ * BS12 คาเมะมิสึ: จำนวนเน็กซัสที่เสื่อมสภาพแทนการจ่ายคอสต์ได้ตอนอัญเชิญการ์ดนี้จากมือ (เมนสเต็ปของเรา) · 0 = ใช้ไม่ได้
+ * ไม่เกินคอสต์ที่ต้องจ่าย (base = คอสต์ก่อนลด)
+ */
+export function nexusExhaustPayMax(state: GameState, db: CardDatabase, player: PlayerId, cardId: string, base: number): { max: number; src: StaticSource | null } {
+  if (state.phase !== 'main' || state.turnPlayer !== player || state.battle) return { max: 0, src: null };
+  const def = db.get(state.cards[cardId]!.cardNo);
+  for (const s of staticSources(state, db, [player], 'nexusExhaustPay')) {
+    const ab = db.get(state.cards[s.cardId]!.cardNo).abilities.find((a) => a.kind === 'nexusExhaustPay' && a.source === s.source);
+    if (ab?.kind !== 'nexusExhaustPay' || !ab.names.includes(def.name)) continue;
+    const ready = state.players[player].field.filter((id) => db.get(state.cards[id]!.cardNo).type === 'nexus' && state.cards[id]!.state === 'refresh').length;
+    return { max: Math.min(ready, payableCost(state, db, player, def, base)), src: s };
+  }
+  return { max: 0, src: null };
+}
+
+/** BS12 แคพิทัลแคพิทัล: จำนวนคอร์ในรีเสิร์ฟที่ต้องส่งลงแทรชเพื่อสั่งการ์ดนี้โจมตี (การ์ดที่ไม่มีโซลคอร์ · 0 = ไม่มี) */
+export function attackReserveTaxFor(state: GameState, db: CardDatabase, attackerId: string): { cores: number; src: StaticSource[] } {
+  const card = state.cards[attackerId]!;
+  if (state.phase !== 'attack' || card.cores.some((c) => state.cores[c]!.isSoul)) return { cores: 0, src: [] };
+  let cores = 0;
+  const src: StaticSource[] = [];
+  for (const s of staticSources(state, db, [card.owner === 'p1' ? 'p2' : 'p1'], 'attackReserveTax')) {
+    const ab = db.get(state.cards[s.cardId]!.cardNo).abilities.find((a) => a.kind === 'attackReserveTax' && a.source === s.source);
+    if (ab?.kind !== 'attackReserveTax') continue;
+    cores += ab.cores + (state.cards[s.cardId]!.cores.some((c) => state.cores[c]!.isSoul) ? ab.soulBonus : 0);
+    src.push(s);
+  }
+  return { cores, src };
 }
 
 /** BS09 สุสานของจักรพรรดิมาร Lv2: จำนวนคอร์ที่ผู้เล่นนี้ต้องส่งลงแทรชจากตัวที่สั่งโจมตี (0 = ไม่มี) */
@@ -1341,6 +1464,13 @@ export function trashSummonRule(state: GameState, db: CardDatabase, player: Play
 }
 
 export function payableCost(state: GameState, db: CardDatabase, player: PlayerId, def: CardDef, base: number = def.cost): number {
+  const n = payableCostInner(state, db, player, def, base);
+  // BS12 ทรูธ-อีเด็น: อัญเชิญไม่ได้ถ้าไม่จ่ายอย่างน้อย N คอสต์
+  const min = def.abilities.find((a) => a.kind === 'minSummonPay');
+  return min?.kind === 'minSummonPay' ? Math.max(min.min, n) : n;
+}
+
+function payableCostInner(state: GameState, db: CardDatabase, player: PlayerId, def: CardDef, base: number): number {
   const full = def.abilities.some(
     (a) => a.kind === 'fullReductionIfAlly' && state.players[player].field.some((id) => db.get(state.cards[id]!.cardNo).name === a.name),
   );
@@ -1530,13 +1660,24 @@ export function bpDestroyBoostFor(state: GameState, db: CardDatabase, cardId: st
   if (!card) return null;
   const def = db.get(card.cardNo);
   const out = { amount: 0, pierce: false, src: [] as StaticSource[] };
-  for (const src of staticSources(state, db, [card.owner], 'bpDestroyBoost')) {
-    const ab = db.get(state.cards[src.cardId]!.cardNo).abilities.find((a) => a.kind === 'bpDestroyBoost' && a.source === src.source);
-    if (ab?.kind !== 'bpDestroyBoost' || !nameHas(def, ab.nameIncludes)) continue;
-    if (ab.ownAttackStepOnly && !(state.phase === 'attack' && state.turnPlayer === card.owner)) continue;
-    out.amount += ab.amount;
-    out.pierce ||= !!ab.pierceShield;
-    out.src.push(src);
+  // BS12: ของการ์ดบนสนามเอง (ตามเลเวล) + ที่เบรฟให้ผู้ร่วมร่าง (Charge ของไชนิ่ง-ซอร์ด)
+  for (const id of state.players[card.owner].field) {
+    if (effectsNegated(state, db, id)) continue;
+    const level = cardLevel(state, db, id);
+    const entries = [
+      ...db.get(state.cards[id]!.cardNo).abilities.filter((a) => a.kind === 'bpDestroyBoost' && !a.granted && a.levels.includes(level)).map((ab) => ({ ab, src: id })),
+      ...state.cards[id]!.braves.flatMap((b) => db.get(state.cards[b]!.cardNo).abilities.filter((a) => a.kind === 'bpDestroyBoost' && a.granted).map((ab) => ({ ab, src: b }))),
+    ];
+    for (const { ab, src } of entries) {
+      if (ab.kind !== 'bpDestroyBoost') continue;
+      if (ab.nameIncludes && !nameHas(def, ab.nameIncludes)) continue;
+      if (ab.fromTypes && !ab.fromTypes.includes(def.type)) continue;
+      if (ab.ownAttackStepOnly && !(state.phase === 'attack' && state.turnPlayer === card.owner)) continue;
+      if (!conditionHolds(state, id, ab.if, false, false, db)) continue;
+      out.amount += ab.amount;
+      out.pierce ||= !!ab.pierceShield;
+      out.src.push({ cardId: src, source: ab.source });
+    }
   }
   return out.src.length ? out : null;
 }
@@ -1746,8 +1887,10 @@ export function fieldCard(state: GameState, player: PlayerId, cardId: string): C
 }
 
 /** Burst ของผู้เล่นนี้ถูกห้ามทำงานตอนนี้หรือไม่ (เช่น โทบิคาเงะ: แอทแท็คสเต็ปของคู่แข่ง) */
-export function burstBlocked(state: GameState, db: CardDatabase, player: PlayerId): boolean {
+export function burstBlocked(state: GameState, db: CardDatabase, player: PlayerId, burstDef?: CardDef): boolean {
   if (state.battle?.noBurst === player) return true;
+  // BS12 เมียวโอบัวม่วง / อาบิส-อโพคาลิพส์: ห้ามเบิร์สใบนี้ตามคอสต์/สี
+  if (burstDef && cardBanSource(state, db, player, burstDef)) return true;
   // BS09 ไดบีท: ในเทิร์นนี้คู่แข่งสั่งใช้เบิร์สไม่ได้
   if ((state.burstBans ?? []).some((b) => b.player === player && b.turn === state.turn)) return true;
   const opp = player === 'p1' ? 'p2' : 'p1';
@@ -1780,6 +1923,8 @@ export function canAttackWith(state: GameState, db: CardDatabase, cardId: string
   // BS09 สุสานของจักรพรรดิมาร: คอร์ 1 เม็ดโจมตีไม่ได้ / ต้องส่งคอร์ 2 เม็ดลงแทรชเพื่อโจมตี
   if (oneCoreLocked(state, db, cardId)) return false;
   if (card.cores.length < attackTaxFor(state, db, card.owner)) return false;
+  // BS12 แคพิทัลแคพิทัล: ต้องส่งคอร์ในรีเสิร์ฟลงแทรช
+  if (state.players[card.owner].reserve.length < attackReserveTaxFor(state, db, cardId).cores) return false;
   if (coreTaxed(state, card.owner) && !card.cores.some((c) => !state.cores[c]!.isSoul)) return false;
   return !(state.attackBans ?? []).some((b) => b.player === card.owner && b.turn === state.turn && b.types.includes(def.type));
 }

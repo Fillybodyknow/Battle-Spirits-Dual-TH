@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { baseCost, bpOf, effectSummonTax, magicBurstTax, summonConditionOk, handCostDeltaSources, levelBoostSources, levelOf, minCores, noReductionBlocked, payableCost, quickAbility, quickAnyCores, summonLevelCostBoost, trashSummonRule } from '@bs/engine';
+import { baseCost, bpOf, effectSummonTax, magicBurstTax, summonConditionOk, handCostDeltaSources, levelBoostSources, levelOf, minCores, nexusExhaustPayMax, noReductionBlocked, payableCost, quickAbility, quickAnyCores, summonLevelCostBoost, trashSummonRule } from '@bs/engine';
 import { cardName, playerLabel } from '../format';
 import { db, flashPlayer, layoutRect, useGame, type MagicTiming, type PlayKind } from '../store';
 import { CardFace } from './CardFace';
@@ -94,7 +94,10 @@ function PlayDialogInner({ cardId, kind, timing, braveOnto }: { cardId: string; 
   const millAb = kind === 'summon' && !braveOnto ? def.abilities.find((a) => a.kind === 'millCostReduce') : undefined;
   const millMax = millAb?.kind === 'millCostReduce' ? Math.min(millAb.max, p.deck.length) : 0;
   const [mill, setMill] = useState(0);
-  const base = Math.max(0, baseCost(state, db, cardId) - Math.min(mill, millMax));
+  // BS12 คาเมะมิสึ: เสื่อมสภาพเน็กซัสของเรา ใบละ = จ่ายแล้ว 1 คอสต์ (อัญเชิญเซ็นจูจากมือในเมนสเต็ป)
+  const nexusMax = kind === 'summon' && !braveOnto && !fromTrash ? nexusExhaustPayMax(state, db, player, cardId, Math.max(0, baseCost(state, db, cardId) - Math.min(mill, millMax))).max : 0;
+  const [nexusPay, setNexusPay] = useState(0);
+  const base = Math.max(0, baseCost(state, db, cardId) - Math.min(mill, millMax) - Math.min(nexusPay, nexusMax));
   // จินเบร์: แอทแท็คสเต็ปของคู่แข่ง ใช้เมจิคต้องจ่ายคอสต์เพิ่ม
   // สิงโตควันม่วง: อัญเชิญโดยเอฟเฟกต์ ([Quick] / จากแทรช) ต้องจ่ายเพิ่ม
   const tax = kind === 'useMagic' ? magicBurstTax(state, db, player).amount : kind === 'summon' && (quickAb || fromTrash) ? effectSummonTax(state, db, cardId).cost : 0;
@@ -174,7 +177,16 @@ function PlayDialogInner({ cardId, kind, timing, braveOnto }: { cardId: string; 
     if (kind === 'useMagic') dispatch({ type: 'useMagic', player, cardId, payment, timing });
     else if (braveOnto) dispatch({ type: 'summon', player, cardId, payment, placement: [], braveOnto });
     else if (soulQuick && reserveSoul) dispatch({ type: 'summon', player, cardId, payment: [reserveSoul, ...payment.filter((id) => id !== reserveSoul)], placement });
-    else if (kind === 'summon' && mill > 0 && millMax > 0) dispatch({ type: 'summon', player, cardId, payment, placement, mill: Math.min(mill, millMax) });
+    else if (kind === 'summon' && ((mill > 0 && millMax > 0) || (nexusPay > 0 && nexusMax > 0)))
+      dispatch({
+        type: 'summon',
+        player,
+        cardId,
+        payment,
+        placement,
+        ...(mill > 0 && millMax > 0 ? { mill: Math.min(mill, millMax) } : {}),
+        ...(nexusPay > 0 && nexusMax > 0 ? { exhaustNexus: Math.min(nexusPay, nexusMax) } : {}),
+      });
     else dispatch({ type: kind, player, cardId, payment, placement });
   };
 
@@ -237,6 +249,22 @@ function PlayDialogInner({ cardId, kind, timing, braveOnto }: { cardId: string; 
                   className={`rounded px-1.5 py-0.5 text-[11px] font-black transition ${n === mill ? 'bg-violet-400 text-slate-950' : 'bg-slate-700 text-slate-200 hover:bg-slate-600'}`}
                 >
                   {n === 0 ? 'ไม่ทิ้ง' : `${n} ใบ`}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {nexusMax > 0 && (
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="text-[11px] text-slate-400">เสื่อมสภาพเน็กซัสแทนคอสต์</span>
+              {Array.from({ length: nexusMax + 1 }, (_, n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setNexusPay(n)}
+                  className={`rounded px-1.5 py-0.5 text-[11px] font-black transition ${n === nexusPay ? 'bg-sky-400 text-slate-950' : 'bg-slate-700 text-slate-200 hover:bg-slate-600'}`}
+                >
+                  {n === 0 ? 'ไม่ใช้' : `${n} ใบ`}
                 </button>
               ))}
             </div>

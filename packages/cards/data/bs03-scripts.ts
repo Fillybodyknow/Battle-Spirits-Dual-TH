@@ -328,15 +328,31 @@ export const BS03_SCRIPTS: Record<string, CardScript> = {
       attackStepOnly: true,
       steps: [{ do: 'destroyChosenOpponent', filter: { types: SPIRITISH }, costFrom: 'subject' }],
     },
-    // Assault: ระหว่างโจมตี เสื่อมสภาพเน็กซัสเรา 1 ใบเพื่อฟื้นสภาพ เทิร์นละไม่เกิน 2 ครั้ง
+    // Assault: 2 "เมื่อสปิริตนี้โจมตี" (ไม่ใช่ Flash: เจ้าของโปรเจกต์กำหนด): เทิร์นละไม่เกิน 2 ครั้ง สามารถเสื่อมสภาพเน็กซัสเรา 1 ใบเพื่อฟื้นสภาพ
+    // BS12 กันดาละ-ไฮดรา Lv2/3: นำเน็กซัสในแทรชกลับขึ้นมือแทนได้
     {
-      kind: 'activated',
+      kind: 'trigger',
+      on: 'attack',
       levels: ALL_LV,
-      timing: 'attackFlash',
-      label: '[Assault] เสื่อมสภาพเน็กซัสเรา 1 ใบ: ฟื้นสภาพสปิริตนี้',
-      maxPerTurn: 2,
-      if: { all: [{ selfAttacking: true }, { selfExhausted: true }, { allyHas: { types: ['nexus'], state: 'refresh' } }] },
-      steps: [{ do: 'exhaustOwn', filter: { types: ['nexus'] } }, { do: 'refreshSelf' }],
+      steps: [
+        {
+          do: 'chooseOne',
+          if: { all: [{ usedFewerThan: { key: 'assault', max: 2 } }, { selfExhausted: true }, { any: [{ allyHas: { types: ['nexus'], state: 'refresh' } }, { all: [{ assaultAlt: true }, { trashHas: { types: ['nexus'] } }] }] }] },
+          options: [
+            {
+              label: '[Assault: 2] เสื่อมสภาพเน็กซัสเรา 1 ใบ: ฟื้นสภาพสปิริตนี้',
+              if: { allyHas: { types: ['nexus'], state: 'refresh' } },
+              steps: [{ do: 'markOnce', key: 'assault' }, { do: 'exhaustOwn', filter: { types: ['nexus'], state: 'refresh' } }, { do: 'refreshSelf' }],
+            },
+            {
+              label: '[Assault: 2] นำเน็กซัสในแทรชกลับขึ้นมือ (กันดาละ-ไฮดรา): ฟื้นสภาพสปิริตนี้',
+              if: { all: [{ assaultAlt: true }, { trashHas: { types: ['nexus'] } }] },
+              steps: [{ do: 'markOnce', key: 'assault' }, { do: 'returnFromTrash', filter: { types: ['nexus'] } }, { do: 'refreshSelf' }],
+            },
+            { label: 'ไม่ใช้', steps: [] },
+          ],
+        },
+      ],
     },
     { kind: 'costBoost', levels: [2, 3], if: soulOnSelf, filter: { types: ['nexus'] }, amount: 2 },
   ],

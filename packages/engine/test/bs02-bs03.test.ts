@@ -267,18 +267,24 @@ describe('Booster Set 02 / 03', () => {
       expect(applyAction(x, { type: 'activate', player: 'p1', cardId: soum, source: 0 }, db).ok).toBe(false);
     });
 
-    it('มิซึมาตะโอโรจิ [Assault]: ระหว่างโจมตี เสื่อมสภาพเน็กซัสเราเพื่อฟื้นสภาพ (ฟื้นแล้วใช้ซ้ำไม่ได้)', () => {
+    /** ประกาศโจมตี แล้วเลือกใช้ Assault (trigger "เมื่อสปิริตนี้โจมตี") เสื่อมสภาพเน็กซัสใบที่ระบุ */
+    const attackAssault = (s: GameState, attacker: string, nexus: string): GameState => {
+      let x = act(act(s, { type: 'endMain', player: 'p1' }), { type: 'declareAttack', player: 'p1', attackerId: attacker });
+      expect(x.choice?.kind).toBe('option');
+      x = choose(x, (x.choice as { options: string[] }).options.findIndex((o) => o.includes('เสื่อมสภาพเน็กซัส')));
+      if (x.choice?.kind === 'card') x = choose(x, nexus);
+      return x;
+    };
+
+    it('มิซึมาตะโอโรจิ [Assault: 2]: เมื่อโจมตี เสื่อมสภาพเน็กซัสเราเพื่อฟื้นสภาพ (ไม่ใช่ Flash)', () => {
       const s = setup();
       const orochi = put(s, 'p1', no('มิซึมาตะโอโรจิแห่งเขียวคราม'), 1);
       const nexus = put(s, 'p1', no('No.3 ร็อคแฮนด์'), 0);
       put(s, 'p1', no('No.3 ร็อคแฮนด์'), 0);
-      let x = attackFlash(s, orochi);
-      expect(x.cards[orochi]!.state).toBe('exhausted');
-      x = activate(x, orochi, 1);
-      x = choose(x, nexus);
+      const x = attackAssault(s, orochi, nexus);
       expect(x.cards[nexus]!.state).toBe('exhausted');
       expect(x.cards[orochi]!.state).toBe('refresh');
-      x = act(x, { type: 'passFlash', player: 'p2' });
+      // ไม่มีปุ่มกดใช้แบบ Flash
       expect(applyAction(x, { type: 'activate', player: 'p1', cardId: orochi, source: 1 }, db).ok).toBe(false);
     });
 
@@ -288,8 +294,7 @@ describe('Booster Set 02 / 03', () => {
       const nexus = put(s, 'p1', no('No.3 ร็อคแฮนด์'), 0); // คอสต์ 4 → 6
       const cost6 = put(s, 'p2', no('นักพรตชั่วร้าย โอกุมะ'), 1);
       const cost8 = put(s, 'p2', no('นินจาเขี้ยวพิศวงชั้นสูง เฮียวโซวกะ'), 1);
-      let x = activate(attackFlash(s, orochi), orochi, 1);
-      x = choose(x, nexus);
+      let x = attackAssault(s, orochi, nexus);
       expect(x.choice?.kind === 'card' && x.choice.candidates).toEqual([cost6]);
       // ข้อความเลือกเป้าบอกเพดานคอสต์ + ที่มาของ +2 · เป้าคอสต์ 6 เลือกได้เพราะ +2 → มิซึมาตะเรืองแสง (บรรทัด "คอสต์ +2")
       expect(x.choice?.prompt).toContain('คอสต์ไม่เกิน 6');
@@ -305,8 +310,7 @@ describe('Booster Set 02 / 03', () => {
       const orochi = put(s, 'p1', no('มิซึมาตะโอโรจิแห่งเขียวคราม'), 2, true);
       const nexus = put(s, 'p1', no('No.3 ร็อคแฮนด์'), 0); // คอสต์ 4 → 6
       const cost1 = put(s, 'p2', DARIU, 1);
-      let x = activate(attackFlash(s, orochi), orochi, 1);
-      x = choose(x, nexus);
+      const x = attackAssault(s, orochi, nexus);
       expect(x.choice?.kind === 'card' && x.choice.candidates).toEqual([cost1]);
       expect(x.log.some((e) => e.type === 'staticApplied' && e.cardId === orochi)).toBe(false);
     });
