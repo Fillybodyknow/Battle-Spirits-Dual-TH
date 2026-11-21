@@ -44,6 +44,7 @@ assets/
                               สคริปต์ของการ์ดที่อยู่ใน Starter ด้วย: `...SD0n_SCRIPTS` ใน bs0n-scripts.ts
   files/แม่แบบการ์ด.txt        แม่แบบการเขียนการ์ด (ไม่ถูกอ่านเป็นชุดการ์ด)
   images/cards/<ชุด>/<cardNo>.webp   ภาพการ์ด (โหลดอัตโนมัติด้วย glob ตามชื่อไฟล์ = cardNo)
+  images/card-thumbs/                 ภาพย่อกว้าง 360px จาก npm run thumbs (CardFace ใช้เมื่อแสดงเล็กกว่าภาพย่อ ใหญ่กว่านั้นสลับเป็นภาพเต็มเอง)
 scripts/build-cards.ts       npm run cards
 scripts/legacy-colors.mjs    สร้าง apps/web/src/legacy-colors.css (สี hex สำรองให้ Chrome < 111)
 ```
@@ -55,6 +56,7 @@ npm run dev -- --port 4352          # dev server (ใช้พอร์ตนี
 npm run typecheck
 npm run build -w @bs/web
 npm run cards                        # แปลง assets/files → packages/cards/data (รันทุกครั้งที่แก้ไฟล์การ์ด)
+npm run thumbs                       # สร้างภาพการ์ดย่อ (รันทุกครั้งที่เพิ่ม/เปลี่ยนภาพการ์ด · ไม่รัน = ใช้ภาพเต็มแทน ไม่พังแต่หนักกว่า)
 cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต์ทั้งหมด (Windows: รันจากรากไดรฟ์แบบนี้)
 ```
 
@@ -226,6 +228,8 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
   · เล่นการ์ดจากมือ/แทรชตามปกติ (`PlayDialog.tsx`) = แผงที่มุมสนามเหมือนกัน: Core ที่จะจ่าย/วางอยู่ใน `store.playCores` (Core บนกระดานแสดงวงสี คลิกเพื่อสลับ)
 - ตั้งค่าการเล่นของผู้เล่น (ยืนยันโจมตี, เรียง/จับการ์ดในมือ, คลิกเดียวเล่น) อยู่ใน `src/prefs.ts` (localStorage, ไม่กระทบ engine)
 - Chain นอกการต่อสู้: นับเอฟเฟกต์ตั้งแต่ action ล่าสุดของผู้เล่น (`chainFloor` ใน store, ไม่นับ choose/passFlash/moveCores)
+- **ประสิทธิภาพกราฟิก**: แสงเรืองกระพริบ (inline style fx-choice-glow / fx-flash-glow / fx-tag-glow / phase-btn-pulse) ถูกแทนด้วย ::before/::after ที่สลับ opacity ใน index.css (ห้ามใช้ ::before/::after เองบน element ที่ใส่แสงเหล่านี้)
+  · แอนิเมชันที่วนตลอดให้ขยับเฉพาะ transform/opacity และไม่ใช้ตัวแปร CSS ใน keyframes (การ์ดจอทำแทนไม่ได้)
 - ไอคอนใช้ SVG ใน `components/Icon.tsx` (อีโมจิ/สัญลักษณ์พิเศษเป็นกล่องว่างบน Windows 7)
 - สี Tailwind v4 เป็น `oklch()`: ถ้าอัปเดต Tailwind ให้รัน `npm run legacy-colors`
 - โหมดออนไลน์: `?online=local` ใช้ transport ในเครื่อง (ทดสอบสองแท็บได้โดยไม่ต้องมี Firebase)

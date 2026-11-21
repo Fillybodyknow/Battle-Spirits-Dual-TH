@@ -220,8 +220,8 @@ export function TurnAura() {
             height: s.h,
             background: `linear-gradient(${low ? '0deg' : '180deg'}, transparent, rgba(${rgb},0.9), transparent)`,
             boxShadow: `0 0 8px rgba(${rgb},0.9)`,
-            ['--dir' as string]: low ? '-1' : '1',
-            animation: `aura-rise ${s.dur}s ${s.delay}s ease-in infinite`,
+            // แยกทิศเป็นคนละ keyframes (ไม่ใช้ตัวแปร CSS ใน keyframes) ให้การ์ดจอทำแอนิเมชันเองได้ ไม่ต้องคำนวณ style ใหม่ทุกเฟรม
+            animation: `${low ? 'aura-rise-up' : 'aura-rise-down'} ${s.dur}s ${s.delay}s ease-in infinite`,
           }}
         />
       ))}

@@ -39,5 +39,21 @@ for (const [path, url] of Object.entries(cardImages)) {
   CARD_ART[cardNo] = url;
 }
 
+/**
+ * ภาพการ์ดย่อ (กว้าง CARD_THUMB_W px) จาก npm run thumbs: assets/images/card-thumbs/<ชุด>/<รหัส>.webp
+ * ใช้บนกระดาน/มือ/พัดการ์ด (หน่วยความจำภาพลดราว 3/4) · ไม่มีภาพย่อ = ใช้ภาพเต็ม
+ */
+const thumbImages = import.meta.glob('../../../assets/images/card-thumbs/**/*.webp', {
+  eager: true,
+  query: '?url',
+  import: 'default',
+}) as Record<string, string>;
+const CARD_THUMB: Record<string, string> = {};
+for (const [path, url] of Object.entries(thumbImages)) CARD_THUMB[path.split('/').pop()!.replace(/\.[^.]+$/, '')] = url;
+/** ความกว้างภาพย่อ (ตรงกับ THUMB_W ใน scripts/card-thumbs.mjs) */
+export const CARD_THUMB_W = 360;
+/** URL ภาพย่อของการ์ด (ไม่มี = ภาพเต็ม) */
+export const cardThumb = (cardNo: string): string | undefined => CARD_THUMB[cardNo] ?? CARD_ART[cardNo];
+
 /** URL ภาพของการ์ด หรือ undefined ถ้ายังไม่มีภาพ */
 export const cardArt = (cardNo: string): string | undefined => CARD_ART[cardNo];

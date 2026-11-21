@@ -143,6 +143,47 @@ body {
   0%, 100% { box-shadow: 0 0 4px 1px var(--tag-glow, rgba(232, 121, 249, 0.6)); }
   50% { box-shadow: 0 0 18px 5px var(--tag-glow, rgba(232, 121, 249, 0.85)); }
 }
+/*
+ * แสงเรืองกระพริบ (fx-choice-glow / fx-flash-glow / fx-tag-glow / phase-btn-pulse ที่ใส่เป็น inline style):
+ * เดิมขยับ box-shadow ทุกเฟรม = เบราว์เซอร์วาดใหม่ทุกเฟรม (หนักเมื่อมีการ์ดเรืองพร้อมกันหลายใบ)
+ * แทนด้วยเงานิ่ง 2 ระดับบน ::before (เบา) / ::after (สว่าง) แล้วสลับความเข้ม (opacity) ให้การ์ดจอทำ → หน้าตาเหมือนเดิม
+ * ระหว่างกระพริบ เงาเดิมของ element (รวม ring-*) ถูกแอนิเมชันเดิมทับอยู่แล้ว จึงปิดไว้เหมือนเดิม
+ */
+:is([style*='fx-choice-glow'], [style*='fx-flash-glow'], [style*='fx-tag-glow'], [style*='phase-btn-pulse']) {
+  animation: none !important;
+  box-shadow: none !important;
+}
+:is([style*='fx-choice-glow'], [style*='fx-flash-glow'], [style*='fx-tag-glow'], [style*='phase-btn-pulse']):not(.absolute, .fixed, .sticky, .relative) {
+  position: relative;
+}
+:is([style*='fx-choice-glow'], [style*='fx-flash-glow'], [style*='fx-tag-glow'], [style*='phase-btn-pulse'])::before,
+:is([style*='fx-choice-glow'], [style*='fx-flash-glow'], [style*='fx-tag-glow'], [style*='phase-btn-pulse'])::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  animation: glow-dim var(--glow-ms, 1.4s) ease-in-out infinite;
+}
+:is([style*='fx-choice-glow'], [style*='fx-flash-glow'], [style*='fx-tag-glow'], [style*='phase-btn-pulse'])::after {
+  animation-name: glow-bright;
+}
+[style*='fx-choice-glow'] { --glow-ms: 1.4s; }
+[style*='fx-choice-glow']::before { box-shadow: 0 0 4px 1px rgba(232, 121, 249, 0.45); }
+[style*='fx-choice-glow']::after { box-shadow: 0 0 16px 5px rgba(232, 121, 249, 0.85); }
+[style*='fx-flash-glow'] { --glow-ms: 1.2s; }
+[style*='fx-flash-glow']::before { box-shadow: 0 0 6px 2px rgba(103, 232, 249, 0.55); }
+[style*='fx-flash-glow']::after { box-shadow: 0 0 22px 8px rgba(103, 232, 249, 0.95); }
+[style*='fx-tag-glow'] { --glow-ms: 1.8s; }
+[style*='fx-tag-glow']::before { box-shadow: 0 0 4px 1px var(--tag-glow, rgba(232, 121, 249, 0.6)); }
+[style*='fx-tag-glow']::after { box-shadow: 0 0 18px 5px var(--tag-glow, rgba(232, 121, 249, 0.85)); }
+[style*='phase-btn-pulse'] { --glow-ms: 2s; }
+[style*='phase-btn-pulse']::before { box-shadow: 0 0 18px rgba(251, 191, 36, 0.45), inset 0 2px 0 rgba(255, 255, 255, 0.5); }
+[style*='phase-btn-pulse']::after { box-shadow: 0 0 34px rgba(251, 191, 36, 0.85), inset 0 2px 0 rgba(255, 255, 255, 0.5); }
+/* จังหวะเดียวกับแอนิเมชันเดิม: เริ่ม/จบที่ระดับเบา กลางรอบสว่างสุด */
+@keyframes glow-dim { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+@keyframes glow-bright { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
+
 /* Flash Timing: การ์ด/เอฟเฟกต์/ช่องที่ใช้ได้ตอนนี้ (สีฟ้าอมเขียว แยกจากสีชมพูของ "เลือกเป้าหมาย") */
 @keyframes fx-flash-glow {
   0%, 100% { box-shadow: 0 0 6px 2px rgba(103, 232, 249, 0.55); }
@@ -299,9 +340,11 @@ body {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 2400px;
-  height: 2400px;
-  margin: -1200px 0 0 -1200px;
+  /* แผ่นที่หมุนต้องใหญ่แค่คลุมเส้นทแยงของแผ่นสนาม (กว้างสุด ~1380 · สูงได้ถึง ~800 เมื่อการ์ดขึ้นหลายแถว → ทแยง ~1600px)
+     เดิม 2400px = เท็กซ์เจอร์ใหญ่เกินจำเป็นราวสองเท่า · conic-gradient แผ่จากจุดกลาง ขนาดแผ่นจึงไม่เปลี่ยนหน้าตาของกรอบ */
+  width: 1700px;
+  height: 1700px;
+  margin: -850px 0 0 -850px;
   background: conic-gradient(#facc15, transparent 25%, transparent 50%, #fde68a 75%, #facc15);
   animation: mat-spin 4s linear infinite;
   will-change: transform;
@@ -345,6 +388,8 @@ body {
 
 /* แผ่นรองเล่น: ยกขึ้นจากโต๊ะ ขอบหนาด้านล่าง + เงาตกบนโต๊ะ + ไฮไลต์ขอบบน */
 .mat-slab {
+  /* จำกัดการคำนวณ layout/การวาดใหม่ไว้ในแผ่น (แผ่น overflow-hidden อยู่แล้ว: ไม่เปลี่ยนหน้าตา · เงาของแผ่นเองไม่ถูกตัด) */
+  contain: layout paint;
   /* ขอบหนาของแผ่น (ชั้นซ้อนสีเข้มขึ้นทีละชั้น = ด้านข้างของแผ่นยาง) + เงาตกบนโต๊ะ */
   box-shadow:
     0 calc(var(--ly) * 2px) 0 #1e293b,
@@ -717,10 +762,16 @@ input:-webkit-autofill:focus {
 /* ---------------------------------------------------------------- ออร่าฝั่งที่ต้องตัดสินใจ */
 @keyframes aura-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes aura-pulse { 0%, 100% { opacity: 0.75; } 50% { opacity: 1; } }
-@keyframes aura-rise {
+/* เส้นแสงลอยของออร่า: แยกทิศ (ค่าคงที่ใน keyframes = การ์ดจอทำแอนิเมชันเองได้ · ตัวแปร CSS ใน keyframes บังคับให้คำนวณ style ทุกเฟรม) */
+@keyframes aura-rise-up {
   0% { transform: translateY(0); opacity: 0; }
   15% { opacity: 1; }
-  100% { transform: translateY(calc(var(--dir) * 34vh)); opacity: 0; }
+  100% { transform: translateY(-34vh); opacity: 0; }
+}
+@keyframes aura-rise-down {
+  0% { transform: translateY(0); opacity: 0; }
+  15% { opacity: 1; }
+  100% { transform: translateY(34vh); opacity: 0; }
 }
 
 /* ---------------------------------------------------------------- ไฮไลต์บรรทัดเอฟเฟกต์ที่กำลังทำงาน */
@@ -963,6 +1014,15 @@ html.gfx-glow-static .btn-row > *,
 html.gfx-glow-static .effect-firing {
   animation-delay: -0.7s !important;
   animation-play-state: paused !important;
+}
+/* แสงเรืองแบบ ::before/::after (ดูด้านบน): ค้างที่จังหวะสว่าง เหมือนแสงเรืองแบบเดิม */
+html.gfx-glow-static :is([style*='fx-choice-glow'], [style*='fx-flash-glow'], [style*='fx-tag-glow'], [style*='phase-btn-pulse'])::before {
+  animation: none !important;
+  opacity: 0;
+}
+html.gfx-glow-static :is([style*='fx-choice-glow'], [style*='fx-flash-glow'], [style*='fx-tag-glow'], [style*='phase-btn-pulse'])::after {
+  animation: none !important;
+  opacity: 1;
 }
 /* ฟอยนิ่ง (ยังเห็นลาย) / ปิด (ไม่มีลายเลย) */
 html.gfx-foil-static .foil *,

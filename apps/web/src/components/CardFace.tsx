@@ -1,5 +1,6 @@
 import type { CardDef, SymbolColor } from '@bs/cards';
-import { IMG, cardArt } from '../assets';
+import { useEffect, useRef, useState } from 'react';
+import { CARD_THUMB_W, IMG, cardArt, cardThumb } from '../assets';
 import { COLOR_BG, COLOR_BORDER, TYPE_LABEL } from '../format';
 
 function Gems({ map, shape }: { map: CardDef['symbols']; shape: 'diamond' | 'dot' }) {
@@ -33,11 +34,34 @@ interface CardFaceProps {
 /**
  * ภาพการ์ดเต็มใบ (มีกรอบ/ข้อความในภาพแล้ว): แสดงภาพตรง ๆ แล้วซ้อนเฉพาะข้อมูลที่เปลี่ยนระหว่างเกม
  */
+/**
+ * ภาพการ์ดที่เลือกความละเอียดตามขนาดที่แสดงจริง: เล็กกว่าภาพย่อ (บนกระดาน/มือ/พัด) = ภาพย่อ, ใหญ่กว่า = ภาพเต็ม
+ * (ขนาดจริงบนจอ = กรอบที่เห็น × ความละเอียดจอ × การย่อหน้าบนมือถือ) · สลับเป็นภาพเต็มแล้วไม่กลับ (กันภาพกระพริบ)
+ */
+function ArtImg({ def, art }: { def: CardDef; art: string }) {
+  const thumb = cardThumb(def.cardNo) ?? art;
+  const ref = useRef<HTMLImageElement>(null);
+  const [full, setFull] = useState(thumb === art);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || full) return;
+    const check = () => {
+      const w = el.getBoundingClientRect().width * (window.devicePixelRatio || 1) * (window.visualViewport?.scale ?? 1);
+      if (w > CARD_THUMB_W * 1.05) setFull(true);
+    };
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [full]);
+  return <img ref={ref} src={full ? art : thumb} alt={def.name} draggable={false} decoding="async" className="h-full w-full object-cover" />;
+}
+
 function CardArt({ def, art, level, payCost }: { def: CardDef; art: string; level?: number; payCost?: number }) {
   const reduced = payCost !== undefined && payCost < def.cost;
   return (
     <div className="relative h-full w-full overflow-hidden rounded-lg bg-black shadow-md">
-      <img src={art} alt={def.name} draggable={false} className="h-full w-full object-cover" />
+      <ArtImg def={def} art={art} />
       {reduced && (
         <span
           className="absolute top-0.5 left-0.5 flex h-6 min-w-6 items-center justify-center gap-0.5 rounded-full bg-emerald-400 px-1 text-sm font-black text-slate-900 shadow"
