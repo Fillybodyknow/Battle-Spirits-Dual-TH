@@ -30,6 +30,36 @@ import { usePrefs } from './prefs';
 const ICON_BTN =
   'flex h-10 w-10 items-center justify-center rounded-full border border-sky-300/50 bg-gradient-to-b from-slate-700 to-slate-900 text-lg text-sky-200 shadow-[0_0_12px_rgba(56,189,248,0.25),inset_0_1px_0_rgba(255,255,255,0.15)] transition hover:scale-105 hover:text-white hover:shadow-[0_0_16px_rgba(56,189,248,0.55)] disabled:opacity-40';
 
+/** ป้ายจำนวนผู้ชมระหว่างเล่นออนไลน์ · ชี้/แตะเพื่อดูรายชื่อ */
+function WatchersBadge() {
+  const watchers = useGame((s) => s.online?.watchers);
+  const [open, setOpen] = useState(false);
+  const names = Object.values(watchers ?? {}).map((n) => n || 'ผู้ชม');
+  const list = names.length ? names.join(', ') : 'ยังไม่มีผู้ชม';
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        data-watchers={names.length}
+        title={list}
+        onClick={() => setOpen((v) => !v)}
+        onBlur={() => setOpen(false)}
+        className={`flex h-10 items-center gap-1.5 rounded-full border border-sky-300/50 bg-gradient-to-b from-slate-700 to-slate-900 px-3 text-sm font-bold text-sky-200 shadow-[0_0_12px_rgba(56,189,248,0.25),inset_0_1px_0_rgba(255,255,255,0.15)] transition hover:text-white ${names.length ? '' : 'opacity-60'}`}
+      >
+        <Icon name="eye" className="text-lg" />
+        <span>ผู้ชม {names.length}</span>
+      </button>
+      {open && names.length > 0 && (
+        <div className="absolute top-full left-0 mt-1.5 max-h-60 min-w-36 overflow-y-auto rounded-lg border border-sky-300/40 bg-slate-900/95 px-3 py-2 text-sm text-sky-100 shadow-lg">
+          {names.map((n, i) => (
+            <div key={i} className="truncate py-0.5">{n}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** ปุ่มลอยมุมซ้ายบน (แทน TopBar) */
 function Toolbar() {
   const online = useGame((s) => s.online);
@@ -47,6 +77,7 @@ function Toolbar() {
     return (
       <div className="fixed top-2 left-2 z-[45] flex items-center gap-1.5">
         <Settings />
+        <WatchersBadge />
       </div>
     );
   }

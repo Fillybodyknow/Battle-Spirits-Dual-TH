@@ -37,9 +37,15 @@ const PATHS: Record<IconName, React.ReactNode> = {
       <path d="M9 3.5h6v2.5H9zM8.5 10.5h7M8.5 14h7M8.5 17.5h4.5" />
     </>
   ),
+  eye: (
+    <>
+      <path d="M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12s-3.5 6.5-9.5 6.5S2.5 12 2.5 12z" />
+      <circle cx="12" cy="12" r="3" />
+    </>
+  ),
 };
 
-export type IconName = 'home' | 'settings' | 'undo' | 'restart' | 'globe' | 'info' | 'chain' | 'log';
+export type IconName = 'home' | 'settings' | 'undo' | 'restart' | 'globe' | 'info' | 'chain' | 'log' | 'eye';
 
 export function Icon({ name, className = '' }: { name: IconName; className?: string }) {
   return (

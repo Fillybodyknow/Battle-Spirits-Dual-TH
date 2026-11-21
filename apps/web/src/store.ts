@@ -2442,6 +2442,8 @@ export interface OnlineState {
   names: Partial<Record<PlayerId, string>>;
   /** รูปโปรไฟล์ (รหัสการ์ด) ของแต่ละที่นั่ง · ไม่มี = ใช้หน้าปกเด็คของที่นั่งนั้น */
   avatars: Partial<Record<PlayerId, string>>;
+  /** ผู้ชมที่อยู่ในห้องเกมตอนนี้ (uid → ชื่อ) จาก rooms/<code>/watchers · ผู้ชมลบตัวเองเมื่อออก/หลุดการเชื่อมต่อ */
+  watchers?: Record<string, string>;
 }
 
 /** รูปโปรไฟล์ที่เลือกไว้ (เก็บโดย account.ts) · ยังไม่เลือก = undefined */
@@ -2493,6 +2495,7 @@ const clearSession = () => sessionStorage.removeItem(SESSION);
 
 let unsubRoom: (() => void) | null = null;
 let unsubActions: (() => void) | null = null;
+let unsubWatchers: (() => void) | null = null;
 /** ช่องถัดไปที่จะเขียน action ของเรา */
 let nextIndex = 0;
 /** action ที่มาก่อนลำดับ (รอจนลำดับต่อเนื่อง) */
@@ -2503,7 +2506,8 @@ let silentBelow = 0;
 function stopSync() {
   unsubRoom?.();
   unsubActions?.();
-  unsubRoom = unsubActions = null;
+  unsubWatchers?.();
+  unsubRoom = unsubActions = unsubWatchers = null;
   buffer.clear();
 }
 
@@ -2520,6 +2524,23 @@ function enterRoom(code: string, me: PlayerId, uid: string, spectator = false) {
     error: null,
   });
   unsubRoom = transport.watchRoom(code, (info) => onRoom(code, info));
+  // จำนวนผู้ชม: ทุกเครื่องในห้อง (ผู้เล่น/ผู้ชม) ฟังรายชื่อ · ผู้ชมเพิ่มชื่อตัวเอง และให้เซิร์ฟเวอร์ลบเองเมื่อหลุดการเชื่อมต่อ/ปิดแท็บ
+  unsubWatchers = transport.watchPath(watcherPath(code), (v) => {
+    const on = useGame.getState().online;
+    if (on?.code === code) useGame.setState({ online: { ...on, watchers: (v as Record<string, string> | null) ?? {} } });
+  });
+  if (spectator) {
+    const path = watcherPath(code, uid);
+    void transport
+      .setPath(path, useGame.getState().playerName)
+      .then(() => transport.removeOnDisconnect(path))
+      .catch(() => {});
+  }
+}
+
+/** รายชื่อผู้ชมของห้องเกม (uid = ผู้ชมคนนั้น) */
+function watcherPath(code: string, uid?: string): string {
+  return `rooms/${code}/watchers${uid ? `/${uid}` : ''}`;
 }
 
 /** ที่นั่ง (uid) ของห้องเกมล่าสุด: ฉากเปิดเกมใช้แสดง Player ID */
@@ -3175,6 +3196,8 @@ export const useGame = create<Store>((set, get) => {
       clearSession();
       if (on) leftGames.add(on.code);
       if (on && !on.spectator) void transport.leave(on.code, on.me).catch(() => {});
+      // ผู้ชมออกจากเกม: เอาชื่อออกจากรายชื่อผู้ชมทันที (ไม่ต้องรอหลุดการเชื่อมต่อ)
+      if (on?.spectator) void transport.removePath(watcherPath(on.code, on.uid)).catch(() => {});
       if (on?.me === 'p1' && !duel) void transport.unpublishRoom(on.code).catch(() => {});
       // ผู้เล่นออกจากเกมของโต๊ะ: โต๊ะกลับไปรอพร้อมใหม่ (ยังนั่งที่เดิม)
       if (duel && on && !on.spectator) {
