@@ -163,9 +163,12 @@ export function sendToTrash(ctx: Ctx, cardId: string): void {
 export function destroy(ctx: Ctx, cardId: string, by?: PlayerId, bySource?: string): void {
   const owner = ctx.s.cards[cardId]!.owner;
   const cost = fieldCost(ctx.s, ctx.db, cardId);
+  // เบิร์ส "หลังจากสปิริต(/อัลติเมท)ของเราถูกทำลายโดยคู่แข่ง": เฉพาะสปิริต/อัลติเมท (รวมเบรฟที่อยู่เป็นสปิริตเอง) ไม่ใช่เน็กซัส
+  // ตรวจก่อนลงแทรช (ร่างแยก Bunshin ถูกคืนเป็นการ์ดจริงตอนออกจากสนาม)
+  const spirit = isSpiritLike(ctx.db.get(ctx.s.cards[cardId]!.cardNo));
   sendToTrash(ctx, cardId);
   emit(ctx, { type: 'destroyed', cardId, cost, ...(bySource ? { bySource } : {}) });
-  if (by && by !== owner) pendBurst(ctx, owner, 'afterAllyDestroyedByOpponent');
+  if (by && by !== owner && spirit) pendBurst(ctx, owner, 'afterAllyDestroyedByOpponent');
 }
 
 /** ไลฟ์ไปรีเสิร์ฟของเจ้าของ; คืน true ถ้าไลฟ์หมดแล้วจบเกม */

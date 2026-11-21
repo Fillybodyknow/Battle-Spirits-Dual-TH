@@ -276,6 +276,41 @@ describe('Booster Set 08', () => {
     expect(run('ปราสาทมังกรใหญ่-ฮนมารุ')).toBe(true);
   });
 
+  it('เบิร์ส "หลังจากสปิริตของเราถูกทำลายโดยคู่แข่ง": เน็กซัสถูกทำลายไม่นับ (ฮนมารุไม่เปิด)', () => {
+    let s = setup();
+    const nexusNo = db.all().find((c) => c.type === 'nexus' && c.name !== 'ปราสาทมังกรใหญ่-ฮนมารุ')!.cardNo;
+    const nexus = put(s, 'p2', nexusNo, 0);
+    const burst = `t8-burst-${++seq}`;
+    s.cards[burst] = { id: burst, cardNo: no('ปราสาทมังกรใหญ่-ฮนมารุ'), owner: 'p2', state: 'refresh', cores: [], turnBp: 0, usedThisTurn: [], braves: [] };
+    s.players.p2.burst = burst;
+    const magic = inHand(s, 'p1', no('บัสเตอร์สเปียร์'));
+    const cost = payableCost(s, db, 'p1', db.get(s.cards[magic]!.cardNo));
+    s = act(s, { type: 'useMagic', player: 'p1', cardId: magic, payment: normalCores(s).slice(0, cost), timing: 'flash' });
+    while (s.choice?.kind === 'card' && s.choice.player === 'p1') s = choose(s, nexus);
+    expect(s.players.p2.trashCards).toContain(nexus);
+    expect(s.choice?.kind === 'option' && s.choice.player === 'p2' && optionIndex(s, 'เปิด Burst') >= 0).toBe(false);
+    expect(s.players.p2.burst).toBe(burst);
+  });
+
+  it('เบิร์ส "หลังจากสปิริตของเราถูกทำลายโดยคู่แข่ง": เบรฟที่ร่วมร่างถูกทำลายไม่นับ (เจ้าของโปรเจกต์กำหนด)', () => {
+    let s = setup();
+    const host = put(s, 'p2', DARIU, 1);
+    const brave = `t8-card-${++seq}`;
+    s.cards[brave] = { id: brave, cardNo: no('ชุดเกราะขุนพลดาบ แอช-ไลอ้อน'), owner: 'p2', state: 'refresh', cores: [], turnBp: 0, usedThisTurn: [], braves: [] };
+    s.cards[host]!.braves.push(brave);
+    const burst = `t8-burst-${++seq}`;
+    s.cards[burst] = { id: burst, cardNo: no('ปราสาทมังกรใหญ่-ฮนมารุ'), owner: 'p2', state: 'refresh', cores: [], turnBp: 0, usedThisTurn: [], braves: [] };
+    s.players.p2.burst = burst;
+    const magic = inHand(s, 'p1', no('ผ่าสังหารทำลายล้างแห่งเปลวเพลิง'));
+    const cost = payableCost(s, db, 'p1', db.get(s.cards[magic]!.cardNo));
+    s = act(s, { type: 'useMagic', player: 'p1', cardId: magic, payment: normalCores(s).slice(0, cost), timing: 'flash' });
+    while (s.choice?.kind === 'card' && s.choice.player === 'p1') s = choose(s, brave);
+    expect(s.players.p2.trashCards).toContain(brave);
+    expect(s.players.p2.field).toContain(host);
+    expect(s.choice?.kind === 'option' && s.choice.player === 'p2' && optionIndex(s, 'เปิด Burst') >= 0).toBe(false);
+    expect(s.players.p2.burst).toBe(burst);
+  });
+
   it('โอตโตะ: คอร์บนสปิริตเผ่า [สมิงหัว] ของเราลดเหลือ 1 เม็ดโดยคู่แข่งไม่ได้', () => {
     const run = (withOtto: boolean) => {
       let s = setup();

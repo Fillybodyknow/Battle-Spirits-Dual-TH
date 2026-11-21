@@ -4434,7 +4434,7 @@ function applyCardPick(ctx: Ctx, cur: QueuedEffect, choice: Extract<PendingChoic
       for (const id of s.players[owner].field) removeFrom(s.cards[id]!.braves, pick);
       s.players[owner].trashCards.push(pick);
       emit(ctx, { type: 'destroyed', cardId: pick, bySource: cur.sourceId });
-      if (owner !== player) pendBurst(ctx, owner, 'afterAllyDestroyedByOpponent');
+      // เบรฟที่ร่วมร่างอยู่ไม่ใช่สปิริต: ไม่เปิดเบิร์ส "หลังจากสปิริตของเราถูกทำลายโดยคู่แข่ง" (เจ้าของโปรเจกต์กำหนด)
       break;
     }
     case 'opponentDestroysOwn':
