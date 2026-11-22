@@ -8,6 +8,7 @@ import { CardInspector } from './CardInspector';
 import { GameLog } from './Controls';
 import { Icon } from './Icon';
 import { DiamondAvatar, useSeatAvatar } from './SeatAvatar';
+import { LevelChip, useSeatLevel } from './LevelBadge';
 import { setTouchInspected, useLastInputTouch, useTouchInspected } from '../touch';
 import { useShownLife } from './useHeld';
 
@@ -32,6 +33,7 @@ export function PlayerPlate({ player, corner }: { player: PlayerId; corner: 'bot
   const turn = useGame((s) => s.state.turnPlayer === player && !s.state.winner);
   const name = useSeatName(player);
   const avatar = useSeatAvatar(player);
+  const level = useSeatLevel(player);
   const bottom = corner === 'bottom-left';
   const accent = bottom ? '#38bdf8' : '#f43f5e';
   return (
@@ -51,6 +53,7 @@ export function PlayerPlate({ player, corner }: { player: PlayerId; corner: 'bot
           className={`flex items-center gap-2 px-3 py-0.5 text-sm font-bold text-white ${bottom ? 'bg-gradient-to-r from-slate-950/95 to-slate-900/40' : 'flex-row-reverse bg-gradient-to-l from-slate-950/95 to-slate-900/40'}`}
           style={{ borderTop: `2px solid ${accent}` }}
         >
+          {level !== null && <LevelChip level={level} className="text-xs" />}
           <span className="max-w-40 truncate">{name}</span>
           {turn && <span className="rounded bg-yellow-300 px-1 text-[10px] font-black text-slate-900">เทิร์น</span>}
         </div>

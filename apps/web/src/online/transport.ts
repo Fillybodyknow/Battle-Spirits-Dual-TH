@@ -9,6 +9,7 @@
  *   rooms/<code>/setup              { round, seed, decks: { p1, p2 } } (round เพิ่มเมื่อเล่นใหม่)
  *   rooms/<code>/actions/<round>/<000000> = JSON ของ action (ลำดับต่อเนื่อง ไม่มีช่องว่าง)
  *   rooms/<code>/avatars/{p1,p2}  รูปโปรไฟล์ (รหัสการ์ด) ของแต่ละที่นั่ง
+ *   rooms/<code>/levels/{p1,p2}   เลเวลผู้เล่นของแต่ละที่นั่ง
  *   rooms/<code>/meta               { name, comment, listed, createdAt } ข้อมูลห้อง (Duel Room)
  *   lobby/<code>                    LobbyEntry: รายการห้องที่เปิดให้เห็น (ลบเมื่อห้องเต็ม/เจ้าของออก/หลุด)
  *
@@ -60,6 +61,8 @@ export interface DuelMember {
   joinedAt: number;
   /** รูปโปรไฟล์ (รหัสการ์ด) · สมาชิกจากเครื่องเวอร์ชันเก่าไม่มี */
   avatar?: string;
+  /** เลเวลผู้เล่น · เครื่องเวอร์ชันเก่าไม่มี */
+  level?: number;
 }
 export interface DuelTable {
   seats?: Partial<Record<PlayerId, string>>;
@@ -84,6 +87,8 @@ export interface RoomInfo {
   versions?: Partial<Record<PlayerId, string>>;
   /** รูปโปรไฟล์ (รหัสการ์ด) ของแต่ละที่นั่ง (ข้อมูลเสริม เขียนแยกเหมือน versions) */
   avatars?: Partial<Record<PlayerId, string>>;
+  /** เลเวลผู้เล่นของแต่ละที่นั่ง (ข้อมูลเสริม เขียนแยกเหมือน avatars) */
+  levels?: Partial<Record<PlayerId, number>>;
   meta?: RoomMeta;
 }
 
@@ -116,6 +121,7 @@ export interface Transport {
   setVersion(code: string, seat: PlayerId, version: string): Promise<void>;
   /** บันทึกรูปโปรไฟล์ของที่นั่งนี้ (แสดงในเกม/ฉากเปิดเกม) */
   setAvatar(code: string, seat: PlayerId, avatar: string): Promise<void>;
+  setLevel(code: string, seat: PlayerId, level: number): Promise<void>;
   /** เจ้าของห้องเปลี่ยนเด็คระหว่างรอ (ไม่เปลี่ยนถ้ามีคู่แข่งนั่งแล้ว) คืน false ถ้าเปลี่ยนไม่ได้ */
   setHostDeck(code: string, deck: string): Promise<boolean>;
   /** ห้องที่เปิดให้เห็นในรายการ */

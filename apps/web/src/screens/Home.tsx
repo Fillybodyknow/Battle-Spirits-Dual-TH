@@ -12,6 +12,7 @@ import { DECKS, db, onlineAvailable, useGame, type DeckId, playableDecks } from 
 import { deckInfo } from '../decks';
 import { playerId, useAccount } from '../account/account';
 import { AccountDialog, AvatarImg } from '../components/AccountDialog';
+import { MyLevel } from '../components/LevelBadge';
 import { TutorialMenu, TutorialWelcome } from '../tutorial/TutorialMenu';
 import { useTutorial } from '../tutorial/tutorial';
 import { LESSONS } from '../tutorial/lessons';
@@ -88,6 +89,7 @@ function ProfilePlate() {
         <span className="min-w-0">
           <span className="block max-w-56 truncate text-lg font-black text-white">{name}</span>
           <span className="block text-xs tracking-wider text-sky-200/70">Player ID: {user ? playerId(user.uid) : '---'}</span>
+          <MyLevel />
         </span>
       </button>
     </>

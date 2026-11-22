@@ -19,6 +19,7 @@ const ALL2 = [1, 2];
 const ALL3 = [1, 2, 3];
 const L23 = [2, 3];
 const soulOnSelf: Condition = { soulOnSelf: true };
+const GOD_SECHS = 'จอมมารสวรรค์ ก็อด-เซคส์';
 const paidSoul: Condition = { paidWithSoul: true };
 const NO = { label: 'ไม่ใช้', steps: [] as Step[] };
 
@@ -146,6 +147,64 @@ export const BS13_SCRIPTS: Record<string, CardScript> = {
     },
   ],
 
+  'จอมมารสวรรค์ ก็อด-เซคส์ -รูปแบบทำลายล้าง-': [
+    // การ์ดนี้ในมือ/แทรช: เมื่อจบการโจมตีของ "ก็อด-เซคส์" ของเรา สามารถนำก็อด-เซคส์ของเรา 1 ตัวกลับขึ้นมือ เพื่ออัญเชิญการ์ดนี้ไม่จ่ายคอสต์
+    (['hand', 'trash'] as const).map((zone) => ({
+      kind: 'trigger' as const,
+      on: 'allyBattleEnd' as const,
+      zone,
+      levels: [],
+      subject: { attacker: true as const, nameIncludes: [GOD_SECHS] },
+      steps: [
+        may(
+          'นำ "จอมมารสวรรค์ ก็อด-เซคส์" ของเรา 1 ตัวกลับขึ้นมือ เพื่ออัญเชิญการ์ดนี้ไม่จ่ายคอสต์',
+          [{ do: 'returnOwnToHand', filter: { nameIncludes: [GOD_SECHS] } }, { do: 'summonCardFree', which: 'self' }],
+          { allyHas: { nameIncludes: [GOD_SECHS] } },
+        ),
+      ],
+    })),
+    {
+      kind: 'trigger',
+      on: 'attack',
+      levels: ALL3,
+      steps: [
+        { do: 'discardOpponentBurst' },
+        // Six Heaven Rush <เจ็ม 4 สี> + โซลคอร์บนสปิริตนี้: ทำลายสปิริต/อัลติเมทคู่แข่งสีละ 1 ตัว ตามสีเจ็มของเรา
+        when({ all: [{ ownGemColorsAtLeast: 4 }, soulOnSelf] }, (['red', 'purple', 'green', 'white', 'yellow', 'blue'] as const).map((color) => ({ do: 'destroyChosenOpponent' as const, filter: { types: SPIRITISH, color }, if: { ownGemColor: color } }))),
+      ],
+    },
+  ],
+  // ---------------------------------------------------------------- Ultimate
+  'หกขุนศึกเซ็นโงคุ เลออนแลนเซอร์': [
+    {
+      kind: 'trigger',
+      on: 'attack',
+      levels: [3, 4, 5],
+      steps: [
+        {
+          do: 'chooseOne',
+          options: [
+            { label: 'ทำลายสปิริต BP ไม่เกิน 10000 ของคู่แข่ง 1 ตัว', steps: [{ do: 'destroyChosenOpponent', filter: { types: SPIRIT, maxBp: 10000 } }] },
+            {
+              label: 'Soul Drive: นำโซลคอร์ออกจากเกม เพื่อทำลายสปิริต/อัลติเมท BP ไม่เกิน 20000 ของคู่แข่งทั้งหมดแทน',
+              if: soulOnSelf,
+              steps: [{ do: 'soulToVoid' }, { do: 'destroyAllOpponent', filter: { types: SPIRITISH, maxBp: 20000 } }],
+            },
+          ],
+        },
+      ],
+    },
+    // "เมื่ออัลติเมทนี้ทำลายสปิริตของคู่แข่งที่มีโซลคอร์วางอยู่" (ทั้งจากเอฟเฟกต์และการต่อสู้ ในแอทแท็คสเต็ปของเรา)
+    {
+      kind: 'trigger',
+      on: 'oppDestroyed',
+      subject: { self: true, victimSoul: true },
+      levels: [4, 5],
+      ownTurnOnly: true,
+      attackStepOnly: true,
+      steps: [{ do: 'opponentLifeToReserve', count: 1 }],
+    },
+  ],
   // ---------------------------------------------------------------- Brave
   'สคัล-การูด้า': [{ kind: 'trigger', on: 'summon', levels: [1], steps: [{ do: 'draw', count: 1 }] }],
   โอริงามิฮันเทอร์: [

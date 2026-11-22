@@ -14,8 +14,8 @@ import { coverOf } from '../components/SeatAvatar';
 import { useAccount } from '../account/account';
 import { sfx } from '../sfx';
 import { db, playableDecks, useGame } from '../store';
-import { GATES, gateById, type Gate, type GateNode } from '../solo/gates';
-import { gateCleared, gateComplete, markCleared, nextNode, nodeCleared, nodeUnlocked, openGate, useSolo } from '../solo/progress';
+import { GATES, gateById, SENGOKU_REALMS, type Gate, type GateNode } from '../solo/gates';
+import { emblemEarned, gateCleared, gateComplete, gateUnlocked, markCleared, nextNode, nodeCleared, nodeUnlocked, openGate, useSolo } from '../solo/progress';
 import { TutorialMenu } from '../tutorial/TutorialMenu';
 import { LocalSetup, SoloMenu } from './Home';
 import { CardArt, DeckTile } from './shared';
@@ -66,10 +66,28 @@ function Cover({ cardNo, className = '' }: { cardNo: string; className?: string 
   );
 }
 
+/** ตราแคว้น (หกเหลี่ยมสีของแคว้น · ยังไม่ได้ = โครงจาง) */
+function EmblemMark({ color, earned, className = '', title }: { color: string; earned: boolean; className?: string; title?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={`shrink-0 ${className}`} aria-label={title}>
+      {title && <title>{title}{earned ? '' : ' (ยังไม่ได้)'}</title>}
+      <polygon
+        points="12,2 21,7 21,17 12,22 3,17 3,7"
+        fill={earned ? color : 'transparent'}
+        stroke={earned ? '#fff' : color}
+        strokeOpacity={earned ? 0.9 : 0.55}
+        strokeWidth={earned ? 1.5 : 2}
+        style={earned ? { filter: `drop-shadow(0 0 4px ${color})` } : undefined}
+      />
+    </svg>
+  );
+}
+
 /** การ์ดด่าน (หัวชื่อ + ภาพ + เครื่องหมายผ่าน) */
 function GateTile({ gate, onClick, selected, className = '' }: { gate: Gate; onClick: () => void; selected?: boolean; className?: string }) {
   const progress = useSolo((s) => s.progress);
   const cleared = gateCleared(progress, gate);
+  const open = gateUnlocked(progress, gate);
   return (
     <button
       type="button"
@@ -78,12 +96,20 @@ function GateTile({ gate, onClick, selected, className = '' }: { gate: Gate; onC
         onClick();
       }}
       onMouseEnter={() => sfx('hover')}
-      className={`group relative flex flex-col overflow-hidden rounded-lg border-2 bg-slate-900 text-left transition hover:-translate-y-0.5 ${
+      className={`group relative flex flex-col overflow-hidden rounded-lg border-2 bg-slate-900 text-left transition hover:-translate-y-0.5 ${open ? '' : 'grayscale-[0.7]'} ${
         selected ? 'border-lime-300 shadow-[0_0_22px_rgba(190,242,100,0.65)]' : 'border-white/25 hover:border-white/60'
       } ${className}`}
     >
-      <div className="z-10 truncate bg-black/85 px-3 py-1.5 text-base font-bold text-white">{gate.title}</div>
-      <Cover cardNo={gate.cardNo} className="flex-1" />
+      <div className="z-10 flex items-center gap-2 truncate bg-black/85 px-3 py-1.5 text-base font-bold text-white">
+        {gate.emblem && <EmblemMark color={gate.emblem.color} earned={cleared} className="h-4 w-4" />}
+        <span className="truncate">{gate.title}</span>
+      </div>
+      <Cover cardNo={gate.cardNo} className={`flex-1 ${open ? '' : 'opacity-50'}`} />
+      {!open && (
+        <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1.5 bg-black/75 py-1.5 text-sm font-bold text-slate-200">
+          <Icon name="lock" /> {gate.soon && !gate.requires ? 'เร็ว ๆ นี้' : 'ต้องได้ตราแคว้นครบ 6'}
+        </div>
+      )}
       {cleared && (
         <div className="absolute right-1.5 bottom-1.5 flex h-8 w-8 items-center justify-center rounded-full bg-orange-500 text-lg text-white shadow ring-2 ring-black/60">
           <Icon name="check" />
@@ -99,8 +125,9 @@ function SoloHome() {
   const progress = useSolo((s) => s.progress);
   const tutorialLeft = useTutorial((s) => LESSONS.some((l) => !s.progress.done.includes(l.id)));
   const [menu, setMenu] = useState<null | 'training' | 'tutorial' | 'bot'>(null);
-  const recommended = GATES.filter((g) => !gateCleared(progress, g)).slice(0, 2);
-  const rec = recommended.length > 0 ? recommended : GATES.slice(0, 2);
+  const playable = GATES.filter((g) => gateUnlocked(progress, g));
+  const recommended = playable.filter((g) => !gateCleared(progress, g)).slice(0, 2);
+  const rec = recommended.length > 0 ? recommended : playable.slice(0, 2);
   const last = progress.last ? gateById(progress.last) : null;
   return (
     <>
@@ -125,8 +152,8 @@ function SoloHome() {
           </section>
         </div>
         <div className="flex w-full max-w-5xl gap-6">
-          <BigTile title="STORIES" sub="เนื้อเรื่อง · ด่านดวลกับคู่แข่งประจำด่าน" cardNo={GATES[GATES.length - 1]?.cardNo ?? ''} onClick={() => useSolo.setState({ view: 'stories' })} />
-          <BigTile title="ฝึกฝน" sub="บทเรียนพื้นฐาน · ดวลกับบอทแบบอิสระ" cardNo={GATES[0]?.cardNo ?? ''} onClick={() => setMenu('training')} badge={tutorialLeft ? 'NEW' : undefined} />
+          <BigTile title="STORIES" sub="เนื้อเรื่อง · ด่านดวลกับคู่แข่งประจำด่าน" cardNo="SD32-X02" onClick={() => useSolo.setState({ view: 'stories' })} />
+          <BigTile title="ฝึกฝน" sub="บทเรียนพื้นฐาน · ดวลกับบอทแบบอิสระ" cardNo="BS31-X01" onClick={() => setMenu('training')} badge={tutorialLeft ? 'NEW' : undefined} />
         </div>
       </div>
       {menu === 'training' && <SoloMenu tutorialLeft={tutorialLeft} onClose={() => setMenu(null)} onTutorial={() => setMenu('tutorial')} onBot={() => setMenu('bot')} />}
@@ -168,9 +195,28 @@ function Stories() {
     <>
       <TopBar title="Stories" onBack={() => useSolo.setState({ view: 'home' })} />
       <div className="flex min-h-0 flex-1 gap-6 px-10 py-6">
-        <div className="grid min-h-0 flex-[1.15] auto-rows-[11rem] grid-cols-3 content-start gap-4 overflow-y-auto pr-2">
-          {GATES.map((g) => (
-            <GateTile key={g.id} gate={g} selected={g.id === gate.id} onClick={() => useSolo.setState({ gateId: g.id })} />
+        <div className="flex min-h-0 flex-[1.15] flex-col gap-4 overflow-y-auto pr-2">
+          {(['sengoku', 'special'] as const).map((era) => (
+            <section key={era}>
+              <div className="mb-2 flex items-center gap-3">
+                <div className="text-lg font-black text-white">{era === 'sengoku' ? 'ยุคสมัยแห่งเซ็นโงคุ' : 'ด่านพิเศษ'}</div>
+                {era === 'sengoku' && (
+                  <div className="ml-auto flex items-center gap-1.5 rounded-full bg-black/50 px-3 py-1 text-xs text-slate-300" title="ตราแคว้น: ผ่านเป้าหมายของแต่ละแคว้น">
+                    ตราแคว้น
+                    {SENGOKU_REALMS.map((id) => {
+                      const g = gateById(id);
+                      return g?.emblem ? <EmblemMark key={id} color={g.emblem.color} earned={emblemEarned(progress, g)} className="h-5 w-5" title={g.emblem.name} /> : null;
+                    })}
+                    <b className="ml-1 text-white">{SENGOKU_REALMS.filter((id) => { const g = gateById(id); return !!g && emblemEarned(progress, g); }).length}/6</b>
+                  </div>
+                )}
+              </div>
+              <div className="grid auto-rows-[11rem] grid-cols-3 gap-4">
+                {GATES.filter((g) => (g.era ?? 'special') === era).map((g) => (
+                  <GateTile key={g.id} gate={g} selected={g.id === gate.id} onClick={() => useSolo.setState({ gateId: g.id })} />
+                ))}
+              </div>
+            </section>
           ))}
         </div>
         <div className="flex flex-1 flex-col gap-3">
@@ -187,13 +233,14 @@ function Stories() {
           </div>
           <button
             type="button"
-            className="h-14 shrink-0 rounded-xl bg-gradient-to-b from-lime-200 to-lime-400 text-2xl font-black text-slate-900 shadow-[0_0_24px_rgba(190,242,100,0.5)] transition hover:brightness-110"
+            disabled={!gateUnlocked(progress, gate)}
+            className="h-14 shrink-0 rounded-xl bg-gradient-to-b from-lime-200 to-lime-400 text-2xl font-black text-slate-900 shadow-[0_0_24px_rgba(190,242,100,0.5)] transition hover:brightness-110 disabled:from-slate-500 disabled:to-slate-600 disabled:text-slate-300 disabled:shadow-none"
             onClick={() => {
               sfx('click');
               openGate(gate.id, true);
             }}
           >
-            เล่น
+            {gateUnlocked(progress, gate) ? 'เล่น' : gate.soon && !gate.requires ? 'เร็ว ๆ นี้' : 'ต้องได้ตราแคว้นครบ 6'}
           </button>
         </div>
       </div>
@@ -425,6 +472,9 @@ function DuelPanel({ gate, node, onClose }: { gate: Gate; node: GateNode; onClos
         level: stars,
         botName: opponent,
         botAvatar: node.avatar ?? gate.cardNo,
+        story: true,
+        // ชนะครั้งแรก = EXP โบนัส
+        ...(cleared ? {} : { firstClearBonus: 100 }),
         onEnd: (won) => {
           if (won) markCleared(gateId, node.id);
         },

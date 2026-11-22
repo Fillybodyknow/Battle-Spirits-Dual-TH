@@ -1089,6 +1089,10 @@ export type TriggerEvent =
 /** เงื่อนไขของสปิริตที่ทำให้ trigger แบบ ally* ทำงาน */
 export interface SubjectFilter {
   family?: string;
+  /** oppDestroyed: การ์ดของคู่แข่งที่ถูกทำลายมี Soul Core วางอยู่ (เลออนแลนเซอร์) */
+  victimSoul?: true;
+  /** allyBattleEnd: ต้นเหตุคือผู้โจมตีของการต่อสู้นี้ ("เมื่อจบการโจมตีของ…") */
+  attacker?: true;
   /** มี Soul Core วางอยู่ */
   soul?: true;
   /** ชื่อการ์ดมีคำใดคำหนึ่งนี้ */

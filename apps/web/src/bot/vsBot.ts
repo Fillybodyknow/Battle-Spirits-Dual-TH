@@ -18,6 +18,10 @@ export interface VsBotOptions {
   botName?: string;
   /** รูปโปรไฟล์ของคู่แข่ง (รหัสการ์ด · ไม่ระบุ = รูปสำรอง) */
   botAvatar?: string;
+  /** ด่าน Story (EXP ×1.5) */
+  story?: boolean;
+  /** ชนะครั้งแรกของด่านนี้ได้ EXP เพิ่ม */
+  firstClearBonus?: number;
   /** จบเกม (ครั้งเดียวต่อเกม) */
   onEnd?: (won: boolean) => void;
   /** ปุ่มหลักในหน้าผลการดวล (เช่น กลับไปที่ด่าน) แทน "กลับหน้าหลัก" */
@@ -111,6 +115,11 @@ export function startVsBot(d: { p1: string; p2: string }, o: VsBotOptions = {}) 
 /** เล่นอีกครั้ง (เด็คและตัวเลือกเดิม) */
 export function restartVsBot() {
   if (decks) startVsBot(decks, opts);
+}
+
+/** ข้อมูลการดวลกับบอทตอนนี้ (หน้าผลการดวลใช้คิด EXP) · null = ไม่ได้ดวลกับบอท */
+export function vsBotInfo(): { stars: number; story: boolean; firstClearBonus: number } | null {
+  return useGame.getState().botSeat ? { stars: opts.level ?? 5, story: !!opts.story, firstClearBonus: opts.firstClearBonus ?? 0 } : null;
 }
 
 /** ปุ่มหลักในหน้าผลการดวล (null = ใช้ "กลับหน้าหลัก" ตามปกติ) */

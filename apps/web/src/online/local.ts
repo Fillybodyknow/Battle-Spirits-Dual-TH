@@ -121,7 +121,7 @@ export const localTransport: Transport = {
     let last = '';
     const check = () => {
       const r = read()[code] ?? null;
-      const sig = JSON.stringify(r && { seats: r.seats, setup: r.setup, names: r.names, versions: r.versions, avatars: r.avatars, meta: r.meta });
+      const sig = JSON.stringify(r && { seats: r.seats, setup: r.setup, names: r.names, versions: r.versions, avatars: r.avatars, levels: r.levels, meta: r.meta });
       if (sig === last) return;
       last = sig;
       cb(r);
@@ -166,6 +166,13 @@ export const localTransport: Transport = {
     const room = s[code];
     if (!room) return;
     room.avatars = { ...(room.avatars ?? {}), [seat]: avatar };
+    write(s);
+  },
+  async setLevel(code, seat, level) {
+    const s = read();
+    const room = s[code];
+    if (!room) return;
+    room.levels = { ...(room.levels ?? {}), [seat]: level };
     write(s);
   },
   async setFirst(code, round, first) {

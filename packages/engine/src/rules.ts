@@ -848,7 +848,7 @@ function fieldSymbolsRaw(state: GameState, db: CardDatabase, player: PlayerId): 
   // "เจ็มของสปิริตนี้ถือว่าเป็นเจ็มสี...ด้วย" (คานิคอง) · นับทุกเจ็มของการ์ดนี้ รวมเจ็มจากเบรฟที่ร่วมร่างและจากเอฟเฟกต์ (เจ้าของโปรเจกต์กำหนด)
   // BS13: ถือว่าเป็นหลายสีได้ (อิเทะคาชะ "สีแดง/ม่วงด้วย") = เจ็มนับเป็นทุกสีที่ระบุ
   for (const id of state.players[player].field) {
-    if (override?.cardId === id || zeroed(id)) continue;
+    if (override?.cardId === id || zeroed(id) || !hasSymbolAlso(db, state.cards[id]!.cardNo)) continue;
     for (const g of cardGems(state, db, id).gems) for (const c of g.also) out[c] = (out[c] ?? 0) + g.count;
   }
   return out;
@@ -861,6 +861,17 @@ export function cardSymbolTotal(state: GameState, db: CardDatabase, cardId: stri
   for (const id of [cardId, ...card.braves]) n += symbolCount(db.get(state.cards[id]!.cardNo));
   for (const v of Object.values(extraSymbols(state, db, cardId))) n += v ?? 0;
   return n;
+}
+
+/** การ์ดนี้มี "เจ็มถือว่าเป็นสี...ด้วย" (เช็กเร็ว: ไม่มี = เจ็มทุกเม็ดมีสีเดียว) */
+const symbolAlsoCache = new Map<string, boolean>();
+function hasSymbolAlso(db: CardDatabase, cardNo: string): boolean {
+  let v = symbolAlsoCache.get(cardNo);
+  if (v === undefined) {
+    v = db.get(cardNo).abilities.some((a) => a.kind === 'symbolAlsoColor');
+    symbolAlsoCache.set(cardNo, v);
+  }
+  return v;
 }
 
 /** เจ็มกลุ่มหนึ่งบนการ์ดบนสนาม: สี จำนวน และสีที่ "ถือว่าเป็นสี...ด้วย" */
@@ -1548,12 +1559,10 @@ function payableCostInner(state: GameState, db: CardDatabase, player: PlayerId, 
   if (full) return Math.max(0, base - Object.values(def.reduction).reduce<number>((n, v) => n + (v ?? 0), 0));
   // ฮาคุโดวโทคาเงะ: คู่แข่งอัญเชิญการ์ดสปิริตคอสต์ดั้งเดิมไม่เกิน N ใช้สัญลักษณ์ลดคอสต์ไม่ได้
   if (def.type === 'spirit' && noReductionFor(state, db, player, def)) return base;
-  // เจ็มทีละเม็ด: สีที่เม็ดนั้นใช้ได้ ("เจ็มถือว่าเป็นสี...ด้วย" = หลายสี แต่ยังเป็นเจ็ม 1 เม็ด ลดคอสต์ได้ 1 ช่องเท่านั้น)
-  const gems: string[][] = [];
-  for (const id of state.players[player].field) {
-    for (const g of cardGems(state, db, id).gems) for (let i = 0; i < g.count; i++) gems.push([g.color, ...g.also]);
-  }
+  const reductionTotal = Object.values(def.reduction).reduce<number>((n, v) => n + (v ?? 0), 0);
+  if (reductionTotal === 0) return base;
   // "เมื่ออัญเชิญการ์ดที่ชื่อมีคำ ... สปิริตนี้เจ็มเพิ่ม" (ปะกุกุ)
+  const summonGems: SymbolColor[] = [];
   for (const id of state.players[player].field) {
     for (const ab of db.get(state.cards[id]!.cardNo).abilities) {
       if (ab.kind !== 'summonSymbol' || effectsNegated(state, db, id)) continue;
@@ -1561,8 +1570,21 @@ function payableCostInner(state: GameState, db: CardDatabase, player: PlayerId, 
       // Spirit Soul: "เมื่อเราทำการอัญเชิญการ์ดอัลติเมท"
       if (ab.filter?.types && !ab.filter.types.includes(def.type)) continue;
       if (!ab.levels.includes(cardLevel(state, db, id)) || !conditionHolds(state, id, ab.if, false, false, db)) continue;
-      for (let i = 0; i < ab.count; i++) gems.push([ab.color]);
+      for (let i = 0; i < ab.count; i++) summonGems.push(ab.color);
     }
+  }
+  // ไม่มีการ์ด "เจ็มถือว่าเป็นสี...ด้วย" บนสนาม: เจ็มแต่ละเม็ดมีสีเดียว นับตามสีได้เลย (เร็ว)
+  if (!state.players[player].field.some((id) => hasSymbolAlso(db, state.cards[id]!.cardNo))) {
+    const symbols = { ...fieldSymbols(state, db, player) };
+    for (const c of summonGems) symbols[c] = (symbols[c] ?? 0) + 1;
+    let reduced = 0;
+    for (const [color, max] of Object.entries(def.reduction) as [SymbolColor, number][]) reduced += Math.min(max, symbols[color] ?? 0);
+    return Math.max(0, base - reduced);
+  }
+  // เจ็มทีละเม็ด: สีที่เม็ดนั้นใช้ได้ ("เจ็มถือว่าเป็นสี...ด้วย" = หลายสี แต่ยังเป็นเจ็ม 1 เม็ด ลดคอสต์ได้ 1 ช่องเท่านั้น)
+  const gems: string[][] = summonGems.map((c) => [c]);
+  for (const id of state.players[player].field) {
+    for (const g of cardGems(state, db, id).gems) for (let i = 0; i < g.count; i++) gems.push([g.color, ...g.also]);
   }
   // ช่องลดคอสต์ทีละช่อง แล้วจับคู่เจ็ม → ช่อง ให้ลดได้มากที่สุด (เจ็มหนึ่งเม็ดใช้ได้ช่องเดียว)
   const slots: string[] = [];

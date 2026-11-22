@@ -63,11 +63,26 @@ export function nodeUnlocked(p: SoloProgress, gate: Gate, node: GateNode): boole
   });
 }
 
-/** ผ่านด่านแล้ว (ถึงเป้าหมาย) */
-export const gateCleared = (p: SoloProgress, gate: Gate) => gate.nodes.filter((n) => n.kind === 'goal').every((n) => nodeCleared(p, gate, n));
+/** ผ่านด่านแล้ว (ถึงเป้าหมาย) · บทที่ยังไม่เปิด/ไม่มีเป้าหมาย = ยังไม่ผ่าน */
+export function gateCleared(p: SoloProgress, gate: Gate): boolean {
+  const goals = gate.nodes.filter((n) => n.kind === 'goal');
+  return !gate.soon && goals.length > 0 && goals.every((n) => nodeCleared(p, gate, n));
+}
+
+/** บทนี้เล่นได้ไหม: เปิดแล้ว และผ่านบทที่ต้องผ่านก่อนครบ */
+export function gateUnlocked(p: SoloProgress, gate: Gate): boolean {
+  if (gate.soon) return false;
+  return (gate.requires ?? []).every((id) => {
+    const g = gateById(id);
+    return !!g && gateCleared(p, g);
+  });
+}
+
+/** ได้ตราแคว้นของบทนี้แล้ว */
+export const emblemEarned = (p: SoloProgress, gate: Gate) => !!gate.emblem && gateCleared(p, gate);
 
 /** ผ่านทุกโหนด (รวมเส้นทางพิเศษ) */
-export const gateComplete = (p: SoloProgress, gate: Gate) => gate.nodes.every((n) => nodeCleared(p, gate, n));
+export const gateComplete = (p: SoloProgress, gate: Gate) => gate.nodes.length > 0 && gate.nodes.every((n) => nodeCleared(p, gate, n));
 
 /** โหนดถัดไปที่ควรเล่น (เล่นได้แต่ยังไม่ผ่าน ตัวแรกตามลำดับ) */
 export function nextNode(p: SoloProgress, gate: Gate): GateNode | null {

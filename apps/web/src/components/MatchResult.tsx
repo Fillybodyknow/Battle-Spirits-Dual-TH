@@ -4,7 +4,9 @@ import { sfx } from '../sfx';
 import { layoutRect, useGame, type Fx, type Rect } from '../store';
 import { deckInfo } from '../decks';
 import { BTN } from './Modal';
-import { restartVsBot, vsBotExit } from '../bot/vsBot';
+import { restartVsBot, vsBotExit, vsBotInfo } from '../bot/vsBot';
+import { addExp, matchExp } from '../progression/level';
+import { ExpGain } from './LevelBadge';
 
 const REASON: Record<string, (win: string, lose: string) => string> = {
   lifeZero: (_w, l) => `Life ของ ${l} เป็น 0!`,
@@ -157,6 +159,15 @@ export function MatchResult({ fx, onClose }: { fx: Extract<Fx, { kind: 'result' 
           ? 'ผู้เล่น 1'
           : 'ผู้เล่น 2';
   const exit = vsBotExit();
+  // EXP ของเกมนี้ (ครั้งเดียวต่อหน้าผล): ออนไลน์ = ที่นั่งเรา · ดวลกับบอท = ฝั่งที่ไม่ใช่บอท · ผู้ชม/เครื่องเดียว/บทเรียน = ไม่มี
+  const award = useMemo(() => {
+    const bot = vsBotInfo();
+    const me = online && !online.spectator ? online.me : bot && botSeat ? opponentOf(botSeat) : null;
+    if (!me) return null;
+    const r = matchExp({ mode: online ? 'online' : 'bot', won: fx.winner === me, stars: bot?.stars, story: bot?.story, firstClearBonus: bot?.firstClearBonus, turn: useGame.getState().state.turn, reason: fx.reason });
+    return addExp(`result-${online?.code ?? 'bot'}-${fx.id}`, r.exp, r.note);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fx.id]);
 
   const started = useRef(false);
   const seq = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -254,6 +265,7 @@ export function MatchResult({ fx, onClose }: { fx: Extract<Fx, { kind: 'result' 
                   );
                 })}
               </div>
+              {award && <ExpGain award={award} />}
               <div className="flex gap-3">
                 {canRematch && (
                   <button

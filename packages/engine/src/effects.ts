@@ -153,6 +153,8 @@ export function queueTriggers(
     subjectFromHand?: boolean;
     /** oppDestroyed: ทำลายด้วยเอฟเฟกต์ */
     subjectByEffect?: boolean;
+    /** oppDestroyed: การ์ดของคู่แข่งที่ถูกทำลายมี Soul Core วางอยู่ */
+    victimSoul?: boolean;
     /** blocked / allyBlocked: ผู้ป้องกัน */
     blockerId?: string;
     /** allyDestroyed: ถูกทำลายโดยคู่แข่ง */
@@ -298,10 +300,13 @@ function subjectMatches(
     subjectByOnStage?: boolean;
     subjectByOpponentEffect?: boolean;
     subjectCatalyzed?: boolean;
+    victimSoul?: boolean;
   } = {},
 ): boolean {
   const card = ctx.s.cards[cardId]!;
   const def = ctx.db.get(card.cardNo);
+  if (f.victimSoul && !extra.victimSoul) return false;
+  if (f.attacker && ctx.s.battle?.attackerId !== cardId) return false;
   if (f.team && !def.teams.includes(f.team)) return false;
   if (f.card && !matchesFilter(ctx.s, ctx.db, cardId, f.card)) return false;
   if (f.bySpirit && !extra.subjectBySpirit) return false;
@@ -449,7 +454,7 @@ function queueDestroyTriggers(
     // "เมื่อสปิริต/อัลติเมทของคู่แข่งถูกทำลายโดย...ของเรา"
     if (by !== owner && destroyedSpirit && cause.bySource && s.cards[cause.bySource]) {
       for (const id of [...s.players[by].field]) {
-        queueTriggers(ctx, id, 'oppDestroyed', batch, { subject: cause.bySource, subjectByEffect: !!cause.effect });
+        queueTriggers(ctx, id, 'oppDestroyed', batch, { subject: cause.bySource, subjectByEffect: !!cause.effect, victimSoul: hadSoul });
       }
     }
   });

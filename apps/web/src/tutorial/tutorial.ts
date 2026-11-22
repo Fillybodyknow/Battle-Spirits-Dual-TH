@@ -3,6 +3,7 @@
  * คู่แข่ง (p2) ตัดสินใจตามบอทของบท · ความคืบหน้าเก็บใน localStorage 'bs-tutorial' (ซิงก์ตามบัญชี: SETTING_KEYS ใน account.ts)
  */
 import { create } from 'zustand';
+import { addExp, TUTORIAL_EXP } from '../progression/level';
 import { blockersFor, canAttackWith, currentBp, payableCost, type Action, type GameState } from '@bs/engine';
 import { actingPlayer, db, isFxBlocking, setTutorialHooks, useGame, type Fx } from '../store';
 import { LESSONS, type Ids, type Lesson, type TutorialStep } from './lessons';
@@ -134,7 +135,9 @@ function advance() {
       useTutorial.setState({ phase: 'done', failed: true });
       return;
     }
-    const done = t.progress.done.includes(t.lesson.id) ? t.progress.done : [...t.progress.done, t.lesson.id];
+    const first = !t.progress.done.includes(t.lesson.id);
+    if (first) addExp(`tutorial-${t.lesson.id}`, TUTORIAL_EXP, `บทเรียน: ${t.lesson.title}`);
+    const done = first ? [...t.progress.done, t.lesson.id] : t.progress.done;
     const progress = { ...t.progress, done };
     saveProgress(progress);
     useTutorial.setState({ phase: 'done', failed: false, progress });

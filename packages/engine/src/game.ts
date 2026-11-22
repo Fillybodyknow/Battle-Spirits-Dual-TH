@@ -1330,7 +1330,8 @@ function endBattle(ctx: Ctx): void {
     for (const id of [battle.attackerId, ...battle.blockers]) {
       const c = ctx.s.cards[id];
       if (!c || !inBattle(ctx.s, id)) continue;
-      for (const f of [...ctx.s.players[c.owner].field]) queueTriggers(ctx, f, 'allyBattleEnd', batch, { subject: id });
+      const pl = ctx.s.players[c.owner];
+      for (const f of [...pl.field, ...pl.hand, ...pl.trashCards]) queueTriggers(ctx, f, 'allyBattleEnd', batch, { subject: id });
     }
     ended = ctx.s.queue.length > before;
   }

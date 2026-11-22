@@ -72,7 +72,7 @@ const summon = (s: GameState, cardId: string, place = 1, extra: Partial<Extract<
 describe('Booster Set 13', () => {
   it('การ์ดทุกใบผูกสคริปต์ได้ และทุกบรรทัดมีสคริปต์', () => {
     const cards = loadBS13Cards().all();
-    expect(cards).toHaveLength(20);
+    expect(cards).toHaveLength(22);
     for (const c of cards) {
       const covered = new Set(c.abilities.map((a) => a.source));
       c.effects.forEach((_, i) => expect(covered.has(i), `${c.name} บรรทัด ${i + 1}`).toBe(true));
@@ -96,6 +96,74 @@ describe('Booster Set 13', () => {
     // เพิ่มสปิริตแดงอีก 1 ตัว: จาโดใช้ช่องขาว มุฉะดาริวใช้ช่องแดง = ลด 2
     put(s, 'p1', DARIU, 1);
     expect(payableCost(s, db, 'p1', sword)).toBe(3);
+  });
+
+  it('เลออนแลนเซอร์: โจมตี = ทำลายสปิริต BP ≤10000 · Soul Drive = ทำลายทั้งหมด BP ≤20000 แทน · Lv4 ทำลายตัวที่มีโซลคอร์ = คอร์ไลฟ์คู่แข่งไปรีเสิร์ฟ', () => {
+    const LEON = no('หกขุนศึกเซ็นโงคุ เลออนแลนเซอร์');
+    // แบบปกติ: เลือกทำลาย 1 ตัว
+    {
+      const s0 = setup();
+      const leon = put(s0, 'p1', LEON, 1); // Lv3
+      const small = put(s0, 'p2', DARIU, 1);
+      let s = attack(s0, leon);
+      expect(s.choice?.kind).toBe('option');
+      s = choose(s, 0);
+      if (s.choice) s = choose(s, small);
+      expect(s.players.p2.field).not.toContain(small);
+    }
+    // Soul Drive ที่ Lv4: ทำลายทั้งหมด · ตัวที่มีโซลคอร์ = ไลฟ์คู่แข่ง -1 ไปรีเสิร์ฟ
+    {
+      const s0 = setup();
+      const leon = put(s0, 'p1', LEON, 4, true); // โซล 1 + 3 = Lv4 (หลังนำโซลออก ยัง Lv4)
+      const withSoul = put(s0, 'p2', DARIU, 2, true);
+      const plain = put(s0, 'p2', DARIU, 1);
+      const life = s0.players.p2.life.length;
+      const reserve = s0.players.p2.reserve.length;
+      let s = attack(s0, leon);
+      s = choose(s, 1);
+      expect(s.players.p2.field).not.toContain(withSoul);
+      expect(s.players.p2.field).not.toContain(plain);
+      expect(s.cards[leon]!.cores.some((c) => s.cores[c]?.isSoul)).toBe(false);
+      expect(s.players.p2.life.length).toBe(life - 1);
+      expect(s.players.p2.reserve.length).toBeGreaterThanOrEqual(reserve + 1);
+    }
+  });
+
+  it('ก็อด-เซคส์ -รูปแบบทำลายล้าง-: โจมตี = ทิ้งเบิร์ส · Six Heaven Rush (เจ็ม 4 สี + โซลคอร์) = ทำลายสปิริตคู่แข่งสีละ 1 ตัว', () => {
+    const s0 = setup();
+    const gs = put(s0, 'p1', no('จอมมารสวรรค์ ก็อด-เซคส์ -รูปแบบทำลายล้าง-'), 2, true); // เจ็มแดง/ขาว
+    put(s0, 'p1', DOLL, 1); // ม่วง (ขาวด้วย)
+    put(s0, 'p1', no('มารสายลม ชิโนบิริกะ'), 1); // เขียว
+    const red = put(s0, 'p2', DARIU, 1);
+    const green = put(s0, 'p2', no('มารสายลม ชิโนบิริกะ'), 1);
+    const burst = card(s0, 'p2', DARIU, 'hand');
+    s0.players.p2.hand = s0.players.p2.hand.filter((x) => x !== burst);
+    s0.players.p2.burst = burst;
+    let s = attack(s0, gs);
+    for (let i = 0; i < 10 && s.choice; i++) s = s.choice.kind === 'card' ? choose(s, s.choice.candidates[0]!) : choose(s, 0);
+    expect(s.players.p2.burst).toBeNull();
+    expect(s.players.p2.field).not.toContain(red);
+    expect(s.players.p2.field).not.toContain(green);
+  });
+
+  it('ก็อด-เซคส์ -รูปแบบทำลายล้าง- ในมือ: จบการโจมตีของก็อด-เซคส์ = นำก็อด-เซคส์กลับขึ้นมือ แล้วอัญเชิญการ์ดนี้ไม่จ่ายคอสต์', () => {
+    const s0 = setup();
+    const base = put(s0, 'p1', no('จอมมารสวรรค์ ก็อด-เซคส์'), 1);
+    const xx = card(s0, 'p1', no('จอมมารสวรรค์ ก็อด-เซคส์ -รูปแบบทำลายล้าง-'), 'hand');
+    let s = attack(s0, base);
+    s = passAll(s);
+    if (s.battle?.step === 'declareBlock') s = act(s, { type: 'noBlock', player: 'p2' });
+    s = passAll(s);
+    for (let i = 0; i < 10 && s.choice; i++) {
+      const c = s.choice;
+      if (c.kind === 'option') s = choose(s, 0);
+      else if (c.kind === 'card') s = choose(s, c.candidates[0]!);
+      else if (c.kind === 'placeCores') s = choose(s, { pay: s.players.p1.reserve.slice(0, 1) });
+      else break;
+      s = passAll(s);
+    }
+    expect(s.players.p1.hand).toContain(base);
+    expect(s.players.p1.field).toContain(xx);
   });
 
   it('cardGems (ป้ายเจ็มบนสนาม): เจ็มม่วง 1 เม็ดที่ถือว่าเป็นขาวด้วย · เจ็มของเบรฟแยกเป็นเจ็มที่ได้รับ · เจ็มเป็น 0', () => {

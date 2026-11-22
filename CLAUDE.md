@@ -171,6 +171,7 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
   `handCostSet` (การ์ดในมือถือว่ามีคอสต์ N) · `millCap` (ต่อเทิร์นถูกทิ้งเด็คโดยเอฟเฟกต์ของคู่แข่งได้ไม่เกิน N: `millCapLeft` + `state.milledByOpponent`) ·
   `opponentNoRefresh.if` / `.anyRefresh` ("ฟื้นสภาพไม่ได้" ทุกทาง: `noRefreshSource` ตรวจในรีเฟรชสเต็ป, `refreshByEffect`, `unexhaustSelf`, `refreshOnBattlerGone`) ·
   magic `notMain` ("ทำงานในเมนสเต็ปไม่ได้": engine useMagic + `handMagicTimings` ในเว็บ) · step `refreshChosen` (ตัวที่ `voidCore to: 'ally'` เพิ่งเลือก) · `bounceOpponent.coresToTrashIf`
+- **BS13 เพิ่มเติม**: เลออนแลนเซอร์ = trigger `oppDestroyed` + subject `victimSoul` (การ์ดคู่แข่งที่ถูกทำลายมีโซลคอร์) · ก็อด-เซคส์ -รูปแบบทำลายล้าง- = `allyBattleEnd` ทำงานจากการ์ดในมือ/แทรชได้ (`zone`) + subject `attacker` ("เมื่อจบการโจมตีของ…") · ตัวแปลงรับบรรทัดที่ขึ้นต้น `เมื่อจบการโจมตีของ` · ลดคอสต์ = เจ็มเม็ดละ 1 ช่อง (จับคู่เฉพาะเมื่อมีการ์ด symbolAlsoColor บนสนาม: `hasSymbolAlso`)
 - **สูญสลายไม่ใช่การถูกทำลาย** (กติกา 10): สูญสลายโดยคู่แข่ง = trigger `depletedByOpponent` + เบิร์ส `afterAllyDepletedByOpponent` เท่านั้น
   ข้อความ "ถูกทำลาย/สูญสลาย" = trigger `on: ['destroyedByOpponent', 'depletedByOpponent']` / เบิร์ส `alsoDepleted: true` · "ถูกทำลายโดยเอฟเฟกต์ของคู่แข่ง" (ไม่นับแพ้เทียบ BP) = `destroyedByOpponentEffect`
   · เอฟเฟกต์ "เมื่อถูกทำลาย" ทำงานขณะยังอยู่บนสนาม (engine ส่งลงแทรชก่อน: "วางคอร์บนสปิริตนี้" = คอร์กลับรีเสิร์ฟ)
@@ -222,7 +223,9 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
   · `BotOptions.level` 1–6 (ดาวของด่าน): ต่ำ = คะแนนคลาดเคลื่อน + โอกาสพลาด (`BLUNDER`) แบบ deterministic · ★6 = ท่าที่ดีที่สุด `LOOKAHEAD_TOP` ท่าคิดต่ออีกหนึ่งท่าถ้ายังเป็นตาเรา (`bestOneStep`)
 - **โหมด SOLO (`screens/Solo.tsx`, screen `'solo'`)**: หน้าแรก (แนะนำ / เล่นล่าสุด / STORIES / ฝึกฝน = TUTORIAL + VS BOT) → รายการด่าน → ฉากเปิดการ์ด → แผนที่ด่าน
   · ข้อมูลด่าน `solo/gates.ts` (โหนด scenario / practice / duel / goal / locked, `after` = ปลดล็อก + เส้นเชื่อม, `col`/`row` = ตำแหน่ง, `deck()` = เด็คของด่านเป็นรหัส `c:`, `avatar` รูปคู่แข่ง, `description` / `deckDescription` ข้อความในแผงด่าน / หน้าดูเด็คคู่แข่ง) ·
+  **เนื้อเรื่อง: อ่าน `docs/story/sengoku.md` ก่อนเขียนบทใหม่** (โลก, 6 แคว้น, ตัวละคร, แม่แบบโหนด, สถานะ, ข้อตกลง) · บทเนื้อเรื่องยุคเซ็นโงคุ (`SENGOKU_GATES`): 6 แคว้นตามสี (`emblem` = ตราแคว้น ได้เมื่อถึงเป้าหมาย) + บทสุดท้าย `requires: SENGOKU_REALMS` · `soon` = ยังไม่เปิด · `gateUnlocked` / `emblemEarned` · ชนะโหนดครั้งแรก = EXP โบนัส (`firstClearBonus`) ·
   ความคืบหน้า `solo/progress.ts` (localStorage `bs-solo` ใน `SETTING_KEYS`) · ดวลจบ = `onEnd` บันทึกผ่าน, หน้าผลมีปุ่ม "กลับไปที่ด่าน" (`vsBotExit()` ใน MatchResult)
+- **เลเวลผู้เล่น (`src/progression/level.ts`)**: EXP ใน localStorage `bs-exp` (ซิงก์บัญชี: รวม = ค่าที่มากกว่า `mergeExpJson`) · `matchExp` = สูตร EXP ต่อเกม · ให้ EXP ที่หน้าผลการดวล (`MatchResult` → `addExp` + `ExpGain`) และบทเรียนผ่านครั้งแรก · ห้องออนไลน์ส่งเลเวลที่ `rooms/<code>/levels` (`setLevel`, สมาชิกห้องดวล `DuelMember.level`) · แสดงด้วย `components/LevelBadge.tsx`
 - `config.manualDraw` (หน้าเว็บเปิดไว้): Draw Step หยุดรอ action `drawStep` · เทสต์ใช้ค่าเริ่มต้น (จั่วเอง)
 - เปลี่ยนลำดับ action ที่ engine คาดหวัง = ห้องออนไลน์ที่เล่นค้างอยู่จะเล่นต่อไม่ได้ (บอกเจ้าของโปรเจกต์ด้วย)
 - ความสามารถถาวร (ไม่ผ่านคิว) ไม่มี `effectResolving` → ตรงจุดที่มัน "ลงมือจริง" ให้เรียก `emitStatic(ctx, { cardId, source })` (event `staticApplied`)
