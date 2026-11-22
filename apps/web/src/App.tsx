@@ -6,7 +6,7 @@ import { useGame, viewPlayer } from './store';
 import { HandFan, PlayerMat } from './components/Board';
 import { ChoiceDialog, ErrorToast, FlashCue, PromptBar, SummonPanel, ShownFan, TrashDialog, TrashSummonFan } from './components/Controls';
 import { UpdateNotice, WhatsNew } from './components/Updates';
-import { CornerButtons, FinalBlowWarning, FloatingInspector, PlayerPlate, TeamPlate, TurnAura } from './components/Hud';
+import { CornerButtons, FinalBlowWarning, FloatingInspector, PlayerPlate, TeamMiniPlate, TurnAura } from './components/Hud';
 import { PlayDialog } from './components/PlayDialog';
 import { MyDeck } from './screens/MyDeck';
 import { BTN } from './components/Modal';
@@ -240,6 +240,9 @@ function GameScreen() {
   // ผู้เล่นที่ถือเทิร์นอยู่ด้านล่าง (มือใหญ่ กดง่าย) เว้นแต่ตั้งมุมมองคงที่
   const bottom = useGame(viewPlayer);
   const top = opponentOf(bottom);
+  // 2VS2: มือของคนที่สองของแต่ละทีม
+  const twoVsTwo = useGame((s) => s.state.mode === '2v2');
+  const partnerHidden = useGame((s) => s.partnerHandHidden);
   const tilt = usePrefs((p) => p.boardTilt);
 
   return (
@@ -265,6 +268,9 @@ function GameScreen() {
         </main>
         <HandFan player={top} top />
         <HandFan player={bottom} />
+        {/* 2VS2: มือของคนที่สองของแต่ละทีม (พัดเดียวกับคนหลัก แบ่งครึ่งจอ: คู่แข่ง 2 = บนซ้าย · เพื่อนร่วมทีม = ล่างขวา หงายหน้า ดูได้อย่างเดียว) */}
+        {twoVsTwo && <HandFan player={top} top partner />}
+        {twoVsTwo && !partnerHidden && <HandFan player={bottom} partner />}
       </div>
 
       {/* HUD: ป้ายผู้เล่น / รายละเอียดการ์ดลอย / ปุ่มมุมขวาล่าง */}
@@ -273,8 +279,9 @@ function GameScreen() {
       <GfxNotice />
       <PlayerPlate player={bottom} corner="bottom-left" />
       <PlayerPlate player={top} corner="top-right" />
-      <TeamPlate player={bottom} corner="bottom-left" />
-      <TeamPlate player={top} corner="top-right" />
+      {/* 2VS2: โปรไฟล์ย่อของคนที่สองของแต่ละทีม */}
+      {twoVsTwo && <TeamMiniPlate player={bottom} corner="bottom-right" />}
+      {twoVsTwo && <TeamMiniPlate player={top} corner="top-left" />}
       <FloatingInspector enabled={inspector} />
       <CornerButtons inspector={inspector} setInspector={setInspector} />
 

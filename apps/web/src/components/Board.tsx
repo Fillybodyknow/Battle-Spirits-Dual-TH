@@ -1,10 +1,10 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { activatableOptions, blockForced, onStageAbilities, baseCost, braveToSwap, canAttackWith, cardColors, cardGems, cardLevel, currentBp, isSpiritLike, magicBanned, payableCost, summonConditionOk, trashSummonRule, type CoreTarget, type GameState, type PlayerId } from '@bs/engine';
+import { burstSetDone, activatableOptions, blockForced, onStageAbilities, baseCost, braveToSwap, canAttackWith, cardColors, cardGems, cardLevel, currentBp, isSpiritLike, magicBanned, payableCost, summonConditionOk, trashSummonRule, type CoreTarget, type GameState, type PlayerId } from '@bs/engine';
 import { COLOR_LABEL, playerLabel } from '../format';
 import { GEM_IMG, IMG } from '../assets';
 import type { Fx } from '../store';
-import { blockCandidates, braveSlot, controls, hiddenFrom, mine, braveHostOf, braveHosts, canDropBurst, canQuickSummon, handFieldAction, separatePlacement, viewPlayer, mySeat } from '../store';
+import { blockCandidates, braveSlot, controls, hiddenFrom, mine, braveHostOf, braveHosts, canDropBurst, canQuickSummon, handFieldAction, separatePlacement, viewPlayer, mySeat, partnerName } from '../store';
 import { usePrefs, type HandLayout } from '../prefs';
 import { castHandSlots, sortHand } from '../store';
 import { CastRestCard, pickingCores } from './Fx';
@@ -429,6 +429,9 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
   // ป้องกัน: ใช้รายชื่อจาก engine (รวมตัวที่ป้องกันได้แม้เสื่อมสภาพ / กฎป้องกันพิเศษ)
   const canBlock = own && !state.winner && !state.choice && battle?.step === 'declareBlock' && card.owner !== state.turnPlayer && blockCandidates(state).includes(cardId);
   const ownTurnMain = own && inMain(state) && card.owner === state.turnPlayer;
+  /** เบรฟที่ร่วมร่างบนการ์ดนี้: เจ้าของเบรฟสั่งแยกร่าง/ย้ายได้ในเมนสเต็ป (2VS2: ดูที่นั่งของเบรฟ ไม่ใช่ของร่างหลัก) */
+  const braveOwnMain = (b: string) =>
+    mine(card.owner) && (state.mode !== '2v2' || (state.cards[b]?.seat ?? 0) === (state.players[card.owner].active ?? 0)) && inMain(state) && card.owner === state.turnPlayer;
   const flashOpts = own && !evolveMode && !fxBlocking ? activatableOptions(state, db, card.owner, cardId) : [];
   /** [Evolution] ใช้ได้ตอนนี้ (Main Step ของเรา / Flash timing): อยู่ในเมนูเดียวกับเอฟเฟกต์ Flash */
   const evo = own && !evolveMode && !fxBlocking && canEvolve(state, cardId);
@@ -633,6 +636,8 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
           // เป็นเป้าหมายให้เลือก (เช่น ทำลายเบรฟที่ร่วมร่างอยู่)
           const braveCandidate = !fxBlocking && isChoiceCandidate(state, b);
           const slot = braveSlot(bi, card.braves.length);
+          // แยกร่าง/ย้ายเบรฟ = เจ้าของเบรฟ (2VS2: เบรฟของเราที่ร่วมร่างกับสปิริตของเพื่อน ดึงกลับได้ · ของเพื่อนบนสปิริตเรา ไม่ได้)
+          const braveMain = braveOwnMain(b);
           return (
           <div
             key={b}
@@ -640,7 +645,7 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
             className={`absolute z-[5] h-[4.6rem] w-[3.3rem] rounded ${slot.right ? '-right-8 rotate-12' : '-left-8 -rotate-12'} ${flyingBraves.split(',').includes(b) ? 'invisible' : ''} shadow-[0_4px_10px_rgba(0,0,0,0.7)] ${
               braveCandidate ? 'cursor-pointer ring-4 ring-fuchsia-400' : 'ring-2 ring-emerald-300'
             }`}
-            title={`Brave: ${db.get(state.cards[b]!.cardNo).name}${ownTurnMain ? ' · คลิกเพื่อแยกร่าง/ย้าย' : ''}`}
+            title={`Brave: ${db.get(state.cards[b]!.cardNo).name}${braveMain ? ' · คลิกเพื่อแยกร่าง/ย้าย' : ''}`}
             onMouseEnter={(e) => {
               e.stopPropagation();
               hover(b);
@@ -654,10 +659,10 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
               e.stopPropagation();
               // คลิกเบรฟ = เปิดรายละเอียดของเบรฟ (ไม่ใช่ผู้ร่วมร่าง) · เทิร์นเราใน Main Step เปิดเมนูแยกร่าง/ย้ายด้วย
               useGame.setState({ pinned: b });
-              if (!ownTurnMain || state.choice) return;
+              if (!braveMain || state.choice) return;
               setBraveMenu(braveMenu ? null : b);
             }}
-            draggable={ownTurnMain && !fxBlocking && !state.choice}
+            draggable={braveMain && !fxBlocking && !state.choice}
             onDragStart={(e) => {
               e.stopPropagation();
               e.dataTransfer.effectAllowed = 'move';
@@ -667,13 +672,13 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
               useGame.getState().startBraveDrag(b);
             }}
             onDragEnd={() => useGame.getState().endBraveDrag()}
-            style={{ top: slot.top, ...(braveCandidate ? { animation: 'fx-choice-glow 1.4s ease-in-out infinite' } : ownTurnMain ? { cursor: 'pointer' } : {}) }}
+            style={{ top: slot.top, ...(braveCandidate ? { animation: 'fx-choice-glow 1.4s ease-in-out infinite' } : braveMain ? { cursor: 'pointer' } : {}) }}
           >
             <CardFace def={db.get(state.cards[b]!.cardNo)} size="xs" />
           </div>
           );
         })}
-        {braveMenu && ownTurnMain && <BraveMenu braveId={braveMenu} onClose={() => setBraveMenu(null)} />}
+        {braveMenu && (braveMenu === cardId ? ownTurnMain : braveOwnMain(braveMenu)) && <BraveMenu braveId={braveMenu} onClose={() => setBraveMenu(null)} />}
         {(braveDrop || fieldBraveDrop) && (
           <div className="absolute inset-x-1 bottom-1 z-10 rounded bg-emerald-400 py-0.5 text-center text-xs font-bold text-slate-900 shadow">
             {over ? 'ปล่อยเพื่อร่วมร่าง' : 'ร่วมร่างได้'}
@@ -906,16 +911,32 @@ function MatSlot({
   );
 }
 
-function LifeSlot({ player }: { player: PlayerId }) {
+/**
+ * 2VS2: ช่องของคนที่สองของทีม (partner) = โซนที่ players[p].partner (state อยู่ในมุมของที่นั่งเรา: คนหลัก = ที่นั่งที่แสดงอยู่)
+ * ช่องของคนที่สองดูได้อย่างเดียว (จัดคอร์/เซ็ทเบิร์ส/อัญเชิญจากแทรช = เจ้าของทำจากเครื่องตัวเอง)
+ */
+function zoneOf(state: GameState, player: PlayerId, partner?: boolean) {
+  return partner ? state.players[player].partner! : state.players[player];
+}
+/** id กองคอร์ของคนนี้ในหน้าแบ่งคอร์ (pile:<กอง>:<ฝั่ง>[:1] ตามที่นั่งจริง) */
+function pileId(state: GameState, kind: 'reserve' | 'trash', player: PlayerId, partner?: boolean): string {
+  const active = state.players[player].active ?? 0;
+  const seat = partner ? (active ? 0 : 1) : active;
+  return `pile:${kind}:${player}${seat ? ':1' : ''}`;
+}
+
+function LifeSlot({ player, partner }: { player: PlayerId; partner?: boolean }) {
   const state = useGame((s) => s.state);
   const blocking = useGame((s) => isFxBlocking(s.fx));
   const dispatch = useGame((s) => s.dispatch);
-  const life = state.players[player].life;
-  const shownLife = useShownLife(player);
+  const life = zoneOf(state, player, partner).life;
+  const heldLife = useShownLife(player);
+  const shownLife = partner ? life.length : heldLife;
   const slots = Math.max(state.config.initialLife, life.length, 6);
   // ช่วงประกาศป้องกัน: คลิกแผง Life ของฝ่ายป้องกัน = ไม่ป้องกัน (รับการโจมตีด้วย Life)
   const battle = state.battle;
   const canTake =
+    !partner &&
     !blocking &&
     mine(player) &&
     !state.choice &&
@@ -926,7 +947,7 @@ function LifeSlot({ player }: { player: PlayerId }) {
   const more = (battle?.blockers.length ?? 0) > 0;
   return (
     <MatSlot
-      data-life={player}
+      data-life={partner ? undefined : player}
       label="Life"
       sub="ไลฟ์"
       count={shownLife}
@@ -954,19 +975,19 @@ function LifeSlot({ player }: { player: PlayerId }) {
   );
 }
 
-function ReserveSlot({ player }: { player: PlayerId }) {
+function ReserveSlot({ player, partner }: { player: PlayerId; partner?: boolean }) {
   const state = useGame((s) => s.state);
   const dragging = useGame((s) => s.dragging);
   const hasSelection = useGame((s) => s.selectedCores.length > 0);
   const moveCoresTo = useGame((s) => s.moveCoresTo);
   const [over, setOver] = useState(false);
-  const p = state.players[player];
-  const active = mine(player) && inMain(state) && player === state.turnPlayer && (!!dragging || hasSelection);
+  const p = zoneOf(state, player, partner);
+  const active = !partner && mine(player) && inMain(state) && player === state.turnPlayer && (!!dragging || hasSelection);
   const target = useMemo<CoreTarget>(() => ({ area: 'reserve' }), []);
 
   return (
     <MatSlot
-      data-reserve={player}
+      data-reserve={partner ? undefined : player}
       label="Reserve"
       sub="รีเสิร์ฟ"
       count={p.reserve.length}
@@ -975,26 +996,26 @@ function ReserveSlot({ player }: { player: PlayerId }) {
       {...dropHandlers(active, () => moveCoresTo(target), setOver)}
     >
       {p.reserve.length > 0 ? <CoreRow cores={p.reserve} size="md" board /> : <span className="text-[11px] text-slate-500">ว่าง</span>}
-      <PileAlloc pileId={`pile:reserve:${player}`} label="รีเสิร์ฟ" />
+      <PileAlloc pileId={pileId(state, 'reserve', player, partner)} label="รีเสิร์ฟ" />
     </MatSlot>
   );
 }
 
-function BurstSlot({ player }: { player: PlayerId }) {
+function BurstSlot({ player, partner }: { player: PlayerId; partner?: boolean }) {
   const state = useGame((s) => s.state);
   const hiddenBurst = useGame((s) => hiddenFrom(s, player));
   const { hover, pin } = useGame.getState();
-  const setBurst = state.players[player].burst;
+  const setBurst = zoneOf(state, player, partner).burst;
   // ใบที่กำลังบินมาเซ็ท: ช่องยังว่างจนบินถึง
   const flyingIn = useFlying(setBurst ?? '');
   const burst = flyingIn ? null : setBurst;
   const visible = !!burst && !hiddenBurst;
-  const dropOk = useGame((s) => !!s.handDrag && s.state.cards[s.handDrag]!.owner === player && canDropBurst(s.state, s.handDrag));
+  const dropOk = useGame((s) => !partner && !!s.handDrag && s.state.cards[s.handDrag]!.owner === player && canDropBurst(s.state, s.handDrag));
   const dropHand = useGame((s) => s.dropHand);
   const dispatch = useGame((s) => s.dispatch);
   const fxBlocking = useGame((s) => isFxBlocking(s.fx));
   const [over, setOver] = useState(false);
-  const myMain = useGame((s) => controls(s, player)) && inMain(state) && state.turnPlayer === player && !fxBlocking;
+  const myMain = useGame((s) => controls(s, player)) && !partner && inMain(state) && state.turnPlayer === player && !fxBlocking;
   /** คลิกการ์ด Burst ของเรา (Main Step) = เปิดตัวเลือก "ทิ้ง Burst" แทนป้าย "เซ็ทอยู่!" */
   const [menu, setMenu] = useState(false);
   const showMenu = menu && myMain && !!burst;
@@ -1015,7 +1036,7 @@ function BurstSlot({ player }: { player: PlayerId }) {
       {/* การ์ด Burst กลางช่อง: ว่าง = กรอบเส้นประมีคำว่า "ว่าง" · เซ็ทแล้ว = หลังการ์ด + ป้าย + ปุ่มทิ้ง (มุมขวาบนของการ์ด) */}
       <div className="flex flex-1 items-center justify-center">
         <div
-          data-burst-card={player}
+          data-burst-card={partner ? undefined : player}
           className={`relative h-24 w-[4.2rem] shrink-0 ${burst ? 'rounded-lg ring-2 ring-orange-400' : ''} ${visible ? 'cursor-pointer' : ''} ${dragging ? 'opacity-40' : ''}`}
           onMouseEnter={() => visible && hover(burst)}
           onMouseLeave={() => {
@@ -1062,7 +1083,7 @@ function BurstSlot({ player }: { player: PlayerId }) {
           )}
         </div>
       </div>
-      {myMain && state.burstSetThisTurn && <span className="absolute top-1 right-1 rounded bg-black/60 px-1 text-[9px] text-orange-200">เซ็ทแล้วเทิร์นนี้</span>}
+      {myMain && burstSetDone(state, player) && <span className="absolute top-1 right-1 rounded bg-black/60 px-1 text-[9px] text-orange-200">เซ็ทแล้วเทิร์นนี้</span>}
     </MatSlot>
   );
 }
@@ -1089,11 +1110,11 @@ function PileEdge({ count, face }: { count: number; face?: boolean }) {
   );
 }
 
-function DeckSlot({ player }: { player: PlayerId }) {
-  const count = useGame((s) => s.state.players[player].deck.length);
+function DeckSlot({ player, partner }: { player: PlayerId; partner?: boolean }) {
+  const count = useGame((s) => zoneOf(s.state, player, partner).deck.length);
   return (
     <MatSlot label="Deck" sub="เด็ค" count={count}>
-      <div data-deck={player} className="relative mx-auto h-16 w-11">
+      <div data-deck={partner ? undefined : player} className="relative mx-auto h-16 w-11">
         {count > 0 ? (
           <>
             <PileEdge count={count} />
@@ -1109,8 +1130,8 @@ function DeckSlot({ player }: { player: PlayerId }) {
   );
 }
 
-function TrashSlot({ player }: { player: PlayerId }) {
-  const p = useGame((s) => s.state.players[player]);
+function TrashSlot({ player, partner }: { player: PlayerId; partner?: boolean }) {
+  const p = useGame((s) => zoneOf(s.state, player, partner));
   const state = useGame((s) => s.state);
   const openTrash = useGame((s) => s.openTrash);
   // การ์ดที่ภาพ "ถูกทิ้ง" (จากเด็ค/มือ) หรือภาพแตกจากสนามยังเล่นอยู่: ยังไม่โชว์ใน Trash
@@ -1123,18 +1144,18 @@ function TrashSlot({ player }: { player: PlayerId }) {
   const top = shown.at(-1);
   const hover = useGame((s) => s.hover);
   // ลาก Burst ของผู้เล่นนี้มาปล่อย = ทิ้ง Burst
-  const burstDrop = useGame((s) => !!s.burstDrag && s.state.players[player].burst === s.burstDrag);
+  const burstDrop = useGame((s) => !partner && !!s.burstDrag && s.state.players[player].burst === s.burstDrag);
   const [over, setOver] = useState(false);
   /** การ์ดใน Trash ที่อัญเชิญได้ตอนนี้ (Flash Timing หรือ Main Step) */
   const summonable = useGame((s) =>
-    !mine(player) || isFxBlocking(s.fx) || s.state.choice || s.state.winner
+    partner || !mine(player) || isFxBlocking(s.fx) || s.state.choice || s.state.winner
       ? 0
       : s.state.players[player].trashCards.filter((id) => trashSummonRule(s.state, db, player, id) !== null).length,
   );
   const inFlash = !!state.battle?.flash;
   return (
     <MatSlot
-      data-trash={player}
+      data-trash={partner ? undefined : player}
       style={summonable > 0 && !burstDrop ? { animation: `${inFlash ? 'fx-flash-glow 1.2s' : 'fx-choice-glow 1.4s'} ease-in-out infinite` } : undefined}
       label="Trash"
       sub="แทรช"
@@ -1142,7 +1163,11 @@ function TrashSlot({ player }: { player: PlayerId }) {
         burstDrop ? (over ? 'border-rose-300 bg-rose-500/30' : 'border-dashed border-rose-300') : summonable > 0 ? (inFlash ? 'border-cyan-300 bg-cyan-400/10' : 'border-yellow-300 bg-yellow-300/10') : ''
       }`}
       // มีใบที่อัญเชิญได้: เปิดพัดการ์ดบนกระดาน (เฉพาะใบที่อัญเชิญได้) · ไม่มี = ดูทั้งกอง
-      onClick={() => (summonable > 0 ? useGame.setState({ trashFan: player }) : openTrash(player))}
+      onClick={() => {
+        useGame.setState({ trashViewPartner: !!partner });
+        if (summonable > 0) useGame.setState({ trashFan: player });
+        else openTrash(player);
+      }}
       title={summonable > 0 ? `อัญเชิญจาก Trash ได้ ${summonable} ใบ · คลิกเพื่อเลือก` : 'คลิกดูการ์ดใน Trash'}
       {...dropHandlers(burstDrop, () => {
         useGame.setState({ burstDrag: null });
@@ -1152,7 +1177,7 @@ function TrashSlot({ player }: { player: PlayerId }) {
       {burstDrop && (
         <div className="pointer-events-none absolute inset-x-1 -top-2 z-10 rounded bg-rose-600 py-0.5 text-center text-[11px] font-bold text-white shadow">ปล่อยเพื่อทิ้ง Burst</div>
       )}
-      <PileAlloc pileId={`pile:trash:${player}`} label="แทรช" />
+      <PileAlloc pileId={pileId(state, 'trash', player, partner)} label="แทรช" />
       {summonable > 0 && !burstDrop && (
         <div
           className={`pointer-events-none absolute inset-x-1 -top-2.5 z-10 rounded py-0.5 text-center text-[11px] font-black text-slate-950 shadow ${inFlash ? 'bg-cyan-300' : 'bg-yellow-300'}`}
@@ -1164,7 +1189,7 @@ function TrashSlot({ player }: { player: PlayerId }) {
       <div className="flex items-center gap-2 border-b border-slate-500/40 pb-1.5">
         <div
           className="relative h-16 w-11 shrink-0"
-          data-trash-top={player}
+          data-trash-top={partner ? undefined : player}
           onMouseEnter={() => top && hover(top)}
           onMouseLeave={() => hover(null)}
         >
@@ -1197,15 +1222,15 @@ function TrashSlot({ player }: { player: PlayerId }) {
  * การ์ดซ้อนกันเป็นแถว ชี้/แตะค้างดูรายละเอียดได้
  */
 const NO_SONGS: string[] = [];
-function SongZone({ player }: { player: PlayerId }) {
-  const songs = useGame((s) => s.state.players[player].songs) ?? NO_SONGS;
+function SongZone({ player, partner, compact }: { player: PlayerId; partner?: boolean; compact?: boolean }) {
+  const songs = useGame((s) => zoneOf(s.state, player, partner).songs) ?? NO_SONGS;
   const hover = useGame((s) => s.hover);
   // การ์ดที่ยังเล่นแอนิเมชันอยู่ (บินจากเวที/มือ): ซ่อนตัวจริงไว้จนภาพมาถึง
   const busy = useGame((s) => s.fx.flatMap((f) => ((f.kind === 'spell' && f.exit === 'song') || (f.kind === 'fly' && f.hideTarget) ? [f.cardId] : [])).join('|')).split('|');
   return (
-    <div className="flex w-36 shrink-0 flex-col items-end gap-1">
+    <div className={`flex shrink-0 flex-col items-end gap-1 ${compact ? "" : "w-36"}`}>
       {/* นอกมือ (กติกา 14) อยู่เหนือโซนเพลง · กำหนดโซนแยกกันชัดเจน */}
-      <OutsideZone player={player} />
+      <OutsideZone player={player} partner={partner} />
       {songs.length > 0 && (
         <div data-song-zone={player} className="flex flex-col items-end gap-0.5" title="เมจิคไทป์ [เพลง] บนฟิลด์ (วางแสดง ใช้งานไม่ได้)">
           <span className="relative flex items-center gap-1 rounded bg-fuchsia-600/80 px-1.5 text-[10px] font-black tracking-wide text-white shadow">
@@ -1291,6 +1316,14 @@ export function PlayerMat({ player, top }: { player: PlayerId; top?: boolean }) 
     return () => ro.disconnect();
   }, []);
 
+  const renderSlot = (slot: { id: string } | { gap: Extract<Fx, { kind: 'ghost' }> }) =>
+    'id' in slot ? (
+      <FieldCard key={slot.id} cardId={slot.id} depleting={depleting.has(slot.id)} />
+    ) : (
+      // ช่องว่างของการ์ดที่กำลังแตก: rect วัดจากจอ (ย่อแล้ว) จึงหารกลับเป็นขนาดก่อนย่อ
+      <div key={`gap-${slot.gap.id}`} className="shrink-0" style={{ width: slot.gap.rect.w / fieldScale, height: slot.gap.rect.h / fieldScale + 32 }} />
+    );
+
   return (
     <MatTopCtx.Provider value={!!top}>
     <section
@@ -1347,11 +1380,16 @@ export function PlayerMat({ player, top }: { player: PlayerId; top?: boolean }) 
       {/* รอยร้าวตาม Life ที่เสีย */}
       <FieldCracks player={player} top={top} />
 
-      <div className={`flex w-32 shrink-0 gap-2 ${col}`}>
-        <BurstSlot player={player} />
-        <LifeSlot player={player} />
-        <ReserveSlot player={player} />
-      </div>
+      {p.partner ? (
+        // 2VS2: ช่องทั้งหมดของคนที่แสดงอยู่ (เรา / คู่แข่ง 1) อยู่ติดกันทางซ้าย · Field ตรงกลาง · ช่องของคนที่สองทางขวา
+        <SeatZones player={player} />
+      ) : (
+        <div className={`flex w-32 shrink-0 gap-2 ${col}`}>
+          <BurstSlot player={player} />
+          <LifeSlot player={player} />
+          <ReserveSlot player={player} />
+        </div>
+      )}
 
       {/* Field */}
       <div
@@ -1390,17 +1428,28 @@ export function PlayerMat({ player, top }: { player: PlayerId; top?: boolean }) 
               </span>
             )}
           </div>
-          <div className="flex flex-1 justify-center">
-            <div className="flex flex-wrap items-center justify-center gap-2 rounded-md border border-dashed border-white/15 bg-black/15 p-1">
-              {nexus.length > 0 ? (
-                nexus.map((id) => <FieldCard key={id} cardId={id} depleting={depleting.has(id)} />)
-              ) : (
-                <span className="px-6 py-0.5 text-[10px] tracking-[0.3em] text-white/25 select-none">NEXUS</span>
-              )}
-            </div>
-          </div>
-          {/* ขวา: เมจิคไทป์ [เพลง] ที่วางบนฟิลด์ (BS07) · ถ่วงให้ช่อง Nexus อยู่กลางสนาม */}
-          <SongZone player={player} />
+          {p.partner ? (
+            // 2VS2: Nexus / นอกมือ / เพลง แบ่งตามเจ้าของ (คนที่แสดงอยู่ = ซ้าย · คนที่สองของทีม = ขวา)
+            // ช่องว่างทางขวากว้างเท่าป้ายผู้เล่นทางซ้าย: กรอบ Nexus อยู่กึ่งกลางสนามตรงกับกลุ่มสปิริต
+            <>
+              <TeamNexusRow player={player} top={!!top} nexus={nexus} depleting={depleting} />
+              <div className="w-36 shrink-0" aria-hidden="true" />
+            </>
+          ) : (
+            <>
+              <div className="flex flex-1 justify-center">
+                <div className="flex flex-wrap items-center justify-center gap-2 rounded-md border border-dashed border-white/15 bg-black/15 p-1">
+                  {nexus.length > 0 ? (
+                    nexus.map((id) => <FieldCard key={id} cardId={id} depleting={depleting.has(id)} />)
+                  ) : (
+                    <span className="px-6 py-0.5 text-[10px] tracking-[0.3em] text-white/25 select-none">NEXUS</span>
+                  )}
+                </div>
+              </div>
+              {/* ขวา: เมจิคไทป์ [เพลง] ที่วางบนฟิลด์ (BS07) · ถ่วงให้ช่อง Nexus อยู่กลางสนาม */}
+              <SongZone player={player} />
+            </>
+          )}
         </div>
 
         {/* แถว Spirit / Ultimate: แถวเดียว ย่อตามจำนวนตัว (data-field-scale ให้แอนิเมชันวัดขนาดการ์ดที่ย่อแล้วได้ถูก) */}
@@ -1412,28 +1461,130 @@ export function PlayerMat({ player, top }: { player: PlayerId; top?: boolean }) 
             className="absolute top-1/2 left-1/2 flex w-max items-start gap-3 transition-transform duration-300"
             style={{ transform: `translate(-50%, -50%) scale(${fieldScale})` }}
           >
-            {slots.map((slot) =>
-              'id' in slot ? (
-                <FieldCard key={slot.id} cardId={slot.id} depleting={depleting.has(slot.id)} />
-              ) : (
-                // ช่องว่างของการ์ดที่กำลังแตก: rect วัดจากจอ (ย่อแล้ว) จึงหารกลับเป็นขนาดก่อนย่อ
-                <div
-                  key={`gap-${slot.gap.id}`}
-                  className="shrink-0"
-                  style={{ width: slot.gap.rect.w / fieldScale, height: slot.gap.rect.h / fieldScale + 32 }}
-                />
-              ),
+            {p.partner ? (
+              // 2VS2: แบ่งสนามเป็นสองกลุ่มตามเจ้าของ (คนที่แสดงอยู่ = ซ้าย · คนที่สองของทีม = ขวา) มีกรอบและป้ายกำกับ
+              <TeamFieldGroups player={player} top={!!top} slots={slots} render={renderSlot} />
+            ) : (
+              slots.map(renderSlot)
             )}
           </div>
         </div>
       </div>
 
-      <div className={`flex w-32 shrink-0 gap-2 ${col}`}>
-        <DeckSlot player={player} />
-        <TrashSlot player={player} />
-      </div>
+      {p.partner ? (
+        /* 2VS2: ช่องทั้งหมดของคนที่สองของทีม (เพื่อนร่วมทีม / คู่แข่งคนที่ 2) */
+        <SeatZones player={player} partner />
+      ) : (
+        <div className={`flex w-32 shrink-0 gap-2 ${col}`}>
+          <DeckSlot player={player} />
+          <TrashSlot player={player} />
+        </div>
+      )}
     </section>
     </MatTopCtx.Provider>
+  );
+}
+
+type FieldSlot = { id: string } | { gap: Extract<Fx, { kind: 'ghost' }> };
+
+/** สีของกลุ่มตามเจ้าของ (2VS2) */
+function teamTone(mineSide: boolean, partner: boolean): { box: string; chip: string } {
+  if (mineSide) return partner ? { box: 'border-violet-300/50 bg-violet-400/[0.08]', chip: 'bg-violet-500 text-white' } : { box: 'border-sky-300/50 bg-sky-400/[0.07]', chip: 'bg-sky-400 text-slate-950' };
+  return partner ? { box: 'border-orange-300/50 bg-orange-400/[0.08]', chip: 'bg-orange-500 text-white' } : { box: 'border-rose-300/50 bg-rose-400/[0.07]', chip: 'bg-rose-500 text-white' };
+}
+
+/** 2VS2: แถว Nexus แบ่งสองกรอบตามเจ้าของ · แต่ละกรอบมีนอกมือ/เพลงของเจ้าของคนนั้นด้วย */
+function TeamNexusRow({ player, top, nexus, depleting }: { player: PlayerId; top: boolean; nexus: string[]; depleting: Set<string> }) {
+  const state = useGame((s) => s.state);
+  const me = useGame((s) => viewPlayer(s));
+  const active = state.players[player].active ?? 0;
+  const mineSide = player === me;
+  return (
+    <div className="flex flex-1 items-start justify-center gap-3">
+      {[false, true].map((partner) => {
+        const ids = nexus.filter((id) => ((state.cards[id]?.seat ?? 0) === active) === !partner);
+        const tone = teamTone(mineSide, partner);
+        return (
+          <div key={String(partner)} className={`relative flex items-start gap-2 rounded-md border border-dashed px-2 pt-5 pb-1 ${tone.box}`}>
+            <span className={`absolute left-1.5 rounded px-1 text-[10px] leading-4 font-black ${top ? 'bottom-0.5 rotate-180' : 'top-0.5'} ${tone.chip}`}>
+              NEXUS · {partner ? (mineSide ? 'เพื่อน' : 'คู่แข่ง 2') : mineSide ? 'เรา' : 'คู่แข่ง 1'}
+            </span>
+            <div className="flex min-w-20 flex-wrap items-center justify-center gap-2">
+              {ids.length > 0 ? ids.map((id) => <FieldCard key={id} cardId={id} depleting={depleting.has(id)} />) : <span className="m-auto py-2 text-[10px] text-white/30">ว่าง</span>}
+            </div>
+            <SongZone player={player} partner={partner} compact />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * 2VS2: แถวสปิริตของสนามรวม แบ่งเป็นสองกลุ่มตามเจ้าของ (กรอบสี + ป้ายชื่อ) ให้เห็นชัดว่าตัวไหนของใคร
+ * กลุ่มซ้าย = คนที่แสดงอยู่ที่ players[p] (ฝั่งเรา = เครื่องนี้) · กลุ่มขวา = คนที่สองของทีม
+ */
+function TeamFieldGroups({ player, top, slots, render }: { player: PlayerId; top: boolean; slots: FieldSlot[]; render: (s: FieldSlot) => React.ReactNode }) {
+  const state = useGame((s) => s.state);
+  const me = useGame((s) => viewPlayer(s));
+  useGame((s) => s.teamNames);
+  const active = state.players[player].active ?? 0;
+  const mineSide = player === me;
+  const ofMain = (slot: FieldSlot) => ('id' in slot ? (state.cards[slot.id]?.seat ?? 0) === active : true);
+  const groups = [
+    { key: 'main', slots: slots.filter(ofMain), label: mineSide ? 'เรา' : 'คู่แข่ง 1', tone: mineSide ? 'sky' : 'rose' },
+    { key: 'partner', slots: slots.filter((s) => !ofMain(s)), label: mineSide ? `เพื่อน · ${partnerName(player, true)}` : `คู่แข่ง 2 · ${partnerName(player, false)}`, tone: mineSide ? 'violet' : 'orange' },
+  ];
+  const ring: Record<string, string> = {
+    sky: 'border-sky-300/50 bg-sky-400/[0.07]',
+    violet: 'border-violet-300/50 bg-violet-400/[0.08]',
+    rose: 'border-rose-300/50 bg-rose-400/[0.07]',
+    orange: 'border-orange-300/50 bg-orange-400/[0.08]',
+  };
+  const chip: Record<string, string> = { sky: 'bg-sky-400 text-slate-950', violet: 'bg-violet-500 text-white', rose: 'bg-rose-500 text-white', orange: 'bg-orange-500 text-white' };
+  return (
+    <>
+      {groups.map((g) => (
+        <div key={g.key} className={`relative flex min-h-[12rem] min-w-[8.5rem] items-start gap-3 rounded-xl border-2 border-dashed px-3 pt-6 pb-2 ${ring[g.tone]}`}>
+          <span className={`absolute left-2 max-w-[90%] truncate rounded px-1.5 text-[11px] leading-4 font-black ${top ? 'bottom-1 rotate-180' : 'top-1'} ${chip[g.tone]}`}>{g.label}</span>
+          {g.slots.length > 0 ? g.slots.map(render) : <span className="m-auto text-xs text-white/30">ยังไม่มีสปิริต</span>}
+        </div>
+      ))}
+    </>
+  );
+}
+
+/**
+ * 2VS2: ช่องทั้งหมดของผู้เล่นหนึ่งคน (Burst / Life / Reserve · Deck / Trash) อยู่ติดกันเป็นชุด มีชื่อกำกับ
+ * คนที่แสดงอยู่ (เรา / คู่แข่ง 1) = ซ้ายของ Field · คนที่สองของทีม = ขวาของ Field (เรียงกลับด้าน: Deck/Trash ติด Field เหมือนกัน)
+ */
+function SeatZones({ player, partner }: { player: PlayerId; partner?: boolean }) {
+  const me = useGame((s) => viewPlayer(s));
+  useGame((s) => s.online?.names);
+  useGame((s) => s.teamNames);
+  const mineSide = player === me;
+  const label = partner ? (mineSide ? `เพื่อน · ${partnerName(player, true)}` : `คู่แข่ง 2 · ${partnerName(player, false)}`) : mineSide ? 'เรา' : 'คู่แข่ง 1';
+  const tone = partner ? (mineSide ? 'bg-violet-500/85 text-white' : 'bg-orange-500/85 text-white') : mineSide ? 'bg-sky-400/90 text-slate-950' : 'bg-rose-500/85 text-white';
+  const front = (
+    <div key="front" className="flex w-28 shrink-0 flex-col gap-2">
+      <BurstSlot player={player} partner={partner} />
+      <LifeSlot player={player} partner={partner} />
+      <ReserveSlot player={player} partner={partner} />
+    </div>
+  );
+  const back = (
+    <div key="back" className="flex w-28 shrink-0 flex-col gap-2">
+      <DeckSlot player={player} partner={partner} />
+      <TrashSlot player={player} partner={partner} />
+    </div>
+  );
+  return (
+    <div className="flex shrink-0 flex-col gap-1">
+      <div className={`truncate rounded px-1.5 py-0.5 text-center text-[11px] font-black ${tone}`} title={label}>
+        {label}
+      </div>
+      <div className="flex min-h-0 flex-1 gap-2">{partner ? [back, front] : [front, back]}</div>
+    </div>
   );
 }
 
@@ -1475,11 +1626,12 @@ function fanStyle(fan: FanPos, raised: boolean, lift = false): React.CSSProperti
 }
 
 /** ลำดับการ์ดในมือที่แสดง: เรียงตามที่ตั้งค่า (มือที่คว่ำอยู่ไม่เรียง ไม่ให้ตำแหน่งบอกว่าเป็นการ์ดอะไร) */
-function useShownHand(player: PlayerId, hidden: boolean): string[] {
+function useShownHand(player: PlayerId, hidden: boolean, partner = false): string[] {
   const state = useGame((s) => s.state);
-  const manual = useGame((s) => s.handOrder[player]);
+  const manualRaw = useGame((s) => s.handOrder[player]);
+  const manual = partner ? undefined : manualRaw;
   const sort = usePrefs((p) => p.handSort);
-  const all = state.players[player].hand;
+  const all = partner ? (state.players[player].partner?.hand ?? []) : state.players[player].hand;
   // การ์ดที่วางแสดงนอกมืออยู่ในโซน "นอกมือ" บนสนาม (OutsideZone) ไม่อยู่ในพัดการ์ดในมือ
   const shownKey = (state.shownCards ?? []).join(',');
   const hand = useMemo(() => (shownKey ? all.filter((id) => !shownKey.split(',').includes(id)) : all), [all, shownKey]);
@@ -1529,21 +1681,22 @@ export function playOptions(state: GameState, cardId: string): { label: string; 
  * แตะตรงไหนของโซนก็ได้ = กางเป็นพัดใหญ่กลางกระดาน (ShownFan ใน Controls) แล้วเลือกใช้จากพัด
  * มีใบที่ใช้ได้ตอนนี้ = โซนเรืองแสง (ฟ้า = Flash / เหลือง = Main / ชมพู = เป็นตัวเลือกของเอฟเฟกต์)
  */
-function OutsideZone({ player }: { player: PlayerId }) {
+function OutsideZone({ player, partner }: { player: PlayerId; partner?: boolean }) {
   const state = useGame((s) => s.state);
   const hover = useGame((s) => s.hover);
   const blocking = useGame((s) => isFxBlocking(s.fx));
   const flying = useGame((s) => s.fx.filter((f) => f.kind === 'fly' && f.hideTarget).map((f) => (f.kind === 'fly' ? f.cardId : '')).join('|'));
-  const ids = (state.shownCards ?? []).filter((id) => state.players[player].hand.includes(id));
+  const ids = (state.shownCards ?? []).filter((id) => zoneOf(state, player, partner).hand.includes(id));
   if (ids.length === 0) return null;
-  const candidate = !blocking && ids.some((id) => isChoiceCandidate(state, id) || isMultiCardCandidate(state, id));
-  const usable = !blocking && !candidate && ids.some((id) => playOptions(state, id).length > 0);
+  // 2VS2: นอกมือของคนที่สองของทีม = ดูได้อย่างเดียว (ชี้ดูรายละเอียดได้)
+  const candidate = !partner && !blocking && ids.some((id) => isChoiceCandidate(state, id) || isMultiCardCandidate(state, id));
+  const usable = !partner && !blocking && !candidate && ids.some((id) => playOptions(state, id).length > 0);
   const tone = candidate ? 'fuchsia' : usable ? (flashPlayer(state) ? 'cyan' : 'yellow') : null;
   return (
     <button
       type="button"
       data-outside-zone={player}
-      onClick={() => useGame.setState({ shownFan: player })}
+      onClick={() => !partner && useGame.setState({ shownFan: player })}
       title="นอกมือ: การ์ดที่วางแสดง ใช้งานได้เสมือนอยู่ในมือ (ทั้งสองฝ่ายเห็น) · แตะเพื่อกางดู/ใช้"
       className={`flex cursor-pointer flex-col items-end gap-0.5 rounded-lg p-1 transition hover:bg-amber-300/15 ${
         tone === 'cyan' ? 'ring-2 ring-cyan-300 bg-cyan-400/10' : tone === 'yellow' ? 'ring-2 ring-yellow-300 bg-yellow-300/10' : tone === 'fuchsia' ? 'ring-2 ring-fuchsia-400 bg-fuchsia-400/10' : ''
@@ -1572,7 +1725,10 @@ function OutsideZone({ player }: { player: PlayerId }) {
   );
 }
 
+
 function HandCard({ cardId, hidden, small, fan, shown: order }: { cardId: string; hidden: boolean; small?: boolean; fan?: FanPos; shown?: string[] }) {
+  // 2VS2: การ์ดในมือของเพื่อนร่วมทีม (ที่นั่งของการ์ดไม่ใช่ที่นั่งที่แสดงอยู่) = ดูได้อย่างเดียว
+  const readOnly = useGame((s) => s.state.mode === '2v2' && (s.state.cards[cardId]?.seat ?? 0) !== (s.state.players[s.state.cards[cardId]?.owner ?? 'p1'].active ?? 0));
   const state = useGame((s) => s.state);
   const selected = useGame((s) => s.selectedHandCard === cardId);
   const { clickHandCard, openPlay, dispatch, hover } = useGame.getState();
@@ -1595,7 +1751,7 @@ function HandCard({ cardId, hidden, small, fan, shown: order }: { cardId: string
   const size = small ? 'h-16 w-11' : fan?.top ? 'h-32 w-[5.75rem]' : fan ? 'h-48 w-34' : 'h-36 w-26';
   const playMode = usePrefs((p) => p.playMode);
   // ลากได้เสมอเมื่อเป็นมือของเรา: ลากไปสนาม = เล่น, ลากไปวางบนการ์ดใบอื่นในมือ = สลับตำแหน่ง
-  const draggable = !hidden && !fxBlocking && mine(card.owner);
+  const draggable = !readOnly && !hidden && !fxBlocking && mine(card.owner);
   /** การ์ดใบอื่นในมือเดียวกันกำลังถูกลากมาวาง (สลับตำแหน่ง) */
   const reorderOver = useGame((s) => !!order && !!s.handDrag && s.handDrag !== cardId && order.includes(s.handDrag));
   const [dropSide, setDropSide] = useState<'l' | 'r' | null>(null);
@@ -1612,8 +1768,8 @@ function HandCard({ cardId, hidden, small, fan, shown: order }: { cardId: string
     );
   }
 
-  const main = mine(card.owner) && inMain(state) && card.owner === state.turnPlayer;
-  const flash = mine(card.owner) && flashPlayer(state) === card.owner;
+  const main = !readOnly && mine(card.owner) && inMain(state) && card.owner === state.turnPlayer;
+  const flash = !readOnly && mine(card.owner) && flashPlayer(state) === card.owner;
   const timings = handMagicTimings(state, cardId);
   const pay = payableCost(state, db, card.owner, def, baseCost(state, db, cardId));
   const affordable = pay <= state.players[card.owner].reserve.length + state.players[card.owner].field.reduce((n, id) => n + state.cards[id]!.cores.length, 0);
@@ -1642,6 +1798,11 @@ function HandCard({ cardId, hidden, small, fan, shown: order }: { cardId: string
       )}
       <div
         onClick={() => {
+          // มือของเพื่อน: คลิก = ปักแผงรายละเอียดเท่านั้น
+          if (readOnly) {
+            useGame.setState({ pinned: cardId });
+            return;
+          }
           // คลิกเดียวเล่นเลย (ตั้งค่า): มีทางเล่นทางเดียว = เปิดแผงเล่นการ์ดทันที
           if (playMode === 'direct' && !candidate && !state.choice && options.length === 1) {
             useGame.setState({ pinned: cardId });
@@ -1836,6 +1997,14 @@ const HandScrollCtx = createContext<{ claimDrag: () => boolean } | null>(null);
 
 /** เว้นขอบซ้าย/ขวาของหน้าต่างมือ ไม่ให้ทับป้ายผู้เล่นและปุ่มมุมจอ · หน้าต่างแคบสุดเท่านี้ (จอเล็กยอมทับมุมเล็กน้อย) */
 const HAND_SIDE = 290;
+/**
+ * 2VS2: พัดมือแบ่งครึ่งจอ เว้นที่ป้ายผู้เล่น/ปุ่มมุมจอ
+ * ล่าง: เรา = ซ้าย (เว้นป้ายผู้เล่นมุมซ้ายล่าง) · เพื่อน = ขวา (เว้นปุ่มมุมขวาล่าง) · บน: คู่แข่ง 2 = ซ้าย (เว้นปุ่มมุมซ้ายบน) · คู่แข่ง 1 = ขวา (เว้นป้ายคู่แข่ง)
+ */
+const SPLIT_FAN = {
+  bottom: { main: 'left-[300px] right-1/2', partner: 'left-1/2 right-[250px]' },
+  top: { main: 'left-1/2 right-[300px]', partner: 'left-[110px] right-1/2' },
+} as const;
 const HAND_MIN_WINDOW = 760;
 /** ระยะจากขอบหน้าต่างที่เอาเมาส์ไปค้างแล้วมือเลื่อนเอง และความเร็วสูงสุด (px ต่อเฟรม) */
 const EDGE_ZONE = 110;
@@ -1847,11 +2016,26 @@ const DRAG_START = 6;
  * มือแบบพัด ลอยทับขอบล่าง (มือคู่แข่ง = ขอบบน) และจมลงใต้ขอบเล็กน้อย
  * การ์ดขนาดเดิมเสมอ ถ้ามือยาวเกินหน้าต่าง: เลื่อนซ้าย/ขวาได้ด้วย เอาเมาส์ค้างที่ขอบ, กดลาก (เมาส์/นิ้ว), ลูกศรที่ขอบ, ลูกล้อเมาส์
  */
-export function HandFan({ player, top }: { player: PlayerId; top?: boolean }) {
+export function HandFan({ player, top, partner = false }: { player: PlayerId; top?: boolean; partner?: boolean }) {
   const hidden = useGame((s) => hiddenFrom(s, player));
-  const hand = useShownHand(player, hidden);
+  /**
+   * 2VS2: มือของแต่ละทีมแยกสองฝั่ง ตรงกับช่องของเจ้าของบนแผ่นสนาม
+   * ล่าง: เรา = ครึ่งซ้าย · เพื่อนร่วมทีม = ครึ่งขวา (หงายหน้า ดูได้อย่างเดียว) · บน (หมุน 180°): คู่แข่ง 1 = ครึ่งขวา · คู่แข่ง 2 = ครึ่งซ้าย
+   */
+  // ซ่อนมือเพื่อนแล้ว: มือเรา (ล่าง) กางเต็มความกว้างเหมือนปกติ
+  const split = useGame((s) => !!s.state.players[player].partner && !(!top && s.partnerHandHidden));
+  const hand = useShownHand(player, hidden, partner);
   // เมจิกที่ยังร่ายไม่จบ: เว้นช่องเดิมในพัดไว้ (การ์ดพักลอยเหนือช่องระหว่างรอเลือก)
-  const slotKey = useGame((s) => castHandSlots(s.state, player));
+  // 2VS2: ช่องพักของเมจิกที่ร่ายอยู่ = พัดมือของเจ้าของการ์ด (ไม่ใช่ทุกใบของฝั่งนี้)
+  const slotKey = useGame((s) => {
+    const all = castHandSlots(s.state, player);
+    if (!s.state.players[player].partner || !all) return all;
+    const active = s.state.players[player].active ?? 0;
+    return all
+      .split(',')
+      .filter((x) => ((s.state.cards[x.split(':')[0]!]?.seat ?? 0) === active) !== partner)
+      .join(',');
+  });
   const items = useMemo(() => {
     const out: { id: string; slot?: true }[] = hand.map((id) => ({ id }));
     const slots = slotKey
@@ -1892,7 +2076,8 @@ export function HandFan({ player, top }: { player: PlayerId; top?: boolean }) {
       const last = kids[kids.length - 1] as HTMLElement;
       const card = first.offsetWidth;
       const step = kids.length > 1 ? (kids[1] as HTMLElement).offsetLeft - first.offsetLeft : card;
-      const win = Math.min(outer.clientWidth, Math.max(HAND_MIN_WINDOW, outer.clientWidth - HAND_SIDE * 2));
+      // 2VS2: พัดกินครึ่งจอ เว้นขอบแค่นิดเดียว
+      const win = split ? outer.clientWidth - 40 : Math.min(outer.clientWidth, Math.max(HAND_MIN_WINDOW, outer.clientWidth - HAND_SIDE * 2));
       const row = last.offsetLeft + last.offsetWidth - first.offsetLeft;
       maxRef.current = row > win + 1 ? row - win : 0;
       setGeo({ win, row, card, step });
@@ -1904,7 +2089,7 @@ export function HandFan({ player, top }: { player: PlayerId; top?: boolean }) {
     window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items.length]);
+  }, [items.length, split]);
 
   // เลือกการ์ดที่อยู่ชิดขอบ: เลื่อนให้เห็นทั้งใบ (เมนูเล่นการ์ดจะได้ไม่ถูกตัด)
   const showCard = (i: number) => {
@@ -2028,11 +2213,13 @@ export function HandFan({ player, top }: { player: PlayerId; top?: boolean }) {
   return (
     <div
       ref={outerRef}
-      data-player-target={player}
-      data-setup={top ? 'hand-top' : 'hand-bottom'}
-      data-hand-fan
-      className={`pointer-events-none fixed left-0 right-[var(--sidebar)] z-20 flex h-0 justify-center ${top ? 'top-0 items-start' : 'bottom-0 items-end'}`}
+      data-player-target={split ? undefined : player}
+      data-setup={partner ? undefined : top ? 'hand-top' : 'hand-bottom'}
+      data-hand-fan={partner ? undefined : true}
+      className={`pointer-events-none fixed z-20 flex h-0 justify-center ${!split ? 'left-0 right-[var(--sidebar)]' : SPLIT_FAN[top ? 'top' : 'bottom'][partner ? 'partner' : 'main']} ${top ? 'top-0 items-start' : 'bottom-0 items-end'}`}
     >
+      {/* 2VS2: เป้าของการโจมตีตรง = กลางจอระหว่างทั้งสองคนของทีม (ไลฟ์ลดทั้งคู่) ไม่ใช่พัดมือของคนแรก */}
+      {split && !partner && <div data-player-target={player} aria-hidden="true" className={`pointer-events-none fixed left-1/2 h-28 w-24 -translate-x-1/2 ${top ? 'top-0' : 'bottom-0'}`} />}
       {/* หน้าต่างของมือ: มือยาวเกิน = ตัดส่วนที่เลยซ้าย/ขวา (ด้านบน/ล่างยังยื่นได้ ให้ใบที่ยกขึ้นและเมนูการ์ดแสดงครบ) */}
       <div
         className={`relative flex shrink-0 ${top ? 'items-start' : 'items-end'}`}

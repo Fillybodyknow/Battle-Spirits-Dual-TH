@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { sfx } from '../sfx';
 import { flashScale, shakeScale } from '../gfx';
-import { useGame, type Fx } from '../store';
+import { useGame, type Fx, type IntroSide } from '../store';
 import { playerId } from '../account/account';
 import { IMG } from '../assets';
 import { coverOf, DiamondAvatar } from './SeatAvatar';
@@ -61,12 +61,22 @@ const COIN_SFX_HIT = 780;
  * ป้ายผู้เล่นมุมล่าง + หลังการ์ดลอย (ฝั่งซ้ายสีฟ้า / ฝั่งขวาสีแดง)
  * ไม่เผยเด็คก่อนดวล: ไม่แสดงการ์ด/ชื่อเด็ค/สีเด็ค · หลังการ์ดเตรียมไว้เปลี่ยนเป็น Sleeve ที่ผู้เล่นเลือกในอนาคต
  */
-function Plate({ side, name, avatar, uid, level }: { side: 'left' | 'right'; name: string; avatar?: string; uid?: string; level?: number }) {
+function Plate({ side, name, avatar, uid, level, mate }: { side: 'left' | 'right'; name: string; avatar?: string; uid?: string; level?: number; mate?: IntroSide['mate'] }) {
   const left = side === 'left';
   const accent = left ? '#38bdf8' : '#f43f5e';
+  /** 2VS2: สีของคนที่สองของทีม */
+  const mateAccent = left ? '#a78bfa' : '#fb923c';
   return (
     <div className={`absolute bottom-[9%] ${left ? 'left-[4%]' : 'right-[4%]'} flex w-[30%] flex-col ${left ? 'items-start' : 'items-end'}`} style={{ animation: `${left ? 'intro-in-left' : 'intro-in-right'} 0.55s cubic-bezier(.2,.9,.3,1) both` }}>
       <div className="relative mb-4 w-[min(15vw,220px)]" style={{ animation: 'home-float 3.2s ease-in-out infinite' }}>
+        {mate && (
+          <div
+            className={`absolute top-[-6%] aspect-[63/88] w-[88%] overflow-hidden rounded-[5%] opacity-90 ${left ? 'left-[62%] rotate-[6deg]' : 'right-[62%] rotate-[-6deg]'}`}
+            style={{ boxShadow: `0 18px 40px rgba(0,0,0,0.7), 0 0 0 2px ${mateAccent}99, 0 0 18px ${mateAccent}55` }}
+          >
+            <img src={IMG.cardBack} alt="" draggable={false} className="h-full w-full object-cover" />
+          </div>
+        )}
         <div className="absolute inset-[-35%] rounded-full blur-3xl" style={{ background: `radial-gradient(circle, ${accent}66, transparent 65%)` }} />
         <div className={`relative aspect-[63/88] w-full overflow-hidden rounded-[5%] shadow-[0_24px_50px_rgba(0,0,0,0.75)] ${left ? 'rotate-[-7deg]' : 'rotate-[7deg]'}`} style={{ boxShadow: `0 24px 50px rgba(0,0,0,0.75), 0 0 0 2px ${accent}99, 0 0 22px ${accent}66` }}>
           <img src={IMG.cardBack} alt="" draggable={false} className="h-full w-full object-cover" />
@@ -90,6 +100,16 @@ function Plate({ side, name, avatar, uid, level }: { side: 'left' | 'right'; nam
             )}
           </div>
         </div>
+        {/* 2VS2: คนที่สองของทีม */}
+        {mate && (
+          <div className={`flex items-center gap-2 py-1.5 ${left ? 'pl-6' : 'flex-row-reverse pr-6'}`}>
+            <DiamondAvatar cardNo={mate.avatar || coverOf()} accent={mateAccent} className="h-9 w-9" />
+            <div className={`flex items-center gap-2 ${left ? '' : 'flex-row-reverse'}`}>
+              {mate.level ? <LevelChip level={mate.level} className="text-xs" /> : null}
+              <div className="text-base font-black text-white/90 drop-shadow">{mate.name}</div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -280,8 +300,8 @@ export function MatchIntro({ fx, onDone }: { fx: Extract<Fx, { kind: 'intro' }>;
       {stage && (
         <>
           <Vortex fade={false} />
-          <Plate side="left" name={fx.left.name} avatar={fx.left.avatar} uid={fx.left.uid} level={fx.left.level} />
-          <Plate side="right" name={fx.right.name} avatar={fx.right.avatar} uid={fx.right.uid} level={fx.right.level} />
+          <Plate side="left" name={fx.left.name} avatar={fx.left.avatar} uid={fx.left.uid} level={fx.left.level} mate={fx.left.mate} />
+          <Plate side="right" name={fx.right.name} avatar={fx.right.avatar} uid={fx.right.uid} level={fx.right.level} mate={fx.right.mate} />
           {phase === 'vs' && (
             <div className="absolute top-1/2 left-1/2 text-[9rem] font-black italic text-white" style={{ textShadow: '0 0 30px rgba(196,181,253,0.95), 0 0 4px #fff', animation: 'intro-vs 1.6s cubic-bezier(.2,1.4,.4,1) both' }}>
               VS

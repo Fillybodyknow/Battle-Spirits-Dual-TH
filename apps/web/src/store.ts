@@ -16,6 +16,7 @@ import {
   activeSeat,
   actorOf,
   actorSeats,
+  burstSetDone,
   ownField,
   seatOfCard,
   handMagic,
@@ -1807,6 +1808,18 @@ export const controls = (st: { online: OnlineState | null }, player: PlayerId | 
  * 2VS2 (เล่นในเครื่องกับบอท): ตอนนี้เป็นตาของเพื่อนร่วมทีมของผู้เล่น (ที่นั่ง 1) ไม่ใช่ของผู้เล่น
  * เช่น ผู้เล่นกดพร้อมแล้วรอเพื่อน / ตัวเลือกของเอฟเฟกต์ของเพื่อน / แฟลชที่เพื่อนยังไม่ได้กดผ่าน
  */
+/** ชื่อคนที่สองของทีม (2VS2): คนที่อยู่ใน players[p].partner ตอนนี้ */
+export function partnerName(p: PlayerId, mine: boolean): string {
+  const { teamNames, online, state } = useGame.getState();
+  // ออนไลน์: ชื่อของที่นั่งที่อยู่ใน partner (อีกคนของทีม)
+  if (online) {
+    const other = (state.players[p].active ?? 0) ? 0 : 1;
+    const n = online.names[seatKey(p, other)];
+    if (n) return n;
+  }
+  return teamNames?.[p] ?? (mine ? 'เพื่อนร่วมทีม' : 'คู่แข่งคนที่ 2');
+}
+
 export function partnerTurn(s: GameState, player: PlayerId | null | undefined): boolean {
   if (s.mode !== '2v2' || !player || actorOf(s) !== player) return false;
   const st = useGame.getState();
@@ -2277,7 +2290,7 @@ export function sortHand(s: GameState, hand: string[], mode: HandSort, manual?: 
 export function canDropBurst(s: GameState, cardId: string): boolean {
   const card = s.cards[cardId];
   if (!card || !s.players[card.owner].hand.includes(cardId) || !mine(card.owner)) return false;
-  return inMain(s) && card.owner === s.turnPlayer && db.get(card.cardNo).burst && !s.burstSetThisTurn;
+  return inMain(s) && card.owner === s.turnPlayer && db.get(card.cardNo).burst && !burstSetDone(s, card.owner);
 }
 
 // ---------------------------------------------------------------- จัด Core (ร่าง)
@@ -2392,6 +2405,8 @@ interface Store {
   pinned: string | null;
   /** ดู Trash ของผู้เล่น */
   trashView: PlayerId | null;
+  /** 2VS2: Trash ที่ดูอยู่เป็นของคนที่สองของทีม */
+  trashViewPartner: boolean;
   /** พัดการ์ดใน Trash ที่อัญเชิญได้ตอนนี้ (แตะช่อง Trash ตอนมีใบที่อัญเชิญได้) */
   trashFan: PlayerId | null;
   /** พัดการ์ดนอกมือ (แตะโซนนอกมือบนสนาม) */
@@ -2425,6 +2440,9 @@ interface Store {
   botAvatar: string | null;
   /** 2VS2: ชื่อคนที่สองของแต่ละทีม (null = ใช้ชื่อทั่วไป) */
   teamNames: Record<PlayerId, string> | null;
+  /** 2VS2: ซ่อนพัดมือของเพื่อนร่วมทีม (มือเรากางเต็มจอ) · จำไว้ในเครื่อง */
+  partnerHandHidden: boolean;
+  setPartnerHandHidden(v: boolean): void;
   /** ก่อนเริ่มเกม: คนชนะการเสี่ยง และผู้เริ่มก่อนที่เลือก (null = ยังเลือกอยู่) */
   pregame: { winner: PlayerId; chosen: PlayerId | null } | null;
   /** คนชนะการเสี่ยงเลือกเริ่มก่อน (true) หรือเริ่มหลัง (false) */
@@ -2707,14 +2725,18 @@ async function startRound(code: string, setup: RoomSetup, opponentHere: boolean)
   // Team Battle: ฉากเปิดเกมแสดงชื่อทั้งทีม (คนที่นั่งเครื่องนี้ก่อน)
   const mine = seatKey(me, st.online.seat);
   const mate = seatKey(me, st.online.seat ? 0 : 1);
-  const teamName = (k: TableSeat, other: TableSeat, fallback: string) => (setup.partnerDecks ? `${names[k] ?? fallback} & ${names[other] ?? 'เพื่อนร่วมทีม'}` : (names[k] ?? fallback));
+  /** คนที่สองของทีม (Team Battle) สำหรับฉากเปิดเกม */
+  const mateOf = (k: TableSeat, fallback: string): Pick<IntroSide, 'mate'> =>
+    setup.partnerDecks
+      ? { mate: { name: names[k] ?? fallback, ...(avatars[k] ? { avatar: avatars[k] } : {}), ...(st.online!.levels?.[k] ? { level: st.online!.levels[k] } : {}), ...(lastSeats[k] ? { uid: lastSeats[k] } : {}) } }
+      : {};
   // ฉากเปิดเกม: จอของคนชนะการเสี่ยงออกหัว จอของอีกฝั่งออกก้อย
   const intro: Fx[] =
     st.animations && existing === 0
       ? matchIntro(
           winner === me,
-          { name: teamName(mine, mate, st.playerName), deck: decks[me], avatar: avatars[mine] ?? storedAvatar(), uid: lastSeats[mine] ?? st.online.uid, level: st.online.levels?.[mine] ?? myLevel() },
-          { name: teamName(opp, seatKey(opp, 1), 'คู่แข่ง'), deck: decks[opp], avatar: avatars[opp], uid: lastSeats[opp], ...(st.online.levels?.[opp] ? { level: st.online.levels[opp] } : {}) },
+          { name: names[mine] ?? st.playerName, deck: decks[me], avatar: avatars[mine] ?? storedAvatar(), uid: lastSeats[mine] ?? st.online.uid, level: st.online.levels?.[mine] ?? myLevel(), ...mateOf(mate, 'เพื่อนร่วมทีม') },
+          { name: names[opp] ?? 'คู่แข่ง', deck: decks[opp], avatar: avatars[opp], uid: lastSeats[opp], ...(st.online.levels?.[opp] ? { level: st.online.levels[opp] } : {}), ...mateOf(seatKey(opp, 1), 'คู่แข่งคนที่ 2') },
         )
       : [];
   const nav = st.screen === 'lobby' ? {} : { screen: 'game' as const };
@@ -3197,6 +3219,8 @@ export interface IntroSide {
   level?: number;
   /** uid ของที่นั่ง (แสดง Player ID) · เล่นเครื่องเดียว = ไม่มี */
   uid?: string;
+  /** 2VS2: คนที่สองของทีมฝั่งนี้ */
+  mate?: { name: string; avatar?: string; level?: number; uid?: string };
 }
 
 /** ฉากเปิดเกม (โยนเหรียญ + เลือกเริ่มก่อน/หลัง) ป้ายเทิร์นที่ 1 ขึ้นเมื่อฉากจบ (introDone) */
@@ -3284,6 +3308,21 @@ export const useGame = create<Store>((set, get) => {
     botName: null,
     botAvatar: null,
     teamNames: null,
+    partnerHandHidden: (() => {
+      try {
+        return localStorage.getItem('bs-partner-hand') === 'hide';
+      } catch {
+        return false;
+      }
+    })(),
+    setPartnerHandHidden: (v) => {
+      try {
+        localStorage.setItem('bs-partner-hand', v ? 'hide' : 'show');
+      } catch {
+        /* ไม่มี storage ก็จำแค่ในหน่วยความจำ */
+      }
+      set({ partnerHandHidden: v });
+    },
     deckView: 'sd01',
     deckReturn: 'home',
     deckPick: null,
@@ -3450,6 +3489,7 @@ export const useGame = create<Store>((set, get) => {
     hovered: null,
     pinned: null,
     trashView: null,
+    trashViewPartner: false,
     trashFan: null,
     shownFan: null,
     truth: null,
@@ -3515,7 +3555,9 @@ export const useGame = create<Store>((set, get) => {
           : p === 'p1'
             ? { name: 'ผู้เล่น 1', deck: d.p1, avatar: storedAvatar() }
             : { name: 'ผู้เล่น 2', deck: d.p2 };
-      const fx: Fx[] = get().animations ? matchIntro(true, side('p1'), side('p2')) : [];
+      const teamNames = get().teamNames;
+      const withMate = (p: PlayerId): IntroSide => ({ ...side(p), ...(localPartners && teamNames ? { mate: { name: teamNames[p] } } : {}) });
+      const fx: Fx[] = get().animations ? matchIntro(true, withMate('p1'), withMate('p2')) : [];
       // คนชนะการเสี่ยง = ผู้เริ่มก่อนชั่วคราวที่ seed สุ่มได้ (ไม่มีแอนิเมชัน = ใช้ตามนั้นเลย)
       set({ pregame: { winner: state.turnPlayer, chosen: get().animations ? null : state.turnPlayer } });
       set({ ...resetUi, state, truth: null, seed, history: [], error: null, pinned: null, hovered: null, fx, viewTurn: state.turnPlayer });

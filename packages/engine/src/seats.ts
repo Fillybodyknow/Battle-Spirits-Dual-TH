@@ -151,6 +151,12 @@ function setCoreSeat(s: GameState, coreId: string, seat: Seat): void {
   else delete core.seat;
 }
 
+/** เซ็ทเบิร์สไปแล้วในเทิร์นนี้ (2VS2: ของที่นั่งที่ทำงานอยู่ · ต่างคนต่างเซ็ทได้) */
+export function burstSetDone(s: GameState, p: PlayerId): boolean {
+  if (s.mode !== '2v2') return s.burstSetThisTurn;
+  return (s.burstSetSeats ?? []).includes(activeSeat(s, p));
+}
+
 /** การ์ดในมือของทุกคนในฝั่งนี้ (trigger ที่ทำงานจากในมือ) */
 export const teamHand = (s: GameState, p: PlayerId): string[] => allZones(s, p).flatMap((z) => z.hand);
 /** การ์ดในแทรชของทุกคนในฝั่งนี้ (trigger ที่ทำงานจากในแทรช) */

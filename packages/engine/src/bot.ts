@@ -25,6 +25,7 @@ import {
   symbolCount,
 } from './rules';
 import type { Action, ChoicePick, GameState, PendingChoice, PlayerId, Seat } from './types';
+import { burstSetDone } from './seats';
 import { allZones, itemSeat, ownField, seatOfCard, seatsOf, useSeat } from './seats';
 
 const opp = (p: PlayerId): PlayerId => (p === 'p1' ? 'p2' : 'p1');
@@ -235,11 +236,23 @@ function handCost(s: GameState, db: CardDatabase, p: PlayerId, id: string, def: 
 // ---------------------------------------------------------------- ท่าที่ทำได้
 
 /** ท่าที่ลองได้ของ me ตอนนี้ (บางท่าอาจผิดกติกา: กรองด้วย applyAction ตอนลอง) */
-export function legalActions(s: GameState, db: CardDatabase, me: PlayerId): Action[] {
+/**
+ * 2VS2: ที่นั่งนี้เล่นได้อิสระตอนนี้ไหม (เมนสเต็ป / แอทแท็คสเต็ปที่ไม่มีการต่อสู้ค้าง ของทีมนี้ และยังไม่กดพร้อม)
+ * สองคนในทีมเล่นพร้อมกันได้ (กติกา 15 ข้อ 3) ไม่ต้องรอให้อีกคนกดพร้อมก่อน
+ */
+export function seatFree(s: GameState, me: PlayerId, seat: Seat): boolean {
+  if (s.mode !== '2v2' || s.winner || s.choice || s.awaitingDraw || s.turnPlayer !== me) return false;
+  if (!(s.phase === 'main' || (s.phase === 'attack' && !s.battle))) return false;
+  return !(s.seatsReady ?? []).includes(seat);
+}
+
+/** onlySeat = สร้างท่าเฉพาะที่นั่งนี้ (บอทคู่หูในหน้าเว็บ: เล่นพร้อมกับผู้เล่นได้ในเมน/แอทแท็คสเต็ป) */
+export function legalActions(s: GameState, db: CardDatabase, me: PlayerId, onlySeat?: Seat): Action[] {
   if (s.mode !== '2v2' || actorOf(s) !== me) return legalActionsSeat(s, db, me);
   // 2VS2: สร้างท่าในมุมของที่นั่งที่ต้องทำ (สลับโซนในสำเนา) แล้วติดที่นั่งให้ action
   const out: Action[] = [];
-  for (const seat of actorSeats(s)) {
+  const seats = onlySeat === undefined ? actorSeats(s) : actorSeats(s).includes(onlySeat) || seatFree(s, me, onlySeat) ? [onlySeat] : [];
+  for (const seat of seats) {
     let view = s;
     // state ที่รับมาอาจสลับที่นั่งไว้แล้ว (หน้าเว็บ): สลับให้ตรงที่นั่งที่จะสร้างท่าเสมอ
     if ((s.players[me].active ?? 0) !== seat) {
@@ -323,7 +336,7 @@ function mainPlays(s: GameState, db: CardDatabase, me: PlayerId): Action[] {
       const timings = new Set(handMagic(s, db, id).map((m) => m.timing));
       for (const t of timings) out.push({ type: 'useMagic', player: me, cardId: id, payment: pay, timing: t });
     }
-    if (def.burst && !s.burstSetThisTurn && !p.burst) out.push({ type: 'setBurst', player: me, cardId: id });
+    if (def.burst && !burstSetDone(s, me) && !p.burst) out.push({ type: 'setBurst', player: me, cardId: id });
   }
   out.push(...coreMoves(s, db, me));
   out.push(...activations(s, db, me));
@@ -631,7 +644,7 @@ export function botDecide(real: GameState, db: CardDatabase, me: PlayerId, opts:
   const debug = opts.debug;
   if (actorOf(real) !== me) return null;
   const s = botView(real, me);
-  const acts = legalActions(s, db, me).filter((a) => opts.seat === undefined || (a.seat ?? 0) === opts.seat);
+  const acts = legalActions(s, db, me, opts.seat).filter((a) => opts.seat === undefined || (a.seat ?? 0) === opts.seat);
   if (acts.length === 0) return null;
   const base = evaluate(s, db, me);
   let best: BotDecision | null = null;

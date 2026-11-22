@@ -401,6 +401,8 @@ export interface GameState {
   /** BS09 สุสานของจักรพรรดิมาร: การโจมตีที่รอผู้เล่นเลือกคอร์ที่จะจ่ายก่อน */
   pendingAttack?: { attackerId: string; fa?: { attackerId: string; holderId: string } };
   burstSetThisTurn: boolean;
+  /** 2VS2: ที่นั่งของทีมเจ้าของเทิร์นที่เซ็ทเบิร์สแล้วในเทิร์นนี้ (ต่างคนต่างเซ็ทได้คนละครั้ง: กติกา 15) */
+  burstSetSeats?: Seat[];
   /** "ในเทิร์นนี้ ... โจมตีไม่ได้": การ์ดของ player ประเภท types โจมตีไม่ได้ในเทิร์น turn */
   attackBans?: { player: PlayerId; turn: number; types: string[]; /** การ์ดต้นเหตุ: ตัวที่ไม่รับผลเอฟเฟกต์ของการ์ดนี้ (Shield / ก็อด-เซคส์) ยังโจมตีได้ */ sourceId?: string }[];
   /** "ในเทิร์นนี้ สปิริตเราทั้งหมด BP+": สปิริตของ player ที่ตรง filter BP+amount ในเทิร์น turn */

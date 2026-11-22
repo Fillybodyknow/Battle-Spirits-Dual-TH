@@ -231,6 +231,13 @@ describe('2VS2', () => {
     s = act(s, { type: 'summon', player: 'p1', seat: 1, cardId: brave, payment: pay, placement: [], braveOnto: host.id });
     expect(s.cards[host.id]!.braves).toEqual([brave]);
     expect(s.cards[brave]!.seat).toBe(1);
+    // แยกร่าง: เจ้าของเบรฟ (ที่นั่ง 1) ดึงกลับได้ · เจ้าของสปิริต (ที่นั่ง 0) สั่งแทนไม่ได้
+    const sep = z(s, 'p1', 1).reserve.filter((c) => !s.cores[c]!.isSoul).slice(0, 1);
+    expect(fails(s, { type: 'brave', player: 'p1', braveId: brave, hostId: null, placement: sep })).toBe('NOT_YOUR_CARD');
+    const back = act(s, { type: 'brave', player: 'p1', seat: 1, braveId: brave, hostId: null, placement: sep });
+    expect(back.players.p1.field).toContain(brave);
+    expect(back.cards[host.id]!.braves).toEqual([]);
+    expect(back.cards[brave]!.cores).toEqual(sep);
     // เจ้าของสปิริต (ที่นั่ง 0) ถอดคอร์สุดท้าย = สปิริตสูญสลาย → เจ้าของเบรฟ (ที่นั่ง 1) เลือก
     s = act(s, { type: 'moveCores', player: 'p1', moves: [{ coreId: hostCore, to: { area: 'reserve' } }] });
     expect(z(s, 'p1', 0).trashCards).toContain(host.id);
@@ -243,6 +250,20 @@ describe('2VS2', () => {
     expect(s.players.p1.field).toContain(brave);
     expect(s.cards[brave]!.cores).toEqual(place);
     expect(s.cores[place[0]!]!.seat).toBe(1);
+  });
+
+  it('เบิร์ส: ต่างคนต่างเซ็ทได้คนละ 1 ครั้งต่อเทิร์น', () => {
+    const WALL = no('เบิร์สวอลล์');
+    let s = setup();
+    const b0 = z(s, 'p1', 0).hand[0]!;
+    const b1 = z(s, 'p1', 1).hand[0]!;
+    const b0b = z(s, 'p1', 0).hand[1]!;
+    for (const id of [b0, b1, b0b]) s.cards[id]!.cardNo = WALL;
+    s = act(s, { type: 'setBurst', player: 'p1', cardId: b0 });
+    s = act(s, { type: 'setBurst', player: 'p1', seat: 1, cardId: b1 });
+    expect(z(s, 'p1', 0).burst).toBe(b0);
+    expect(z(s, 'p1', 1).burst).toBe(b1);
+    expect(fails(s, { type: 'setBurst', player: 'p1', cardId: b0b })).toBe('BURST_ALREADY_SET');
   });
 
   it('ทีมแพ้เมื่อไลฟ์เป็น 0 ทั้งคู่', () => {

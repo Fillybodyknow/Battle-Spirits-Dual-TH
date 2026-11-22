@@ -1192,16 +1192,18 @@ export function TrashSummonFan() {
 export function TrashDialog() {
   const state = useGame((s) => s.state);
   const player = useGame((s) => s.trashView);
+  /** 2VS2: ดูแทรชของคนที่สองของทีม (ช่องแทรชของเพื่อน / คู่แข่งคนที่ 2) */
+  const partner = useGame((s) => s.trashViewPartner);
   const openTrash = useGame((s) => s.openTrash);
   const openPlay = useGame((s) => s.openPlay);
-  const mine = useGame((s) => !!player && controls(s, player));
+  const mine = useGame((s) => !!player && controls(s, player) && !s.trashViewPartner);
   const busy = useGame((s) => !!s.state.choice || isFxBlocking(s.fx));
   if (!player) return null;
-  const cards = state.players[player].trashCards;
+  const cards = (partner ? (state.players[player].partner ?? state.players[player]) : state.players[player]).trashCards;
   // อัญเชิญจากแทรชได้ (ร็อคแฮนด์ / มุเมอิ)
   const summonable = (id: string) => mine && !busy && !state.winner && !!trashSummonRule(state, db, player, id);
   return (
-    <Modal title={`Trash ของ${playerLabel(player)}`} subtitle={`${cards.length} ใบ · ชี้การ์ดเพื่อดูรายละเอียด`} onClose={() => openTrash(null)} wide>
+    <Modal title={`Trash ของ${partner ? 'คนที่สองของทีม' : playerLabel(player)}`} subtitle={`${cards.length} ใบ · ชี้การ์ดเพื่อดูรายละเอียด`} onClose={() => openTrash(null)} wide>
       {cards.length === 0 ? (
         <p className="text-sm text-slate-500">ยังไม่มีการ์ดใน Trash</p>
       ) : (

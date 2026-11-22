@@ -8,6 +8,7 @@ import { useAccount } from '../account/account';
 import { deckCover } from '../screens/shared';
 import { useGame, type DeckId } from '../store';
 import { AvatarImg } from './AccountDialog';
+import { seatKey } from '../online/transport';
 
 /** รูปเริ่มต้น = ปก Starter Deck 02 (เหมือนป้ายโปรไฟล์หน้าแรก) · ส่งรหัสเด็คมา = หน้าปกเด็คนั้น */
 export function coverOf(deck?: string | null): string {
@@ -24,11 +25,13 @@ export function useSeatAvatar(p: PlayerId): string {
   const mine = useAccount((s) => s.avatar);
   const botSeat = useGame((s) => s.botSeat);
   const botAvatar = useGame((s) => s.botAvatar);
+  // Team Battle: ที่นั่งที่แสดงอยู่ของฝั่งนี้ (เครื่องของคนที่สองของทีม = ตัวเอง)
+  const shown = useGame((s) => s.state.players[p].active ?? 0);
   if (!online && botSeat) return p === botSeat ? botAvatar || coverOf() : mine || coverOf();
   if (online) {
-    const a = online.avatars[p];
+    const a = online.avatars[seatKey(p, shown)];
     if (a) return a;
-    if (!online.spectator && p === online.me && mine) return mine;
+    if (!online.spectator && p === online.me && shown === (online.seat ?? 0) && mine) return mine;
     return coverOf();
   }
   return p === 'p1' && mine ? mine : coverOf();

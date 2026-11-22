@@ -3,6 +3,7 @@ import { assertUsableCore, checkDepletion, destroy, drawCard, emit, emitStatic, 
 import { destroyCard, enqueue, fireTriggers, refreshByEffect, newBatch, queueExhaustTriggers, queueLifeLostTriggers, queueMagicUsedTriggers, queueSummonTriggers, queueTriggers, resolveChoice, runQueue } from './effects';
 import { nextRandom, shuffle } from './rng';
 import { normalizeSeats } from './seats';
+import { burstSetDone } from './seats';
 import { activeSeat, allZones, asSeat, restoreSeats, seatOfCard, seatsOf, teamHand, teamTrash, useSeat } from './seats';
 import {
   attackTaxFor,
@@ -444,6 +445,7 @@ function finishTurn(ctx: Ctx): void {
   s.turn += 1;
   s.turnPlayer = opponentOf(s.turnPlayer);
   s.burstSetThisTurn = false;
+  delete s.burstSetSeats;
   beginTurn(ctx);
 }
 
@@ -755,7 +757,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
 
   setBurst(ctx, { player, cardId }) {
     requireMain(ctx, player);
-    if (ctx.s.burstSetThisTurn) fail('BURST_ALREADY_SET', 'เซ็ท Burst ได้เทิร์นละครั้ง');
+    if (burstSetDone(ctx.s, player)) fail('BURST_ALREADY_SET', 'เซ็ท Burst ได้เทิร์นละครั้ง');
     const def = cardInHand(ctx, player, cardId);
     if (!def.burst) fail('NO_BURST_EFFECT', 'การ์ดที่ไม่มีเอฟเฟกต์ Burst เซ็ทไม่ได้');
     if ((ctx.s.shownCards ?? []).includes(cardId)) fail('SHOWN_CARD', 'การ์ดที่วางแสดงนอกมือเซ็ทเป็น Burst ไม่ได้ (กติกา 06 Q&A 5)');
@@ -766,6 +768,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     removeFrom(p.hand, cardId);
     p.burst = cardId;
     ctx.s.burstSetThisTurn = true;
+    if (ctx.s.mode === '2v2') ctx.s.burstSetSeats = [...(ctx.s.burstSetSeats ?? []), activeSeat(ctx.s, player)];
     emit(ctx, { type: 'burstSet', player, replacedCardId: replaced });
   },
 

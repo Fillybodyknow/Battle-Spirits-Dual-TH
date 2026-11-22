@@ -2,12 +2,11 @@ import { useState } from 'react';
 import type { TextEffect } from '@bs/cards';
 import { opponentOf, symbolCount, type PlayerId } from '@bs/engine';
 import { playerLabel } from '../format';
-import { actingPlayer, chainEntries, db, isFxBlocking, useGame, viewPlayer } from '../store';
+import { actingPlayer, chainEntries, db, isFxBlocking, partnerName, useGame, viewPlayer } from '../store';
 import { CardFace } from './CardFace';
 import { CardInspector } from './CardInspector';
 import { GameLog } from './Controls';
 import { seatKey } from '../online/transport';
-import { PileAlloc } from './Board';
 import { Icon } from './Icon';
 import { DiamondAvatar, useSeatAvatar } from './SeatAvatar';
 import { LevelChip, useSeatLevel } from './LevelBadge';
@@ -71,80 +70,54 @@ export function PlayerPlate({ player, corner }: { player: PlayerId; corner: 'bot
   );
 }
 
-/** ชื่อคนที่สองของทีม (2VS2) */
-export function partnerName(p: PlayerId, mine: boolean): string {
-  const { teamNames, online, state } = useGame.getState();
-  // ออนไลน์: ชื่อของที่นั่งที่อยู่ใน partner (อีกคนของทีม)
-  if (online) {
-    const other = (state.players[p].active ?? 0) ? 0 : 1;
-    const n = online.names[seatKey(p, other)];
-    if (n) return n;
-  }
-  return teamNames?.[p] ?? (mine ? 'เพื่อนร่วมทีม' : 'คู่แข่งคนที่ 2');
-}
-
 /**
- * 2VS2 (กติกา 15): ป้ายคนที่สองของทีม ต่อจากป้ายผู้เล่นหลัก · ไลฟ์ มือ รีเสิร์ฟ เด็ค แทรช เบิร์ส ของคนนั้น
- * เพื่อนร่วมทีม = กดดูมือได้ (เห็นมือกันในทีม) · คลิกการ์ด = แผงรายละเอียด
+ * 2VS2 (กติกา 15): ป้ายโปรไฟล์ย่อของคนที่สองของทีม (รูป ชื่อ LIFE มือ พร้อม) วางมุมที่ยังว่าง ไม่รกจอ
+ * เพื่อนร่วมทีม = มุมขวาล่าง (เหนือปุ่มมุมจอ) + ปุ่มซ่อน/แสดงมือเพื่อน · คู่แข่งคนที่ 2 = มุมซ้ายบน (ข้างปุ่มเมนู)
  */
-export function TeamPlate({ player, corner }: { player: PlayerId; corner: 'bottom-left' | 'top-right' }) {
+export function TeamMiniPlate({ player, corner }: { player: PlayerId; corner: 'bottom-right' | 'top-left' }) {
   const z = useGame((s) => s.state.players[player].partner);
-  const ready = useGame((s) => (s.state.turnPlayer === player ? (s.state.seatsReady ?? []).includes((s.state.players[player].active ?? 0) ? 0 : 1) : false));
+  const otherSeat = useGame((s) => ((s.state.players[player].active ?? 0) ? 0 : 1));
+  const ready = useGame((s) => s.state.turnPlayer === player && (s.state.seatsReady ?? []).includes(otherSeat));
+  const acting = useGame((s) => !!s.state.players[player].partner && actingPlayer(s.state) === player);
+  const hiddenHand = useGame((s) => s.partnerHandHidden);
+  const setHidden = useGame((s) => s.setPartnerHandHidden);
+  const online = useGame((s) => s.online);
+  useGame((s) => s.teamNames);
   const mine = player === viewPlayer(useGame.getState());
-  const pin = useGame((s) => s.pin);
-  const [open, setOpen] = useState(false);
   if (!z) return null;
-  const bottom = corner === 'bottom-left';
-  const accent = bottom ? '#7dd3fc' : '#fda4af';
-  const stat = (label: string, v: string | number) => (
-    <span className="flex items-baseline gap-1">
-      <span className="text-[10px] text-slate-400">{label}</span>
-      <span className="text-sm font-black text-white tabular-nums">{v}</span>
-    </span>
-  );
-  // แถบบนจอที่ว่าง: เพื่อนของเรา = ข้างปุ่มมุมซ้ายบน · คนที่สองของคู่แข่ง = ข้างป้ายคู่แข่ง (ไม่ทับสนาม)
+  const bottom = corner === 'bottom-right';
+  const accent = mine ? '#a78bfa' : '#fb923c';
+  const avatar = online?.avatars[seatKey(player, otherSeat)] ?? (mine ? undefined : undefined);
   return (
-    <div data-team-plate={player} className={`fixed z-[42] flex flex-col gap-1 ${bottom ? 'top-3 left-[112px] items-start' : 'top-3 right-[300px] items-end'}`}>
-      <div
-        className="relative flex flex-col gap-0.5 rounded-md bg-slate-950/90 px-2.5 py-1"
-        style={{ borderLeft: `3px solid ${accent}` }}
-        title={`เด็ค ${z.deck.length} · แทรช ${z.trashCards.length} ใบ`}
-      >
-        {/* ส่งคอร์จากรีเสิร์ฟ/แทรชของคนที่สอง (มุโดว / เฮล-สคัล: เลือกจากของคู่แข่งทั้งสองคนรวมกัน) */}
-        <PileAlloc pileId={`pile:reserve:${player}:1`} label="รีเสิร์ฟคนที่ 2" />
-        <PileAlloc pileId={`pile:trash:${player}:1`} label="แทรชคนที่ 2" />
-        <span className="flex items-center gap-1.5">
-          <span className="rounded-full border px-1.5 text-[10px] leading-4 font-black" style={{ color: accent, borderColor: accent }}>
-            {player === 'p1' ? '1' : '2'}-{(useGame.getState().state.players[player].active ?? 0) ? 1 : 2}
-          </span>
-          <span className="max-w-40 truncate text-xs font-bold text-white">{partnerName(player, mine)}</span>
-          {ready && <span className="rounded bg-emerald-400 px-1 text-[10px] font-black text-slate-900">พร้อม</span>}
-          {mine && z.hand.length > 0 && (
-            <button type="button" className="ml-auto rounded border border-sky-300/50 px-1.5 text-[10px] leading-4 font-bold text-sky-100 hover:bg-sky-500/20" onClick={() => setOpen(!open)}>
-              {open ? 'ซ่อนมือ' : 'ดูมือ'}
+    <div className={`fixed z-[42] flex items-center gap-2 ${bottom ? 'right-5 bottom-[78px] flex-row-reverse' : 'top-3 left-[170px]'}`}>
+      <div className="relative">
+        {avatar ? <DiamondAvatar cardNo={avatar} accent={accent} className="h-9 w-9" /> : <div className="h-9 w-9 rotate-45 border-2 bg-slate-900" style={{ borderColor: accent }} />}
+        <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 rounded-full border bg-slate-950 px-1 text-[9px] leading-3 font-black" style={{ color: accent, borderColor: accent }}>
+          {player === 'p1' ? '1' : '2'}-{otherSeat + 1}
+        </span>
+      </div>
+      <div className={`flex flex-col rounded-md bg-slate-950/85 px-2 py-0.5 ${bottom ? 'items-end' : ''}`} style={{ borderTop: `2px solid ${accent}` }}>
+        <span className={`flex items-center gap-1.5 ${bottom ? 'flex-row-reverse' : ''}`}>
+          <span className="max-w-36 truncate text-xs font-bold text-white">{partnerName(player, mine)}</span>
+          {ready && <span className="rounded bg-emerald-400 px-1 text-[9px] font-black text-slate-900">พร้อม</span>}
+          {acting && !ready && <span className="rounded bg-yellow-300 px-1 text-[9px] font-black text-slate-900">เทิร์น</span>}
+        </span>
+        <span className={`flex items-baseline gap-2 ${bottom ? 'flex-row-reverse' : ''}`}>
+          <span className="text-[10px] font-black tracking-widest text-slate-400">LIFE</span>
+          <span className="text-lg leading-tight font-black text-white tabular-nums">{z.life.length}</span>
+          <span className="text-[10px] text-slate-400">มือ {z.hand.length}</span>
+          {mine && (
+            <button
+              type="button"
+              className="rounded border border-violet-300/60 px-1.5 text-[10px] leading-4 font-bold text-violet-100 hover:bg-violet-500/30"
+              onClick={() => setHidden(!hiddenHand)}
+              title={hiddenHand ? 'แสดงมือของเพื่อนร่วมทีม (มือเราแบ่งครึ่งจอ)' : 'ซ่อนมือของเพื่อนร่วมทีม (มือเรากางเต็มจอ)'}
+            >
+              {hiddenHand ? 'แสดงมือเพื่อน' : 'ซ่อนมือเพื่อน'}
             </button>
           )}
         </span>
-        <span className="flex items-center gap-2.5">
-          {stat('LIFE', z.life.length)}
-          {stat('มือ', z.hand.length)}
-          {stat('รีเสิร์ฟ', z.reserve.length)}
-          <span className={`text-[10px] font-black ${z.burst ? 'text-amber-300' : 'text-slate-500'}`}>{z.burst ? 'เบิร์ส ✓' : 'เบิร์ส –'}</span>
-        </span>
       </div>
-      {mine && open && (
-        <div className="flex max-w-[640px] flex-wrap gap-1 rounded-md bg-slate-950/90 p-1.5 ring-1 ring-sky-300/30">
-          {z.hand.map((id) => {
-            const c = useGame.getState().state.cards[id];
-            if (!c) return null;
-            return (
-              <button key={id} type="button" className="h-[84px] w-[60px] transition hover:-translate-y-0.5" onClick={() => pin(id)} onMouseEnter={() => useGame.setState({ hovered: id })}>
-                <CardFace def={db.get(c.cardNo)} size="xs" />
-              </button>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }

@@ -3,7 +3,7 @@
  * ผู้เล่นอยู่ที่นั่ง p1 (ด้านล่างตลอด) · บอทอยู่ p2: ตัดสินใจด้วย botAction ของ engine (ไม่เห็นมือ/เด็ค/เบิร์สของผู้เล่น)
  * บอทรอแอนิเมชันจบก่อนเดินทุกครั้ง · กั้นไม่ให้ผู้เล่นกดแทนฝั่งบอท (ใช้ตัวกั้น action เดียวกับบทเรียน)
  */
-import { actorOf, actorSeats, botAction, type Action, type PlayerId, type Seat } from '@bs/engine';
+import { actorOf, actorSeats, botAction, seatFree, type Action, type PlayerId, type Seat } from '@bs/engine';
 import { db, isFxBlocking, setLocalPartners, setTutorialHooks, useGame, type Fx } from '../store';
 import { setSeatNames } from '../format';
 
@@ -70,7 +70,8 @@ function botTurn(): { player: PlayerId; seat?: Seat } | null {
   if (s.winner) return null;
   const actor = actorOf(s);
   if (actor === BOT) return { player: BOT };
-  if (s.mode === '2v2' && actor === 'p1' && actorSeats(s).includes(1)) return { player: 'p1', seat: 1 };
+  // บอทคู่หู: ตาของที่นั่งนี้ หรือเมน/แอทแท็คสเต็ปของทีมเราที่ยังไม่กดพร้อม (เล่นพร้อมกับผู้เล่นได้)
+  if (s.mode === '2v2' && actor === 'p1' && (actorSeats(s).includes(1) || seatFree(s, 'p1', 1))) return { player: 'p1', seat: 1 };
   return null;
 }
 
