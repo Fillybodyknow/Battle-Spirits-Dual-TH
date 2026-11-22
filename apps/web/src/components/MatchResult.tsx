@@ -4,11 +4,12 @@ import { sfx } from '../sfx';
 import { layoutRect, useGame, type Fx, type Rect } from '../store';
 import { deckInfo } from '../decks';
 import { BTN } from './Modal';
+import { restartVsBot, vsBotExit } from '../bot/vsBot';
 
 const REASON: Record<string, (win: string, lose: string) => string> = {
-  lifeZero: (_w, l) => `Life ของ${l}เป็น 0!`,
-  deckOut: (_w, l) => `เด็คของ${l}หมด!`,
-  concede: (_w, l) => `${l}ยอมแพ้`,
+  lifeZero: (_w, l) => `Life ของ ${l} เป็น 0!`,
+  deckOut: (_w, l) => `เด็คของ ${l} หมด!`,
+  concede: (_w, l) => `${l} ยอมแพ้`,
 };
 
 /** แผ่นสนามของผู้แพ้แตก: รอยร้าวลามจากจุดกลาง + เศษกระจกกระเด็น + แสงวาบ */
@@ -139,8 +140,23 @@ export function MatchResult({ fx, onClose }: { fx: Extract<Fx, { kind: 'result' 
   const [mat, setMat] = useState<Rect | null>(null);
 
   const loser = opponentOf(fx.winner);
-  const win = online ? fx.winner === online.me : true;
-  const label = (p: PlayerId) => (online ? (p === online.me ? (names?.[p] ?? myName) : (names?.[p] ?? 'คู่แข่ง')) : p === 'p1' ? 'ผู้เล่น 1' : 'ผู้เล่น 2');
+  const botSeat = useGame((s) => s.botSeat);
+  // ออนไลน์ = มุมของที่นั่งเรา · ดวลกับบอท = บอทชนะคือเราแพ้ · สองคนเครื่องเดียว = ฉลองผู้ชนะเสมอ
+  const win = online ? fx.winner === online.me : botSeat ? fx.winner !== botSeat : true;
+  const botName = useGame((s) => s.botName);
+  const label = (p: PlayerId) =>
+    online
+      ? p === online.me
+        ? (names?.[p] ?? myName)
+        : (names?.[p] ?? 'คู่แข่ง')
+      : botSeat
+        ? p === botSeat
+          ? (botName ?? 'บอท')
+          : myName
+        : p === 'p1'
+          ? 'ผู้เล่น 1'
+          : 'ผู้เล่น 2';
+  const exit = vsBotExit();
 
   const started = useRef(false);
   const seq = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -249,6 +265,7 @@ export function MatchResult({ fx, onClose }: { fx: Extract<Fx, { kind: 'result' 
                         onlineLeave();
                         setScreen('lobby');
                       }
+                      else if (botSeat) restartVsBot();
                       else startLocal(decks);
                     }}
                   >
@@ -261,13 +278,14 @@ export function MatchResult({ fx, onClose }: { fx: Extract<Fx, { kind: 'result' 
                   onClick={() => {
                     onClose();
                     if (online) onlineLeave();
+                    else if (exit) exit.run();
                     else {
                       useGame.setState({ localInProgress: false });
                       setScreen('home');
                     }
                   }}
                 >
-                  กลับหน้าหลัก
+                  {exit?.label ?? 'กลับหน้าหลัก'}
                 </button>
               </div>
             </div>

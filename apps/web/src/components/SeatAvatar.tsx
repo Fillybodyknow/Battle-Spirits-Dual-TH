@@ -22,6 +22,9 @@ export function coverOf(deck?: string | null): string {
 export function useSeatAvatar(p: PlayerId): string {
   const online = useGame((s) => s.online);
   const mine = useAccount((s) => s.avatar);
+  const botSeat = useGame((s) => s.botSeat);
+  const botAvatar = useGame((s) => s.botAvatar);
+  if (!online && botSeat) return p === botSeat ? botAvatar || coverOf() : mine || coverOf();
   if (online) {
     const a = online.avatars[p];
     if (a) return a;

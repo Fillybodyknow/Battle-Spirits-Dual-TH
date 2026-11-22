@@ -15,6 +15,10 @@ import { useShownLife } from './useHeld';
 function useSeatName(p: PlayerId): string {
   const online = useGame((s) => s.online);
   const myName = useGame((s) => s.playerName);
+  const botSeat = useGame((s) => s.botSeat);
+  const botName = useGame((s) => s.botName);
+  // ดวลกับบอท: เรา = ชื่อที่ตั้ง · บอท = ชื่อคู่แข่งของด่าน
+  if (!online && botSeat) return p === botSeat ? (botName ?? 'บอท') : myName;
   if (!online) return playerLabel(p);
   return online.names[p] ?? (p === online.me ? myName : 'คู่แข่ง');
 }

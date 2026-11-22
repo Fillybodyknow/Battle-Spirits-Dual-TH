@@ -4591,7 +4591,8 @@ function applyCardPick(ctx: Ctx, cur: QueuedEffect, choice: Extract<PendingChoic
     case 'destroyOpponentBrave': {
       // Brave ที่ร่วมร่างอยู่: ออกจากผู้ร่วมร่างลง Trash ของเจ้าของ (ผู้ร่วมร่างอยู่ต่อ)
       const owner = s.cards[pick]!.owner;
-      for (const id of s.players[owner].field) removeFrom(s.cards[id]!.braves, pick);
+      // เอาออกเฉพาะจากผู้ร่วมร่างที่มีเบรฟใบนี้ (removeFrom โยน error ถ้าไม่มี: เดิมวนทุกการ์ด = พังเมื่อคู่แข่งมีการ์ดบนสนามหลายใบ)
+      for (const id of s.players[owner].field) if (s.cards[id]!.braves.includes(pick)) removeFrom(s.cards[id]!.braves, pick);
       s.players[owner].trashCards.push(pick);
       emit(ctx, { type: 'destroyed', cardId: pick, bySource: cur.sourceId });
       // เบรฟที่ร่วมร่างอยู่ไม่ใช่สปิริต: ไม่เปิดเบิร์ส "หลังจากสปิริตของเราถูกทำลายโดยคู่แข่ง" (เจ้าของโปรเจกต์กำหนด)

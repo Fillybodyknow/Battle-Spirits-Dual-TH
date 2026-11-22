@@ -447,6 +447,19 @@ describe('Booster Set 12', () => {
     expect(s.players.p2.burst, seen.join('\n')).toBe(oppBurst);
   });
 
+  it('ทำลายเบรฟที่ร่วมร่างของคู่แข่ง: คู่แข่งมีการ์ดบนสนามหลายใบก็ไม่พัง (พบจากบอทเล่นกันเอง)', () => {
+    let s = setup();
+    put(s, 'p2', DARIU, 1); // การ์ดใบแรกที่ไม่มีเบรฟ
+    const host = put(s, 'p2', no('มังกรยุทธ์ดาบศักดิ์สิทธิ์ มิสึรุกิ-ดราก้อน'), 2);
+    const brave = `t12-brave-${++seq}`;
+    s.cards[brave] = { id: brave, cardNo: no('ดาบมังกรเกราะ โกวเท็น'), owner: 'p2', state: 'refresh', cores: [], turnBp: 0, usedThisTurn: [], braves: [] };
+    s.cards[host]!.braves.push(brave);
+    s = useMagic(s, 'ผ่าสังหารทำลายล้างแห่งเปลวเพลิง');
+    if (s.choice?.kind === 'card' && (s.choice as { candidates: string[] }).candidates.includes(brave)) s = choose(s, brave);
+    expect(s.cards[host]!.braves).toEqual([]);
+    expect(s.players.p2.trashCards).toContain(brave);
+  });
+
   it('โจมตีไม่ถูกป้องกันแล้วเสียไลฟ์: event lifeLost ติด attack', () => {
     let s = setup();
     const atk = put(s, 'p1', DARIU, 1);

@@ -50,7 +50,12 @@ export const PHASES: { id: Phase; label: string }[] = [
   { id: 'end', label: 'End' },
 ];
 
-export const playerLabel = (p: PlayerId) => (p === 'p1' ? 'ผู้เล่น 1' : 'ผู้เล่น 2');
+/** ชื่อที่นั่งแทน "ผู้เล่น 1/2" (ดวลกับบอท: ชื่อเรา / ชื่อคู่แข่ง · ตั้งใน bot/vsBot.ts) */
+let seatNames: Partial<Record<PlayerId, string>> | null = null;
+export function setSeatNames(names: Partial<Record<PlayerId, string>> | null) {
+  seatNames = names;
+}
+export const playerLabel = (p: PlayerId) => seatNames?.[p] ?? (p === 'p1' ? 'ผู้เล่น 1' : 'ผู้เล่น 2');
 
 const END_REASON = { lifeZero: 'Life เป็น 0', deckOut: 'เด็คหมด', concede: 'ยอมแพ้' } as const;
 

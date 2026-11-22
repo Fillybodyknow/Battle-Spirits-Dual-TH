@@ -206,11 +206,23 @@ export function MatchIntro({ fx, onDone }: { fx: Extract<Fx, { kind: 'intro' }>;
   const winner = pregame?.winner ?? 'p1';
   // ผู้ชม: บอกชื่อผู้เล่นจากห้อง (ไม่พูดกับ "คุณ")
   const spec = !!online?.spectator;
-  const seatName = (p: string) => (spec ? (online?.names[p as 'p1' | 'p2'] ?? (p === 'p1' ? 'ผู้เล่น 1' : 'ผู้เล่น 2')) : p === 'p1' ? 'ผู้เล่น 1' : 'ผู้เล่น 2');
+  // ดวลกับบอท: เรา = ชื่อที่ตั้ง · บอท = ชื่อคู่แข่งของด่าน
+  const { botSeat, botName, playerName } = useGame.getState();
+  const seatName = (p: string) =>
+    spec
+      ? (online?.names[p as 'p1' | 'p2'] ?? (p === 'p1' ? 'ผู้เล่น 1' : 'ผู้เล่น 2'))
+      : botSeat && !online
+        ? p === botSeat
+          ? (botName ?? 'บอท')
+          : playerName
+        : p === 'p1'
+          ? 'ผู้เล่น 1'
+          : 'ผู้เล่น 2';
   // ข้อความ: ออนไลน์พูดกับ "คุณ" / เครื่องเดียวบอกชื่อผู้เล่น
   const winText = online && !spec ? (fx.heads ? 'คุณชนะการเสี่ยง!' : 'คู่แข่งชนะการเสี่ยง') : `${seatName(winner)} ชนะการเสี่ยง!`;
   const firstText = chosen === null ? '' : online && !spec ? (chosen === online.me ? 'คุณเริ่มก่อน!' : 'คุณเริ่มทีหลัง') : `${seatName(chosen)} เริ่มก่อน!`;
-  const iChoose = !online || (!online.spectator && online.me === winner);
+  // ดวลกับบอท: บอทเลือกเอง (bot/vsBot.ts) ไม่แสดงปุ่มให้กดแทน
+  const iChoose = online ? !online.spectator && online.me === winner : !(botSeat && botSeat === winner);
 
   // ข้ามฉาก: ก่อนเลือก = ไปที่ช่วงเลือกเลย / เลือกแล้ว = จบฉาก
   const skip = () => {

@@ -214,6 +214,15 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
   · Kagemusha ที่ใช้แล้ว = เป้าทั้งหมดย้ายไปที่การ์ด Kagemusha (กติกา 14) · step ใหม่ที่เล็งหลายตัวด้วย count: เพิ่มใน `MULTI_STEPS`
 - **แคชผลคำนวณ (`freezeForCache` ใน rules.ts)**: store ประกาศทุก state ที่ถืออยู่ → `cardLevel` / `currentBp` / `cardColors` / `cardFamilies` / `extraSymbols` / `fieldSymbols` / `payableCost` / `effectsNegated` / `maxLevelAllySource` / `statCopySource` จำผลต่อ state
   (engine ระหว่างทำ action ไม่ใช้แคช · ข้ามแคชเมื่อตัวกันวนซ้ำทำงานอยู่) · หน้าเว็บ **ห้ามแก้ state ใน store ตรง ๆ** (clone ก่อนเสมอ) · ตัวกันวนซ้ำใหม่ใน rules.ts ต้องเพิ่มในเงื่อนไขของ `memo` · เทสต์ `memo.test.ts`
+- **บอท (`src/bot.ts`, ระดับกลาง · พื้นฐานโหมด Story)**: `botDecide` / `botAction` = หาท่า (`legalActions` รวมตัวเลือกระหว่างเอฟเฟกต์ทุก kind) → ลองบน `botView` (ซ่อนมือ/เบิร์สคู่แข่งและเด็คทั้งสองฝ่ายด้วยการ์ดว่าง `CLONE_CARD_NO` = ไม่โกง, ตัด log) →
+  `settle` (เล่นต่อด้วยนโยบายง่ายจนถึงจุดตัดสินใจอิสระ) → `evaluate` (ไลฟ์, สนาม, คอร์, มือ, เบิร์ส, ความเสี่ยงโดนตีตายเทิร์นหน้า) · จบสเต็ป = คะแนนกระดานตอนนี้ (ไม่จำลองข้ามเทิร์น)
+  · `evaluate` ให้คะแนนบรรทัดเอฟเฟกต์ที่เลเวลตอนนี้ใช้ได้ (`abilityValue`: เงื่อนไข soulOnSelf ต้องมีโซลคอร์จริง) · เมนสเต็ปมีท่าจัดคอร์ `coreMoves` (เพิ่มเลเวลจากรีเสิร์ฟ, วาง/สลับโซลคอร์) · จ่ายคอสต์ด้วย `payAny` (รีเสิร์ฟก่อน แล้วคอร์ส่วนเกินเหนือ Lv1 บนสนาม)
+  · เทสต์ `bot.test.ts` (ตัวช่วย `bot-helpers.ts`): บอทเล่นกันเองทุกคู่ Starter + เด็คจากการ์ดทุกชุด (จับเอฟเฟกต์ที่ทำให้ค้าง/พังได้: เพิ่มชุดใหม่แล้วรันด้วย) + ชนะการสุ่มท่า
+  · หน้าเว็บ: `bot/vsBot.ts` (`startVsBot(decks, { level, botName, onEnd, exit })`): บอทที่นั่ง p2 (`store.botSeat` / `botName`: มือคว่ำ, `mine()` = false, กั้น action ด้วย `setTutorialHooks`) เดินหลังแอนิเมชันจบ · บอทชนะการเสี่ยง = เลือกเอง (ห้ามรอฉากเปิดจบ: ฉากค้างรอการเลือก)
+  · `BotOptions.level` 1–6 (ดาวของด่าน): ต่ำ = คะแนนคลาดเคลื่อน + โอกาสพลาด (`BLUNDER`) แบบ deterministic · ★6 = ท่าที่ดีที่สุด `LOOKAHEAD_TOP` ท่าคิดต่ออีกหนึ่งท่าถ้ายังเป็นตาเรา (`bestOneStep`)
+- **โหมด SOLO (`screens/Solo.tsx`, screen `'solo'`)**: หน้าแรก (แนะนำ / เล่นล่าสุด / STORIES / ฝึกฝน = TUTORIAL + VS BOT) → รายการด่าน → ฉากเปิดการ์ด → แผนที่ด่าน
+  · ข้อมูลด่าน `solo/gates.ts` (โหนด scenario / practice / duel / goal / locked, `after` = ปลดล็อก + เส้นเชื่อม, `col`/`row` = ตำแหน่ง, `deck()` = เด็คของด่านเป็นรหัส `c:`, `avatar` รูปคู่แข่ง, `description` / `deckDescription` ข้อความในแผงด่าน / หน้าดูเด็คคู่แข่ง) ·
+  ความคืบหน้า `solo/progress.ts` (localStorage `bs-solo` ใน `SETTING_KEYS`) · ดวลจบ = `onEnd` บันทึกผ่าน, หน้าผลมีปุ่ม "กลับไปที่ด่าน" (`vsBotExit()` ใน MatchResult)
 - `config.manualDraw` (หน้าเว็บเปิดไว้): Draw Step หยุดรอ action `drawStep` · เทสต์ใช้ค่าเริ่มต้น (จั่วเอง)
 - เปลี่ยนลำดับ action ที่ engine คาดหวัง = ห้องออนไลน์ที่เล่นค้างอยู่จะเล่นต่อไม่ได้ (บอกเจ้าของโปรเจกต์ด้วย)
 - ความสามารถถาวร (ไม่ผ่านคิว) ไม่มี `effectResolving` → ตรงจุดที่มัน "ลงมือจริง" ให้เรียก `emitStatic(ctx, { cardId, source })` (event `staticApplied`)
@@ -256,7 +265,7 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
   กฎ Realtime Database อยู่ที่ `database.rules.json` (+ `firebase.json`) ไม่ได้ deploy อัตโนมัติ: แก้ path ใหม่ใน DB ต้องแก้ไฟล์นี้
   แล้วให้เจ้าของโปรเจกต์วางใน Firebase Console → Realtime Database → Rules (หรือ `npx firebase-tools deploy --only database`)
   ไม่งั้น path ใหม่ถูกปฏิเสธ (เช่น `lobby` ใช้ไม่ได้ = รายการห้องว่าง แต่เข้าด้วยรหัสยังได้)
-- **บทเรียน (`src/tutorial/`)**: เมนู TUTORIAL หน้าหลัก + ชวนเล่นครั้งเดียวสำหรับ ID ใหม่ (บัญชีสร้างตั้งแต่ `TUTORIAL_SINCE`, กดข้ามได้): ค้างฉากวาร์ปของ Login.tsx (`WarpOut hold`) แล้วขึ้นแผงชวน · ป้ายในหน้าหลักเป็นทางสำรอง · ใช้การ์ด SD01 · กล่องข้อความล้วน (เจ้าของโปรเจกต์กำหนด)
+- **บทเรียน (`src/tutorial/`)**: เมนู TUTORIAL หน้าหลัก + ชวนเล่นครั้งเดียวสำหรับ ID ใหม่ (บัญชีสร้างตั้งแต่ `TUTORIAL_SINCE`, กดข้ามได้): ค้างฉากวาร์ปของ Login.tsx (`WarpOut hold`) แล้วขึ้นแผง: ตั้งชื่อ (`WelcomeName`) → เลือกรูปโปรไฟล์ (`WelcomeAvatar`) → ชวนเล่นบทเรียน · ป้ายในหน้าหลักเป็นทางสำรอง · ใช้การ์ด SD01 · กล่องข้อความล้วน (เจ้าของโปรเจกต์กำหนด)
   - `lessons.ts` = ข้อมูลบทเรียน: `setup()` จัด state ด้วย engine (เด็คไม่สับ, `put` วางการ์ดลงสนาม) · ขั้น = `focus`/`allow` (selector ที่ส่องไฟ/กดได้), `expect` (action ที่รอ), `until` (รอ state), `draw` (โชว์หน้ากดจั่ว), `free` (เล่นอิสระ: action ฝั่งเราได้หมด กล่องข้อความย่อ) · `bot` = คู่แข่งตัดสินใจ (null = `smartBot`: จั่ว/อัญเชิญเทิร์นละ 1 ถ้า `botSummons`/โจมตี/ป้องกันเมื่อ BP สูงกว่า/ผ่าน Flash) · `passed` = ด่านที่ต้องชนะ (แพ้ = ลองใหม่)
   - `tutorial.ts` = ตัวรัน: `store.setTutorialHooks` กั้น action ใน `dispatch` (นอกขั้นตอน = ไม่ทำ) · `startScripted(state)` เริ่มเกมไม่มีฉากเปิด · มุมมองคงที่ฝั่ง p1 ระหว่างเรียน
   - `TutorialOverlay.tsx` = ไฟส่อง + กล่องข้อความ + บล็อกการกดทุกที่ (capture) ยกเว้นจุดใน focus/allow ของขั้นที่รอ action

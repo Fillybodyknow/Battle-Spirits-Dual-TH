@@ -15,6 +15,7 @@ import { AccountDialog, AvatarImg } from '../components/AccountDialog';
 import { TutorialMenu, TutorialWelcome } from '../tutorial/TutorialMenu';
 import { useTutorial } from '../tutorial/tutorial';
 import { LESSONS } from '../tutorial/lessons';
+import { startVsBot } from '../bot/vsBot';
 import { CardArt, DeckTile, GLOW, deckColor, deckCover, deckSize } from './shared';
 
 /** คู่การ์ด X-Rare ที่หมุนแสดงทางขวาของหน้าหลัก */
@@ -224,22 +225,64 @@ function NewsBanner() {
   );
 }
 
-/** หน้าต่างเลือกเด็คสองฝั่งสำหรับเล่นเครื่องเดียว */
-function LocalSetup({ onClose }: { onClose: () => void }) {
+/** เมนู SOLO: เล่นคนเดียว (บทเรียน / ดวลกับบอท) */
+export function SoloMenu({ onClose, onTutorial, onBot, tutorialLeft }: { onClose: () => void; onTutorial: () => void; onBot: () => void; tutorialLeft: boolean }) {
+  const item = (title: string, sub: string, onClick: () => void, badge?: string) => (
+    <button
+      type="button"
+      onClick={() => {
+        sfx('click');
+        onClick();
+      }}
+      onMouseEnter={() => sfx('hover')}
+      className="group flex w-72 flex-col items-start gap-1 rounded-xl border border-sky-300/30 bg-slate-900/70 px-5 py-4 text-left transition hover:-translate-y-0.5 hover:border-amber-300/70 hover:bg-slate-800/80"
+    >
+      <span className="flex items-center gap-2">
+        <span className="bg-gradient-to-r from-white via-sky-100 to-sky-300 bg-clip-text pr-[0.12em] text-3xl font-black tracking-wide text-transparent italic group-hover:from-yellow-100 group-hover:to-amber-400">{title}</span>
+        {badge && <span className="rounded bg-rose-500 px-1.5 py-0.5 text-[10px] font-black text-white">{badge}</span>}
+      </span>
+      <span className="text-sm text-slate-300 group-hover:text-white">{sub}</span>
+    </button>
+  );
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={onClose}>
+      <div className="hud-panel flex flex-col gap-4 rounded-2xl p-6" onClick={(e) => e.stopPropagation()}>
+        <div>
+          <div className="text-xs tracking-[0.3em] text-sky-300">SOLO</div>
+          <div className="text-2xl font-black text-white">เล่นคนเดียว</div>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          {item('TUTORIAL', 'บทเรียนพื้นฐาน · เรียนวิธีเล่นทีละขั้น', onTutorial, tutorialLeft ? 'NEW' : undefined)}
+          {item('VS BOT', 'ดวลกับบอท (ทดลอง) · เลือกเด็คทั้งสองฝ่าย', onBot)}
+        </div>
+        <div className="flex justify-end">
+          <button type="button" className={BTN.secondary} onClick={onClose}>
+            ปิด
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** หน้าต่างเลือกเด็คสองฝั่งสำหรับเล่นเครื่องเดียว (vsBot = ดวลกับบอท: ฝั่งที่ 2 เป็นบอท) */
+export function LocalSetup({ onClose, vsBot }: { onClose: () => void; vsBot?: boolean }) {
   const decks = useGame((s) => s.decks);
   const startLocal = useGame((s) => s.startLocal);
   const [pick, setPick] = useState(decks);
+  /** ความเก่งของบอท ★1–6 (★6 = คิดล่วงหน้าอีกหนึ่งท่า) */
+  const [level, setLevel] = useState(5);
   const ids = playableDecks();
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={onClose}>
       <div className="hud-panel flex max-w-4xl flex-col gap-4 rounded-2xl p-6" onClick={(e) => e.stopPropagation()}>
         <div>
-          <div className="text-xs tracking-[0.3em] text-sky-300">LOCAL DUEL</div>
-          <div className="text-2xl font-black text-white">เล่นเครื่องเดียว (สองคนสลับกัน)</div>
+          <div className="text-xs tracking-[0.3em] text-sky-300">{vsBot ? 'VS BOT' : 'LOCAL DUEL'}</div>
+          <div className="text-2xl font-black text-white">{vsBot ? 'ดวลกับบอท (ทดลอง)' : 'เล่นเครื่องเดียว (สองคนสลับกัน)'}</div>
         </div>
         {(['p1', 'p2'] as const).map((p) => (
           <div key={p}>
-            <div className="mb-2 text-sm font-bold text-slate-300">เด็คผู้เล่น {p === 'p1' ? '1' : '2'}</div>
+            <div className="mb-2 text-sm font-bold text-slate-300">{vsBot ? (p === 'p1' ? 'เด็คของเรา' : 'เด็คของบอท') : `เด็คผู้เล่น ${p === 'p1' ? '1' : '2'}`}</div>
             <div className="flex gap-3 overflow-x-auto pb-1">
               {ids.map((id) => (
                 <DeckTile key={id} id={id} small selected={pick[p] === id} onClick={() => setPick({ ...pick, [p]: id })} />
@@ -247,11 +290,24 @@ function LocalSetup({ onClose }: { onClose: () => void }) {
             </div>
           </div>
         ))}
+        {vsBot && (
+          <div>
+            <div className="mb-2 text-sm font-bold text-slate-300">ความเก่งของบอท</div>
+            <div className="flex items-center gap-1">
+              {Array.from({ length: 6 }, (_, i) => (
+                <button key={i} type="button" title={`★${i + 1}`} onClick={() => setLevel(i + 1)} className="text-3xl transition hover:scale-110">
+                  <Icon name="star" className={i < level ? (i === 5 ? 'fill-rose-400 text-rose-400' : 'fill-yellow-300 text-yellow-300') : 'text-slate-600'} />
+                </button>
+              ))}
+              <span className="ml-2 text-sm text-slate-300">★{level}{level === 6 ? ' · คิดล่วงหน้า (ยากที่สุด)' : level === 5 ? ' · เต็มที่' : ''}</span>
+            </div>
+          </div>
+        )}
         <div className="flex justify-end gap-2">
           <button type="button" className={BTN.secondary} onClick={onClose}>
             ยกเลิก
           </button>
-          <button type="button" className={`${BTN.primary} px-8`} onClick={() => startLocal(pick)}>
+          <button type="button" className={`${BTN.primary} px-8`} onClick={() => (vsBot ? startVsBot(pick, { level }) : startLocal(pick))}>
             เริ่มดวล!
           </button>
         </div>
@@ -315,7 +371,8 @@ function InstallButton() {
 export function Home() {
   const setScreen = useGame((s) => s.setScreen);
   const localInProgress = useGame((s) => s.localInProgress);
-  const [local, setLocal] = useState(false);
+  const [vsBot, setVsBot] = useState(false);
+  const [solo, setSolo] = useState(false);
   const [sound, setSound] = useState(sfxSettings());
   const [settings, setSettings] = useState(false);
   const [tutorial, setTutorial] = useState(false);
@@ -342,9 +399,8 @@ export function Home() {
         <nav className="flex flex-col gap-1 pl-16">
           {localInProgress && <MenuItem title="CONTINUE" sub="เล่นเกมเครื่องเดียวต่อ" onClick={() => setScreen('game')} />}
           <MenuItem big title="DUEL" sub="ดวลออนไลน์กับเพื่อน" onClick={() => setScreen('lobby')} disabled={!onlineAvailable} badge={onlineAvailable ? 'ONLINE' : undefined} />
-          <MenuItem title="LOCAL" sub="เล่นเครื่องเดียว สองคนสลับกัน" onClick={() => setLocal(true)} />
+          <MenuItem title="SOLO" sub="เนื้อเรื่อง · บทเรียน · ดวลกับบอท" onClick={() => setScreen('solo')} badge={tutorialLeft ? 'NEW' : undefined} />
           <MenuItem title="DECK" sub="เด็คของฉัน · จัดเด็ค · ของตกแต่ง" onClick={() => setScreen('mydeck')} />
-          <MenuItem title="TUTORIAL" sub="บทเรียนพื้นฐาน · เรียนวิธีเล่นทีละขั้น" onClick={() => setTutorial(true)} badge={tutorialLeft ? 'NEW' : undefined} />
           {!onlineAvailable && <p className="mt-1 text-xs text-amber-300/80">ยังไม่ได้ตั้งค่า Firebase: ดวลออนไลน์ไม่ได้</p>}
         </nav>
 
@@ -386,7 +442,21 @@ export function Home() {
         </button>
       </div>
 
-      {local && <LocalSetup onClose={() => setLocal(false)} />}
+      {solo && (
+        <SoloMenu
+          tutorialLeft={tutorialLeft}
+          onClose={() => setSolo(false)}
+          onTutorial={() => {
+            setSolo(false);
+            setTutorial(true);
+          }}
+          onBot={() => {
+            setSolo(false);
+            setVsBot(true);
+          }}
+        />
+      )}
+      {vsBot && <LocalSetup vsBot onClose={() => setVsBot(false)} />}
       {tutorial && <TutorialMenu onClose={() => setTutorial(false)} />}
       <TutorialWelcome />
       {settings && (

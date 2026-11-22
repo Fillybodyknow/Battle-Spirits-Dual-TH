@@ -31,7 +31,7 @@ function useInputLock(active: boolean) {
       if (target?.closest('[data-tutorial-ui]')) return;
       const t = useTutorial.getState();
       const st = currentStep(t);
-      // เล่นอิสระ: กดได้ทุกที่ ยกเว้นปุ่มมุมซ้ายบน (หน้าหลัก/ย้อน/เกมใหม่: ทำให้บทเรียนเพี้ยน)
+      // เล่นอิสระ: กดได้ทุกที่ ยกเว้นปุ่มมุมซ้ายบน (หน้าหลัก/ตั้งค่า: ทำให้บทเรียนเพี้ยน)
       if (st?.free && t.phase !== 'done') {
         if (!target?.closest('[data-tutorial-lock]')) return;
       } else if (e.type !== 'keydown' && t.phase === 'show' && st?.expect && target) {

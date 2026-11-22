@@ -43,9 +43,46 @@ const PATHS: Record<IconName, React.ReactNode> = {
       <circle cx="12" cy="12" r="3" />
     </>
   ),
+  // ---------------- โหมด Solo
+  back: <path d="M15 5l-7 7 7 7" />,
+  chevron: <path d="M9 5l7 7-7 7" />,
+  close: <path d="M6 6l12 12M18 6L6 18" />,
+  book: (
+    <>
+      <path d="M12 6.5C10 5 7 4.5 3.5 5v13c3.5-.5 6.5 0 8.5 1.5 2-1.5 5-2 8.5-1.5V5C17 4.5 14 5 12 6.5z" />
+      <path d="M12 6.5v13" />
+    </>
+  ),
+  cap: (
+    <>
+      <path d="M2.5 9.5L12 5l9.5 4.5L12 14z" />
+      <path d="M6.5 11.5v4c1.5 1.5 3.5 2.2 5.5 2.2s4-.7 5.5-2.2v-4M21.5 9.5v5" />
+    </>
+  ),
+  swords: (
+    <>
+      <path d="M4 4l9.5 9.5M4 4h3.5L15 11.5M4 4v3.5L11.5 15" />
+      <path d="M20 4l-9.5 9.5M20 4h-3.5M20 4v3.5" />
+      <path d="M8 16l-3 3M16 16l3 3M7 14l3 3M17 14l-3 3" />
+    </>
+  ),
+  flag: (
+    <>
+      <path d="M6 21V4" />
+      <path d="M6 4.5c3-1.5 5 1.5 8 0s4-1 4-1v8s-1-.5-4 1-5-1.5-8 0" />
+    </>
+  ),
+  lock: (
+    <>
+      <rect x="5" y="10.5" width="14" height="10" rx="2" />
+      <path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" />
+    </>
+  ),
+  check: <path d="M5 12.5l4.5 4.5L19 7.5" />,
+  star: <path d="M12 3.5l2.6 5.3 5.9.9-4.25 4.1 1 5.8L12 16.9l-5.25 2.7 1-5.8L3.5 9.7l5.9-.9z" />,
 };
 
-export type IconName = 'home' | 'settings' | 'undo' | 'restart' | 'globe' | 'info' | 'chain' | 'log' | 'eye';
+export type IconName = 'home' | 'settings' | 'undo' | 'restart' | 'globe' | 'info' | 'chain' | 'log' | 'eye' | 'back' | 'book' | 'cap' | 'swords' | 'flag' | 'lock' | 'check' | 'star' | 'chevron' | 'close';
 
 export function Icon({ name, className = '' }: { name: IconName; className?: string }) {
   return (

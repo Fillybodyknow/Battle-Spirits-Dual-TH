@@ -845,17 +845,11 @@ function fieldSymbolsRaw(state: GameState, db: CardDatabase, player: PlayerId): 
       return { ...(out.ultimate ? { ultimate: out.ultimate } : {}), ...(total > 0 ? { [all]: total } : {}) };
     }
   }
-  // "เจ็มของสปิริตนี้ถือว่าเป็นเจ็มสี...ด้วย" (คานิคอง)
+  // "เจ็มของสปิริตนี้ถือว่าเป็นเจ็มสี...ด้วย" (คานิคอง) · นับทุกเจ็มของการ์ดนี้ รวมเจ็มจากเบรฟที่ร่วมร่างและจากเอฟเฟกต์ (เจ้าของโปรเจกต์กำหนด)
+  // BS13: ถือว่าเป็นหลายสีได้ (อิเทะคาชะ "สีแดง/ม่วงด้วย") = เจ็มนับเป็นทุกสีที่ระบุ
   for (const id of state.players[player].field) {
-    const def = db.get(state.cards[id]!.cardNo);
-    if (effectsNegated(state, db, id) || zeroed(id)) continue;
-    const lv = cardLevel(state, db, id);
-    // BS13: ถือว่าเป็นหลายสีได้ (อิเทะคาชะ "สีแดง/ม่วงด้วย") = เจ็มนับเป็นทุกสีที่ระบุ
-    for (const also of def.abilities) {
-      if (also.kind !== 'symbolAlsoColor' || !also.levels.includes(lv)) continue;
-      const own = Object.entries(def.symbols).reduce((n, [c, v]) => n + (c === also.color ? 0 : (v ?? 0)), 0);
-      if (own > 0) out[also.color] = (out[also.color] ?? 0) + own;
-    }
+    if (override?.cardId === id || zeroed(id)) continue;
+    for (const g of cardGems(state, db, id).gems) for (const c of g.also) out[c] = (out[c] ?? 0) + g.count;
   }
   return out;
 }
@@ -867,6 +861,57 @@ export function cardSymbolTotal(state: GameState, db: CardDatabase, cardId: stri
   for (const id of [cardId, ...card.braves]) n += symbolCount(db.get(state.cards[id]!.cardNo));
   for (const v of Object.values(extraSymbols(state, db, cardId))) n += v ?? 0;
   return n;
+}
+
+/** เจ็มกลุ่มหนึ่งบนการ์ดบนสนาม: สี จำนวน และสีที่ "ถือว่าเป็นสี...ด้วย" */
+export interface CardGem {
+  color: SymbolColor;
+  count: number;
+  /** เจ็มของสปิริตนี้ถือว่าเป็นสีเหล่านี้ด้วย (symbolAlsoColor: ทุกเจ็มของการ์ดนี้ รวมจากเบรฟ/เอฟเฟกต์) */
+  also: SymbolColor[];
+  /** มาจากเบรฟที่ร่วมร่าง / เอฟเฟกต์ (ไม่ใช่เจ็มที่พิมพ์บนการ์ดตัวเอง) */
+  added?: boolean;
+}
+
+/**
+ * เจ็มของการ์ดบนสนามใบนี้สำหรับแสดงผล (กติกาเดียวกับ fieldSymbolsRaw: เบรฟ, เจ็มจากเอฟเฟกต์, เจ็มเป็น 0, โอคิดาคุ, ยาเท็นโดว)
+ * zeroed = เจ็มของการ์ดนี้ถูกทำให้เป็น 0 ในเทิร์นนี้ (มีเจ็มจริงแต่ไม่นับ)
+ */
+export function cardGems(state: GameState, db: CardDatabase, cardId: string): { gems: CardGem[]; zeroed: boolean } {
+  const card = state.cards[cardId];
+  if (!card) return { gems: [], zeroed: false };
+  const zero = state.symbolsZero?.turn === state.turn ? state.symbolsZero.minSymbols : null;
+  if (zero !== null && cardSymbolTotal(state, db, cardId) >= zero) return { gems: [], zeroed: true };
+  const override = state.battle?.symbolOverride;
+  if (override?.cardId === cardId) return { gems: override.count > 0 ? [{ color: override.color as SymbolColor, count: override.count, also: [] }] : [], zeroed: false };
+  const def = db.get(card.cardNo);
+  const own: Partial<Record<SymbolColor, number>> = {};
+  const added: Partial<Record<SymbolColor, number>> = {};
+  const add = (into: Partial<Record<SymbolColor, number>>, color: SymbolColor, n: number) => {
+    if (n > 0) into[color] = (into[color] ?? 0) + n;
+  };
+  const baseZero = symbolsZeroCard(state, cardId, db);
+  if (!baseZero) {
+    for (const [c, n] of Object.entries(def.symbols) as [SymbolColor, number][]) add(own, c, n);
+    for (const b of card.braves) for (const [c, n] of Object.entries(db.get(state.cards[b]!.cardNo).symbols) as [SymbolColor, number][]) add(added, c, n);
+  }
+  for (const [c, n] of Object.entries(extraSymbols(state, db, cardId)) as [SymbolColor, number][]) add(added, c, n);
+  const list = (m: Partial<Record<SymbolColor, number>>) => Object.entries(m) as [SymbolColor, number][];
+  if (list(own).length === 0 && list(added).length === 0) return { gems: [], zeroed: baseZero && symbolCount(def) > 0 };
+  // ยาเท็นโดว: เจ็มทั้งหมดเป็นสีเดียว (เจ็มอัลติเมทคงเดิม)
+  const all = allColorOverride(state, db);
+  if (all) {
+    const total = [...list(own), ...list(added)].reduce((n, [c, v]) => n + (c === 'ultimate' ? 0 : v), 0);
+    const ult = (own.ultimate ?? 0) + (added.ultimate ?? 0);
+    return { gems: [...(total ? [{ color: all as SymbolColor, count: total, also: [] }] : []), ...(ult ? [{ color: 'ultimate' as SymbolColor, count: ult, also: [] }] : [])], zeroed: false };
+  }
+  const lv = cardLevel(state, db, cardId);
+  const also = effectsNegated(state, db, cardId) ? [] : def.abilities.flatMap((a) => (a.kind === 'symbolAlsoColor' && a.levels.includes(lv) ? [a.color as SymbolColor] : []));
+  // "เจ็มของสปิริตนี้ถือว่าเป็นสี...ด้วย" มีผลกับทุกเจ็มของการ์ดนี้ (รวมเจ็มจากเบรฟ/เอฟเฟกต์) · เจ็มอัลติเมทไม่เปลี่ยน
+  const alsoFor = (c: SymbolColor) => (c === 'ultimate' ? [] : [...new Set(also.filter((x) => x !== c))]);
+  const gems: CardGem[] = list(own).map(([c, n]) => ({ color: c, count: n, also: alsoFor(c) }));
+  for (const [c, n] of list(added)) gems.push({ color: c, count: n, also: alsoFor(c), added: true });
+  return { gems, zeroed: false };
 }
 
 /** คอสต์ที่ต้องจ่ายจริงหลังลดด้วย gem symbol บนสนาม (หมวด 3 ข้อ 1-4) */
@@ -1503,7 +1548,11 @@ function payableCostInner(state: GameState, db: CardDatabase, player: PlayerId, 
   if (full) return Math.max(0, base - Object.values(def.reduction).reduce<number>((n, v) => n + (v ?? 0), 0));
   // ฮาคุโดวโทคาเงะ: คู่แข่งอัญเชิญการ์ดสปิริตคอสต์ดั้งเดิมไม่เกิน N ใช้สัญลักษณ์ลดคอสต์ไม่ได้
   if (def.type === 'spirit' && noReductionFor(state, db, player, def)) return base;
-  const symbols = { ...fieldSymbols(state, db, player) };
+  // เจ็มทีละเม็ด: สีที่เม็ดนั้นใช้ได้ ("เจ็มถือว่าเป็นสี...ด้วย" = หลายสี แต่ยังเป็นเจ็ม 1 เม็ด ลดคอสต์ได้ 1 ช่องเท่านั้น)
+  const gems: string[][] = [];
+  for (const id of state.players[player].field) {
+    for (const g of cardGems(state, db, id).gems) for (let i = 0; i < g.count; i++) gems.push([g.color, ...g.also]);
+  }
   // "เมื่ออัญเชิญการ์ดที่ชื่อมีคำ ... สปิริตนี้เจ็มเพิ่ม" (ปะกุกุ)
   for (const id of state.players[player].field) {
     for (const ab of db.get(state.cards[id]!.cardNo).abilities) {
@@ -1512,13 +1561,26 @@ function payableCostInner(state: GameState, db: CardDatabase, player: PlayerId, 
       // Spirit Soul: "เมื่อเราทำการอัญเชิญการ์ดอัลติเมท"
       if (ab.filter?.types && !ab.filter.types.includes(def.type)) continue;
       if (!ab.levels.includes(cardLevel(state, db, id)) || !conditionHolds(state, id, ab.if, false, false, db)) continue;
-      symbols[ab.color] = (symbols[ab.color] ?? 0) + ab.count;
+      for (let i = 0; i < ab.count; i++) gems.push([ab.color]);
     }
   }
+  // ช่องลดคอสต์ทีละช่อง แล้วจับคู่เจ็ม → ช่อง ให้ลดได้มากที่สุด (เจ็มหนึ่งเม็ดใช้ได้ช่องเดียว)
+  const slots: string[] = [];
+  for (const [color, max] of Object.entries(def.reduction) as [SymbolColor, number][]) for (let i = 0; i < (max ?? 0); i++) slots.push(color);
+  const owner: (number | undefined)[] = slots.map(() => undefined);
+  const tryGem = (g: number, seen: boolean[]): boolean => {
+    for (let k = 0; k < slots.length; k++) {
+      if (seen[k] || !gems[g]!.includes(slots[k]!)) continue;
+      seen[k] = true;
+      if (owner[k] === undefined || tryGem(owner[k]!, seen)) {
+        owner[k] = g;
+        return true;
+      }
+    }
+    return false;
+  };
   let reduced = 0;
-  for (const [color, max] of Object.entries(def.reduction) as [SymbolColor, number][]) {
-    reduced += Math.min(max, symbols[color] ?? 0);
-  }
+  for (let g = 0; g < gems.length && reduced < slots.length; g++) if (tryGem(g, [])) reduced++;
   return Math.max(0, base - reduced);
 }
 

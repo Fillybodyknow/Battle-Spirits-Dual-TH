@@ -7,12 +7,12 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isXRare } from '@bs/cards';
-import { playerId, useAccount } from '../account/account';
+import { account, playerId, useAccount } from '../account/account';
 import { cardArt, IMG } from '../assets';
 import { effects } from '../gfx';
-import { db } from '../store';
+import { db, useGame } from '../store';
 import { APP_VERSION } from '../changelog';
-import { AccountDialog, SignInForm } from '../components/AccountDialog';
+import { AccountDialog, AvatarImg, AvatarPicker, SignInForm } from '../components/AccountDialog';
 import { SettingsDialog } from '../components/SettingsDialog';
 import { Icon } from '../components/Icon';
 import { sfx } from '../sfx';
@@ -313,6 +313,8 @@ export function Login({ onEnter }: { onEnter: () => void }) {
   const needsWelcome = useNeedsWelcome();
   const [hold, setHold] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  // ID ใหม่: ตั้งชื่อ → เลือกรูปโปรไฟล์ → ชวนเล่นบทเรียน
+  const [welcomeStep, setWelcomeStep] = useState<'name' | 'avatar' | 'tutorial'>('name');
   const leave = (tutorial: boolean) => {
     if (leaving) return;
     sfx('click');
@@ -523,7 +525,9 @@ export function Login({ onEnter }: { onEnter: () => void }) {
 
       {/* เข้าเกม: การ์ดพุ่งออกจากอุโมงค์ แล้วแสงวาบ */}
       {phase === 'entering' && <WarpOut hold={hold} leaving={leaving} progress={welcomeReady ? null : progress} />}
-      {phase === 'entering' && welcomeReady && !leaving && (
+      {phase === 'entering' && welcomeReady && !leaving && welcomeStep === 'name' && <WelcomeName onDone={() => setWelcomeStep('avatar')} />}
+      {phase === 'entering' && welcomeReady && !leaving && welcomeStep === 'avatar' && <WelcomeAvatar onBack={() => setWelcomeStep('name')} onDone={() => setWelcomeStep('tutorial')} />}
+      {phase === 'entering' && welcomeReady && !leaving && welcomeStep === 'tutorial' && (
         <div className="absolute inset-0 z-[60] flex items-center justify-center p-6" onClick={(e) => e.stopPropagation()}>
           <div
             className="hud-panel flex w-[min(560px,92vw)] flex-col gap-4 rounded-2xl border border-yellow-300/50 p-6 shadow-[0_0_60px_rgba(167,139,250,0.45)]"
@@ -550,5 +554,102 @@ export function Login({ onEnter }: { onEnter: () => void }) {
         </div>
       )}
     </div>
+  );
+}
+
+/** แผงต้อนรับ ID ใหม่ (กรอบเดียวกับแผงชวนเล่นบทเรียน) */
+function WelcomePanel({ step, title, children, wide }: { step: string; title: string; children: React.ReactNode; wide?: boolean }) {
+  return (
+    <div className="absolute inset-0 z-[60] flex items-center justify-center p-6" onClick={(e) => e.stopPropagation()}>
+      <div
+        className={`hud-panel flex ${wide ? 'w-[min(760px,94vw)]' : 'w-[min(560px,92vw)]'} flex-col gap-4 rounded-2xl border border-yellow-300/50 p-6 shadow-[0_0_60px_rgba(167,139,250,0.45)]`}
+        style={{ animation: 'fx-slide-up 0.45s cubic-bezier(.2,.9,.3,1) 0.1s both' }}
+      >
+        <div>
+          <div className="text-xs font-bold tracking-[0.3em] text-yellow-200/80">WELCOME · {step}</div>
+          <div className="text-2xl font-black text-white">{title}</div>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** ขั้นที่ 1: ตั้งชื่อนักดวล (แสดงบนกระดาน หน้าโยนเหรียญ และห้องดวลออนไลน์ · แก้ภายหลังได้ในหน้าบัญชี) */
+function WelcomeName({ onDone }: { onDone: () => void }) {
+  const current = useGame((s) => s.playerName);
+  const [draft, setDraft] = useState(current === 'นักดวล' ? '' : current);
+  const ok = draft.trim().length > 0;
+  const submit = () => {
+    if (!ok) return;
+    sfx('click');
+    useGame.getState().setPlayerName(draft);
+    onDone();
+  };
+  return (
+    <WelcomePanel step="1/2" title="ตั้งชื่อนักดวลของคุณ">
+      <p className="text-sm leading-relaxed text-slate-300">ชื่อนี้จะแสดงบนกระดาน หน้าโยนเหรียญ และห้องดวลออนไลน์ (เปลี่ยนได้ภายหลังในหน้าบัญชี)</p>
+      <form
+        className="flex gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          submit();
+        }}
+      >
+        <input
+          autoFocus
+          value={draft}
+          maxLength={16}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="ชื่อนักดวล (ไม่เกิน 16 ตัวอักษร)"
+          className="min-w-0 flex-1 rounded-lg bg-slate-800 px-4 py-3 text-lg font-bold text-white ring-1 ring-white/15 outline-none focus:ring-yellow-300"
+        />
+        <button type="submit" disabled={!ok} className={`${BTN.primary} px-8 disabled:opacity-40`}>
+          ถัดไป
+        </button>
+      </form>
+    </WelcomePanel>
+  );
+}
+
+/** ขั้นที่ 2: เลือกรูปโปรไฟล์จากภาพการ์ด */
+function WelcomeAvatar({ onBack, onDone }: { onBack: () => void; onDone: () => void }) {
+  const current = useAccount((s) => s.avatar);
+  const name = useGame((s) => s.playerName);
+  const [pick, setPick] = useState(current);
+  return (
+    <WelcomePanel step="2/2" title="เลือกรูปโปรไฟล์" wide>
+      <div className="flex items-center gap-4 rounded-xl bg-black/30 p-3">
+        {pick ? <AvatarImg cardNo={pick} className="h-16 w-16 shrink-0 rounded-2xl ring-2 ring-yellow-300/80" /> : <div className="h-16 w-16 shrink-0 rounded-2xl bg-slate-700 ring-2 ring-white/20" />}
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-xl font-black text-white">{name}</div>
+          <div className="text-sm text-slate-400">{pick ? db.find(pick)?.name : 'แตะภาพการ์ดด้านล่างเพื่อเลือก'}</div>
+        </div>
+        <button
+          type="button"
+          disabled={!pick}
+          className={`${BTN.primary} px-8 disabled:opacity-40`}
+          onClick={() => {
+            sfx('click');
+            account.setAvatar(pick);
+            onDone();
+          }}
+        >
+          ยืนยัน
+        </button>
+      </div>
+      <AvatarPicker
+        current={pick}
+        onPick={(no) => {
+          sfx('click');
+          setPick(no);
+        }}
+        onCancel={() => {
+          sfx('click');
+          onBack();
+        }}
+        cancelLabel="แก้ชื่อ"
+      />
+    </WelcomePanel>
   );
 }

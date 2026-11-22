@@ -1089,3 +1089,28 @@ html.gfx-no-blur *::after {
 @keyframes idol-wave { from { transform: translate(-50%, -50%) scale(0.7); opacity: 0.9; } to { transform: translate(-50%, -50%) scale(1.5); opacity: 0; } }
 /* บทเรียน: กรอบจุดที่ต้องกด */
 @keyframes tutorial-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+/* ---------------------------------------------------------------- โหมด Solo: ฉากเปิดการ์ดของด่าน */
+@keyframes solo-card-in {
+  0% { transform: perspective(1200px) rotateY(85deg) rotateZ(-14deg) scale(0.5); opacity: 0; }
+  35% { opacity: 1; }
+  65% { transform: perspective(1200px) rotateY(-10deg) rotateZ(-7deg) scale(1.04); }
+  100% { transform: perspective(1200px) rotateY(0deg) rotateZ(-8deg) scale(1); opacity: 1; }
+}
+@keyframes solo-intro-glow {
+  0% { opacity: 0; transform: scale(0.6); }
+  50% { opacity: 1; }
+  100% { opacity: 0.8; transform: scale(1); }
+}
+
+/* SOLO: แผงด่านดวลเลื่อนเข้ามาจากขวา */
+@keyframes solo-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(48px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}

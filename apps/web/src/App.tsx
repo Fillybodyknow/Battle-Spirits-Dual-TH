@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Login } from './screens/Login';
 import { useAccount } from './account/account';
-import { PLAYERS, opponentOf } from '@bs/engine';
-import { playerLabel } from './format';
-import { onlineAvailable, onlineVia, playableDecks, useGame, viewPlayer, type DeckId } from './store';
-import { deckInfo } from './decks';
+import { opponentOf } from '@bs/engine';
+import { useGame, viewPlayer } from './store';
 import { HandFan, PlayerMat } from './components/Board';
 import { ChoiceDialog, ErrorToast, FlashCue, PromptBar, SummonPanel, ShownFan, TrashDialog, TrashSummonFan } from './components/Controls';
 import { UpdateNotice, WhatsNew } from './components/Updates';
@@ -24,6 +22,7 @@ import { DeckViewer } from './screens/DeckViewer';
 import { DeckBuilder } from './screens/DeckBuilder';
 import { Home } from './screens/Home';
 import { Lobby } from './screens/Lobby';
+import { Solo } from './screens/Solo';
 import { useBgmDirector } from './bgmDirector';
 import { usePrefs } from './prefs';
 
@@ -63,15 +62,6 @@ function WatchersBadge() {
 /** ปุ่มลอยมุมซ้ายบน (แทน TopBar) */
 function Toolbar() {
   const online = useGame((s) => s.online);
-  const canUndo = useGame((s) => !s.online && (s.history.length > 0 || !!s.truth));
-  const hasDraft = useGame((s) => !!s.truth);
-  const { newGame, undo, onlineRematch, cancelCores } = useGame.getState();
-  const canRestart = !online || (online.me === 'p1' && online.status === 'playing');
-  const restart = () => {
-    if (!confirm(online ? 'เริ่มเกมใหม่ในห้องนี้ (ทั้งสองฝ่าย)?' : 'เริ่มเกมใหม่?')) return;
-    if (online) onlineRematch();
-    else newGame();
-  };
   // ออนไลน์: เหลือแค่ปุ่มตั้งค่า (ยอมแพ้/ออกจากห้องอยู่ในตั้งค่า)
   if (online) {
     return (
@@ -81,28 +71,23 @@ function Toolbar() {
       </div>
     );
   }
+  // ออฟไลน์ (ดวลกับบอท / บทเรียน): กลับหน้าหลัก + ตั้งค่า
   return (
     <div data-tutorial-lock className="fixed top-2 left-2 z-[45] flex items-center gap-1.5">
       <button
         type="button"
         className={ICON_BTN}
-        title={online ? 'ออกจากห้องแล้วกลับหน้าหลัก' : 'กลับหน้าหลัก (เกมนี้ยังเล่นต่อได้)'}
+        title="กลับหน้าหลัก"
         onClick={() => {
-          if (online) {
-            if (confirm('ออกจากห้องออนไลน์แล้วกลับหน้าหลัก?')) useGame.getState().onlineLeave();
-          } else useGame.getState().setScreen('home');
+          const g = useGame.getState();
+          // ดวลกับบอท: ออกจากหน้าเกม = จบการดวลนี้
+          if (g.botSeat && !g.state.winner && !confirm('ออกจากการดวลนี้แล้วกลับหน้าหลัก?')) return;
+          g.setScreen('home');
         }}
       >
         <Icon name="home" />
       </button>
       <Settings />
-      <button type="button" disabled={!canUndo && !(online && hasDraft)} onClick={online ? cancelCores : undo} className={ICON_BTN} title={online ? 'ยกเลิกการจัด Core' : 'ย้อน action'}>
-        <Icon name="undo" />
-      </button>
-      <button type="button" disabled={!canRestart} onClick={restart} className={ICON_BTN} title={online ? 'เกมใหม่ (เจ้าของห้อง)' : 'เกมใหม่'}>
-        <Icon name="restart" />
-      </button>
-      <OnlinePanel />
     </div>
   );
 }
@@ -133,130 +118,31 @@ function OnlineExit() {
   );
 }
 
-/** ปุ่ม 🌐: สร้างห้อง / เข้าห้อง / สถานะห้อง */
-function OnlinePanel() {
-  const online = useGame((s) => s.online);
-  const decks = useGame((s) => s.decks);
-  const [open, setOpen] = useState(false);
-  const [deck, setDeck] = useState<DeckId>(decks.p1);
-  const [code, setCode] = useState('');
-  const [busy, setBusy] = useState(false);
-  const { onlineHost, onlineJoin, onlineLeave } = useGame.getState();
-  const run = async (fn: () => Promise<void>) => {
-    setBusy(true);
-    await fn();
-    setBusy(false);
-  };
+/** ในตั้งค่าตอนดวลกับบอท: ยอมแพ้ */
+function BotConcede() {
+  const botSeat = useGame((s) => s.botSeat);
+  const winner = useGame((s) => s.state.winner);
+  if (!botSeat || winner) return null;
   return (
-    <div className="relative flex items-center gap-1.5">
-      <button type="button" className={ICON_BTN} onClick={() => setOpen((o) => !o)} title="เล่นออนไลน์">
-        <Icon name="globe" />
+    <div className="flex flex-col gap-1 border-t border-slate-700 pt-3">
+      <button
+        type="button"
+        className="rounded-lg bg-rose-700/80 px-3 py-1.5 text-sm font-bold text-white hover:bg-rose-600"
+        onClick={() => {
+          if (confirm('ยอมแพ้เกมนี้?')) useGame.getState().dispatch({ type: 'concede', player: opponentOf(botSeat) });
+        }}
+      >
+        ยอมแพ้
       </button>
-      {online && (
-        <span className="rounded-full border border-emerald-300/40 bg-black/70 px-3 py-1 text-xs text-emerald-200 shadow">
-          ห้อง <b className="tracking-widest text-white">{online.code}</b> · คุณคือ{playerLabel(online.me)} ·{' '}
-          {online.status === 'waiting' ? 'รอคู่แข่ง…' : online.opponentHere ? '● คู่แข่งอยู่ในห้อง' : '○ คู่แข่งออกจากห้อง'}
-        </span>
-      )}
-      {open && (
-        <div className="absolute top-full left-0 z-50 mt-1 flex w-80 flex-col gap-3 rounded-lg border border-slate-600 bg-slate-900 p-3 text-sm shadow-xl">
-          <div className="flex items-center justify-between">
-            <b className="text-slate-100">เล่นออนไลน์</b>
-            <span className="text-xs text-slate-500">ผ่าน {onlineVia}</span>
-          </div>
-          {!onlineAvailable ? (
-            <p className="text-xs text-amber-300">
-              ยังไม่ได้ตั้งค่า Firebase: ใส่ค่าใน <code>apps/web/.env.local</code> (ดู <code>.env.example</code>) แล้วรัน dev server ใหม่
-            </p>
-          ) : online ? (
-            <>
-              {online.status === 'waiting' ? (
-                <div className="flex flex-col items-center gap-1 rounded-lg bg-black/40 p-3">
-                  <span className="text-xs text-slate-400">ส่งรหัสนี้ให้เพื่อน</span>
-                  <span className="text-3xl font-black tracking-[0.3em] text-yellow-300 select-all">{online.code}</span>
-                  <span className="text-xs text-slate-400">รอคู่แข่งเข้าห้อง…</span>
-                </div>
-              ) : (
-                <p className="text-xs text-slate-400">
-                  กำลังเล่นอยู่ในห้อง {online.code} · {online.me === 'p1' ? 'คุณเป็นเจ้าของห้อง กด ⟳ เพื่อเริ่มเกมใหม่ในห้องนี้' : 'เจ้าของห้องเริ่มเกมใหม่ได้'}
-                </p>
-              )}
-              <button
-                type="button"
-                className={BTN.secondary}
-                onClick={() => {
-                  if (confirm('ออกจากห้อง?')) {
-                    onlineLeave();
-                    setOpen(false);
-                  }
-                }}
-              >
-                ออกจากห้อง
-              </button>
-            </>
-          ) : (
-            <>
-              <label className="flex items-center justify-between gap-2">
-                <span className="text-slate-300">เด็คของคุณ</span>
-                <select value={deck} onChange={(e) => setDeck(e.target.value as DeckId)} className="rounded bg-slate-700 px-2 py-1 text-slate-100">
-                  {playableDecks().map((id) => (
-                    <option key={id} value={id}>
-                      {deckInfo(id).label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button type="button" disabled={busy} className={BTN.primary} onClick={() => run(() => onlineHost(deck))}>
-                สร้างห้อง
-              </button>
-              <div className="flex items-center gap-2">
-                <input
-                  value={code}
-                  onChange={(e) => setCode(e.target.value.toUpperCase())}
-                  placeholder="รหัสห้อง"
-                  maxLength={5}
-                  className="w-28 rounded bg-slate-800 px-2 py-1.5 text-center font-bold tracking-widest text-white uppercase ring-1 ring-slate-600 outline-none focus:ring-yellow-300"
-                />
-                <button type="button" disabled={busy || code.length < 5} className={`${BTN.secondary} flex-1`} onClick={() => run(() => onlineJoin(code, deck))}>
-                  เข้าห้อง
-                </button>
-              </div>
-              <p className="text-xs text-slate-500">ผู้สร้างห้องเป็นผู้เล่น 1 · ผู้เข้าห้องเป็นผู้เล่น 2 · ผู้เริ่มก่อนสุ่มจาก seed ของห้อง</p>
-            </>
-          )}
-        </div>
-      )}
     </div>
   );
 }
 
-/** ปุ่มตั้งค่าในเกม: เปิดหน้าต่างตั้งค่า (แท็บการเล่นมีเลือกเด็ค/seed/ออกจากห้องเพิ่ม) */
+/** ปุ่มตั้งค่าในเกม: เปิดหน้าต่างตั้งค่า (แท็บการเล่น: ยอมแพ้ / ออกจากห้อง) */
 function Settings() {
   const [open, setOpen] = useState(false);
-  const decks = useGame((s) => s.decks);
-  const seed = useGame((s) => s.seed);
   const online = useGame((s) => s.online);
-  const { setDeck } = useGame.getState();
-  const extra = online ? (
-    <OnlineExit />
-  ) : (
-    <section className="flex flex-col gap-2 rounded-lg bg-black/25 p-3">
-      <h3 className="text-xs font-black tracking-widest text-sky-300/90">เด็คในเกมนี้</h3>
-      {PLAYERS.map((p) => (
-        <label key={p} className="flex items-center justify-between gap-2 text-sm">
-          <span className="text-slate-300">เด็ค{playerLabel(p)}</span>
-          <select value={decks[p]} onChange={(e) => setDeck(p, e.target.value as DeckId)} className="rounded bg-slate-700 px-2 py-1 text-slate-100">
-            {playableDecks().map((id) => (
-              <option key={id} value={id}>
-                {deckInfo(id).label}
-              </option>
-            ))}
-          </select>
-        </label>
-      ))}
-      <p className="text-xs text-slate-500">เปลี่ยนเด็คจะเริ่มเกมใหม่ · seed {seed}</p>
-    </section>
-  );
+  const extra = online ? <OnlineExit /> : <BotConcede />;
   return (
     <>
       <button type="button" className={ICON_BTN} onClick={() => setOpen(true)} title="ตั้งค่า">
@@ -297,7 +183,7 @@ export function App() {
     <>
       {/* เพิ่งเข้าจากหน้าไตเติล: แสงวาบจางออก */}
       <div className="pointer-events-none fixed inset-0 z-[150] bg-white" style={{ animation: 'login-flash-out 0.6s ease-out both' }} />
-      {screen === 'home' ? <Home /> : screen === 'lobby' ? <Lobby /> : screen === 'decks' ? <DeckViewer /> : screen === 'mydeck' ? <MyDeck /> : screen === 'builder' ? <DeckBuilder /> : <GameScreen />}
+      {screen === 'home' ? <Home /> : screen === 'solo' ? <Solo /> : screen === 'lobby' ? <Lobby /> : screen === 'decks' ? <DeckViewer /> : screen === 'mydeck' ? <MyDeck /> : screen === 'builder' ? <DeckBuilder /> : <GameScreen />}
       {screen !== 'game' && <ErrorToast />}
       {/* อัปเดตแอป: แจ้งเวอร์ชันใหม่ / มีอะไรใหม่หลังอัปเดต */}
       <UpdateNotice />

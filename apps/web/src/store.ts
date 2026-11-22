@@ -891,7 +891,8 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
   const fromReveal = (id: string, fallback: string) => (revealed.has(id) ? `[data-reveal-card="${id}"]` : fallback);
   let draws = 0;
   // กดจั่วใน Draw Step (จอของคนจั่ว): ทุกใบที่จั่วใน Draw Step นี้ (รวมใบที่เอฟเฟกต์ให้จั่วเพิ่ม) พลิกเปิดกลางจอทีละใบ
-  const drawPrompt = prev.awaitingDraw ? promptRect() : null;
+  // การ์ดของฝั่งที่ซ่อนจากจอนี้ (เช่น บอท) ห้ามพลิกเปิดหน้า
+  const drawPrompt = prev.awaitingDraw && !hiddenFrom(useGame.getState(), prev.awaitingDraw) ? promptRect() : null;
   let inDrawStep = !!drawPrompt;
   let reveals = 0;
   const onAnyField = (id: string) => PLAYERS.some((p) => s.players[p].field.includes(id) || prev.players[p].field.includes(id));
@@ -1746,8 +1747,8 @@ export const viewPlayer = (st: { fixedView: boolean; viewTurn: PlayerId; online:
  * การ์ดบนมือ/Burst ของผู้เล่นนี้ต้องคว่ำไว้สำหรับคนที่ดูจอนี้หรือไม่
  * ออนไลน์ = ของคู่แข่งคว่ำเสมอ, เล่นเครื่องเดียว = ตามตัวเลือก "ซ่อนมือฝ่ายที่ไม่ได้ตัดสินใจ"
  */
-export const hiddenFrom = (st: { online: OnlineState | null; hideIdleHand: boolean; state: GameState }, owner: PlayerId): boolean =>
-  st.online ? !!st.online.spectator || owner !== st.online.me : st.hideIdleHand && actingPlayer(st.state) !== owner;
+export const hiddenFrom = (st: { online: OnlineState | null; hideIdleHand: boolean; state: GameState; botSeat?: PlayerId | null }, owner: PlayerId): boolean =>
+  st.online ? !!st.online.spectator || owner !== st.online.me : st.botSeat ? owner === st.botSeat : st.hideIdleHand && actingPlayer(st.state) !== owner;
 
 /**
  * การ์ด/Core/การเลือกของผู้เล่นนี้ จับต้องได้จากเครื่องนี้หรือไม่ (ออนไลน์ = เฉพาะของที่นั่งเรา)
@@ -1755,13 +1756,14 @@ export const hiddenFrom = (st: { online: OnlineState | null; hideIdleHand: boole
  * ไม่งั้นสองเครื่องจะเดิน state ต่างกัน
  */
 export function mine(player: PlayerId | null | undefined): boolean {
-  const on = useGame.getState().online;
+  const { online: on, botSeat } = useGame.getState();
+  if (!on && botSeat) return player !== botSeat;
   return !on || (!on.spectator && player === on.me);
 }
 
-/** ผู้เล่นนี้กดสั่งงานจากเครื่องนี้ได้หรือไม่ (ออนไลน์ = เฉพาะที่นั่งของเรา) */
+/** ผู้เล่นนี้กดสั่งงานจากเครื่องนี้ได้หรือไม่ (ออนไลน์ = เฉพาะที่นั่งของเรา · ดวลกับบอท = ไม่ใช่ฝั่งบอท: ไม่แสดงตัวเลือก/หน้ากดจั่วของบอท) */
 export const controls = (st: { online: OnlineState | null }, player: PlayerId | null | undefined): boolean =>
-  !st.online || (!st.online.spectator && st.online.status === 'playing' && player === st.online.me);
+  !st.online ? !player || player !== useGame.getState().botSeat : (!st.online.spectator && st.online.status === 'playing' && player === st.online.me);
 
 /**
  * เอฟเฟกต์ที่กำลังทำงานอยู่ตอนนี้ (หัวคิวที่เริ่มแล้ว): การ์ด + ลำดับบรรทัดเอฟเฟกต์ใน CardDef.effects
@@ -2354,6 +2356,12 @@ interface Store {
   startScripted(state: GameState): void;
   /** มีเกมเครื่องเดียวที่เล่นค้างอยู่ (กลับไปเล่นต่อได้) */
   localInProgress: boolean;
+  /** ดวลกับบอท: ที่นั่งของบอท (มือคว่ำตลอด กดแทนไม่ได้) · null = เล่นเครื่องเดียวสองคน (bot/vsBot.ts) */
+  botSeat: PlayerId | null;
+  /** ชื่อคู่แข่งที่เป็นบอท (โหมด Story) · null = "บอท" */
+  botName: string | null;
+  /** รูปโปรไฟล์ของบอท (รหัสการ์ด) · null = รูปสำรอง */
+  botAvatar: string | null;
   /** ก่อนเริ่มเกม: คนชนะการเสี่ยง และผู้เริ่มก่อนที่เลือก (null = ยังเลือกอยู่) */
   pregame: { winner: PlayerId; chosen: PlayerId | null } | null;
   /** คนชนะการเสี่ยงเลือกเริ่มก่อน (true) หรือเริ่มหลัง (false) */
@@ -2441,7 +2449,7 @@ interface Store {
 
 // ---------------------------------------------------------------- เล่นออนไลน์
 
-export type Screen = 'home' | 'lobby' | 'decks' | 'mydeck' | 'builder' | 'game';
+export type Screen = 'home' | 'lobby' | 'decks' | 'mydeck' | 'builder' | 'game' | 'solo';
 
 function loadName(): string {
   try {
@@ -3142,6 +3150,9 @@ export const useGame = create<Store>((set, get) => {
       set({ playerName: clean });
     },
     localInProgress: false,
+    botSeat: null,
+    botName: null,
+    botAvatar: null,
     deckView: 'sd01',
     deckReturn: 'home',
     deckPick: null,
@@ -3361,7 +3372,17 @@ export const useGame = create<Store>((set, get) => {
       const seed = randomSeed();
       const state = startGame(seed, get().decks);
       const d = get().decks;
-      const fx: Fx[] = get().animations ? matchIntro(true, { name: 'ผู้เล่น 1', deck: d.p1, avatar: storedAvatar() }, { name: 'ผู้เล่น 2', deck: d.p2 }) : [];
+      // ดวลกับบอท: ชื่อเรา / ชื่อและรูปของบอท · สองคนเครื่องเดียว: ผู้เล่น 1 / 2
+      const { botSeat, botName, botAvatar, playerName } = get();
+      const side = (p: PlayerId): IntroSide =>
+        botSeat
+          ? p === botSeat
+            ? { name: botName ?? 'บอท', deck: d[p], ...(botAvatar ? { avatar: botAvatar } : {}) }
+            : { name: playerName, deck: d[p], avatar: storedAvatar() }
+          : p === 'p1'
+            ? { name: 'ผู้เล่น 1', deck: d.p1, avatar: storedAvatar() }
+            : { name: 'ผู้เล่น 2', deck: d.p2 };
+      const fx: Fx[] = get().animations ? matchIntro(true, side('p1'), side('p2')) : [];
       // คนชนะการเสี่ยง = ผู้เริ่มก่อนชั่วคราวที่ seed สุ่มได้ (ไม่มีแอนิเมชัน = ใช้ตามนั้นเลย)
       set({ pregame: { winner: state.turnPlayer, chosen: get().animations ? null : state.turnPlayer } });
       set({ ...resetUi, state, truth: null, seed, history: [], error: null, pinned: null, hovered: null, fx, viewTurn: state.turnPlayer });

@@ -1,8 +1,8 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { activatableOptions, blockForced, onStageAbilities, baseCost, braveToSwap, canAttackWith, cardLevel, currentBp, isSpiritLike, magicBanned, payableCost, summonConditionOk, trashSummonRule, type CoreTarget, type GameState, type PlayerId } from '@bs/engine';
-import { playerLabel } from '../format';
-import { IMG } from '../assets';
+import { activatableOptions, blockForced, onStageAbilities, baseCost, braveToSwap, canAttackWith, cardColors, cardGems, cardLevel, currentBp, isSpiritLike, magicBanned, payableCost, summonConditionOk, trashSummonRule, type CoreTarget, type GameState, type PlayerId } from '@bs/engine';
+import { COLOR_LABEL, playerLabel } from '../format';
+import { GEM_IMG, IMG } from '../assets';
 import type { Fx } from '../store';
 import { blockCandidates, braveSlot, controls, hiddenFrom, mine, braveHostOf, braveHosts, canDropBurst, canQuickSummon, handFieldAction, separatePlacement } from '../store';
 import { usePrefs, type HandLayout } from '../prefs';
@@ -243,6 +243,103 @@ function FlashMenu({ cardId, anchor, onClose }: { cardId: string; anchor: React.
   );
 }
 
+/** สีเจ็มสำหรับแสงเรือง / เจ็มที่ไม่มีภาพ (อัลติเมท) */
+const GEM_HEX: Record<string, string> = { red: '#ef4444', purple: '#a855f7', green: '#22c55e', white: '#e2e8f0', yellow: '#facc15', blue: '#38bdf8', ultimate: '#fbbf24' };
+
+/** ภาพเจ็มสีเดียว (ไม่มีภาพ = ข้าวหลามตัดสีนั้น) */
+function GemIcon({ color, className }: { color: string; className: string }) {
+  return GEM_IMG[color] ? (
+    <img src={GEM_IMG[color]} alt="" draggable={false} className={`${className} object-contain`} style={{ filter: 'drop-shadow(0 0 1px rgba(0,0,0,0.9))' }} />
+  ) : (
+    <span className={`${className} flex items-center justify-center`}>
+      <span className="h-[62%] w-[62%] rotate-45 rounded-[2px] border border-white/80" style={{ background: GEM_HEX[color] ?? '#facc15' }} />
+    </span>
+  );
+}
+
+/**
+ * ป้ายเจ็มของการ์ดบนสนามทุกใบที่มีเจ็ม (สปิริต/อัลติเมท/เบรฟ/เน็กซัส · มุมขวาล่าง คู่กับป้าย Lv มุมซ้ายล่าง · ป้าย BP อยู่มุมขวาบน)
+ * · เจ็มทีละเม็ดตามสี (มากกว่า 3 เม็ด = ภาพ + ×จำนวน) รวมเจ็มจากเบรฟที่ร่วมร่าง / เอฟเฟกต์
+ * · "เจ็มถือว่าเป็นสี X ด้วย" (ทุกเจ็มของการ์ด รวมจากเบรฟ/เอฟเฟกต์): เจ็มเม็ดนั้นตัดแบ่งแนวเฉียงเป็นสีเดิม/สี X (หลายสี = แถบเฉียง) + ขอบป้ายไล่สีทุกสีที่นับได้
+ * · "สีถือว่าเป็นสี X ด้วย" (ไม่ได้รวมเจ็ม) และสีจากเบรฟ: จุดสีหลังเส้นคั่น
+ * · เจ็มถูกทำให้เป็น 0 ในเทิร์นนี้: เจ็มจาง + ขีดฆ่า "0"
+ */
+function GemBadge({ cardId, compact }: { cardId: string; compact?: boolean }) {
+  const state = useGame((s) => s.state);
+  const card = state.cards[cardId]!;
+  const def = db.get(card.cardNo);
+  const { gems, zeroed } = cardGems(state, db, cardId);
+  const gemAlso = new Set(gems.flatMap((g) => [g.color, ...g.also]));
+  const extraColors = cardColors(state, db, cardId).filter((c) => !def.colors.includes(c) && !gemAlso.has(c));
+  const total = gems.reduce((n, g) => n + g.count, 0);
+  if (total === 0 && !zeroed && extraColors.length === 0) return null;
+  const many = total > 3;
+  const multi = gems.some((g) => g.also.length > 0);
+  const rainbow = [...new Set(gems.flatMap((g) => [g.color, ...g.also]))].map((c) => GEM_HEX[c] ?? '#fff');
+  const title = [
+    zeroed ? 'เจ็ม 0 (ในเทิร์นนี้)' : `เจ็ม ${total} เม็ด`,
+    ...gems.map(
+      (g) =>
+        `${COLOR_LABEL[g.color]} ${g.count}${g.added ? ' (จากเบรฟ/เอฟเฟกต์)' : ''}${g.also.length ? ` · ถือว่าเป็นสี${g.also.map((c) => COLOR_LABEL[c]).join('/')}ด้วย` : ''}`,
+    ),
+    ...(extraColors.length ? [`สีการ์ดถือว่าเป็นสี${extraColors.map((c) => COLOR_LABEL[c]).join('/')}ด้วย`] : []),
+  ].join('\n');
+  // "ถือว่าเป็นสี X ด้วย" = เจ็มเม็ดเดียวตัดแบ่งแนวเฉียง: ซ้ายบนสีเดิม → ขวาล่างสีที่ถือว่าเป็นด้วย (หลายสี = แถบเฉียงเท่า ๆ กัน)
+  const icon = (color: string, also: string[], key: number | string) => {
+    const parts = [color, ...also];
+    return (
+      <span key={key} className="relative h-[26px] w-[26px] shrink-0">
+        {parts.map((c, i) => {
+          if (i === 0) return <GemIcon key={c} color={c} className="absolute inset-0 h-full w-full" />;
+          const from = (i / parts.length) * 100;
+          const to = ((i + 1) / parts.length) * 100;
+          const mask = `linear-gradient(135deg, transparent ${from}%, #000 ${from}%, #000 ${to}%, transparent ${to}%)`;
+          return (
+            <span key={c} className="absolute inset-0" style={{ maskImage: mask, WebkitMaskImage: mask }}>
+              <GemIcon color={c} className="h-full w-full" />
+            </span>
+          );
+        })}
+      </span>
+    );
+  };
+  return (
+    <div
+      data-gems={cardId}
+      title={title}
+      className={`pointer-events-auto absolute z-[6] origin-bottom-right rounded-md p-px shadow ${compact ? '-right-1.5 -bottom-1 scale-[0.8]' : '-right-2.5 bottom-1'}`}
+      // ขอบไล่สี = เจ็มนับได้หลายสี
+      style={{ background: multi ? `linear-gradient(135deg, ${rainbow.join(', ')})` : 'rgba(255,255,255,0.15)' }}
+    >
+      {/* 3 เม็ดขึ้นไป: เจ็มซ้อนกันเล็กน้อย ป้ายไม่ยาวไปชนป้าย Lv */}
+      <div className={`flex items-center rounded-[5px] bg-black/85 py-0.5 pr-1 pl-1 ${total >= 3 && !many ? '-space-x-1.5' : 'gap-0.5'}`}>
+        {zeroed ? (
+          <>
+            <span className="flex opacity-60 grayscale">{icon(Object.keys(def.symbols)[0] ?? 'white', [], 'z')}</span>
+            <span className="text-sm font-black text-rose-300 line-through decoration-2">0</span>
+          </>
+        ) : many ? (
+          gems.map((g, i) => (
+            <span key={i} className="flex items-center gap-px">
+              {icon(g.color, g.also, i)}
+              <span className="text-sm font-black text-white">×{g.count}</span>
+            </span>
+          ))
+        ) : (
+          gems.flatMap((g, i) => Array.from({ length: g.count }, (_, k) => icon(g.color, g.also, `${i}-${k}`)))
+        )}
+        {extraColors.length > 0 && (
+          <span className="ml-0.5 flex items-center gap-0.5 border-l border-white/25 pl-1">
+            {extraColors.map((c) => (
+              <span key={c} className="h-2.5 w-2.5 rounded-full ring-1 ring-white/60" style={{ background: GEM_HEX[c] }} />
+            ))}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }) {
   const state = useGame((s) => s.state);
   const dragging = useGame((s) => s.dragging);
@@ -375,6 +472,8 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
           <div className={`h-24 w-[4.2rem] shrink-0 transition-transform duration-300 ${exhausted ? 'rotate-90 brightness-75' : ''}`}>
             <CardFace def={def} size="xs" level={level} />
           </div>
+          {/* เจ็มของเน็กซัสนี้ */}
+          <GemBadge cardId={cardId} compact />
         </div>
         {/* ช่อง Core แคบ ๆ ข้างการ์ด เรียงแนวตั้ง (หลายดวงซ้อนกันให้พอดีช่อง) · ชื่อ/รายละเอียดดูจากแผงรายละเอียดการ์ด */}
         <div className="flex h-24 w-8 flex-col items-center justify-center rounded bg-black/50 py-1 ring-1 ring-white/10">
@@ -474,6 +573,8 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
             {bp.toLocaleString()}
           </div>
         )}
+        {/* เจ็มของการ์ดนี้ (ทุกการ์ดที่มีเจ็ม) */}
+        <GemBadge cardId={cardId} />
         {/* แบ่งคอร์ที่จะส่งออก: จำนวนที่เลือกจากตัวนี้ + ปุ่มลด */}
         {allocN > 0 && (
           <div className={`absolute inset-x-0 z-[7] flex items-center justify-center gap-1 ${matTop ? 'top-2 rotate-180' : 'bottom-2'}`}>

@@ -220,8 +220,8 @@ export function SignInForm() {
   );
 }
 
-/** เลือกรูปโปรไฟล์จากภาพการ์ดในเกม (X-Rare ขึ้นก่อน · ค้นหาตามชื่อ) */
-function AvatarPicker({ current, onPick, onCancel }: { current: string; onPick: (cardNo: string) => void; onCancel: () => void }) {
+/** เลือกรูปโปรไฟล์จากภาพการ์ดในเกม (X-Rare ขึ้นก่อน · ค้นหาตามชื่อ) · cancelLabel = ข้อความปุ่มย้อนกลับ */
+export function AvatarPicker({ current, onPick, onCancel, cancelLabel = 'ย้อนกลับ' }: { current: string; onPick: (cardNo: string) => void; onCancel: () => void; cancelLabel?: string }) {
   const [q, setQ] = useState('');
   const all = useMemo(
     () =>
@@ -243,7 +243,7 @@ function AvatarPicker({ current, onPick, onCancel }: { current: string; onPick: 
           className="min-w-0 flex-1 rounded-lg bg-slate-800 px-3 py-2 text-sm text-white ring-1 ring-white/15 outline-none focus:ring-yellow-300"
         />
         <button type="button" className={BTN.ghost} onClick={onCancel}>
-          ย้อนกลับ
+          {cancelLabel}
         </button>
       </div>
       <div className="grid max-h-[50vh] grid-cols-5 gap-2 overflow-y-auto pr-1 sm:grid-cols-7">

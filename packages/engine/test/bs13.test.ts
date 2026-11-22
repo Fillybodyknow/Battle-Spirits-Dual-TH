@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { loadAllCards, loadBS13Cards } from '@bs/cards';
-import { applyAction, baseCost, cardColors, createGame, currentBp, fieldSymbols, payableCost, type Action, type GameState, type PlayerId } from '../src';
+import { applyAction, baseCost, cardColors, cardGems, createGame, currentBp, fieldSymbols, payableCost, type Action, type GameState, type PlayerId } from '../src';
 
 const db = loadAllCards();
 const no = (name: string) => db.all().find((c) => c.name === name)!.cardNo;
@@ -84,6 +84,50 @@ describe('Booster Set 13', () => {
     const doll = put(s, 'p1', DOLL, 1);
     expect(cardColors(s, db, doll)).toEqual(expect.arrayContaining(['purple', 'white']));
     expect(fieldSymbols(s, db, 'p1')).toMatchObject({ purple: 1, white: 1 });
+  });
+
+  it('เจ็มที่ถือว่าเป็นอีกสีด้วยยังเป็นเจ็ม 1 เม็ด: ลดคอสต์ได้ช่องเดียว (จาโด ขาว=แดง 1 เม็ด → ดาบจอมมาร 5 ลดเหลือ 4)', () => {
+    const s = setup();
+    put(s, 'p1', no('นักรบเครื่องกล จาโด'), 1);
+    // Rush / นับสี: ยังนับเป็นทั้งขาวและแดง
+    expect(fieldSymbols(s, db, 'p1')).toMatchObject({ white: 1, red: 1 });
+    const sword = db.get(no('ดาบจอมมาร')); // คอสต์ 5 ลด ขาว1 แดง1 ม่วง1
+    expect(payableCost(s, db, 'p1', sword)).toBe(4);
+    // เพิ่มสปิริตแดงอีก 1 ตัว: จาโดใช้ช่องขาว มุฉะดาริวใช้ช่องแดง = ลด 2
+    put(s, 'p1', DARIU, 1);
+    expect(payableCost(s, db, 'p1', sword)).toBe(3);
+  });
+
+  it('cardGems (ป้ายเจ็มบนสนาม): เจ็มม่วง 1 เม็ดที่ถือว่าเป็นขาวด้วย · เจ็มของเบรฟแยกเป็นเจ็มที่ได้รับ · เจ็มเป็น 0', () => {
+    const s = setup();
+    const doll = put(s, 'p1', DOLL, 1);
+    expect(cardGems(s, db, doll)).toEqual({ gems: [{ color: 'purple', count: 1, also: ['white'] }], zeroed: false });
+    const plain = put(s, 'p1', DARIU, 1);
+    const brave = db.all().find((c) => c.type === 'brave' && (c.symbols.red ?? 0) === 1)!;
+    const b = card(s, 'p1', brave.cardNo, 'hand');
+    s.players.p1.hand = s.players.p1.hand.filter((x) => x !== b);
+    s.cards[plain]!.braves.push(b);
+    expect(cardGems(s, db, plain).gems).toEqual([
+      { color: 'red', count: 1, also: [] },
+      { color: 'red', count: 1, also: [], added: true },
+    ]);
+    s.symbolsZeroCards = [{ cardId: doll, turn: s.turn }];
+    expect(cardGems(s, db, doll)).toEqual({ gems: [], zeroed: true });
+  });
+
+  it('เจ็มถือว่าเป็นสี...ด้วย: มีผลกับเจ็มจากเบรฟที่ร่วมร่างด้วย (เจ้าของโปรเจกต์กำหนด)', () => {
+    const s = setup();
+    const doll = put(s, 'p1', DOLL, 1);
+    const brave = db.all().find((c) => c.type === 'brave' && (c.symbols.red ?? 0) === 1 && Object.keys(c.symbols).length === 1)!;
+    const b = card(s, 'p1', brave.cardNo, 'hand');
+    s.players.p1.hand = s.players.p1.hand.filter((x) => x !== b);
+    s.cards[doll]!.braves.push(b);
+    expect(cardGems(s, db, doll).gems).toEqual([
+      { color: 'purple', count: 1, also: ['white'] },
+      { color: 'red', count: 1, also: ['white'], added: true },
+    ]);
+    // ม่วง 1 + แดง 1 (เบรฟ) · ขาว = ทั้งสองเม็ด
+    expect(fieldSymbols(s, db, 'p1')).toMatchObject({ purple: 1, red: 1, white: 2 });
   });
 
   it('อิเทะคาชะ: เจ็มนับเป็นแดงและม่วงด้วย · Lv2 มีโซลคอร์ สปิริตที่มีตั้งแต่ 2 สี BP+3000', () => {
