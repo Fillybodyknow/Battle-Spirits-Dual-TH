@@ -7,6 +7,7 @@ import { addExp, TUTORIAL_EXP } from '../progression/level';
 import { blockersFor, canAttackWith, currentBp, payableCost, type Action, type GameState } from '@bs/engine';
 import { actingPlayer, db, isFxBlocking, setTutorialHooks, useGame, type Fx } from '../store';
 import { LESSONS, type Ids, type Lesson, type TutorialStep } from './lessons';
+import { STORY_LESSONS } from '../solo/lessons';
 
 const KEY = 'bs-tutorial';
 interface Progress {
@@ -56,6 +57,16 @@ let botPending = false;
 let bypass = false;
 let unsub: (() => void) | null = null;
 let savedFixedView: boolean | null = null;
+
+/** ตัวเลือกของการเล่นบทเรียนรอบนี้ (บทเรียนของด่าน Story: จบแล้วบันทึกผ่านโหนด + ปุ่มกลับไปที่ด่าน) */
+export interface TutorialRun {
+  /** จบบท (ผ่าน) ครั้งเดียวต่อรอบ */
+  onDone?: () => void;
+  /** ปุ่มออก/ปุ่มหลักตอนจบ แทน "กลับหน้าหลัก" */
+  exit?: { label: string; run: () => void };
+}
+let run: TutorialRun = {};
+export const tutorialRun = () => run;
 
 function botDispatch(a: Action) {
   bypass = true;
@@ -135,6 +146,14 @@ function advance() {
       useTutorial.setState({ phase: 'done', failed: true });
       return;
     }
+    // บทเรียนของด่าน Story: ความคืบหน้าอยู่ที่ด่าน (ไม่นับเป็นบทเรียนพื้นฐาน)
+    if (!LESSONS.some((l) => l.id === t.lesson!.id)) {
+      useTutorial.setState({ phase: 'done', failed: false });
+      const cb = run.onDone;
+      run = { ...run, onDone: undefined };
+      cb?.();
+      return;
+    }
     const first = !t.progress.done.includes(t.lesson.id);
     if (first) addExp(`tutorial-${t.lesson.id}`, TUTORIAL_EXP, `บทเรียน: ${t.lesson.title}`);
     const done = first ? [...t.progress.done, t.lesson.id] : t.progress.done;
@@ -172,8 +191,8 @@ function tick() {
  * เริ่มบทเรียน · คืน false = ไม่ได้เริ่ม
  * อยู่ในห้องออนไลน์ = เริ่มไม่ได้ (action จะถูกส่งเข้าห้อง) · มีเกมเครื่องเดียวค้างอยู่ = ถามก่อน (บทเรียนใช้กระดานเดียวกัน)
  */
-export function startTutorial(id: string): boolean {
-  const lesson = LESSONS.find((l) => l.id === id);
+export function startTutorial(id: string, opts: TutorialRun = {}): boolean {
+  const lesson = LESSONS.find((l) => l.id === id) ?? STORY_LESSONS.find((l) => l.id === id);
   if (!lesson) return false;
   const g = useGame.getState();
   if (g.online) {
@@ -182,6 +201,7 @@ export function startTutorial(id: string): boolean {
   }
   if (g.localInProgress && !confirm('เกมเครื่องเดียวที่เล่นค้างอยู่จะหายไป เริ่มบทเรียนเลยไหม?')) return false;
   endTutorial(false, true);
+  run = opts;
   const { state, ids } = lesson.setup();
   // ผู้เล่นอยู่ด้านล่างตลอด (ไม่พลิกกระดานตอนคู่แข่งตัดสินใจ)
   savedFixedView = g.fixedView;
@@ -229,7 +249,12 @@ export function endTutorial(home = true, quiet = false) {
   if (savedFixedView !== null) useGame.setState({ fixedView: savedFixedView });
   savedFixedView = null;
   useTutorial.setState({ lesson: null, ids: {}, step: 0, phase: 'show', failed: false });
-  if (home) useGame.getState().setScreen('home');
+  const exit = run.exit;
+  run = {};
+  if (!home) return;
+  // บทเรียนของด่าน Story: ออก = กลับไปที่ด่าน
+  if (exit) exit.run();
+  else useGame.getState().setScreen('home');
 }
 
 /** บันทึกว่าชวนเล่นแล้ว (กดเริ่มหรือข้ามที่ป้ายต้อนรับ) */

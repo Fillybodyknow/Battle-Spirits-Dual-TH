@@ -7,7 +7,7 @@ import { createPortal } from 'react-dom';
 import { useGame } from '../store';
 import { BTN } from '../components/Modal';
 import { LESSONS } from './lessons';
-import { currentStep, endTutorial, nextStep, startTutorial, useTutorial } from './tutorial';
+import { currentStep, endTutorial, nextStep, startTutorial, tutorialRun, useTutorial } from './tutorial';
 
 type Box = { x: number; y: number; w: number; h: number };
 const PAD = 8;
@@ -74,7 +74,10 @@ export function TutorialOverlay() {
   if (!t.lesson) return null;
   const lesson = t.lesson;
   const idx = LESSONS.findIndex((l) => l.id === lesson.id);
-  const nextLesson = LESSONS[idx + 1];
+  // บทเรียนของด่าน Story: ไม่มีบทถัดไป · ปุ่มหลัก = กลับไปที่ด่าน
+  const story = idx < 0;
+  const exit = tutorialRun().exit;
+  const nextLesson = story ? undefined : LESSONS[idx + 1];
   const text =
     t.phase === 'done'
       ? t.failed
@@ -145,8 +148,8 @@ export function TutorialOverlay() {
         </div>
         <p className={`leading-relaxed font-semibold whitespace-pre-line text-white ${free ? 'text-[13px]' : 'text-[15px]'}`}>{text}</p>
         <div className="flex items-center gap-2">
-          <button type="button" className={`${BTN.ghost} !px-2 !py-1 text-xs`} onClick={() => endTutorial()}>
-            {t.phase === 'done' ? 'กลับหน้าหลัก' : 'ออกจากบทเรียน'}
+          <button type="button" className={`${BTN.ghost} !px-2 !py-1 text-xs`} onClick={() => (t.phase === 'done' && exit && !t.failed ? startTutorial(lesson.id, tutorialRun()) : endTutorial())}>
+            {t.phase === 'done' ? (exit && !t.failed ? 'เล่นอีกครั้ง' : (exit?.label ?? 'กลับหน้าหลัก')) : exit ? `ออก (${exit.label})` : 'ออกจากบทเรียน'}
           </button>
           <span className="flex-1" />
           {t.phase === 'show' && st && !st.expect && (
@@ -159,8 +162,12 @@ export function TutorialOverlay() {
           {free && <span className="text-xs font-bold text-yellow-200">เล่นได้เต็มที่</span>}
           {t.phase === 'done' &&
             (t.failed ? (
-              <button type="button" className={`${BTN.primary} px-6`} onClick={() => startTutorial(lesson.id)}>
+              <button type="button" className={`${BTN.primary} px-6`} onClick={() => startTutorial(lesson.id, tutorialRun())}>
                 ลองอีกครั้ง ▸
+              </button>
+            ) : story && exit ? (
+              <button type="button" className={`${BTN.primary} px-6`} onClick={() => endTutorial()}>
+                {exit.label} ▸
               </button>
             ) : nextLesson ? (
               <button type="button" className={`${BTN.primary} px-6`} onClick={() => startTutorial(nextLesson.id)}>

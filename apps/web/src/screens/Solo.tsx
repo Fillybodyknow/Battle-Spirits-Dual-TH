@@ -19,7 +19,8 @@ import { emblemEarned, gateCleared, gateComplete, gateUnlocked, markCleared, nex
 import { TutorialMenu } from '../tutorial/TutorialMenu';
 import { LocalSetup, SoloMenu } from './Home';
 import { CardArt, DeckTile } from './shared';
-import { useTutorial } from '../tutorial/tutorial';
+import { startTutorial, useTutorial } from '../tutorial/tutorial';
+import { addExp } from '../progression/level';
 import { LESSONS } from '../tutorial/lessons';
 
 export function Solo() {
@@ -534,6 +535,41 @@ function DuelPanel({ gate, node, onClose }: { gate: Gate; node: GateNode; onClos
           </div>
           <p className="mt-5 text-lg leading-relaxed whitespace-pre-line text-slate-200">{node.description ?? `${opponent} ใช้เด็ค ${deckInfo(botDeck).label}`}</p>
         </div>
+        {node.lesson ? (
+          // ฝึกซ้อมแบบบทเรียน: สอนเด็คของแคว้นทีละขั้นบนกระดานจริง (ตัวรันเดียวกับ TUTORIAL)
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col items-center gap-2 rounded-xl bg-slate-800/70 p-4">
+              <div className="rounded bg-yellow-300 px-2 py-0.5 text-xs font-black text-slate-900">บทเรียน</div>
+              <div className="text-sm font-bold text-slate-300">เด็คที่ใช้ในบทเรียน</div>
+              <DeckTile id={loaner} small selected onClick={() => {}} />
+              <p className="text-center text-xs leading-relaxed text-slate-400">ทำตามขั้นตอนบนกระดาน (จุดที่มีกรอบเหลือง) · ออกกลางคันได้ทุกเมื่อ</p>
+              <button
+                type="button"
+                onClick={() => {
+                  sfx('click');
+                  const gateId = gate.id;
+                  const first = !cleared;
+                  startTutorial(node.lesson!, {
+                    onDone: () => {
+                      markCleared(gateId, node.id);
+                      if (first) addExp(`story-lesson-${gateId}-${node.id}`, 100, 'ผ่านบทเรียนของด่านครั้งแรก');
+                    },
+                    exit: {
+                      label: 'กลับไปที่ด่าน',
+                      run: () => {
+                        useSolo.setState({ view: 'gate', gateId, intro: false, reading: null });
+                        useGame.getState().setScreen('solo');
+                      },
+                    },
+                  });
+                }}
+                className="mt-1 w-full rounded-lg bg-gradient-to-b from-lime-200 to-lime-400 py-3.5 text-2xl font-black text-slate-900 shadow-[0_0_22px_rgba(190,242,100,0.6)] transition hover:brightness-110 active:scale-[0.98]"
+              >
+                เริ่มบทเรียน
+              </button>
+            </div>
+          </div>
+        ) : (
         <div className="flex flex-col gap-4">
           <button
             type="button"
@@ -609,6 +645,7 @@ function DuelPanel({ gate, node, onClose }: { gate: Gate; node: GateNode; onClos
             </button>
           </div>
         </div>
+        )}
       </div>
       {viewDeck && <OpponentDeck deck={botDeck} name={opponent} description={node.deckDescription} onClose={() => setViewDeck(false)} />}
       {deckMenu && mine && <SoloDeckMenu deck={mine} onClose={() => setDeckMenu(false)} />}

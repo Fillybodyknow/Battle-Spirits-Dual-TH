@@ -38,6 +38,8 @@ export interface GateNode {
   description?: string;
   /** คำอธิบายเด็คของคู่แข่ง (หน้าดูเด็คคู่แข่ง) */
   deckDescription?: string;
+  /** practice: บทเรียนสอนเด็คของแคว้น (id ใน solo/lessons.ts) แทนการดวลกับบอท */
+  lesson?: string;
   botDeck?: DeckId;
   /** เด็คที่ด่านให้ยืม (practice บังคับใช้ · duel เลือกได้) */
   playerDeck?: DeckId;
@@ -216,7 +218,8 @@ export const SENGOKU_GATES: Gate[] = [
         title: 'วิถีแห่งสายลม',
         opponent: 'มารสายลม ชิโนบิริกะ',
         avatar: 'BS31-C027',
-        description: 'ลองใช้เด็ควายุนินจา: นินจาผีเสื้อราตรีสวมเกราะคอสต์ต่ำลงสนามได้เร็ว แล้วรุมโจมตีก่อนคู่แข่งตั้งตัว',
+        lesson: 'wind-ninja',
+        description: 'บทเรียน: ชิโนบิริกะพาลองเด็ควายุนินจาทีละขั้น\n· โซลคอร์ปลุกพลังนินจา\n· นินจาได้คอร์ฟรี (คอร์วอยด์)\n· ทำให้คู่แข่งเสื่อมสภาพ แล้วฟื้นสภาพนินจาเพื่อโจมตีซ้ำ\nเป้าหมาย: ปิดเกมให้ได้ในเทิร์นเดียว',
         playerDeck: WIND_NINJA,
         botDeck: 'sd02',
         deckDescription: 'เด็คนินจาเริ่มต้นของป่าวายุ ใช้นินจาตัวเล็กหลายตัวกดดันตั้งแต่เทิร์นแรก ๆ',

@@ -38,7 +38,7 @@ export interface Lesson {
   passed?(s: GameState): boolean;
 }
 
-const card = (name: string): string => {
+export const card = (name: string): string => {
   const c = db.all().find((x) => x.name === name);
   if (!c) throw new Error(`บทเรียน: ไม่พบการ์ด ${name}`);
   return c.cardNo;
@@ -55,7 +55,7 @@ const NEXUS = () => card('หุบเหวร้อยปราชญ์'); //
 const WALL = () => card('เบิร์สวอลล์'); // เบิร์ส: หลังเสียไลฟ์ ได้ไลฟ์คืน + [Flash] จบ Attack Step
 
 /** เกมตั้งต้น: p1 เริ่มก่อน · เด็คไม่สับ (ใบบนสุด = ต้นรายการ) · ที่เหลือเป็นมุฉะดาริว */
-function game(p1Top: string[], config: Partial<GameConfig> = {}): GameState {
+export function game(p1Top: string[], config: Partial<GameConfig> = {}): GameState {
   const pad = (top: string[]) => [...top, ...Array<string>(40 - top.length).fill(DARIU())];
   return createGame({
     db,
@@ -67,7 +67,7 @@ function game(p1Top: string[], config: Partial<GameConfig> = {}): GameState {
   }).state;
 }
 
-function act(s: GameState, a: Action): GameState {
+export function act(s: GameState, a: Action): GameState {
   const r = applyAction(s, a, db);
   if (!r.ok) throw new Error(`บทเรียน: ${a.type} ${r.error.message}`);
   return r.state;
@@ -75,7 +75,7 @@ function act(s: GameState, a: Action): GameState {
 
 let seq = 0;
 /** วางการ์ดลงสนามพร้อม Core (Core ใหม่ ไม่ได้มาจาก Reserve) */
-function put(s: GameState, owner: PlayerId, cardNo: string, cores: number): string {
+export function put(s: GameState, owner: PlayerId, cardNo: string, cores: number): string {
   const id = `tut-card-${++seq}`;
   const coreIds = Array.from({ length: cores }, () => {
     const c = `tut-core-${++seq}`;
@@ -87,12 +87,12 @@ function put(s: GameState, owner: PlayerId, cardNo: string, cores: number): stri
   return id;
 }
 
-const handCard = (s: GameState, cardNo: string) => s.players.p1.hand.find((id) => s.cards[id]!.cardNo === cardNo)!;
-const field = (id: string) => `[data-field-card="${id}"]`;
-const hand = (id: string) => `[data-hand-card="${id}"]`;
+export const handCard = (s: GameState, cardNo: string) => s.players.p1.hand.find((id) => s.cards[id]!.cardNo === cardNo)!;
+export const field = (id: string) => `[data-field-card="${id}"]`;
+export const hand = (id: string) => `[data-hand-card="${id}"]`;
 /** แผงอัญเชิญ + เมนูของการ์ดในมือ (คลิกการ์ด = ยกขึ้นพร้อมเมนู "อัญเชิญ") */
-const PLAY = ['[data-tutorial="play-panel"]', '[data-tutorial="hand-menu"]'];
-const SWORD = 'button[title="โจมตี"]';
+export const PLAY = ['[data-tutorial="play-panel"]', '[data-tutorial="hand-menu"]'];
+export const SWORD = 'button[title="โจมตี"]';
 
 export const LESSONS: Lesson[] = [
   {
