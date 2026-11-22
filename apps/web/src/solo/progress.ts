@@ -43,9 +43,11 @@ interface SoloState {
   /** เนื้อเรื่องที่กำลังอ่าน (โหนด scenario / goal) */
   reading: string | null;
   progress: SoloProgress;
+  /** แผงด่านดวลที่เปิดอยู่บนแผนที่ (id โหนด) · กลับจากหน้าเลือก/แก้เด็คแล้วเปิดค้างไว้ */
+  panel: string | null;
 }
 
-export const useSolo = create<SoloState>(() => ({ view: 'home', gateId: GATES[0]?.id ?? '', intro: false, reading: null, progress: load() }));
+export const useSolo = create<SoloState>(() => ({ view: 'home', gateId: GATES[0]?.id ?? '', intro: false, reading: null, progress: load(), panel: null }));
 
 const key = (gateId: string, nodeId: string) => `${gateId}/${nodeId}`;
 

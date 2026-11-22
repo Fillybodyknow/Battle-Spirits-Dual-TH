@@ -7,7 +7,7 @@ import { createPortal } from 'react-dom';
 import { BTN } from '../components/Modal';
 import { Icon, type IconName } from '../components/Icon';
 import { startVsBot } from '../bot/vsBot';
-import { deckInfo, newDeckId, saveMyDeck, type DeckId } from '../decks';
+import { deckChoices, deckInfo, newDeckId, saveMyDeck, type DeckId } from '../decks';
 import { CardDetail } from '../components/CardDetail';
 import { AvatarImg } from '../components/AccountDialog';
 import { coverOf } from '../components/SeatAvatar';
@@ -287,7 +287,8 @@ const KIND: Record<GateNode['kind'], { label: string; icon: IconName }> = {
 function GateMap() {
   const gate = gateById(useSolo((s) => s.gateId));
   const progress = useSolo((s) => s.progress);
-  const [picked, setPicked] = useState<string | null>(null);
+  const picked = useSolo((s) => s.panel);
+  const setPicked = (panel: string | null) => useSolo.setState({ panel });
   const mapRef = useRef<HTMLDivElement>(null);
   const myAvatar = useAccount((s) => s.avatar) || coverOf();
   // เปิดแผงด่าน: แผนที่หดไปทางซ้าย → เลื่อนให้โหนดที่เลือกอยู่กลางแผนที่
@@ -455,11 +456,18 @@ function DuelPanel({ gate, node, onClose }: { gate: Gate; node: GateNode; onClos
   const cleared = nodeCleared(progress, gate, node);
   const practice = node.kind === 'practice';
   const loaner = node.playerDeck ?? 'sd01';
-  const own = playableDecks().filter((id) => id !== loaner);
-  const [tab, setTab] = useState<'loaner' | 'mine'>('loaner');
-  const [mine, setMine] = useState<DeckId>(own[0] ?? loaner);
+  const [tab, setTabState] = useState<'loaner' | 'mine'>(lastTab);
+  const setTab = (t: 'loaner' | 'mine') => {
+    lastTab = t;
+    setTabState(t);
+  };
+  const mine = soloDeck();
+  const mineOk = !!mine && playableDecks().includes(mine);
+  const [deckMenu, setDeckMenu] = useState(false);
   const [viewDeck, setViewDeck] = useState(false);
-  const deck = tab === 'loaner' || practice ? loaner : mine;
+  const useLoaner = tab === 'loaner' || practice;
+  const deck = useLoaner ? loaner : (mine ?? loaner);
+  const canStart = useLoaner || mineOk;
   const botDeck = node.botDeck ?? 'sd02';
   const opponent = node.opponent ?? 'คู่แข่ง';
   const stars = node.stars ?? 3;
@@ -541,7 +549,7 @@ function DuelPanel({ gate, node, onClose }: { gate: Gate; node: GateNode; onClos
           <div className="flex flex-col rounded-xl bg-slate-800/70 p-3">
             <div className="mb-3 grid grid-cols-2 gap-2">
               {(['loaner', 'mine'] as const).map((t) => {
-                const disabled = t === 'mine' && (practice || own.length === 0);
+                const disabled = t === 'mine' && practice;
                 const on = (practice ? 'loaner' : tab) === t;
                 return (
                   <button
@@ -567,10 +575,20 @@ function DuelPanel({ gate, node, onClose }: { gate: Gate; node: GateNode; onClos
                 <DeckTile id={loaner} small selected onClick={() => {}} />
               </div>
             ) : (
-              <div className="flex max-h-72 flex-wrap justify-center gap-2 overflow-y-auto rounded-lg bg-black/30 p-2">
-                {own.map((id) => (
-                  <DeckTile key={id} id={id} small selected={mine === id} onClick={() => setMine(id)} />
-                ))}
+              <div className="flex flex-col items-center gap-1 rounded-lg bg-black/30 py-3">
+                <div className="text-sm font-bold text-slate-300">เด็คของฉัน · แตะเพื่อแก้ไข/เปลี่ยนเด็ค</div>
+                {mine ? (
+                  <div className="relative">
+                    <DeckTile id={mine} small selected={mineOk} onClick={() => (sfx('click'), setDeckMenu(true))} />
+                    {!mineOk && (
+                      <div className="pointer-events-none absolute inset-x-0 top-1/3 bg-white py-1 text-center text-xs font-black text-rose-600 shadow">ใช้ไม่ได้ (เด็คไม่ครบกติกา)</div>
+                    )}
+                  </div>
+                ) : (
+                  <button type="button" onClick={() => (sfx('click'), pickSoloDeck())} className="flex h-40 w-32 items-center justify-center rounded-xl border-2 border-dashed border-white/30 text-sm font-bold text-slate-300 hover:border-white/60">
+                    เลือกเด็ค
+                  </button>
+                )}
               </div>
             )}
             <div className="mt-3 flex items-center justify-center gap-2 text-base font-bold text-slate-200">
@@ -584,7 +602,8 @@ function DuelPanel({ gate, node, onClose }: { gate: Gate; node: GateNode; onClos
             <button
               type="button"
               onClick={start}
-              className="mt-3 rounded-lg bg-gradient-to-b from-lime-200 to-lime-400 py-3.5 text-2xl font-black text-slate-900 shadow-[0_0_22px_rgba(190,242,100,0.6)] transition hover:brightness-110 active:scale-[0.98]"
+              disabled={!canStart}
+              className="mt-3 rounded-lg bg-gradient-to-b from-lime-200 to-lime-400 py-3.5 text-2xl font-black text-slate-900 shadow-[0_0_22px_rgba(190,242,100,0.6)] transition hover:brightness-110 active:scale-[0.98] disabled:opacity-40 disabled:shadow-none"
             >
               เริ่มดวล
             </button>
@@ -592,7 +611,61 @@ function DuelPanel({ gate, node, onClose }: { gate: Gate; node: GateNode; onClos
         </div>
       </div>
       {viewDeck && <OpponentDeck deck={botDeck} name={opponent} description={node.deckDescription} onClose={() => setViewDeck(false)} />}
+      {deckMenu && mine && <SoloDeckMenu deck={mine} onClose={() => setDeckMenu(false)} />}
     </div>
+  );
+}
+
+/** แท็บที่เลือกล่าสุดในแผงด่าน (กลับจากหน้าเลือก/แก้เด็คแล้วอยู่แท็บเดิม) */
+let lastTab: 'loaner' | 'mine' = 'loaner';
+const SOLO_DECK_KEY = 'bs-solo-deck';
+
+/** เด็คของฉันที่เลือกไว้สำหรับโหมด Solo (ไม่มี/ถูกลบ = เด็คที่จัดเองใบแรก หรือ Starter ใบแรก) */
+function soloDeck(): DeckId | null {
+  let saved: string | null = null;
+  try {
+    saved = localStorage.getItem(SOLO_DECK_KEY);
+  } catch {
+    /* ไม่มี storage */
+  }
+  const all = deckChoices();
+  if (saved && all.includes(saved)) return saved;
+  return all.find((id) => id.startsWith('u:')) ?? all[0] ?? null;
+}
+
+/** เปลี่ยนเด็ค: หน้าเด็คของฉันในโหมดเลือก แล้วกลับมาที่แผงด่าน */
+function pickSoloDeck() {
+  lastTab = 'mine';
+  useGame.setState({ deckPick: soloDeck() ?? 'sd01', deckReturn: 'solo' });
+  useGame.getState().setScreen('mydeck');
+}
+
+/** แก้ไขเด็ค: หน้าจัดเด็ค (Starter = เริ่มจากสำเนา) แล้วกลับมาที่แผงด่าน */
+function editSoloDeck(deck: DeckId) {
+  lastTab = 'mine';
+  useGame.setState({ deckView: deck, deckReturn: 'solo' });
+  useGame.getState().setScreen('builder');
+}
+
+/** เมนูของเด็คที่เลือก: แก้ไขเด็ค / เปลี่ยนเด็ค / ยกเลิก */
+function SoloDeckMenu({ deck, onClose }: { deck: DeckId; onClose: () => void }) {
+  const btn = 'w-full rounded-full border-2 border-white/80 bg-black py-3 text-lg font-black text-white transition hover:bg-white/10';
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={onClose}>
+      <div className="hud-panel flex w-[min(92vw,34rem)] flex-col items-center gap-4 rounded-2xl p-7" onClick={(e) => e.stopPropagation()}>
+        <DeckTile id={deck} small selected={false} onClick={() => {}} />
+        <button type="button" className={btn} onClick={() => (sfx('click'), editSoloDeck(deck))}>
+          แก้ไขเด็ค
+        </button>
+        <button type="button" className={btn} onClick={() => (sfx('click'), onClose(), pickSoloDeck())}>
+          เปลี่ยนเด็ค
+        </button>
+        <button type="button" className="w-4/5 rounded-xl border-2 border-lime-300/70 bg-black py-2.5 text-base font-black text-lime-300 hover:bg-lime-300/10" onClick={() => (sfx('click'), onClose())}>
+          ยกเลิก
+        </button>
+      </div>
+    </div>,
+    document.body,
   );
 }
 

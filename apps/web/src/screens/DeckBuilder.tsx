@@ -188,7 +188,7 @@ export function DeckBuilder() {
     <div className="game-bg relative flex h-screen min-w-[1200px] flex-col overflow-hidden">
       {/* ---------------- แถบบน: ชื่อเด็ค / บันทึก (เลือก/สร้าง/คัดลอกเด็คทำที่หน้าเด็คของฉัน) */}
       <header className="flex items-center gap-4 pt-5 pr-6">
-        <BackButton onClick={() => leave(() => (useGame.getState().setScreen(useGame.getState().deckReturn), useGame.setState({ deckReturn: 'home' })))} label={{ lobby: 'กลับห้องดวล', mydeck: 'เด็คของฉัน' }[useGame.getState().deckReturn as string] ?? 'หน้าหลัก'} />
+        <BackButton onClick={() => leave(() => (useGame.getState().setScreen(useGame.getState().deckReturn), useGame.setState({ deckReturn: 'home' })))} label={{ lobby: 'กลับห้องดวล', mydeck: 'เด็คของฉัน', solo: 'กลับไปที่ด่าน' }[useGame.getState().deckReturn as string] ?? 'หน้าหลัก'} />
         <div className="shrink-0">
           <div className="text-xs tracking-[0.4em] text-sky-300">DECK BUILDER</div>
           <div className="text-2xl font-black text-white italic">จัดเด็ค</div>

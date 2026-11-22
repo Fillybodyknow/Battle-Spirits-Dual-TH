@@ -419,9 +419,11 @@ export function MyDeck() {
   // โหมดเลือกเด็คให้ห้องดวล (กด "เปลี่ยนเด็ค" ในห้อง): คลิกเด็ค = ใช้เด็คนั้นแล้วกลับห้อง
   const pick = useGame((s) => s.deckPick);
   const [pickErr, setPickErr] = useState<string | null>(null);
+  const pickFor = useGame((s) => s.deckReturn);
   const leavePick = () => {
+    const back = useGame.getState().deckReturn;
     useGame.setState({ deckPick: null, deckReturn: 'home' });
-    setScreen('lobby');
+    setScreen(back === 'solo' ? 'solo' : 'lobby');
   };
   const choosePick = (id: DeckId) => {
     if (!playableDecks().includes(id)) {
@@ -430,7 +432,7 @@ export function MyDeck() {
     }
     sfx('click');
     try {
-      localStorage.setItem('bs-lobby-deck', id);
+      localStorage.setItem(useGame.getState().deckReturn === 'solo' ? 'bs-solo-deck' : 'bs-lobby-deck', id);
     } catch {
       /* เก็บไม่ได้ก็ไม่เป็นไร */
     }
@@ -444,7 +446,7 @@ export function MyDeck() {
     setScreen('home');
   };
   const title = pick && view.kind === 'grid'
-    ? ['SELECT DECK', 'เลือกเด็คที่จะใช้ในห้องดวล']
+    ? ['SELECT DECK', pickFor === 'solo' ? 'เลือกเด็คที่จะใช้ในด่าน' : 'เลือกเด็คที่จะใช้ในห้องดวล']
     : view.kind === 'acc' ? ['CHANGE ACCESSORIES', 'เปลี่ยนของตกแต่ง'] : view.kind === 'detail' ? ['DECK', 'ดูเด็ค'] : starters ? ['STARTER DECK', 'รายการ Starter Deck'] : ['MY DECK', 'เด็คของฉัน'];
 
   return (
