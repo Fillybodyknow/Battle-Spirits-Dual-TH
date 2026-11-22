@@ -3,6 +3,11 @@ import type { BurstEvent, CardFilter, Condition, Step } from '@bs/cards';
 export type PlayerId = 'p1' | 'p2';
 export const PLAYERS: readonly PlayerId[] = ['p1', 'p2'];
 export const opponentOf = (p: PlayerId): PlayerId => (p === 'p1' ? 'p2' : 'p1');
+/**
+ * โหมด 2VS2 (กติกา 15): ที่นั่งในทีม · 0 = คนแรก (โซนอยู่ที่ players[p] ตามปกติ), 1 = คนที่สอง (โซนอยู่ที่ players[p].partner)
+ * 1VS1 มีแค่ที่นั่ง 0
+ */
+export type Seat = 0 | 1;
 
 export type Phase = 'start' | 'core' | 'draw' | 'refresh' | 'main' | 'attack' | 'end';
 export type CardState = 'refresh' | 'exhausted';
@@ -34,12 +39,16 @@ export interface CoreInstance {
   id: string;
   owner: PlayerId;
   isSoul: boolean;
+  /** 2VS2: คอร์ของคนที่สองในทีม (ไม่มี = ที่นั่ง 0) */
+  seat?: Seat;
 }
 
 export interface CardInstance {
   id: string;
   cardNo: string;
   owner: PlayerId;
+  /** 2VS2: การ์ดของคนที่สองในทีม (ไม่มี = ที่นั่ง 0) */
+  seat?: Seat;
   state: CardState;
   /** id ของ Core ที่วางอยู่บนการ์ด (มีค่าเฉพาะตอนอยู่บน Field) */
   cores: string[];
@@ -60,10 +69,10 @@ export interface CardInstance {
 }
 
 /** ทุก array เก็บ id; deck[0] คือใบบนสุด */
-export interface PlayerState {
+/** โซนส่วนตัวของผู้เล่น 1 คน (2VS2: แยกต่อคน ส่วนสนามใช้ร่วมกันทั้งทีม) */
+export interface PersonalZones {
   deck: string[];
   hand: string[];
-  field: string[];
   trashCards: string[];
   burst: string | null;
   life: string[];
@@ -73,15 +82,32 @@ export interface PlayerState {
   songs?: string[];
 }
 
+export interface PlayerState extends PersonalZones {
+  /** สนามของฝั่งนี้ (2VS2 = สนามรวมของทีม การ์ดแต่ละใบมีที่นั่งเจ้าของ) */
+  field: string[];
+  /**
+   * 2VS2: โซนส่วนตัวของที่นั่งที่ไม่ได้ทำงานอยู่ตอนนี้
+   * ปกติ (ระหว่าง action) โซนของที่นั่ง 0 อยู่ที่ players[p] และของที่นั่ง 1 อยู่ที่ partner
+   * ระหว่างทำ action/เอฟเฟกต์ของที่นั่ง 1 engine สลับให้โซนของที่นั่ง 1 มาอยู่ที่ players[p] ชั่วคราว (ดู seats.ts)
+   */
+  partner?: PersonalZones;
+  /** ที่นั่งที่โซนอยู่ที่ players[p] ตอนนี้ (ไม่มี = 0) */
+  active?: Seat;
+}
+
 export interface FlashWindow {
   priority: PlayerId;
   consecutivePasses: number;
+  /** 2VS2: ที่นั่งของฝั่งที่มีสิทธิ์ที่กดผ่านแล้ว (ผ่านครบทุกคน = ฝั่งนั้นผ่าน) ล้างทุกครั้งที่สิทธิ์เปลี่ยนฝั่ง */
+  seatsPassed?: Seat[];
 }
 
 export type BattleStep = 'flashBeforeBlock' | 'declareBlock' | 'flashAfterBlock';
 
 export interface Battle {
   attackerId: string;
+  /** 2VS2: ที่นั่งของฝ่ายป้องกันที่โหวต "ไม่ป้องกัน" แล้ว (ครบทุกคน = ไม่ป้องกัน) */
+  noBlockVotes?: Seat[];
   /** ผู้ป้องกัน (ปกติไม่เกิน 1 ตัว, [Consecutive Blade] ได้ 2 ตัว) */
   blockers: string[];
   /** จำนวนผู้ป้องกันสูงสุดในการต่อสู้นี้ */
@@ -167,6 +193,12 @@ export interface Battle {
 /** เอฟเฟกต์ที่รอประมวลผล (หัวคิวคือที่กำลังทำ) */
 export interface QueuedEffect {
   controller: PlayerId;
+  /** 2VS2: ที่นั่งของผู้ควบคุม ("ไลฟ์/มือ/รีเสิร์ฟของเรา" = ของที่นั่งนี้) ไม่มี = 0 */
+  seat?: Seat;
+  /** 2VS2: กำลังทำ step ที่ลงผลกับโซนส่วนตัวของคู่แข่งที่นั่งนี้ (ดู OPP_ZONE_STEPS ใน effects.ts) */
+  oppSeat?: Seat;
+  /** 2VS2: ที่นั่งเดิมก่อน step selfSeat (เจ้าของเอฟเฟกต์เลือกว่าใครในทีมจั่ว) */
+  seatPrev?: Seat;
   /** การ์ดที่เป็นเจ้าของเอฟเฟกต์ */
   sourceId: string;
   /** ขั้นตอนที่ยังไม่ได้ทำ */
@@ -347,6 +379,10 @@ export type PendingChoice =
 
 export interface GameState {
   config: GameConfig;
+  /** โหมดเกม (ไม่มี = 1VS1) */
+  mode?: '2v2';
+  /** 2VS2: ที่นั่งที่กด "พร้อม" จบเมนสเต็ป/แอทแท็คสเต็ปแล้วในเทิร์นทีมนี้ */
+  seatsReady?: Seat[];
   /** สถานะของ seeded RNG (เกมเดิน deterministic) */
   rng: number;
   turn: number;
@@ -377,6 +413,8 @@ export interface GameState {
   milledByOpponent?: { turn: number; p1?: number; p2?: number };
   /** จำนวนจั่วเพิ่มของ Draw Step ปัจจุบัน (เอฟเฟกต์ก่อนจั่ว) */
   drawStepExtra?: number;
+  /** 2VS2: จั่วเพิ่ม/ลดในดรอว์สเต็ปนี้ แยกต่อที่นั่ง [ที่นั่ง 0, ที่นั่ง 1] */
+  drawStepExtraSeats?: number[];
   /** ผู้เล่นที่ไลฟ์ได้รับความเสียหายในเทิร์นนี้ (ล้างเมื่อเริ่มเทิร์นใหม่) */
   lifeDamagedThisTurn?: PlayerId[];
   /**
@@ -489,7 +527,9 @@ export type EndReason = 'lifeZero' | 'deckOut' | 'concede';
 /** ปลายทางของการย้าย Core */
 export type CoreTarget = { area: 'reserve' } | { cardId: string };
 
-export type Action =
+export type Action = ActionBody & { /** 2VS2: ที่นั่งที่ทำ action นี้ (ไม่มี = 0) */ seat?: Seat };
+
+type ActionBody =
   /**
    * อัญเชิญจากมือ: Main Step หรือ (การ์ดที่มี [Quick]) ใน Flash timing
    * braveOnto = Brave ร่วมร่างกับสปิริตนี้ (ไม่วาง Core บน Brave)
@@ -563,6 +603,8 @@ export type GameEvent =
   | { type: 'blockDeclared'; blockerId: string }
   | { type: 'noBlock' }
   | { type: 'flashPassed'; player: PlayerId }
+  /** 2VS2: ที่นั่งนี้กดพร้อม/ผ่านแล้ว รอเพื่อนร่วมทีม */
+  | { type: 'seatReady'; player: PlayerId; seat: Seat; what: 'main' | 'attack' | 'flash' | 'block' }
   /** attack: ผู้โจมตีที่ไม่ถูกป้องกันทำความเสียหายแก่ไลฟ์ (หน้าเว็บใช้เล่นท่าวิ่งชน · เสียไลฟ์จากเอฟเฟกต์ระหว่างการต่อสู้ไม่มี) */
   | { type: 'lifeLost'; player: PlayerId; amount: number; attack?: true }
   /** bySource = การ์ดที่เป็นเจ้าของเอฟเฟกต์ที่ทำลาย */

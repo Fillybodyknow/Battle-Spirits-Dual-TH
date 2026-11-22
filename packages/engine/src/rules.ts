@@ -1,5 +1,6 @@
 import type { Ability, CardDatabase, CardDef, CardFilter, Condition, Step, SymbolColor } from '@bs/cards';
 import type { CardInstance, GameState, PlayerId } from './types';
+import { allZones, ownerZones } from './seats';
 
 /** ข้อผิดพลาดจากการทำ action ผิดกติกา */
 export class RuleError extends Error {
@@ -371,7 +372,7 @@ export function conditionHolds(
     const a = state.cards[b.attackerId]!;
     return a.owner === card.owner && db.get(a.cardNo).family.includes(cond.attackerFamily);
   }
-  if ('opponentHasBurst' in cond) return !!state.players[card.owner === 'p1' ? 'p2' : 'p1'].burst;
+  if ('opponentHasBurst' in cond) return allZones(state, card.owner === 'p1' ? 'p2' : 'p1').some((z) => !!z.burst);
   if ('opponentHandAtLeast' in cond) return handCards(state, card.owner === 'p1' ? 'p2' : 'p1').length >= cond.opponentHandAtLeast;
   if ('opponentColorsAtLeast' in cond) {
     if (!db) return false;
@@ -2035,7 +2036,7 @@ export function canAttackWith(state: GameState, db: CardDatabase, cardId: string
   if (oneCoreLocked(state, db, cardId)) return false;
   if (card.cores.length < attackTaxFor(state, db, card.owner)) return false;
   // BS12 แคพิทัลแคพิทัล: ต้องส่งคอร์ในรีเสิร์ฟลงแทรช
-  if (state.players[card.owner].reserve.length < attackReserveTaxFor(state, db, cardId).cores) return false;
+  if (ownerZones(state, cardId).reserve.length < attackReserveTaxFor(state, db, cardId).cores) return false;
   if (coreTaxed(state, card.owner) && !card.cores.some((c) => !state.cores[c]!.isSoul)) return false;
   // "ในเทิร์นนี้ สปิริตคู่แข่งทั้งหมดโจมตีไม่ได้" ลงผลกับสปิริตแต่ละตัว: ตัวที่ไม่รับผลเอฟเฟกต์ของการ์ดต้นเหตุยังโจมตีได้ (เจ้าของโปรเจกต์กำหนด)
   return !(state.attackBans ?? []).some(

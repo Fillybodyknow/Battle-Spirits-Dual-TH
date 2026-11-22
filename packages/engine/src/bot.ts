@@ -24,7 +24,8 @@ import {
   quickAbility,
   symbolCount,
 } from './rules';
-import type { Action, ChoicePick, GameState, PendingChoice, PlayerId } from './types';
+import type { Action, ChoicePick, GameState, PendingChoice, PlayerId, Seat } from './types';
+import { allZones, itemSeat, ownField, seatOfCard, seatsOf, useSeat } from './seats';
 
 const opp = (p: PlayerId): PlayerId => (p === 'p1' ? 'p2' : 'p1');
 
@@ -38,6 +39,32 @@ export function actorOf(s: GameState): PlayerId | null {
   if (b?.step === 'declareBlock') return opp(s.turnPlayer);
   return s.turnPlayer;
 }
+
+/**
+ * 2VS2: ที่นั่งของฝั่ง actor ที่ต้องตัดสินใจตอนนี้
+ * เมน/แอทแท็คสเต็ป = คนแรกที่ยังไม่กดพร้อม · แฟลช = คนแรกที่ยังไม่กดผ่าน · ป้องกัน = ทั้งสองคน (เลือกผู้ป้องกันของตัวเอง)
+ * ตัวเลือกของเอฟเฟกต์ = ที่นั่งที่เอฟเฟกต์ทำงานอยู่ (ของเรา / คู่แข่งที่ถูกเลือก)
+ */
+export function actorSeats(s: GameState): Seat[] {
+  const who = actorOf(s);
+  if (!who || s.mode !== '2v2') return [0];
+  const all = seatsOf(s, who);
+  if (s.choice) {
+    const cur = s.queue[0];
+    if (!cur) return [0];
+    return [cur.controller === who ? itemSeat(s, cur) : (cur.oppSeat ?? 0)];
+  }
+  if (s.awaitingDraw) return [0];
+  const b = s.battle;
+  if (b?.flash) return [all.find((x) => !(b.flash!.seatsPassed ?? []).includes(x)) ?? 0];
+  if (b?.step === 'declareBlock') {
+    const left = all.filter((x) => !(b.noBlockVotes ?? []).includes(x));
+    return left.length ? left : all;
+  }
+  return [all.find((x) => !(s.seatsReady ?? []).includes(x)) ?? 0];
+}
+
+const withSeat = (a: Action, seat: Seat): Action => (seat ? { ...a, seat } : a);
 
 // ---------------------------------------------------------------- ข้อมูลที่บอทเห็น
 
@@ -56,6 +83,12 @@ export function botView(s: GameState, me: PlayerId): GameState {
   o.hand.forEach(blank);
   if (o.burst) blank(o.burst);
   for (const p of ['p1', 'p2'] as const) v.players[p].deck.forEach(blank);
+  // 2VS2: คู่แข่งคนที่สอง (มือ/เบิร์ส) และเด็คของคนที่สองทั้งสองฝั่ง
+  if (o.partner) {
+    o.partner.hand.forEach(blank);
+    if (o.partner.burst) blank(o.partner.burst);
+  }
+  for (const p of ['p1', 'p2'] as const) v.players[p].partner?.deck.forEach(blank);
   // สปิริตร่างแยกของคู่แข่ง: ไม่รู้การ์ดจริง
   for (const id of o.field) delete v.cards[id]!.realCardNo;
   return v;
@@ -71,10 +104,14 @@ export function evaluate(s: GameState, db: CardDatabase, me: PlayerId): number {
 
 function side(s: GameState, db: CardDatabase, p: PlayerId, isMe: boolean): number {
   const pl = s.players[p];
+  // 2VS2: โซนส่วนตัวของทั้งสองคนในทีม · ทีมแพ้เมื่อไลฟ์เป็น 0 ทั้งคู่ = ความอันตรายดูจากไลฟ์ที่มากที่สุด
+  const zones = allZones(s, p);
   let v = 0;
   // ไลฟ์ยิ่งน้อยยิ่งอันตราย (เม็ดท้าย ๆ มีค่ามากขึ้น)
-  const life = pl.life.length;
+  const life = Math.max(...zones.map((z) => z.life.length));
   v += life * 1200 + (life <= 2 ? -1500 : 0) + (life <= 1 ? -2500 : 0);
+  // ไลฟ์ของอีกคน (ไม่ใช่ตัวตัดสินแพ้ แต่ยังมีค่า: เบิร์ส/เงื่อนไขไลฟ์)
+  if (zones.length > 1) v += (zones.reduce((n, z) => n + z.life.length, 0) - life) * 250;
   /** คู่แข่งมีสปิริตที่จะโจมตีเราได้ในเทิร์นหน้า */
   const threat = s.players[opp(p)].field.filter((id) => isSpiritLike(db.get(s.cards[id]!.cardNo))).length;
   for (const id of pl.field) {
@@ -103,10 +140,14 @@ function side(s: GameState, db: CardDatabase, p: PlayerId, isMe: boolean): numbe
     if (dmg >= life) v -= 7000;
     else v -= dmg * 150;
   }
-  v += pl.reserve.length * 55;
-  v += pl.hand.length * 110;
-  if (pl.burst) v += isMe ? 220 : 180;
-  if (pl.deck.length < 6) v -= (6 - pl.deck.length) * 300;
+  for (const z of zones) {
+    v += z.reserve.length * 55;
+    v += z.hand.length * 110;
+    if (z.burst) v += isMe ? 220 : 180;
+  }
+  // เด็คหมด = แพ้ (2VS2: ต้องหมดทั้งคู่)
+  const deck = Math.max(...zones.map((z) => z.deck.length));
+  if (deck < 6) v -= (6 - deck) * 300;
   return v;
 }
 
@@ -148,7 +189,7 @@ function coresAnywhere(s: GameState, db: CardDatabase, p: PlayerId, n: number, e
   const out = payFrom(s, p, Math.min(n, s.players[p].reserve.filter((c) => !exclude.includes(c)).length), exclude) ?? [];
   const surplus: string[] = [];
   const rest: string[] = [];
-  for (const id of s.players[p].field) {
+  for (const id of ownField(s, p)) {
     const card = s.cards[id]!;
     const def = db.get(card.cardNo);
     const keep = def.type === 'nexus' ? 0 : (def.levels[0]?.cores ?? 1);
@@ -173,7 +214,7 @@ function payAny(s: GameState, db: CardDatabase, p: PlayerId, n: number): string[
   const out = payFrom(s, p, Math.min(n, free)) ?? [];
   if (out.length >= n) return out;
   const surplus: string[] = [];
-  for (const id of s.players[p].field) {
+  for (const id of ownField(s, p)) {
     const card = s.cards[id]!;
     const def = db.get(card.cardNo);
     const keep = def.type === 'nexus' ? 0 : (def.levels[0]?.cores ?? 1);
@@ -195,6 +236,27 @@ function handCost(s: GameState, db: CardDatabase, p: PlayerId, id: string, def: 
 
 /** ท่าที่ลองได้ของ me ตอนนี้ (บางท่าอาจผิดกติกา: กรองด้วย applyAction ตอนลอง) */
 export function legalActions(s: GameState, db: CardDatabase, me: PlayerId): Action[] {
+  if (s.mode !== '2v2' || actorOf(s) !== me) return legalActionsSeat(s, db, me);
+  // 2VS2: สร้างท่าในมุมของที่นั่งที่ต้องทำ (สลับโซนในสำเนา) แล้วติดที่นั่งให้ action
+  const out: Action[] = [];
+  for (const seat of actorSeats(s)) {
+    let view = s;
+    if (seat) {
+      view = structuredClone(s);
+      useSeat(view, me, seat);
+    }
+    for (const a of legalActionsSeat(view, db, me)) {
+      if (a.type === 'noBlock' && out.some((x) => x.type === 'noBlock')) continue;
+      // ป้องกันได้เฉพาะสปิริตของตัวเอง
+      if (a.type === 'declareBlock' && seatOfCard(s.cards[a.blockerId]) !== seat) continue;
+      if (a.type === 'declareAttack' && seatOfCard(s.cards[a.attackerId]) !== seat) continue;
+      out.push(withSeat(a, seat));
+    }
+  }
+  return out;
+}
+
+function legalActionsSeat(s: GameState, db: CardDatabase, me: PlayerId): Action[] {
   if (s.winner) return [];
   if (s.choice) return s.choice.player === me ? choiceActions(s, db, me, s.choice) : [];
   if (s.awaitingDraw === me) return [{ type: 'drawStep', player: me }];
@@ -275,7 +337,7 @@ function coreMoves(s: GameState, db: CardDatabase, me: PlayerId): Action[] {
   const out: Action[] = [];
   const p = s.players[me];
   const soul = p.reserve.find((c) => s.cores[c]!.isSoul);
-  for (const id of p.field) {
+  for (const id of ownField(s, me)) {
     const card = s.cards[id]!;
     const def = db.get(card.cardNo);
     const cur = card.cores.length;
@@ -316,7 +378,7 @@ function flashPlays(s: GameState, db: CardDatabase, me: PlayerId): Action[] {
 
 function activations(s: GameState, db: CardDatabase, me: PlayerId): Action[] {
   const out: Action[] = [];
-  for (const id of s.players[me].field) {
+  for (const id of ownField(s, me)) {
     for (const o of activatableOptions(s, db, me, id)) out.push({ type: 'activate', player: me, cardId: id, source: o.ability.source, from: o.from });
   }
   return out;
@@ -460,19 +522,20 @@ function quickPolicy(s: GameState, db: CardDatabase, who: PlayerId): Action {
   }
   if (s.awaitingDraw) return { type: 'drawStep', player: s.awaitingDraw };
   const b = s.battle!;
-  if (b.flash) return { type: 'passFlash', player: b.flash.priority };
+  if (b.flash) return withSeat({ type: 'passFlash', player: b.flash.priority }, actorSeats(s)[0]!);
   // ป้องกัน: ใช้ตัวที่ชนะผู้โจมตีได้ (BP สูงกว่า) ตัวที่อ่อนที่สุด · ไลฟ์จะหมด = ป้องกันด้วยตัวที่มีค่าน้อยสุด
   const def = opp(s.turnPlayer);
   const blockers = blockersFor(s, db, def);
   const atkBp = currentBp(s, db, b.attackerId);
   const winners = blockers.filter((id) => currentBp(s, db, id) > atkBp).sort((x, y) => currentBp(s, db, x) - currentBp(s, db, y));
-  if (winners[0]) return { type: 'declareBlock', player: def, blockerId: winners[0] };
+  if (winners[0]) return withSeat({ type: 'declareBlock', player: def, blockerId: winners[0] }, seatOfCard(s.cards[winners[0]]));
   const dmg = symbolCount(db.get(s.cards[b.attackerId]!.cardNo));
   if (blockers.length > 0 && dmg >= s.players[def].life.length) {
     const cheapest = [...blockers].sort((x, y) => currentBp(s, db, x) - currentBp(s, db, y))[0]!;
-    return { type: 'declareBlock', player: def, blockerId: cheapest };
+    return withSeat({ type: 'declareBlock', player: def, blockerId: cheapest }, seatOfCard(s.cards[cheapest]));
   }
-  return { type: 'noBlock', player: def };
+  // 2VS2: โหวตไม่ป้องกันในนามคนที่ยังไม่โหวต
+  return withSeat({ type: 'noBlock', player: def }, actorSeats(s)[0]!);
 }
 
 /** เล่นต่ออัตโนมัติจนถึงจุดที่ต้องตัดสินใจอย่างอิสระ (เมน/แอทแท็คสเต็ปที่ไม่มีการต่อสู้ค้าง) */
@@ -486,7 +549,7 @@ function settle(s: GameState, db: CardDatabase, limit = 40): GameState {
     const r = applyAction(cur, quickPolicy(cur, db, who), db);
     if (!r.ok) {
       // นโยบายง่ายทำไม่ได้ (เช่น ตัวเลือกที่จ่ายไม่ไหว): ไม่เลือก / ผ่าน
-      const fallback: Action = cur.choice ? { type: 'choose', player: who, pick: null } : { type: 'passFlash', player: who };
+      const fallback: Action = cur.choice ? { type: 'choose', player: who, pick: null } : withSeat({ type: 'passFlash', player: who }, actorSeats(cur)[0]!);
       const r2 = applyAction(cur, fallback, db);
       if (!r2.ok) return cur;
       cur = r2.state;

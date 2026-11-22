@@ -1,0 +1,269 @@
+import { describe, expect, it } from 'vitest';
+import { loadAllCards } from '@bs/cards';
+import { applyAction, createGame, payableCost, type Action, type GameState, type PlayerId, type Seat } from '../src';
+import { zonesOf } from '../src/seats';
+
+/** โหมด 2VS2 (กติกา 15): สนามร่วม แยกโซนส่วนตัว เล่นพร้อมกันในเทิร์นทีม */
+const db = loadAllCards();
+const no = (name: string) => db.all().find((c) => c.name === name)!.cardNo;
+const DARIU = no('มุฉะดาริว'); // สีแดง คอสต์ 1 BP 3000 (Core 1/3/5) ไม่มีเอฟเฟกต์
+
+function setup(): GameState {
+  const deck = Array<string>(40).fill(DARIU);
+  return createGame({
+    db,
+    decks: { p1: deck, p2: deck },
+    partnerDecks: { p1: deck, p2: deck },
+    seed: 1,
+    firstPlayer: 'p1',
+    shuffleDecks: false,
+    config: { firstPlayerSkipsAttackStep: false },
+  }).state;
+}
+
+function act(s: GameState, action: Action): GameState {
+  const r = applyAction(s, action, db);
+  if (!r.ok) throw new Error(`${action.type}: ${r.error.code} ${r.error.message}`);
+  return r.state;
+}
+const fails = (s: GameState, action: Action) => {
+  const r = applyAction(s, action, db);
+  return r.ok ? 'ok' : r.error.code;
+};
+const z = (s: GameState, p: PlayerId, seat: Seat) => zonesOf(s, p, seat);
+
+/** ที่นั่ง seat ของ p1 อัญเชิญมุฉะดาริวจากมือ (จ่าย 1 + วาง 1 จากรีเสิร์ฟของตัวเอง) */
+function summon(s: GameState, seat: Seat): { s: GameState; id: string } {
+  const zone = z(s, 'p1', seat);
+  const id = zone.hand[0]!;
+  const normals = zone.reserve.filter((c) => !s.cores[c]!.isSoul);
+  // เจ็มบนสนามรวมของทีมลดคอสต์ได้ (กติกา 15 ข้อ 8)
+  const cost = payableCost(s, db, 'p1', db.get(DARIU));
+  const next = act(s, { type: 'summon', player: 'p1', seat, cardId: id, payment: normals.slice(0, cost), placement: [normals[cost]!] });
+  return { s: next, id };
+}
+
+describe('2VS2', () => {
+  it('เริ่มเกม: ทุกคนมีไลฟ์ 5 มือ 4 (ทีมที่เริ่มก่อนจั่วแล้ว = 5) รีเสิร์ฟ 3 + โซลคอร์ ของตัวเอง', () => {
+    const s = setup();
+    expect(s.mode).toBe('2v2');
+    for (const p of ['p1', 'p2'] as PlayerId[]) {
+      for (const seat of [0, 1] as Seat[]) {
+        const zone = z(s, p, seat);
+        expect(zone.life).toHaveLength(5);
+        expect(zone.hand).toHaveLength(p === 'p1' ? 5 : 4);
+        expect(zone.reserve).toHaveLength(4);
+        expect(zone.reserve.filter((c) => s.cores[c]!.isSoul)).toHaveLength(1);
+        for (const id of [...zone.hand, ...zone.deck]) expect(s.cards[id]!.seat ?? 0).toBe(seat);
+        for (const c of [...zone.life, ...zone.reserve]) expect(s.cores[c]!.seat ?? 0).toBe(seat);
+      }
+    }
+  });
+
+  it('เทิร์นทีม: ทั้งสองคนได้คอร์และจั่ว', () => {
+    let s = setup();
+    s = act(s, { type: 'endMain', player: 'p1' });
+    s = act(s, { type: 'endMain', player: 'p1', seat: 1 });
+    s = act(s, { type: 'endAttackStep', player: 'p1' });
+    s = act(s, { type: 'endAttackStep', player: 'p1', seat: 1 });
+    expect(s.turnPlayer).toBe('p2');
+    for (const seat of [0, 1] as Seat[]) {
+      expect(z(s, 'p2', seat).hand).toHaveLength(5);
+      expect(z(s, 'p2', seat).reserve).toHaveLength(5);
+    }
+  });
+
+  it('อัญเชิญด้วยคอร์ของตัวเอง · การ์ดอยู่บนสนามรวมพร้อมที่นั่งเจ้าของ · เพื่อนจัดคอร์/โจมตีด้วยการ์ดนี้ไม่ได้', () => {
+    let s = setup();
+    const before0 = z(s, 'p1', 0).reserve.length;
+    const r = summon(s, 1);
+    s = r.s;
+    expect(s.players.p1.field).toContain(r.id);
+    expect(s.cards[r.id]!.seat).toBe(1);
+    expect(z(s, 'p1', 1).reserve).toHaveLength(2);
+    expect(z(s, 'p1', 0).reserve).toHaveLength(before0);
+    // ที่นั่ง 0 ใช้คอร์ของเพื่อนไม่ได้ · วางคอร์บนการ์ดเพื่อนไม่ได้
+    expect(fails(s, { type: 'moveCores', player: 'p1', moves: [{ coreId: z(s, 'p1', 1).reserve[0]!, to: { area: 'reserve' } }] })).toBe('CORE_NOT_OWNED');
+    expect(fails(s, { type: 'moveCores', player: 'p1', moves: [{ coreId: z(s, 'p1', 0).reserve[0]!, to: { cardId: r.id } }] })).toBe('NOT_YOUR_CARD');
+    // เจ้าของวางคอร์เพิ่มได้
+    s = act(s, { type: 'moveCores', player: 'p1', seat: 1, moves: [{ coreId: z(s, 'p1', 1).reserve.find((c) => !s.cores[c]!.isSoul)!, to: { cardId: r.id } }] });
+    expect(s.cards[r.id]!.cores).toHaveLength(2);
+    // จบเมนสเต็ปต้องพร้อมทั้งสองคน
+    s = act(s, { type: 'endMain', player: 'p1' });
+    expect(s.phase).toBe('main');
+    s = act(s, { type: 'endMain', player: 'p1', seat: 1 });
+    expect(s.phase).toBe('attack');
+    expect(fails(s, { type: 'declareAttack', player: 'p1', attackerId: r.id })).toBe('NOT_YOUR_CARD');
+    s = act(s, { type: 'declareAttack', player: 'p1', seat: 1, attackerId: r.id });
+    expect(s.battle?.attackerId).toBe(r.id);
+  });
+
+  it('โจมตีไม่ถูกป้องกัน: ไลฟ์ของคู่แข่งลดพร้อมกันทั้งสองคน · แฟลชต้องผ่านครบทุกคน', () => {
+    let s = setup();
+    const r = summon(s, 1);
+    s = act(act(r.s, { type: 'endMain', player: 'p1' }), { type: 'endMain', player: 'p1', seat: 1 });
+    s = act(s, { type: 'declareAttack', player: 'p1', seat: 1, attackerId: r.id });
+    // Flash ก่อนป้องกัน: ฝ่ายป้องกัน (p2) มีสิทธิ์ก่อน ต้องผ่านทั้งสองคน
+    expect(s.battle!.flash!.priority).toBe('p2');
+    s = act(s, { type: 'passFlash', player: 'p2' });
+    expect(s.battle!.flash!.priority).toBe('p2');
+    s = act(s, { type: 'passFlash', player: 'p2', seat: 1 });
+    expect(s.battle!.flash!.priority).toBe('p1');
+    s = act(s, { type: 'passFlash', player: 'p1', seat: 1 });
+    s = act(s, { type: 'passFlash', player: 'p1' });
+    expect(s.battle!.step).toBe('declareBlock');
+    // ไม่ป้องกัน = โหวตครบทั้งสองคน
+    s = act(s, { type: 'noBlock', player: 'p2' });
+    expect(s.battle!.step).toBe('declareBlock');
+    expect(z(s, 'p2', 0).life).toHaveLength(5);
+    s = act(s, { type: 'noBlock', player: 'p2', seat: 1 });
+    expect(z(s, 'p2', 0).life).toHaveLength(4);
+    expect(z(s, 'p2', 1).life).toHaveLength(4);
+    // คอร์ไลฟ์ไปรีเสิร์ฟของแต่ละคน
+    for (const seat of [0, 1] as Seat[]) for (const c of z(s, 'p2', seat).reserve) expect(s.cores[c]!.seat ?? 0).toBe(seat);
+  });
+
+  it('การ์ดที่ออกจากสนามลงแทรชเจ้าของ และคอร์บนการ์ดกลับรีเสิร์ฟเจ้าของ', () => {
+    let s = setup();
+    const r = summon(s, 1);
+    s = r.s;
+    const core = s.cards[r.id]!.cores[0]!;
+    // ที่นั่ง 0 ถอดคอร์สุดท้ายออกจากการ์ดเพื่อนไม่ได้ → ให้เจ้าของถอดเอง = สูญสลาย
+    s = act(s, { type: 'moveCores', player: 'p1', seat: 1, moves: [{ coreId: core, to: { area: 'reserve' } }] });
+    expect(s.players.p1.field).not.toContain(r.id);
+    expect(z(s, 'p1', 1).trashCards).toContain(r.id);
+    expect(z(s, 'p1', 0).trashCards).not.toContain(r.id);
+    expect(z(s, 'p1', 1).reserve).toContain(core);
+  });
+
+  it('เอฟเฟกต์ที่ลงผลกับเด็ค/มือของคู่แข่ง = คู่แข่งทั้งสองคน (ทิ้งเด็ค 2 ใบ = คนละ 2 ใบ · ทิ้งมือ = แต่ละคนเลือกทิ้งของตัวเอง)', () => {
+    let s = setup();
+    const src = z(s, 'p1', 1).hand[0]!;
+    const deck0 = z(s, 'p2', 0).deck.length;
+    const deck1 = z(s, 'p2', 1).deck.length;
+    s.queue = [{ controller: 'p1', sourceId: src, steps: [{ do: 'mill', count: 2 }, { do: 'opponentDiscards', count: 1 }], paidWithSoul: false, trashWhenDone: false }];
+    s = act(s, { type: 'endMain', player: 'p1' });
+    expect(z(s, 'p2', 0).deck).toHaveLength(deck0 - 2);
+    expect(z(s, 'p2', 1).deck).toHaveLength(deck1 - 2);
+    expect(z(s, 'p2', 0).trashCards).toHaveLength(2);
+    expect(z(s, 'p2', 1).trashCards).toHaveLength(2);
+    // คู่แข่งคนแรกเลือกจากมือตัวเอง แล้วคนที่สอง
+    expect(s.choice?.player).toBe('p2');
+    const c0 = (s.choice as { candidates: string[] }).candidates;
+    expect(c0.every((id) => (s.cards[id]!.seat ?? 0) === 0)).toBe(true);
+    s = act(s, { type: 'choose', player: 'p2', pick: c0[0]! });
+    const c1 = (s.choice as { candidates: string[] }).candidates;
+    expect(c1.every((id) => s.cards[id]!.seat === 1)).toBe(true);
+    s = act(s, { type: 'choose', player: 'p2', seat: 1, pick: c1[0]! });
+    expect(z(s, 'p2', 0).hand).toHaveLength(3);
+    expect(z(s, 'p2', 1).hand).toHaveLength(3);
+    expect(z(s, 'p2', 1).trashCards).toContain(c1[0]);
+  });
+
+  it('เอฟเฟกต์จั่วการ์ด: เจ้าของเอฟเฟกต์เลือกว่าใครในทีมจั่ว', () => {
+    let s = setup();
+    const src = z(s, 'p1', 1).hand[0]!; // การ์ดของที่นั่ง 1 = ที่นั่ง 1 เป็นเจ้าของเอฟเฟกต์
+    const h0 = z(s, 'p1', 0).hand.length;
+    const h1 = z(s, 'p1', 1).hand.length;
+    s.queue = [{ controller: 'p1', sourceId: src, steps: [{ do: 'draw', count: 2 }], paidWithSoul: false, trashWhenDone: false }];
+    s = act(s, { type: 'endMain', player: 'p1' });
+    expect(s.choice?.kind).toBe('option');
+    expect((s.choice as { options: string[] }).options).toEqual(['เราจั่ว', 'ให้เพื่อนร่วมทีมจั่ว']);
+    s = act(s, { type: 'choose', player: 'p1', seat: 1, pick: 1 });
+    expect(z(s, 'p1', 0).hand).toHaveLength(h0 + 2);
+    expect(z(s, 'p1', 1).hand).toHaveLength(h1);
+  });
+
+  it('ป้องกัน: คนใดคนหนึ่งประกาศป้องกัน = ทีมป้องกัน (โหวตไม่ป้องกันที่ค้างอยู่ถูกล้าง)', () => {
+    let s = setup();
+    const a = summon(s, 0);
+    s = act(act(a.s, { type: 'endMain', player: 'p1' }), { type: 'endMain', player: 'p1', seat: 1 });
+    // p2 ที่นั่ง 1 มีสปิริตไว้ป้องกัน
+    const blocker = z(s, 'p2', 1).hand[0]!;
+    z(s, 'p2', 1).hand.splice(0, 1);
+    s.players.p2.field.push(blocker);
+    const core = z(s, 'p2', 1).reserve.find((c) => !s.cores[c]!.isSoul)!;
+    z(s, 'p2', 1).reserve.splice(z(s, 'p2', 1).reserve.indexOf(core), 1);
+    s.cards[blocker]!.cores.push(core);
+    s = act(s, { type: 'declareAttack', player: 'p1', attackerId: a.id });
+    while (s.battle?.flash) s = act(s, { type: 'passFlash', player: s.battle.flash.priority, ...(s.battle.flash.seatsPassed?.includes(0) ? { seat: 1 as Seat } : {}) });
+    s = act(s, { type: 'noBlock', player: 'p2' });
+    expect(s.battle!.noBlockVotes).toEqual([0]);
+    // ที่นั่ง 0 ป้องกันด้วยสปิริตของเพื่อนไม่ได้
+    expect(fails(s, { type: 'declareBlock', player: 'p2', blockerId: blocker })).toBe('NOT_YOUR_CARD');
+    s = act(s, { type: 'declareBlock', player: 'p2', seat: 1, blockerId: blocker });
+    expect(s.battle!.blockers).toEqual([blocker]);
+    expect(s.battle!.noBlockVotes).toBeUndefined();
+  });
+
+  it('ถอดคอร์จากรีเสิร์ฟคู่แข่ง: เลือกจากรีเสิร์ฟของคู่แข่งทั้งสองคนรวมกัน', () => {
+    let s = setup();
+    const src = z(s, 'p1', 0).hand[0]!;
+    s.queue = [{ controller: 'p1', sourceId: src, steps: [{ do: 'removeOpponentCores', count: 3, to: 'trash', withReserve: true }], paidWithSoul: false, trashWhenDone: false }];
+    s = act(s, { type: 'endMain', player: 'p1' });
+    expect(s.choice?.kind).toBe('distribute');
+    const c = s.choice as { candidates: string[]; caps: Record<string, number> };
+    expect(c.candidates).toEqual(['pile:reserve:p2', 'pile:reserve:p2:1']);
+    expect(c.caps['pile:reserve:p2:1']).toBe(4);
+    s = act(s, { type: 'choose', player: 'p1', pick: { alloc: { 'pile:reserve:p2': 1, 'pile:reserve:p2:1': 2 } } });
+    expect(z(s, 'p2', 0).reserve).toHaveLength(3);
+    expect(z(s, 'p2', 1).reserve).toHaveLength(2);
+    expect(z(s, 'p2', 0).trashCores).toHaveLength(1);
+    expect(z(s, 'p2', 1).trashCores).toHaveLength(2);
+  });
+
+  it('เบรฟของเราร่วมร่างกับสปิริตของเพื่อน · สปิริตเพื่อนออกจากสนาม = เจ้าของเบรฟเลือกให้อยู่ต่อด้วยคอร์ของตัวเอง', () => {
+    const BRAVE = no('มังกรบินชุดเกราะ โอโซเดลเกอร์'); // เบรฟ คอสต์ 5 (ลดแดง 3) ร่วมร่างกับคอสต์ 1 ขึ้นไป Lv1 = 1 คอร์
+    let s = setup();
+    const host = summon(s, 0);
+    s = host.s;
+    const hostCore = s.cards[host.id]!.cores[0]!;
+    // ที่นั่ง 1 มีเบรฟในมือ + คอร์พอจ่าย
+    const brave = z(s, 'p1', 1).hand[0]!;
+    s.cards[brave]!.cardNo = BRAVE;
+    for (let i = 0; i < 6; i++) {
+      const c = `bv-${i}`;
+      s.cores[c] = { id: c, owner: 'p1', isSoul: false, seat: 1 };
+      z(s, 'p1', 1).reserve.push(c);
+    }
+    const cost = payableCost(s, db, 'p1', db.get(BRAVE));
+    const pay = z(s, 'p1', 1).reserve.filter((c) => !s.cores[c]!.isSoul).slice(0, cost);
+    s = act(s, { type: 'summon', player: 'p1', seat: 1, cardId: brave, payment: pay, placement: [], braveOnto: host.id });
+    expect(s.cards[host.id]!.braves).toEqual([brave]);
+    expect(s.cards[brave]!.seat).toBe(1);
+    // เจ้าของสปิริต (ที่นั่ง 0) ถอดคอร์สุดท้าย = สปิริตสูญสลาย → เจ้าของเบรฟ (ที่นั่ง 1) เลือก
+    s = act(s, { type: 'moveCores', player: 'p1', moves: [{ coreId: hostCore, to: { area: 'reserve' } }] });
+    expect(z(s, 'p1', 0).trashCards).toContain(host.id);
+    expect(z(s, 'p1', 0).reserve).toContain(hostCore);
+    expect(s.choice?.kind).toBe('option');
+    s = act(s, { type: 'choose', player: 'p1', seat: 1, pick: 0 });
+    expect(s.choice?.kind).toBe('placeCores');
+    const place = z(s, 'p1', 1).reserve.filter((c) => !s.cores[c]!.isSoul).slice(0, 1);
+    s = act(s, { type: 'choose', player: 'p1', seat: 1, pick: { pay: place } });
+    expect(s.players.p1.field).toContain(brave);
+    expect(s.cards[brave]!.cores).toEqual(place);
+    expect(s.cores[place[0]!]!.seat).toBe(1);
+  });
+
+  it('ทีมแพ้เมื่อไลฟ์เป็น 0 ทั้งคู่', () => {
+    let s = setup();
+    // ไลฟ์ของ p2 ที่นั่ง 1 เหลือ 1 · ที่นั่ง 0 เหลือ 2 → โดน 1: ยังไม่แพ้ · โดนอีก 1: แพ้
+    z(s, 'p2', 0).life.splice(0, 3);
+    z(s, 'p2', 1).life.splice(0, 4);
+    const attack = (st: GameState, id: string) => {
+      let x = act(st, { type: 'declareAttack', player: 'p1', seat: 1, attackerId: id });
+      while (x.battle?.flash) x = act(x, { type: 'passFlash', player: x.battle.flash.priority, ...(x.battle.flash.seatsPassed?.includes(0) ? { seat: 1 as Seat } : {}) });
+      return act(act(x, { type: 'noBlock', player: 'p2' }), { type: 'noBlock', player: 'p2', seat: 1 });
+    };
+    const a = summon(s, 1);
+    s = a.s;
+    const b = summon(s, 1);
+    s = act(act(b.s, { type: 'endMain', player: 'p1' }), { type: 'endMain', player: 'p1', seat: 1 });
+    s = attack(s, a.id);
+    expect(z(s, 'p2', 1).life).toHaveLength(0);
+    expect(z(s, 'p2', 0).life).toHaveLength(1);
+    expect(s.winner).toBeNull();
+    s = attack(s, b.id);
+    expect(s.winner).toBe('p1');
+  });
+});

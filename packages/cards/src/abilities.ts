@@ -659,6 +659,10 @@ export type Step =
   /** (engine ใช้ภายใน) เบรฟที่ผู้ร่วมร่างออกจากสนาม: เลือกให้อยู่ต่อหรือลง Trash */
   /** (ภายใน engine) ร่างต้นออกจากสนาม: เบรฟจะคงอยู่ไหม · รีเสิร์ฟไม่พอ Lv1 = ลงแทรชเลย ไม่ถาม (กติกา 04 ข้อ 2) */
   | { do: 'braveFate'; cardId: string; state: 'refresh' | 'exhausted'; continuesAttackOf?: string }
+  /** (ภายใน) 2VS2: step ถัดไปทำกับโซนส่วนตัวของคู่แข่งที่นั่งนี้ (null = จบ) · กติกา 15 ข้อ 8 */
+  | { do: 'oppSeat'; seat: 0 | 1 | null }
+  /** (ภายใน) 2VS2: step ถัดไปทำในฐานะที่นั่งนี้ของทีมเรา (เจ้าของเอฟเฟกต์เลือกให้เพื่อนจั่ว) · null = กลับเป็นที่นั่งเดิม */
+  | { do: 'selfSeat'; seat: 0 | 1 | null }
   | { do: 'braveTrash'; cardId: string }
   /**
    * ผู้ควบคุมเลือก 1 ตัวเลือก (if = ถามเฉพาะเมื่อเงื่อนไขเป็นจริง)
@@ -924,7 +928,7 @@ export type Step =
   /** (engine ใช้ภายใน) มิคาเนะ: นำคอร์ไลฟ์ count เม็ดมาวางบนการ์ดนี้ */
   | { do: 'lifeCoreOnto'; cardId: string; count: number }
   /** (engine ใช้ภายใน) ส่งคอร์ n เม็ดในรีเสิร์ฟ/แทรชของคู่แข่งไป to */
-  | { do: 'opponentPileCores'; from: 'reserve' | 'trash'; n: number; to: 'reserve' | 'trash' | 'void' }
+  | { do: 'opponentPileCores'; from: 'reserve' | 'trash'; n: number; to: 'reserve' | 'trash' | 'void'; /** 2VS2: กองของคู่แข่งที่นั่งนี้ (ไม่ระบุ = ที่นั่ง 0) */ seat?: 0 | 1 }
   /** ส่งคอร์ count เม็ดบนการ์ดต้นเหตุ (subject) ของเราลงแทรชเรา (คอร์ปกติก่อน) */
   | { do: 'subjectCoresToTrash'; count: number }
   /** Bunshin: สามารถนำใบบนสุดเด็คเราไม่เกิน max ใบไปวางคว่ำบนฟิลด์ (วางคอร์จากรีเสิร์ฟใบละ 1 เม็ด) กลายเป็นสปิริตร่างแยก (n: engine ใช้ภายใน) */

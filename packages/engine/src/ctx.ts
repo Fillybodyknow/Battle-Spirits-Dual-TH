@@ -2,6 +2,7 @@ import type { CardDatabase, CardDef } from '@bs/cards';
 import { cardLevel, fail, noRefreshSource, fieldCost, isSpiritLike, levelOf, locateCore, minCores, levelBoostSources, payableCost, removeCore, removeFrom, summonLevelCostBoost, type StaticSource } from './rules';
 import { PLAYERS, opponentOf, type EndReason, type GameEvent, type GameState, type Phase, type PlayerId } from './types';
 import { newBatch, queueLifeLostTriggers, queueTriggers } from './effects';
+import { activeSeat, allZones, ownerZones, seatOfCard, zonesOf } from './seats';
 
 /** สถานะระหว่างประมวลผล action หนึ่งครั้ง (s เป็นสำเนาที่แก้ได้) */
 export interface Ctx {
@@ -33,7 +34,7 @@ export function emit(ctx: Ctx, event: GameEvent): void {
   if (ctx.s.shownCards?.length && event.type !== 'cardShown' && 'cardId' in event) {
     const id = (event as { cardId: string }).cardId;
     const c = ctx.s.cards[id];
-    if (c && ctx.s.shownCards.includes(id) && !ctx.s.players[c.owner].hand.includes(id)) ctx.s.shownCards = ctx.s.shownCards.filter((x) => x !== id);
+    if (c && ctx.s.shownCards.includes(id) && !ownerZones(ctx.s, id).hand.includes(id)) ctx.s.shownCards = ctx.s.shownCards.filter((x) => x !== id);
   }
   // จดการอัญเชิญใบแรกสุดของเทิร์น (นอร์ธซีโรด)
   if (event.type === 'summoned') {
@@ -43,9 +44,10 @@ export function emit(ctx: Ctx, event: GameEvent): void {
   }
 }
 
-export function newCore(ctx: Ctx, owner: PlayerId, isSoul = false): string {
+/** seat ไม่ระบุ = ที่นั่งที่ทำงานอยู่ของฝั่งนั้น (2VS2) */
+export function newCore(ctx: Ctx, owner: PlayerId, isSoul = false, seat = activeSeat(ctx.s, owner)): string {
   const id = `core-${ctx.s.nextCoreId++}`;
-  ctx.s.cores[id] = { id, owner, isSoul };
+  ctx.s.cores[id] = { id, owner, isSoul, ...(seat ? { seat } : {}) };
   return id;
 }
 
@@ -96,7 +98,9 @@ export function endGame(ctx: Ctx, winner: PlayerId, reason: EndReason): void {
  */
 export function leaveField(ctx: Ctx, cardId: string, to: 'trash' | 'hand', opts: { cloneToHand?: boolean } = {}): 'trash' | 'hand' {
   const card = ctx.s.cards[cardId]!;
-  const p = ctx.s.players[card.owner];
+  const field = ctx.s.players[card.owner].field;
+  // 2VS2: การ์ดและคอร์บนการ์ดกลับไปโซนของเจ้าของการ์ด (กติกา 15 ข้อ 2)
+  const p = zonesOf(ctx.s, card.owner, seatOfCard(card));
   // Bunshin: สปิริตร่างแยกออกจากสนาม = กลับเป็นการ์ดจริง · จะกลับขึ้นมือ/เข้าเด็ค = ถูกทิ้งแทน (กติกา 14 Bunshin ข้อ 2)
   if (card.realCardNo) {
     card.cardNo = card.realCardNo;
@@ -104,13 +108,14 @@ export function leaveField(ctx: Ctx, cardId: string, to: 'trash' | 'hand', opts:
     if (!opts.cloneToHand) to = 'trash';
   }
   const hostState = card.state;
-  removeFrom(p.field, cardId);
+  removeFrom(field, cardId);
   // ออกจากสนามระหว่างการต่อสู้: ถ้าถูกอัญเชิญกลับมา (เช่น ชิคิงามิออฟเดอะเดด) ถือเป็นการ์ดใหม่ ไม่ได้โจมตี/ป้องกันอยู่
   const battle = ctx.s.battle;
   if (battle && (battle.attackerId === cardId || battle.blockers.includes(cardId) || battle.chosenBlockers.includes(cardId))) {
     battle.left = [...(battle.left ?? []), cardId];
   }
   p.reserve.push(...card.cores);
+  if (card.seat) for (const c of card.cores) ctx.s.cores[c]!.seat = card.seat;
   card.cores = [];
   card.state = 'refresh';
   card.turnBp = 0;
@@ -175,7 +180,23 @@ export function destroy(ctx: Ctx, cardId: string, by?: PlayerId, bySource?: stri
 }
 
 /** ไลฟ์ไปรีเสิร์ฟของเจ้าของ; คืน true ถ้าไลฟ์หมดแล้วจบเกม */
-export function loseLife(ctx: Ctx, player: PlayerId, amount: number, winner: PlayerId, to: 'reserve' | 'trash' = 'reserve', attack = false): boolean {
+export function loseLife(ctx: Ctx, player: PlayerId, amount: number, winner: PlayerId, to: 'reserve' | 'trash' = 'reserve', attack = false, opts: { selfOnly?: boolean } = {}): boolean {
+  // 2VS2: ไลฟ์ของคู่แข่งลดพร้อมกันทั้งสองคน · ทีมแพ้เมื่อไลฟ์เป็น 0 ทั้งคู่ (กติกา 15 ข้อ 4, 7) · selfOnly = เฉพาะที่นั่งที่ทำอยู่ (จ่ายไลฟ์ของเราเอง)
+  if (ctx.s.players[player].partner) {
+    const zones = opts.selfOnly ? [ctx.s.players[player]] : allZones(ctx.s, player);
+    let lost = 0;
+    for (const z of zones) {
+      const k = Math.min(amount, z.life.length);
+      (to === 'trash' ? z.trashCores : z.reserve).push(...z.life.splice(z.life.length - k, k));
+      lost = Math.max(lost, k);
+    }
+    emit(ctx, { type: 'lifeLost', player, amount: lost, ...(attack ? { attack: true } : {}) });
+    if (lost > 0 && !(ctx.s.lifeDamagedThisTurn ?? []).includes(player)) ctx.s.lifeDamagedThisTurn = [...(ctx.s.lifeDamagedThisTurn ?? []), player];
+    if (lost > 0) pendBurst(ctx, player, 'afterLifeLost');
+    if (allZones(ctx.s, player).some((z) => z.life.length > 0)) return false;
+    endGame(ctx, winner, 'lifeZero');
+    return true;
+  }
   const p = ctx.s.players[player];
   const n = Math.min(amount, p.life.length);
   (to === 'trash' ? p.trashCores : p.reserve).push(...p.life.splice(p.life.length - n, n));
@@ -218,6 +239,8 @@ export function checkDepletion(ctx: Ctx): string[] {
 export function assertUsableCore(ctx: Ctx, player: PlayerId, coreId: string): void {
   const core = ctx.s.cores[coreId];
   if (!core || core.owner !== player) fail('CORE_NOT_OWNED', `Core ${coreId} ไม่ใช่ของคุณ`);
+  // 2VS2: ใช้ได้เฉพาะคอร์ของตัวเอง (กติกา 15 ข้อ 2)
+  if (ctx.s.mode === '2v2' && (core.seat ?? 0) !== activeSeat(ctx.s, player)) fail('CORE_NOT_OWNED', 'คอร์นี้เป็นของเพื่อนร่วมทีม');
   const loc = locateCore(ctx.s, coreId);
   if (!loc || loc.player !== player || (loc.area !== 'reserve' && loc.area !== 'card')) {
     fail('CORE_NOT_USABLE', `Core ${coreId} ต้องอยู่ใน Reserve หรือบนการ์ดในสนาม`);

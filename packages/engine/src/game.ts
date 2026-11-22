@@ -2,6 +2,8 @@ import type { CardDatabase, CardDef, Step } from '@bs/cards';
 import { assertUsableCore, checkDepletion, destroy, drawCard, emit, emitStatic, endGame, loseLife, newCore, payCost, pendBurst, setPhase, type Ctx } from './ctx';
 import { destroyCard, enqueue, fireTriggers, refreshByEffect, newBatch, queueExhaustTriggers, queueLifeLostTriggers, queueMagicUsedTriggers, queueSummonTriggers, queueTriggers, resolveChoice, runQueue } from './effects';
 import { nextRandom, shuffle } from './rng';
+import { normalizeSeats } from './seats';
+import { activeSeat, allZones, asSeat, restoreSeats, seatOfCard, seatsOf, teamHand, teamTrash, useSeat } from './seats';
 import {
   attackTaxFor,
   attackReserveTaxFor,
@@ -87,6 +89,8 @@ export interface CreateGameOptions {
   firstPlayer?: PlayerId;
   /** false = ใช้ลำดับเด็คตามที่ส่งมา (ใช้ในเทส); ค่าเริ่มต้น true */
   shuffleDecks?: boolean;
+  /** โหมด 2VS2 (กติกา 15): เด็คของคนที่สองในแต่ละทีม (ที่นั่ง 1) · ไม่ระบุ = 1VS1 */
+  partnerDecks?: Record<PlayerId, string[]>;
 }
 
 const emptyPlayer = (): PlayerState => ({
@@ -128,23 +132,33 @@ export function createGame(options: CreateGameOptions): { state: GameState; even
     log: [],
   };
   const ctx: Ctx = { s, db, events: [] };
+  const partners = options.partnerDecks;
+  if (partners) {
+    s.mode = '2v2';
+    for (const player of PLAYERS) s.players[player].partner = { deck: [], hand: [], trashCards: [], burst: null, life: [], reserve: [], trashCores: [] };
+  }
 
   for (const player of PLAYERS) {
-    for (const cardNo of decks[player]) db.get(cardNo); // โยน error ถ้าไม่มีการ์ดนี้
-    let shuffled = decks[player];
-    if (options.shuffleDecks !== false) [shuffled, s.rng] = shuffle(decks[player], s.rng);
-    // สร้าง id หลังสับ เพื่อไม่ให้ id เผยลำดับในเด็คลิสต์
-    shuffled.forEach((cardNo, i) => {
-      const id = `${player}-${i + 1}`;
-      s.cards[id] = { id, cardNo, owner: player, state: 'refresh', cores: [], turnBp: 0, usedThisTurn: [], braves: [] };
-      s.players[player].deck.push(id);
-    });
+    for (const seat of seatsOf(s, player)) {
+      const list = seat === 1 ? partners![player] : decks[player];
+      useSeat(s, player, seat);
+      for (const cardNo of list) db.get(cardNo); // โยน error ถ้าไม่มีการ์ดนี้
+      let shuffled = list;
+      if (options.shuffleDecks !== false) [shuffled, s.rng] = shuffle(list, s.rng);
+      // สร้าง id หลังสับ เพื่อไม่ให้ id เผยลำดับในเด็คลิสต์
+      shuffled.forEach((cardNo, i) => {
+        const id = seat === 1 ? `${player}b-${i + 1}` : `${player}-${i + 1}`;
+        s.cards[id] = { id, cardNo, owner: player, ...(seat ? { seat } : {}), state: 'refresh', cores: [], turnBp: 0, usedThisTurn: [], braves: [] };
+        s.players[player].deck.push(id);
+      });
 
-    const p = s.players[player];
-    for (let i = 0; i < config.initialLife; i++) p.life.push(newCore(ctx, player));
-    for (let i = 0; i < config.initialReserve; i++) p.reserve.push(newCore(ctx, player));
-    p.reserve.push(newCore(ctx, player, true));
-    for (let i = 0; i < config.initialHand; i++) drawCard(ctx, player);
+      const p = s.players[player];
+      for (let i = 0; i < config.initialLife; i++) p.life.push(newCore(ctx, player));
+      for (let i = 0; i < config.initialReserve; i++) p.reserve.push(newCore(ctx, player));
+      p.reserve.push(newCore(ctx, player, true));
+      for (let i = 0; i < config.initialHand; i++) drawCard(ctx, player);
+    }
+    useSeat(s, player, 0);
   }
 
   let first = options.firstPlayer;
@@ -171,7 +185,7 @@ function beginTurn(ctx: Ctx): void {
   if (s.lifeDamagedThisTurn?.length) s.lifeDamagedThisTurn = [];
 
   setPhase(ctx, 'start');
-  if (p.deck.length === 0) {
+  if (allZones(s, player).every((z) => z.deck.length === 0)) {
     endGame(ctx, opponentOf(player), 'deckOut');
     return;
   }
@@ -200,9 +214,14 @@ function afterStart(ctx: Ctx): void {
   const p = s.players[player];
   setPhase(ctx, 'core');
   if (!(s.turn === 1 && s.config.firstPlayerSkipsCoreStep)) {
-    const coreId = newCore(ctx, player);
-    p.reserve.push(coreId);
-    emit(ctx, { type: 'coreGained', player, coreId });
+    // 2VS2: ทั้งสองคนในทีมได้คอร์ (กติกา 15 ข้อ 3)
+    for (const seat of seatsOf(s, player)) {
+      asSeat(s, player, seat, () => {
+        const coreId = newCore(ctx, player);
+        p.reserve.push(coreId);
+        emit(ctx, { type: 'coreGained', player, coreId });
+      });
+    }
   }
 
   setPhase(ctx, 'draw');
@@ -212,6 +231,23 @@ function afterStart(ctx: Ctx): void {
     for (const ab of ctx.db.get(s.cards[id]!.cardNo).abilities) {
       if (ab.kind !== 'drawStep' || !ab.before || !ab.levels.includes(level)) continue;
       enqueue(ctx, { controller: player, sourceId: id, source: ab.source, steps: [...ab.before], paidWithSoul: false, trashWhenDone: false });
+    }
+  }
+  // 2VS2: จั่วเพิ่มของดรอว์สเต็ปจากการ์ดบนสนาม = เจ้าของการ์ดเลือกว่าใครในทีมจั่ว (ถามก่อนจั่ว: step addDrawStepDraw)
+  if (p.partner) {
+    const stacked = new Set<string>();
+    for (const id of p.field) {
+      const level = cardLevel(s, ctx.db, id);
+      for (const ab of ctx.db.get(s.cards[id]!.cardNo).abilities) {
+        if (ab.kind !== 'drawStep' || !ab.levels.includes(level) || ab.extraDraw.length === 0) continue;
+        if (ab.noStack) {
+          const key = `${ctx.db.get(s.cards[id]!.cardNo).name}:${ab.source}`;
+          if (stacked.has(key)) continue;
+          stacked.add(key);
+        }
+        const amount = ab.extraDraw.filter((x) => conditionHolds(s, id, x.if)).reduce((n, x) => n + x.amount, 0);
+        if (amount !== 0) enqueue(ctx, { controller: player, sourceId: id, source: ab.source, steps: [{ do: 'addDrawStepDraw', amount }], paidWithSoul: false, trashWhenDone: false });
+      }
     }
   }
   if (s.queue.length > 0) {
@@ -254,6 +290,9 @@ function drawStep(ctx: Ctx): void {
   const player = s.turnPlayer;
   let count = 1 + (s.drawStepExtra ?? 0);
   delete s.drawStepExtra;
+  const team = !!s.players[player].partner;
+  const perSeat = s.drawStepExtraSeats ?? [0, 0];
+  delete s.drawStepExtraSeats;
   const after: { sourceId: string; steps: Step[] }[] = [];
   const stacked = new Set<string>();
   for (const id of s.players[player].field) {
@@ -266,12 +305,18 @@ function drawStep(ctx: Ctx): void {
         if (stacked.has(key)) continue;
         stacked.add(key);
       }
+      // 2VS2: จั่วเพิ่มถามไปแล้วก่อนจั่ว (afterStart) อยู่ใน drawStepExtraSeats
+      if (team && ab.extraDraw.length > 0 && !ab.after) continue;
       emit(ctx, { type: 'abilityTriggered', cardId: id, source: ab.source });
-      for (const extra of ab.extraDraw) if (conditionHolds(s, id, extra.if)) count += extra.amount;
+      if (!team) for (const extra of ab.extraDraw) if (conditionHolds(s, id, extra.if)) count += extra.amount;
       if (ab.after) after.push({ sourceId: id, steps: ab.after });
     }
   }
-  for (let i = 0; i < count; i++) drawCard(ctx, player);
+  // 2VS2: ทั้งสองคนจั่ว 1 ใบ + จั่วเพิ่มที่เจ้าของเอฟเฟกต์เลือกให้ที่นั่งนั้น
+  for (const seat of seatsOf(s, player)) asSeat(s, player, seat, () => {
+    const n = team ? count + (perSeat[seat] ?? 0) : count;
+    for (let i = 0; i < n; i++) drawCard(ctx, player);
+  });
   for (const a of after) {
     enqueue(ctx, { controller: player, sourceId: a.sourceId, steps: [...a.steps], paidWithSoul: false, trashWhenDone: false });
   }
@@ -322,8 +367,10 @@ function refreshStep(ctx: Ctx): void {
     s.cards[id]!.state = 'refresh';
   }
   if (locks.length > 0) s.refreshLocks = locks.filter((id) => s.cards[id]!.owner !== player);
-  p.reserve.push(...p.trashCores);
-  p.trashCores = [];
+  for (const z of allZones(s, player)) {
+    z.reserve.push(...z.trashCores);
+    z.trashCores = [];
+  }
   emit(ctx, { type: 'refreshed', player });
 }
 
@@ -372,7 +419,7 @@ function endTurn(ctx: Ctx): void {
   setPhase(ctx, 'end');
   // "เอนด์สเต็ปของเรา"
   const batch = newBatch(ctx);
-  for (const id of [...s.players[s.turnPlayer].field, ...s.players[s.turnPlayer].trashCards]) queueTriggers(ctx, id, 'endStep', batch);
+  for (const id of [...s.players[s.turnPlayer].field, ...teamTrash(s, s.turnPlayer)]) queueTriggers(ctx, id, 'endStep', batch);
   for (const id of [...s.players[opponentOf(s.turnPlayer)].field]) queueTriggers(ctx, id, 'oppEndStep', batch);
   if (s.queue.length > 0) {
     runQueue(ctx);
@@ -401,6 +448,30 @@ function finishTurn(ctx: Ctx): void {
 }
 
 // ---------------------------------------------------------------- field helpers
+
+/** 2VS2: การ์ดใบนี้ต้องเป็นของที่นั่งที่ทำ action (โจมตี/ป้องกัน/จัดคอร์/ใช้เอฟเฟกต์ได้เฉพาะของตัวเอง: กติกา 15 ข้อ 2, 4) */
+function requireOwnSeat(ctx: Ctx, player: PlayerId, cardId: string): void {
+  if (ctx.s.mode === '2v2' && seatOfCard(ctx.s.cards[cardId]) !== activeSeat(ctx.s, player)) fail('NOT_YOUR_CARD', 'การ์ดนี้เป็นของเพื่อนร่วมทีม');
+}
+
+/**
+ * 2VS2: จบเมนสเต็ป/แอทแท็คสเต็ปเมื่อทั้งสองคนในทีมกดพร้อม (กติกา 15 ข้อ 3)
+ * คืน false = จดว่าที่นั่งนี้พร้อมแล้ว ยังรอเพื่อน
+ */
+function teamReady(ctx: Ctx, player: PlayerId, what: 'main' | 'attack'): boolean {
+  const { s } = ctx;
+  if (s.mode !== '2v2') return true;
+  const seat = activeSeat(s, player);
+  const ready = new Set(s.seatsReady ?? []);
+  ready.add(seat);
+  if (ready.size < seatsOf(s, player).length) {
+    s.seatsReady = [...ready];
+    emit(ctx, { type: 'seatReady', player, seat, what });
+    return false;
+  }
+  delete s.seatsReady;
+  return true;
+}
 
 function requireMain(ctx: Ctx, player: PlayerId): void {
   const { s } = ctx;
@@ -472,6 +543,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
       if (flash) {
         flash.consecutivePasses = 0;
         flash.priority = opponentOf(player);
+        delete flash.seatsPassed;
       }
       checkDepletion(ctx);
       if (host.braves.includes(cardId) && p.field.includes(braveOnto)) {
@@ -547,6 +619,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     if (flash) {
       flash.consecutivePasses = 0;
       flash.priority = opponentOf(player);
+      delete flash.seatsPassed;
     }
     checkDepletion(ctx);
     if (p.field.includes(cardId)) {
@@ -623,6 +696,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     if (flash) {
       flash.consecutivePasses = 0;
       flash.priority = opponentOf(player);
+      delete flash.seatsPassed;
     }
     const effects = asMagic.filter((m) => m.timing === use);
     const source = effects.find((m) => m.source >= 0)?.source;
@@ -667,7 +741,10 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     const p = ctx.s.players[player];
     for (const { coreId, to } of moves) {
       assertUsableCore(ctx, player, coreId);
-      if ('cardId' in to) fieldCard(ctx.s, player, to.cardId);
+      if ('cardId' in to) {
+        fieldCard(ctx.s, player, to.cardId);
+        requireOwnSeat(ctx, player, to.cardId);
+      }
       removeCore(ctx.s, coreId);
       if ('cardId' in to) ctx.s.cards[to.cardId]!.cores.push(coreId);
       else p.reserve.push(coreId);
@@ -704,6 +781,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
 
   endMain(ctx, { player }) {
     requireMain(ctx, player);
+    if (!teamReady(ctx, player, 'main')) return;
     if (ctx.s.turn === 1 && ctx.s.config.firstPlayerSkipsAttackStep) {
       setPhase(ctx, 'attack');
       endTurn(ctx);
@@ -717,6 +795,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     if (s.turnPlayer !== player) fail('NOT_YOUR_TURN', 'ไม่ใช่เทิร์นของคุณ');
     if (s.phase !== 'attack' || s.battle) fail('WRONG_PHASE', 'ประกาศโจมตีได้เฉพาะ Attack Step');
     const card = fieldCard(s, player, attackerId);
+    requireOwnSeat(ctx, player, attackerId);
     if (!isSpiritLike(ctx.db.get(card.cardNo))) fail('CANNOT_ATTACK', 'การ์ดนี้โจมตีไม่ได้');
     if (card.state !== 'refresh') fail('EXHAUSTED', 'การ์ดเสื่อมสภาพอยู่');
     if (!canAttackWith(s, ctx.db, attackerId)) fail('CANNOT_ATTACK', 'การ์ดนี้โจมตีไม่ได้ในเทิร์นนี้');
@@ -774,10 +853,22 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     const battle = ctx.s.battle;
     if (!battle?.flash) fail('NO_FLASH_WINDOW', 'ไม่อยู่ในช่วง Flash');
     if (battle.flash.priority !== player) fail('NOT_YOUR_PRIORITY', 'ยังไม่ถึงตาคุณใน Flash timing');
+    // 2VS2: ทุกคนในทีมต้องกดผ่าน ทีมจึงนับว่าผ่าน (กติกา 15 ข้อ 5)
+    if (ctx.s.mode === '2v2') {
+      const seat = activeSeat(ctx.s, player);
+      const passed = new Set(battle.flash.seatsPassed ?? []);
+      passed.add(seat);
+      if (passed.size < seatsOf(ctx.s, player).length) {
+        battle.flash.seatsPassed = [...passed];
+        emit(ctx, { type: 'seatReady', player, seat, what: 'flash' });
+        return;
+      }
+    }
 
     emit(ctx, { type: 'flashPassed', player });
     battle.flash.consecutivePasses += 1;
     battle.flash.priority = opponentOf(player);
+    delete battle.flash.seatsPassed;
     if (battle.flash.consecutivePasses < 2) return;
 
     battle.flash = null;
@@ -797,6 +888,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
   declareBlock(ctx, { player, blockerId }) {
     const battle = requireBlockStep(ctx, player);
     const card = fieldCard(ctx.s, player, blockerId);
+    requireOwnSeat(ctx, player, blockerId);
     if (!isSpiritLike(ctx.db.get(card.cardNo))) fail('CANNOT_BLOCK', 'การ์ดนี้ป้องกันไม่ได้');
     if (card.state !== 'refresh' && !canBlockExhausted(ctx.s, ctx.db, blockerId)) fail('EXHAUSTED', 'การ์ดเสื่อมสภาพอยู่');
     if (attackerUnblockable(ctx.s, battle.attackerId, ctx.db.get(card.cardNo).type)) fail('CANNOT_BLOCK', 'การโจมตีนี้ป้องกันไม่ได้');
@@ -810,6 +902,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
       return;
     }
     payBlockTax(ctx, player, battle.attackerId);
+    delete battle.noBlockVotes;
     card.state = battle.exhaustedBlock ? 'refresh' : 'exhausted';
     battle.blockers.push(blockerId);
     emit(ctx, { type: 'blockDeclared', blockerId });
@@ -845,6 +938,18 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     if (battle.levelBlock && battle.blockers.length > 0 && blockLevelTotal(ctx) < battle.levelBlock) {
       fail('MUST_BLOCK', `ต้องป้องกันเพิ่มให้ Lv รวมถึง ${battle.levelBlock}`);
     }
+    // 2VS2: ไม่ป้องกัน = ทุกคนในทีมโหวต (กติกา 15 ข้อ 4)
+    if (ctx.s.mode === '2v2') {
+      const seat = activeSeat(ctx.s, player);
+      const votes = new Set(battle.noBlockVotes ?? []);
+      votes.add(seat);
+      if (votes.size < seatsOf(ctx.s, player).length) {
+        battle.noBlockVotes = [...votes];
+        emit(ctx, { type: 'seatReady', player, seat, what: 'block' });
+        return;
+      }
+      delete battle.noBlockVotes;
+    }
     if (battle.blockers.length > 0) {
       openFlashAfterBlock(battle, player);
       return;
@@ -867,11 +972,13 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     const { s } = ctx;
     if (s.turnPlayer !== player) fail('NOT_YOUR_TURN', 'ไม่ใช่เทิร์นของคุณ');
     if (s.phase !== 'attack' || s.battle) fail('WRONG_PHASE', 'จบ Attack Step ได้เมื่อไม่มีการต่อสู้ค้างอยู่');
-    const forced = forcedAttackers(s, ctx.db, player);
+    // 2VS2: ตรวจเฉพาะสปิริตของที่นั่งที่กดจบ (โจมตีด้วยของเพื่อนไม่ได้)
+    const forced = forcedAttackers(s, ctx.db, player).filter((id) => s.mode !== '2v2' || seatOfCard(s.cards[id]) === activeSeat(s, player));
     if (forced.length > 0) {
       const holder = activeForcedAttack(s, ctx.db, player)?.holderId ?? forceAttackHolders(s, ctx.db, player)[0]!.id;
       fail('MUST_ATTACK', `ต้องโจมตีก่อนจบ Attack Step (เอฟเฟกต์ของ ${ctx.db.get(s.cards[holder]!.cardNo).name}): ${forced.map((id) => ctx.db.get(s.cards[id]!.cardNo).name).join(', ')}`);
     }
+    if (!teamReady(ctx, player, 'attack')) return;
     afterAttackStep(ctx);
   },
 
@@ -880,6 +987,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     if (s.turnPlayer !== player) fail('NOT_YOUR_TURN', 'ไม่ใช่เทิร์นของคุณ');
     if (s.phase !== 'attack' || s.battle) fail('WRONG_PHASE', 'On Stage ได้เฉพาะแอทแท็คสเต็ปของเรา ตอนที่ไม่มีการต่อสู้ค้างอยู่');
     fieldCard(s, player, cardId);
+    requireOwnSeat(ctx, player, cardId);
     const fa = activeForcedAttack(s, db, player);
     if (fa) fail('MUST_ATTACK', `ต้องโจมตีด้วย ${db.get(s.cards[fa.attackerId]!.cardNo).name} ก่อน`);
     const ab = onStageAbilities(s, db, player, cardId).find((a) => a.source === source);
@@ -912,12 +1020,15 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     // from = การ์ดเจ้าของเอฟเฟกต์ (ผู้ร่วมร่างกับ Brave อาจมีเอฟเฟกต์บรรทัดเดียวกัน)
     const opt = activatableOptions(s, db, player, cardId).find((o) => o.ability.source === source && (from === undefined || o.from === from));
     if (!opt) fail('CANNOT_ACTIVATE', 'ใช้เอฟเฟกต์นี้ไม่ได้ตอนนี้');
+    // 2VS2: เอฟเฟกต์ของการ์ดเพื่อน (รวมเบรฟของเราที่ร่วมร่างกับสปิริตเพื่อน = เราใช้ได้)
+    requireOwnSeat(ctx, player, opt.from);
     const ab = opt.ability;
     // นับ "เทิร์นละ N ครั้ง" ที่การ์ดเจ้าของเอฟเฟกต์
     s.cards[opt.from]!.usedThisTurn.push(source);
     emit(ctx, { type: 'activated', player, cardId, source, ...(opt.from !== cardId ? { from: opt.from } : {}) });
     flash.consecutivePasses = 0;
     flash.priority = opponentOf(player);
+    delete flash.seatsPassed;
     enqueue(ctx, { controller: player, sourceId: ab.granted ? opt.from : cardId, steps: [...ab.steps], paidWithSoul: false, trashWhenDone: false, source });
     runQueue(ctx);
   },
@@ -953,6 +1064,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     if (flash) {
       flash.consecutivePasses = 0;
       flash.priority = opponentOf(player);
+      delete flash.seatsPassed;
     }
 
     const depleted = checkDepletion(ctx);
@@ -966,12 +1078,14 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     if (depleted.length > 0) {
       const batch = newBatch(ctx);
       // การ์ดในมือก็ทำงาน (สุเมรากิ-ดราก้อน: อัญเชิญไม่จ่ายคอสต์)
-      for (const id of [...s.players[player].field, ...s.players[player].hand]) queueTriggers(ctx, id, 'allyDepletedByEvolution', batch);
+      for (const id of [...s.players[player].field, ...teamHand(s, player)]) queueTriggers(ctx, id, 'allyDepletedByEvolution', batch);
       runQueue(ctx);
     }
   },
 
   brave(ctx, { player, braveId, hostId, placement = [] }) {
+    // 2VS2: เจ้าของเบรฟเป็นคนสั่งร่วมร่าง/แยกร่าง (ร่วมร่างกับสปิริตของเพื่อนได้: กติกา 15 ข้อ 6)
+    requireOwnSeat(ctx, player, braveId);
     requireMain(ctx, player);
     const { s, db } = ctx;
     const brave = s.cards[braveId];
@@ -1333,7 +1447,7 @@ function endBattle(ctx: Ctx): void {
       const c = ctx.s.cards[id];
       if (!c || !inBattle(ctx.s, id)) continue;
       const pl = ctx.s.players[c.owner];
-      for (const f of [...pl.field, ...pl.hand, ...pl.trashCards]) queueTriggers(ctx, f, 'allyBattleEnd', batch, { subject: id });
+      for (const f of [...pl.field, ...teamHand(ctx.s, c.owner), ...teamTrash(ctx.s, c.owner)]) queueTriggers(ctx, f, 'allyBattleEnd', batch, { subject: id });
     }
     ended = ctx.s.queue.length > before;
   }
@@ -1435,6 +1549,10 @@ export function applyAction(state: GameState, input: Action, db: CardDatabase): 
     if (state.awaitingDraw && action.type !== 'drawStep' && action.type !== 'concede') {
       fail('DRAW_PENDING', 'ต้องจั่วการ์ดใน Draw Step ก่อน');
     }
+    if (action.seat) {
+      if (!ctx.s.players[action.player].partner) fail('NO_SEAT', 'เกมนี้ไม่มีที่นั่งนี้');
+      useSeat(ctx.s, action.player, action.seat);
+    }
     (handlers[action.type] as Handler<Action['type']>)(ctx, action);
     // งานค้าง (Brave ที่ผู้ร่วมร่างสูญสลายจากการย้าย Core, Burst ที่เงื่อนไขเกิด)
     if (!ctx.s.choice && !ctx.s.winner && (ctx.s.queue.length > 0 || ctx.s.pendingBursts.length > 0)) runQueue(ctx);
@@ -1471,5 +1589,7 @@ export function applyAction(state: GameState, input: Action, db: CardDatabase): 
     if (e instanceof RuleError) return { ok: false, error: { code: e.code, message: e.message } };
     throw e;
   }
+  normalizeSeats(ctx.s);
+  restoreSeats(ctx.s);
   return { ok: true, state: ctx.s, events: ctx.events };
 }

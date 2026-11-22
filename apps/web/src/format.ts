@@ -107,6 +107,8 @@ export function formatEvent(e: GameEvent, s: GameState): string | null {
       return 'ไม่บล็อก';
     case 'flashPassed':
       return `${playerLabel(e.player)} pass Flash`;
+    case 'seatReady':
+      return `${playerLabel(e.player)} (คนที่ ${e.seat + 1}) ${e.what === 'flash' ? 'pass Flash' : 'พร้อม'} รอเพื่อนร่วมทีม`;
     case 'lifeLost':
       return `${playerLabel(e.player)} เสีย Life ${e.amount}`;
     case 'destroyed':
