@@ -1,6 +1,7 @@
 export * from './types';
 export { createGame, applyAction, type CreateGameOptions } from './game';
 export { getPlayerView, type PlayerView, type CardView } from './view';
-export { actorOf, botAction, botDecide, botView, evaluate, legalActions, type BotDecision, type BotOptions } from './bot';
+export { actorOf, actorSeats, botAction, botDecide, botView, evaluate, legalActions, type BotDecision, type BotOptions } from './bot';
+export { activeSeat, allZones, is2v2, ownField, ownerZones, seatOfCard, seatsOf, useSeat, zonesOf } from './seats';
 export { braveFits, onStageAbilities, hasSoloPart, levelOf, bpOf, currentBp, cardLevel, minCores, summonMinCores, summonLevelCostBoost, staticSources, effectBlocker, negatedBy, levelBoostSources, handCostDeltaSources, noReductionBlocked, type StaticSource, payableCost, baseCost, trashSummonRule, activatableAbilities, activatableOptions, cardColors, type ActivatableOption, quickAnyCores, fieldSymbols, symbolCount, attackLifeDamage, extraSymbols, cardGems, type CardGem, isSpiritLike, locateCore, canAttackWith, blockersFor, blockForced, magicUsedUp, matchesFilter, nameHas, effectBlocked, effectsNegated, handCards, forcedAttackers, handMagic, hasHolyLife, turnLocked, braveRoom, braveToSwap, quickAbility, activeForcedAttack, summonConditionOk, summonBanned, hasEvolutionNow, cardFamilies, gemColorCount, attackTaxFor, oneCoreLocked, trashLockSource, ignoreSummonConditionSource, magicBurstTax, magicBanned, effectSummonTax, nexusExhaustPayMax, attackReserveTaxFor, cardBanSource, freezeForCache } from './rules';
 export { shuffle, nextRandom } from './rng';

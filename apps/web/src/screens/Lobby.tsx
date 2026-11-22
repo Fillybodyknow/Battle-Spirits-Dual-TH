@@ -5,8 +5,7 @@
  *  - หน้าห้อง: โต๊ะ 1 โต๊ะ 2 ที่นั่ง กด ENTRY เพื่อนั่ง (ครบสองคน = เริ่มเกม)
  */
 import { useEffect, useRef, useState } from 'react';
-import { PLAYERS, type PlayerId } from '@bs/engine';
-import type { DuelRoom, LobbyEntry } from '../online/transport';
+import type { DuelRoom, LobbyEntry, TableSeat } from '../online/transport';
 import { sfx } from '../sfx';
 import {
   compatibleVersion,
@@ -27,6 +26,7 @@ import {
   onlineVia,
   playableDecks,
   seatOf,
+  tableSeats,
   seatUid,
   tableIds,
   useGame,
@@ -46,6 +46,8 @@ type View = { kind: 'menu' } | { kind: 'create' } | { kind: 'list' } | { kind: '
 
 /** หน้าที่เปิดอยู่ (จำไว้ตอนไปหน้าดู/จัดเด็คแล้วกลับมา) */
 let lastView: View = { kind: 'menu' };
+/** โหมดที่เลือกในเมนูการดวล: Team Battle (2VS2) / Duel Room (1VS1) */
+let lastTeam = false;
 /** ไปแก้เด็คจากหน้าห้อง: กลับมาแล้วส่งเด็คที่แก้ขึ้นห้องใหม่ */
 let resyncDeck = false;
 
@@ -290,7 +292,7 @@ const timeText = (t: number) => new Date(t).toLocaleTimeString('th-TH', { hour: 
 
 // ---------------------------------------------------------------- หน้าต่าง ๆ
 
-function DuelMenu({ onRoom }: { onRoom: () => void }) {
+function DuelMenu({ onRoom, onTeam }: { onRoom: () => void; onTeam: () => void }) {
   return (
     <div className="relative z-10 grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)] gap-10 px-16 py-6">
       <div className="flex min-h-0 flex-col gap-2">
@@ -300,7 +302,7 @@ function DuelMenu({ onRoom }: { onRoom: () => void }) {
         <div className="grid min-h-0 flex-1 grid-cols-2 grid-rows-2 gap-4">
           <DuelTile title="Duel Room" icon="room" color="#38bdf8" status="ใช้งานได้" onClick={onRoom} className="row-span-2" big />
           <DuelTile title="Casual Match" tag="เร็ว ๆ นี้" icon="casual" color="#facc15" status="ยังไม่เปิด" />
-          <DuelTile title="Team Battle" tag="เร็ว ๆ นี้" icon="team" color="#c084fc" status="ยังไม่เปิด" />
+          <DuelTile title="Team Battle" tag="ทดลอง" icon="team" color="#c084fc" status="2VS2 · ใช้งานได้" onClick={onTeam} />
         </div>
       </div>
       <div className="flex min-h-0 flex-col gap-2">
@@ -315,7 +317,7 @@ function DuelMenu({ onRoom }: { onRoom: () => void }) {
 }
 
 /** หน้าต่าง Room Match: สร้างห้อง / เข้าห้อง / ชมการดวล */
-function RoomMatch({ onClose, onCreate, onEnter }: { onClose: () => void; onCreate: () => void; onEnter: () => void }) {
+function RoomMatch({ onClose, onCreate, onEnter, team }: { onClose: () => void; onCreate: () => void; onEnter: () => void; team: boolean }) {
   const item = (label: string, sub: string, onClick?: () => void) => (
     <button
       type="button"
@@ -331,9 +333,10 @@ function RoomMatch({ onClose, onCreate, onEnter }: { onClose: () => void; onCrea
   return (
     <div className="fixed inset-0 z-40 flex justify-center bg-black/70" onClick={onClose}>
       <div className="flex h-full w-[46rem] max-w-full flex-col justify-center bg-gradient-to-b from-slate-800/95 via-slate-900/95 to-slate-950/95 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="border-b-2 border-sky-400 pb-3 text-center text-2xl font-black text-white">Room Match</div>
+        <div className={`border-b-2 pb-3 text-center text-2xl font-black text-white ${team ? 'border-fuchsia-400' : 'border-sky-400'}`}>{team ? 'Team Battle (2VS2)' : 'Room Match'}</div>
         <div className="flex flex-col gap-4 bg-gradient-to-b from-sky-900/30 to-transparent px-16 py-8">
-          {item('สร้างห้อง', 'ตั้งชื่อห้อง เลือกเด็ค แล้วรอคู่แข่ง', onCreate)}
+          {team && <div className="text-center text-sm text-slate-300">ทีมละ 2 คน · สนามใช้ร่วมกันทั้งทีม · ต้องมีผู้เล่นครบ 4 คนต่อโต๊ะ</div>}
+          {item('สร้างห้อง', team ? 'ตั้งชื่อห้อง เลือกเด็ค แล้วรอเพื่อนอีก 3 คน' : 'ตั้งชื่อห้อง เลือกเด็ค แล้วรอคู่แข่ง', onCreate)}
           {item('เข้าห้อง', 'เลือกจากรายการห้อง หรือใส่รหัสห้อง', onEnter)}
           {item('ชมการดวล', 'เร็ว ๆ นี้')}
         </div>
@@ -347,18 +350,18 @@ function RoomMatch({ onClose, onCreate, onEnter }: { onClose: () => void; onCrea
   );
 }
 
-function CreateRoom({ deck }: { deck: DeckId }) {
+function CreateRoom({ deck, team }: { deck: DeckId; team: boolean }) {
   const playerName = useGame((s) => s.playerName);
-  const [roomName, setRoomName] = useState(`ห้องของ ${playerName}`);
+  const [roomName, setRoomName] = useState(`${team ? 'ทีมของ' : 'ห้องของ'} ${playerName}`);
   const [comment, setComment] = useState('');
   const [listed, setListed] = useState(true);
-  const [max, setMax] = useState(6);
+  const [max, setMax] = useState(team ? 4 : 6);
   const [busy, setBusy] = useState(false);
   const input = 'w-72 rounded bg-slate-800 px-3 py-1.5 text-right font-bold text-lime-300 outline-none focus:ring-2 focus:ring-lime-300';
   const create = async () => {
     setBusy(true);
     sfx('click');
-    await duelCreate({ name: roomName, comment, listed, max }, deck);
+    await duelCreate({ name: roomName, comment, listed, max, team }, deck);
     setBusy(false);
   };
   return (
@@ -377,9 +380,9 @@ function CreateRoom({ deck }: { deck: DeckId }) {
             ))}
           </select>
         </SettingRow>
-        <SettingRow label="จำนวนคนในห้องสูงสุด" hint={`โต๊ะ ${Math.ceil(max / 2)} โต๊ะ · คนที่ไม่ได้นั่งโต๊ะเข้าชมการดวลได้`}>
+        <SettingRow label="จำนวนคนในห้องสูงสุด" hint={`โต๊ะ ${team ? Math.floor(max / 4) : Math.ceil(max / 2)} โต๊ะ${team ? ' (โต๊ะละ 4 คน: 2VS2)' : ''} · คนที่ไม่ได้นั่งโต๊ะเข้าชมการดวลได้`}>
           <select value={max} onChange={(e) => setMax(Number(e.target.value))} className={input}>
-            {[2, 3, 4, 5, 6].map((n) => (
+            {(team ? [4, 5, 6, 7, 8] : [2, 3, 4, 5, 6]).map((n) => (
               <option key={n} value={n}>
                 {n} คน
               </option>
@@ -404,14 +407,14 @@ function CreateRoom({ deck }: { deck: DeckId }) {
   );
 }
 
-function RoomList({ onOpen }: { onOpen: (code: string) => void }) {
+function RoomList({ onOpen, team }: { onOpen: (code: string) => void; team: boolean }) {
   const [rooms, setRooms] = useState<LobbyEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [code, setCode] = useState('');
   const load = () => {
     setRooms(null);
     setError(null);
-    listRooms().then(setRooms, (e: Error) => {
+    listRooms().then((list) => setRooms(list.filter((x) => !!x.team === team)), (e: Error) => {
       setRooms([]);
       setError(`โหลดรายการห้องไม่ได้ (${e.message}) · ยังเข้าห้องด้วยรหัสได้`);
     });
@@ -465,7 +468,7 @@ function RoomList({ onOpen }: { onOpen: (code: string) => void }) {
               </div>
               <div className="flex flex-col items-end gap-0.5 text-sm text-slate-300">
                 <span className="font-bold text-white">
-                  คนในห้อง {r.count ?? 1}/{r.max ?? 2}
+                  {r.team ? '2VS2 · ' : ''}คนในห้อง {r.count ?? 1}/{r.max ?? 2}
                 </span>
                 <span>เปิดเมื่อ {timeText(r.createdAt)}</span>
                 <span className="font-mono text-xs text-slate-400">#{r.code}</span>
@@ -531,14 +534,16 @@ function Seat({ name, avatar, me, ready, onSit, onStand, locked }: { name?: stri
 function TableCard({ room, t, uid }: { room: DuelRoom; t: string; uid: string }) {
   const online = useGame((s) => s.online);
   const tb = room.tables?.[t] ?? {};
-  const p1 = seatUid(room, t, 'p1');
-  const p2 = seatUid(room, t, 'p2');
-  const mySeat = p1 === uid ? 'p1' : p2 === uid ? 'p2' : null;
+  const keys = tableSeats(room);
+  const team = !!room.meta.team;
+  const mySeat = keys.find((k) => seatUid(room, t, k) === uid) ?? null;
   const name = (u?: string) => (u ? room.members?.[u]?.name : undefined);
   const avatar = (u?: string) => (u ? room.members?.[u]?.avatar : undefined);
   const game = tb.game;
-  const ready = (s: PlayerId) => !!tb.ready?.[s];
+  const ready = (s: TableSeat) => !!tb.ready?.[s];
   const iAmReady = mySeat ? ready(mySeat) : false;
+  const full = keys.every((k) => !!seatUid(room, t, k));
+  const allReady = keys.every(ready);
   const starting = !!game && !!online && online.code === game && online.status === 'waiting';
 
   let center: React.ReactNode;
@@ -554,7 +559,7 @@ function TableCard({ room, t, uid }: { room: DuelRoom; t: string; uid: string })
         เข้าชมการดวล
       </button>
     );
-  } else if (p1 && p2) {
+  } else if (full) {
     center = mySeat ? (
       <>
         <button
@@ -566,16 +571,16 @@ function TableCard({ room, t, uid }: { room: DuelRoom; t: string; uid: string })
         >
           {iAmReady ? 'พร้อมแล้ว ✓' : 'พร้อม'}
         </button>
-        <div className="text-xs text-slate-300">{ready('p1') && ready('p2') ? 'กำลังเริ่มเกม…' : iAmReady ? 'รออีกฝ่ายกดพร้อม (กดอีกครั้งเพื่อยกเลิก)' : 'กดพร้อมเมื่อเลือกเด็คเสร็จ · ทั้งสองฝ่ายพร้อม = เริ่มดวล'}</div>
+        <div className="text-xs text-slate-300">{allReady ? 'กำลังเริ่มเกม…' : iAmReady ? 'รอคนอื่นกดพร้อม (กดอีกครั้งเพื่อยกเลิก)' : `กดพร้อมเมื่อเลือกเด็คเสร็จ · ${team ? 'ทุกคนพร้อม' : 'ทั้งสองฝ่ายพร้อม'} = เริ่มดวล`}</div>
       </>
     ) : (
-      <div className="text-sm text-slate-300">{ready('p1') && ready('p2') ? 'กำลังเริ่มเกม…' : 'รอผู้เล่นกดพร้อม…'}</div>
+      <div className="text-sm text-slate-300">{allReady ? 'กำลังเริ่มเกม…' : 'รอผู้เล่นกดพร้อม…'}</div>
     );
   } else {
     center = (
       <>
         <div className="text-3xl font-black text-white/40 italic">VS</div>
-        <div className="text-sm text-sky-200">{mySeat ? 'รอคู่แข่งมานั่ง…' : 'กดที่นั่งว่างเพื่อนั่ง'}</div>
+        <div className="text-sm text-sky-200">{mySeat ? (team ? 'รอผู้เล่นให้ครบ 4 คน…' : 'รอคู่แข่งมานั่ง…') : 'กดที่นั่งว่างเพื่อนั่ง'}</div>
       </>
     );
   }
@@ -587,9 +592,28 @@ function TableCard({ room, t, uid }: { room: DuelRoom; t: string; uid: string })
         {game && <span className="text-xs font-bold text-rose-600">● กำลังดวล</span>}
       </div>
       <div className="flex items-center justify-center gap-8 px-6 py-4">
-        <Seat name={name(p1)} avatar={avatar(p1)} me={mySeat === 'p1'} ready={ready('p1')} onSit={canSit ? () => duelSit(t, 'p1') : undefined} onStand={duelStand} locked={!!game || iAmReady} />
-        <div className="flex w-64 flex-col items-center gap-2 text-center">{center}</div>
-        <Seat name={name(p2)} avatar={avatar(p2)} me={mySeat === 'p2'} ready={ready('p2')} onSit={canSit ? () => duelSit(t, 'p2') : undefined} onStand={duelStand} locked={!!game || iAmReady} />
+        {(['p1', 'p2'] as const).map((side, i) => {
+          const seats = keys.filter((k) => k.startsWith(side));
+          const col = (
+            <div key={side} className="flex flex-col items-center gap-1">
+              {team && <div className={`text-xs font-black tracking-widest ${side === 'p1' ? 'text-sky-300' : 'text-rose-300'}`}>{side === 'p1' ? 'ทีม A' : 'ทีม B'}</div>}
+              <div className="flex gap-2">
+                {seats.map((k) => {
+                  const u = seatUid(room, t, k);
+                  return <Seat key={k} name={name(u)} avatar={avatar(u)} me={mySeat === k} ready={ready(k)} onSit={canSit ? () => duelSit(t, k) : undefined} onStand={duelStand} locked={!!game || iAmReady} />;
+                })}
+              </div>
+            </div>
+          );
+          return i === 0 ? (
+            col
+          ) : (
+            <div key="rest" className="contents">
+              <div className="flex w-64 flex-col items-center gap-2 text-center">{center}</div>
+              {col}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -622,7 +646,7 @@ function RoomView({ deck, setDeck }: { deck: DeckId; setDeck: (id: DeckId) => vo
   if (!room) return <div className="relative z-10 flex flex-1 items-center justify-center text-slate-300">กำลังโหลดห้อง {duel.code}…</div>;
 
   const members = Object.entries(room.members ?? {}).sort((a, b) => a[1].joinedAt - b[1].joinedAt);
-  const seated = new Set(tableIds(room).flatMap((t) => PLAYERS.map((p) => seatUid(room, t, p)).filter((x): x is string => !!x)));
+  const seated = new Set(tableIds(room).flatMap((t) => tableSeats(room).map((p) => seatUid(room, t, p)).filter((x): x is string => !!x)));
   const watchers = members.filter(([u]) => !seated.has(u)).length;
   const mine = seatOf(room, uid);
   const myTable = mine ? room.tables?.[mine.t] : undefined;
@@ -780,6 +804,11 @@ export function Lobby() {
     setViewState(v);
   };
   const [roomMatch, setRoomMatch] = useState(false);
+  const [team, setTeamState] = useState(lastTeam);
+  const setTeam = (v: boolean) => {
+    lastTeam = v;
+    setTeamState(v);
+  };
   const [deck, setDeck] = useLobbyDeck();
 
   // อยู่ในห้องดวลแล้ว (สร้าง / เข้า / กลับมาจากกระดาน): แสดงหน้าห้อง
@@ -797,7 +826,13 @@ export function Lobby() {
     setView({ kind: 'menu' });
     setRoomMatch(true);
   };
-  const title = { menu: ['DUEL MENU', 'เมนูการดวล'], create: ['CREATE ROOM', 'สร้างห้อง'], list: ['ROOM LIST', 'รายการห้อง'], room: ['ROOM MATCH', 'ห้องดวล'] }[current.kind];
+  const roomTeam = duel?.room ? !!duel.room.meta.team : team;
+  const title = {
+    menu: ['DUEL MENU', 'เมนูการดวล'],
+    create: [team ? 'CREATE TEAM ROOM' : 'CREATE ROOM', team ? 'สร้างห้อง Team Battle' : 'สร้างห้อง'],
+    list: [team ? 'TEAM BATTLE' : 'ROOM LIST', team ? 'รายการห้อง Team Battle' : 'รายการห้อง'],
+    room: [roomTeam ? 'TEAM BATTLE' : 'ROOM MATCH', roomTeam ? 'ห้อง Team Battle (2VS2)' : 'ห้องดวล'],
+  }[current.kind];
 
   return (
     <div className="game-bg relative flex h-screen min-w-[1200px] flex-col overflow-hidden">
@@ -809,16 +844,17 @@ export function Lobby() {
       {!onlineAvailable ? (
         <div className="flex flex-1 items-center justify-center text-amber-300">ยังไม่ได้ตั้งค่า Firebase (apps/web/.env.local)</div>
       ) : current.kind === 'menu' ? (
-        <DuelMenu onRoom={() => setRoomMatch(true)} />
+        <DuelMenu onRoom={() => (setTeam(false), setRoomMatch(true))} onTeam={() => (setTeam(true), setRoomMatch(true))} />
       ) : current.kind === 'create' ? (
-        <CreateRoom deck={deck} />
+        <CreateRoom key={String(team)} deck={deck} team={team} />
       ) : current.kind === 'list' ? (
-        <RoomList onOpen={(code) => void duelJoin(code, deck)} />
+        <RoomList key={String(team)} onOpen={(code) => void duelJoin(code, deck)} team={team} />
       ) : (
         <RoomView deck={deck} setDeck={setDeck} />
       )}
       {roomMatch && !duel && (
         <RoomMatch
+          team={team}
           onClose={() => setRoomMatch(false)}
           onCreate={() => (setRoomMatch(false), setView({ kind: 'create' }))}
           onEnter={() => (setRoomMatch(false), setView({ kind: 'list' }))}

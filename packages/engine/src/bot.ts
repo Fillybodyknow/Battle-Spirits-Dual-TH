@@ -241,7 +241,8 @@ export function legalActions(s: GameState, db: CardDatabase, me: PlayerId): Acti
   const out: Action[] = [];
   for (const seat of actorSeats(s)) {
     let view = s;
-    if (seat) {
+    // state ที่รับมาอาจสลับที่นั่งไว้แล้ว (หน้าเว็บ): สลับให้ตรงที่นั่งที่จะสร้างท่าเสมอ
+    if ((s.players[me].active ?? 0) !== seat) {
       view = structuredClone(s);
       useSeat(view, me, seat);
     }
@@ -574,6 +575,8 @@ export interface BotDecision {
 export interface BotOptions {
   /** ระดับความเก่ง 1–6 (ดาวของด่าน): ต่ำ = ใส่ความคลาดเคลื่อนให้คะแนนแต่ละท่า (เลือกท่าที่ไม่ดีที่สุดบ้าง) · 5 = เต็มที่ · 6 = คิดล่วงหน้าอีกหนึ่งท่า */
   level?: number;
+  /** 2VS2: ตัดสินใจแทนที่นั่งนี้เท่านั้น (หน้าเว็บ: เพื่อนร่วมทีมเป็นบอท ไม่กดแทนผู้เล่น) */
+  seat?: Seat;
   /** (ไว้ดีบัก) คะแนนของทุกท่าที่ลอง */
   debug?: { action: Action; score: number }[];
 }
@@ -628,7 +631,7 @@ export function botDecide(real: GameState, db: CardDatabase, me: PlayerId, opts:
   const debug = opts.debug;
   if (actorOf(real) !== me) return null;
   const s = botView(real, me);
-  const acts = legalActions(s, db, me);
+  const acts = legalActions(s, db, me).filter((a) => opts.seat === undefined || (a.seat ?? 0) === opts.seat);
   if (acts.length === 0) return null;
   const base = evaluate(s, db, me);
   let best: BotDecision | null = null;

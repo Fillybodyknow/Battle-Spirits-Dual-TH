@@ -95,6 +95,28 @@ describe('Booster Set 06', () => {
     expect(s.cards[target]!.state).toBe('refresh');
   });
 
+  it('Kagemusha + Showdown: คู่แข่งระบุสปิริตที่มี Soul Core ของตัวเอง → ใช้ Kagemusha ได้ แล้ว Showdown ต้องเทียบกับการ์ด Kagemusha', () => {
+    let s = setup();
+    const hyojin = put(s, 'p1', no('ขุนศึกผู้งามสง่า เฮียวจินดราก้อน'), 1);
+    const target = put(s, 'p2', DARIU, 1, true);
+    const s23 = inHand(s, 'p2', no('นักรบเครื่องกล S23'));
+    s.queue = [{ controller: 'p1', sourceId: hyojin, steps: [{ do: 'showdown', then: [] }], paidWithSoul: false, trashWhenDone: false }];
+    s = act(s, { type: 'endMain', player: 'p1' });
+    // คู่แข่งระบุสปิริตของตัวเอง
+    expect(s.choice).toMatchObject({ kind: 'card', player: 'p2' });
+    s = choose(s, target);
+    expect(s.choice).toMatchObject({ kind: 'option', player: 'p2' });
+    s = choose(s, optionIndex(s, 'อัญเชิญ'));
+    const cost = (s.choice as { cost: number }).cost;
+    s = choose(s, { pay: normalCores(s, 'p2').slice(0, cost) });
+    s = choose(s, { pay: normalCores(s, 'p2').slice(0, 1) });
+    expect(s.players.p2.field).toContain(s23);
+    // Showdown ต้องเทียบกับ S23
+    expect(s.choice).toMatchObject({ kind: 'card', player: 'p2', candidates: [s23] });
+    s = choose(s, s23);
+    expect(s.players.p2.field).toContain(target);
+  });
+
   it('ส่งคอร์หลายเม็ด: แบ่งทีเดียว → ถาม Kagemusha → ใช้ = คอร์ทั้งหมดไปที่การ์ด Kagemusha', () => {
     let s = setup();
     const rinne = put(s, 'p1', no('มิโกะเบื้องหลัง รินเนะ'), 1); // เมื่อโจมตี: ส่งคอร์บนสปิริตคู่แข่ง 2 เม็ด

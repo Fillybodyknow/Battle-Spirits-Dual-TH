@@ -232,6 +232,11 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
   · ส่งของไป "เจ้าของ" ใช้ `ownerZones(s, cardId)` / `zonesOf(s, p, seat)` · `normalizeSeats` ย้ายการ์ด/คอร์ที่หลงไปโซนเพื่อนกลับหลังทุก step · คอร์ที่ใช้จ่าย/จัดได้ = `ownField` (ของตัวเอง)
   · ไลฟ์คู่แข่งลดทั้งสองคน (`loseLife`), step ที่ลงผลกับเด็ค/มือ/เบิร์สคู่แข่ง = `OPP_ZONE_STEPS` (ทำทีละคน: step ภายใน `oppSeat`) · trigger จากมือ/แทรช = `teamHand` / `teamTrash`
   · จบเมน/แอทแท็คสเต็ป = ทุกคนกดพร้อม (`seatsReady`), แฟลช = ทุกคนกดผ่าน (`flash.seatsPassed`) · บอท: `actorSeats` + `legalActions` ติดที่นั่งให้ · เทสต์ `2v2.test.ts`, `2v2-bot.test.ts`
+  · `applyAction` รับ state ที่สลับที่นั่งไว้ได้ (คืนเป็นที่นั่ง 0 ก่อนเสมอ) · หน้าเว็บ (ตอนนี้มีแค่ดวลกับบอท: `startVsBot(..., { partners })`): ผู้เล่น = p1 ที่นั่ง 0, อีก 3 ที่นั่งเป็นบอท (`botTurn` ใน vsBot.ts, `BotOptions.seat`)
+    `partnerTurn` (store) = ตาของเพื่อนร่วมทีม → `mine`/`controls` เป็น false + แถบ "รอเพื่อนร่วมทีม" · `TeamPlate` (Hud) ป้ายคนที่สองของแต่ละทีม + ดูมือเพื่อน · `OwnerTag` (Board) ป้ายเจ้าของการ์ดบนสนาม
+  · **Team Battle ออนไลน์** (DUEL → Team Battle): ห้องดวล `meta.team` = โต๊ะละ 4 ที่นั่ง `TableSeat` p1/p1b/p2/p2b (`tableSeats`, `seatKey`/`keySide`/`keySeat` ใน online/transport.ts) · ห้องเกมมี `setup.partnerDecks` + ที่นั่ง p1b/p2b
+    `OnlineState.seat` · state ในเครื่องเก็บ **ในมุมของที่นั่งตัวเอง** (`asMySeat` หลังทุก action) · `dispatch` ติด `seat` ให้ action · `autoAdvance` ต้องตัดสินตามที่นั่งด้วยสำเนาที่สลับที่นั่ง (ห้ามขึ้นกับมุมของเครื่อง ไม่งั้น 4 เครื่องเดินไม่ตรงกัน)
+    ทดสอบ: 4 แท็บ `?online=local` (สคริปต์ CDP: import store ด้วย URL เดียวกับที่แอปโหลด จาก `performance.getEntriesByType('resource')` ไม่งั้นได้ store ตัวใหม่)
 - `config.manualDraw` (หน้าเว็บเปิดไว้): Draw Step หยุดรอ action `drawStep` · เทสต์ใช้ค่าเริ่มต้น (จั่วเอง)
 - เปลี่ยนลำดับ action ที่ engine คาดหวัง = ห้องออนไลน์ที่เล่นค้างอยู่จะเล่นต่อไม่ได้ (บอกเจ้าของโปรเจกต์ด้วย)
 - ความสามารถถาวร (ไม่ผ่านคิว) ไม่มี `effectResolving` → ตรงจุดที่มัน "ลงมือจริง" ให้เรียก `emitStatic(ctx, { cardId, source })` (event `staticApplied`)

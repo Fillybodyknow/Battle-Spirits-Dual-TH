@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { loadAllCards, loadBS08Cards } from '@bs/cards';
 import { applyAction, createGame, currentBp, payableCost, type Action, type GameState, type PlayerId } from '../src';
+import { textHas } from '../src/rules';
 
 const db = loadAllCards();
 const no = (name: string) => db.all().find((c) => c.name === name)!.cardNo;
@@ -60,6 +61,21 @@ const attack = (s: GameState, attackerId: string) => act(act(s, { type: 'endMain
 const toP2Turn = (s: GameState) => act(act(s, { type: 'endMain', player: 'p1' }), { type: 'endAttackStep', player: 'p1' });
 
 describe('Booster Set 08', () => {
+  it('กุนซือ โดรเดอร์ดราก้อน: ตัวเองโจมตีไม่จั่ว (ข้อความแค่อ้างถึงคีย์เวิร์ด) · ลีฟวูล์ฟ: นับการ์ดที่มี Quick จริง', () => {
+    const def = (name: string) => db.get(no(name));
+    expect(textHas(def('กุนซือ โดรเดอร์ดราก้อน'), 'Evolution')).toBe(false);
+    expect(textHas(def('No.43 แบร์บุ๊ค'), 'Showdown')).toBe(false);
+    expect(textHas(def('ขุนศึกผู้งามสง่า เฮียวจินดราก้อน'), 'Showdown')).toBe(true);
+    expect(textHas(def('ฮากาเนะวูม'), 'True-Rage')).toBe(true);
+    expect(textHas(def('ฮากาเนะวูม'), 'Consecutive Blade')).toBe(false);
+    expect(textHas(def('ลีฟวูล์ฟ'), 'Quick')).toBe(true);
+    let s = setup();
+    const dorder = put(s, 'p1', no('กุนซือ โดรเดอร์ดราก้อน'), 1);
+    const hand = s.players.p1.hand.length;
+    s = passAll(attack(s, dorder));
+    expect(s.players.p1.hand).toHaveLength(hand);
+  });
+
   it('กำแพงผลึกขาว (โซลคอร์): ในเทิร์นนี้โดนสปิริต 2 เจ็มตี = ไลฟ์ลดแค่ 1', () => {
     const run = (cap: boolean) => {
       let s = setup();

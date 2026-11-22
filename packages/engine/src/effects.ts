@@ -967,7 +967,7 @@ function addTurnBp(ctx: Ctx, cardId: string, amount: number): void {
 function ask(ctx: Ctx, item: QueuedEffect, choice: DistributiveOmit<PendingChoice, 'player' | 'sourceId'>, player: PlayerId = item.controller): void {
   // Kagemusha: การเลือกครั้งถัดไปของเอฟเฟกต์นี้ต้องเล็งการ์ด Kagemusha ที่อัญเชิญมา (ไม่อัญเชิญ = เป้าเดิม)
   const onField = (id: string) => PLAYERS.some((p) => ctx.s.players[p].field.includes(id));
-  if (item.kageForce && choice.kind === 'card' && player === item.controller) {
+  if (item.kageForce && choice.kind === 'card' && (player === item.controller || ownerPicksTarget(choice, player, item))) {
     const f = item.kageForce;
     item.kageForce = undefined;
     const forced = [f.kage, f.orig].find((id) => !!id && onField(id));
@@ -987,7 +987,7 @@ function ask(ctx: Ctx, item: QueuedEffect, choice: DistributiveOmit<PendingChoic
       if (forced === f.kage && 'step' in choice) item.kageAbsorb = { cardId: forced, stepDo: choice.step.do };
       choice = { ...choice, candidates: [forced], prompt: `${choice.prompt} (Kagemusha: ต้องเล็งการ์ดนี้)` };
     }
-  } else if (item.kageAbsorb && choice.kind === 'card' && player === item.controller && 'step' in choice) {
+  } else if (item.kageAbsorb && choice.kind === 'card' && (player === item.controller || ownerPicksTarget(choice, player, item)) && 'step' in choice) {
     if (choice.step.do !== item.kageAbsorb.stepDo) item.kageAbsorb = undefined;
     else {
       // เป้าที่เหลือ: เล็งการ์ด Kagemusha ได้อีกก็เล็ง ไม่ได้ (เช่น เสื่อมสภาพไปแล้ว) = เอฟเฟกต์ส่วนนี้จบ
@@ -1062,7 +1062,12 @@ const KAGE_STEPS = new Set<Step['do']>([
   // BS11
   'noLifeDamageChosen',
   'negateChosenThisTurn',
+  // Showdown: คู่แข่งระบุสปิริตของตัวเอง = สปิริตนั้นตกเป็นเป้าของเอฟเฟกต์เรา (เจ้าของเลือกเองแล้วใช้ Kagemusha ได้)
+  'showdown',
 ]);
+
+/** การเลือกของ Showdown ที่คู่แข่งเป็นคนระบุสปิริตของตัวเอง */
+const ownerPicksTarget = (choice: { step?: Step }, player: PlayerId, item: QueuedEffect) => choice.step?.do === 'showdown' && player !== item.controller;
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
@@ -4522,7 +4527,8 @@ export function resolveChoice(ctx: Ctx, player: PlayerId, pick: ChoicePick): voi
     }
     if (typeof pick !== 'string' || !choice.candidates.includes(pick)) fail('INVALID_PICK', 'เลือกการ์ดนี้ไม่ได้');
     // Kagemusha: สปิริตของคู่แข่ง (ที่มี Soul Core) ตกเป็นเป้า → คู่แข่งอัญเชิญการ์ด Kagemusha จากมือได้ แล้วเอฟเฟกต์ต้องเล็งการ์ดนั้นแทน
-    if (KAGE_STEPS.has(step.do) && player === cur.controller && s.cards[pick]!.owner !== player && !(cur.kageDone ?? []).includes(pick) && kagemusha(ctx, cur, step, pick)) return;
+    const targeted = player === cur.controller ? s.cards[pick]!.owner !== player : step.do === 'showdown' && s.cards[pick]!.owner === player;
+    if (KAGE_STEPS.has(step.do) && targeted && !(cur.kageDone ?? []).includes(pick) && kagemusha(ctx, cur, step, pick)) return;
     applyCardPick(ctx, cur, choice, player, pick);
   }
 

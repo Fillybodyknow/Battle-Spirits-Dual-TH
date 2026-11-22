@@ -4,7 +4,7 @@ import { activatableOptions, blockForced, onStageAbilities, baseCost, braveToSwa
 import { COLOR_LABEL, playerLabel } from '../format';
 import { GEM_IMG, IMG } from '../assets';
 import type { Fx } from '../store';
-import { blockCandidates, braveSlot, controls, hiddenFrom, mine, braveHostOf, braveHosts, canDropBurst, canQuickSummon, handFieldAction, separatePlacement } from '../store';
+import { blockCandidates, braveSlot, controls, hiddenFrom, mine, braveHostOf, braveHosts, canDropBurst, canQuickSummon, handFieldAction, separatePlacement, viewPlayer, mySeat } from '../store';
 import { usePrefs, type HandLayout } from '../prefs';
 import { castHandSlots, sortHand } from '../store';
 import { CastRestCard, pickingCores } from './Fx';
@@ -340,6 +340,29 @@ function GemBadge({ cardId, compact }: { cardId: string; compact?: boolean }) {
   );
 }
 
+/** 2VS2: ป้ายเจ้าของการ์ดบนสนามรวม (เรา / เพื่อน / คู่แข่ง 1 / คู่แข่ง 2) */
+function OwnerTag({ cardId, top }: { cardId: string; top: boolean }) {
+  const card = useGame((s) => s.state.cards[cardId]);
+  const me = useGame((s) => viewPlayer(s));
+  const names = useGame((s) => s.teamNames);
+  if (!card) return null;
+  const seat = card.seat ?? 0;
+  const ours = card.owner === me;
+  // การ์ดของเครื่องนี้ = ที่นั่งของเรา (Team Battle: คนที่สองของทีมก็เห็นการ์ดตัวเองเป็น "เรา")
+  const own = ours && seat === mySeat();
+  const label = ours ? (own ? 'เรา' : 'เพื่อน') : seat ? 'คู่แข่ง 2' : 'คู่แข่ง 1';
+  const cls = ours ? (own ? 'bg-sky-400 text-slate-950' : 'bg-violet-500 text-white') : seat ? 'bg-orange-500 text-white' : 'bg-rose-500 text-white';
+  const title = ours ? (own ? 'การ์ดของเรา' : (names?.[card.owner] ?? 'เพื่อนร่วมทีม')) : seat ? (names?.[card.owner] ?? 'คู่แข่งคนที่ 2') : 'คู่แข่งคนที่ 1';
+  return (
+    <div
+      title={title}
+      className={`pointer-events-none absolute -left-2 z-[6] rounded px-1.5 text-[10px] leading-4 font-black shadow ring-1 ring-black/40 ${cls} ${top ? 'bottom-1 rotate-180' : '-top-2'}`}
+    >
+      {label}
+    </div>
+  );
+}
+
 function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }) {
   const state = useGame((s) => s.state);
   const dragging = useGame((s) => s.dragging);
@@ -394,8 +417,9 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
   const isAttacker = battle?.attackerId === cardId;
   const isBlocker = battle?.blockers.includes(cardId) ?? false;
 
-  // ออนไลน์: จับต้องได้เฉพาะการ์ดของที่นั่งเรา
-  const own = mine(card.owner);
+  // ออนไลน์: จับต้องได้เฉพาะการ์ดของที่นั่งเรา · 2VS2: การ์ดของเพื่อนร่วมทีมโจมตี/ป้องกัน/จัดคอร์/ใช้เอฟเฟกต์ไม่ได้
+  // (state อยู่ในมุมของที่นั่งเรา: ที่นั่งที่อยู่ที่ players[เจ้าของ] = ที่นั่งของเครื่องนี้)
+  const own = mine(card.owner) && (state.mode !== '2v2' || (card.seat ?? 0) === (state.players[card.owner].active ?? 0));
   const ready = own && spirit && !exhausted && !state.winner && !state.choice;
   const canAttack = ready && state.phase === 'attack' && !battle && card.owner === state.turnPlayer && canAttackWith(state, db, cardId);
   const confirming = useGame((s) => s.attackConfirm === cardId);
@@ -575,6 +599,8 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
         )}
         {/* เจ็มของการ์ดนี้ (ทุกการ์ดที่มีเจ็ม) */}
         <GemBadge cardId={cardId} />
+        {/* 2VS2: เจ้าของการ์ด (สนามรวมของทีม: จัดคอร์/โจมตีได้เฉพาะของตัวเอง) */}
+        {state.mode === '2v2' && <OwnerTag cardId={cardId} top={matTop} />}
         {/* แบ่งคอร์ที่จะส่งออก: จำนวนที่เลือกจากตัวนี้ + ปุ่มลด */}
         {allocN > 0 && (
           <div className={`absolute inset-x-0 z-[7] flex items-center justify-center gap-1 ${matTop ? 'top-2 rotate-180' : 'bottom-2'}`}>
@@ -811,7 +837,7 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
  * มุโดว / เฮล-สคัล: คอร์ในรีเสิร์ฟ/แทรชของคู่แข่งเป็นตัวเลือกหนึ่งในหน้าแบ่งคอร์ (choice distribute)
  * คลิกช่อง = +1 เม็ด · ปุ่ม − = ลด
  */
-function PileAlloc({ pileId, label }: { pileId: string; label: string }) {
+export function PileAlloc({ pileId, label }: { pileId: string; label: string }) {
   const candidate = useGame((s) => isDistributeCandidate(s.state, pileId) && !isFxBlocking(s.fx));
   const n = useGame((s) => allocOf(s)[pileId] ?? 0);
   // ฝั่งคู่แข่งหมุน 180°: หมุนป้ายกลับให้อ่านได้

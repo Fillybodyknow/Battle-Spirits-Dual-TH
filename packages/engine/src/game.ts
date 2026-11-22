@@ -1542,6 +1542,8 @@ export function applyAction(state: GameState, input: Action, db: CardDatabase): 
   const action = structuredClone(input);
   if (state.winner) return { ok: false, error: { code: 'GAME_OVER', message: 'เกมจบแล้ว' } };
   const ctx: Ctx = { s: structuredClone(state), db, events: [], start: state };
+  // 2VS2: รับ state ที่สลับที่นั่งไว้ได้ (หน้าเว็บเก็บ state ในมุมของที่นั่งตัวเอง) → คืนเป็นที่นั่ง 0 ก่อนทำ action เสมอ
+  restoreSeats(ctx.s);
   try {
     if (state.choice && action.type !== 'choose' && action.type !== 'concede') {
       fail('CHOICE_PENDING', 'ต้องเลือกให้เสร็จก่อน');

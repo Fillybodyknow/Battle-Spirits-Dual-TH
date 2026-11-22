@@ -6,7 +6,7 @@ import { useGame, viewPlayer } from './store';
 import { HandFan, PlayerMat } from './components/Board';
 import { ChoiceDialog, ErrorToast, FlashCue, PromptBar, SummonPanel, ShownFan, TrashDialog, TrashSummonFan } from './components/Controls';
 import { UpdateNotice, WhatsNew } from './components/Updates';
-import { CornerButtons, FinalBlowWarning, FloatingInspector, PlayerPlate, TurnAura } from './components/Hud';
+import { CornerButtons, FinalBlowWarning, FloatingInspector, PlayerPlate, TeamPlate, TurnAura } from './components/Hud';
 import { PlayDialog } from './components/PlayDialog';
 import { MyDeck } from './screens/MyDeck';
 import { BTN } from './components/Modal';
@@ -273,6 +273,8 @@ function GameScreen() {
       <GfxNotice />
       <PlayerPlate player={bottom} corner="bottom-left" />
       <PlayerPlate player={top} corner="top-right" />
+      <TeamPlate player={bottom} corner="bottom-left" />
+      <TeamPlate player={top} corner="top-right" />
       <FloatingInspector enabled={inspector} />
       <CornerButtons inspector={inspector} setInspector={setInspector} />
 

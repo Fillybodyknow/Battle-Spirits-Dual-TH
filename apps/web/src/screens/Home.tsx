@@ -274,7 +274,20 @@ export function LocalSetup({ onClose, vsBot }: { onClose: () => void; vsBot?: bo
   const [pick, setPick] = useState(decks);
   /** ความเก่งของบอท ★1–6 (★6 = คิดล่วงหน้าอีกหนึ่งท่า) */
   const [level, setLevel] = useState(5);
+  /** 2VS2 (ทดลอง): เพื่อนร่วมทีม + คู่แข่ง 2 คนเป็นบอท */
+  const [team, setTeam] = useState(false);
+  const [partners, setPartners] = useState(decks);
   const ids = playableDecks();
+  const row = (label: string, value: string, onPick: (id: string) => void) => (
+    <div key={label}>
+      <div className="mb-2 text-sm font-bold text-slate-300">{label}</div>
+      <div className="flex gap-3 overflow-x-auto pb-1">
+        {ids.map((id) => (
+          <DeckTile key={id} id={id} small selected={value === id} onClick={() => onPick(id)} />
+        ))}
+      </div>
+    </div>
+  );
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={onClose}>
       <div className="hud-panel flex max-w-4xl flex-col gap-4 rounded-2xl p-6" onClick={(e) => e.stopPropagation()}>
@@ -282,16 +295,32 @@ export function LocalSetup({ onClose, vsBot }: { onClose: () => void; vsBot?: bo
           <div className="text-xs tracking-[0.3em] text-sky-300">{vsBot ? 'VS BOT' : 'LOCAL DUEL'}</div>
           <div className="text-2xl font-black text-white">{vsBot ? 'ดวลกับบอท (ทดลอง)' : 'เล่นเครื่องเดียว (สองคนสลับกัน)'}</div>
         </div>
-        {(['p1', 'p2'] as const).map((p) => (
-          <div key={p}>
-            <div className="mb-2 text-sm font-bold text-slate-300">{vsBot ? (p === 'p1' ? 'เด็คของเรา' : 'เด็คของบอท') : `เด็คผู้เล่น ${p === 'p1' ? '1' : '2'}`}</div>
-            <div className="flex gap-3 overflow-x-auto pb-1">
-              {ids.map((id) => (
-                <DeckTile key={id} id={id} small selected={pick[p] === id} onClick={() => setPick({ ...pick, [p]: id })} />
-              ))}
-            </div>
+        {vsBot && (
+          <div className="flex gap-2">
+            {[false, true].map((t) => (
+              <button
+                key={String(t)}
+                type="button"
+                onClick={() => setTeam(t)}
+                className={`rounded-lg border px-4 py-1.5 text-sm font-black transition ${team === t ? 'border-amber-300 bg-amber-400/20 text-amber-100' : 'border-slate-600 text-slate-300 hover:border-slate-400'}`}
+              >
+                {t ? '2VS2 (ทดลอง)' : '1VS1'}
+              </button>
+            ))}
           </div>
-        ))}
+        )}
+        <div className={`flex flex-col gap-4 ${team ? 'max-h-[52vh] overflow-y-auto pr-1' : ''}`}>
+          {team && vsBot
+            ? [
+                row('เด็คของเรา', pick.p1, (id) => setPick({ ...pick, p1: id })),
+                row('เด็คเพื่อนร่วมทีม (บอท)', partners.p1, (id) => setPartners({ ...partners, p1: id })),
+                row('เด็คคู่แข่งคนที่ 1 (บอท)', pick.p2, (id) => setPick({ ...pick, p2: id })),
+                row('เด็คคู่แข่งคนที่ 2 (บอท)', partners.p2, (id) => setPartners({ ...partners, p2: id })),
+              ]
+            : (['p1', 'p2'] as const).map((p) =>
+                row(vsBot ? (p === 'p1' ? 'เด็คของเรา' : 'เด็คของบอท') : `เด็คผู้เล่น ${p === 'p1' ? '1' : '2'}`, pick[p], (id) => setPick({ ...pick, [p]: id })),
+              )}
+        </div>
         {vsBot && (
           <div>
             <div className="mb-2 text-sm font-bold text-slate-300">ความเก่งของบอท</div>
@@ -309,7 +338,7 @@ export function LocalSetup({ onClose, vsBot }: { onClose: () => void; vsBot?: bo
           <button type="button" className={BTN.secondary} onClick={onClose}>
             ยกเลิก
           </button>
-          <button type="button" className={`${BTN.primary} px-8`} onClick={() => (vsBot ? startVsBot(pick, { level }) : startLocal(pick))}>
+          <button type="button" className={`${BTN.primary} px-8`} onClick={() => (vsBot ? startVsBot(pick, { level, ...(team ? { partners } : {}) }) : startLocal(pick))}>
             เริ่มดวล!
           </button>
         </div>

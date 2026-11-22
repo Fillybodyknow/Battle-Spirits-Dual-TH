@@ -5,13 +5,19 @@ import { primeCoreMotion, snapCores } from './motion';
 import { prefs, setPrefs, type HandSort } from './prefs';
 import { firebaseConfigured, firebaseTransport } from './online/firebase';
 import { localTransport } from './online/local';
-import type { DuelMember, DuelRoom, DuelTable, LobbyEntry, RoomInfo, RoomSetup, Transport } from './online/transport';
+import type { DuelMember, DuelRoom, DuelTable, LobbyEntry, RoomInfo, RoomSetup, TableSeat, Transport } from './online/transport';
+import { keySeat, keySide, seatKey, TEAM_SEATS } from './online/transport';
 import { expandDeck, loadAllCards, validateDeck } from '@bs/cards';
 import { deckChoices, deckInfo, deckToken, STARTER_DECKS, type DeckId } from './decks';
 import { rarityOf, type TextEffect } from '@bs/cards';
 import { APP_VERSION } from './changelog';
 import {
   activatableAbilities,
+  activeSeat,
+  actorOf,
+  actorSeats,
+  ownField,
+  seatOfCard,
   handMagic,
   quickAbility,
   braveFits,
@@ -45,6 +51,8 @@ import {
   type GameEvent,
   type GameState,
   type PlayerId,
+  type Seat,
+  useSeat,
   hasEvolutionNow,
   freezeForCache,
 } from '@bs/engine';
@@ -212,7 +220,9 @@ export function responseOptions(
   // ในการต่อสู้นี้ใช้เอฟเฟกต์แฟลชไม่ได้ (ดุ๊คคิงเทารอส)
   if (flashPlayer(s) !== player || s.battle?.noFlash === player) return { magic: [], evolve: [], quick: [], activate: [], trash: [] };
   const p = s.players[player];
-  const cores = p.reserve.length + p.field.reduce((n, id) => n + s.cards[id]!.cores.length, 0);
+  // 2VS2: การ์ด/คอร์ของตัวเอง (ที่นั่งที่อยู่ที่ players[p] ตอนนี้)
+  const own = ownField(s, player);
+  const cores = p.reserve.length + own.reduce((n, id) => n + s.cards[id]!.cores.length, 0);
   const magic = p.hand.filter((id) => {
     const def = db.get(s.cards[id]!.cardNo);
     return (
@@ -224,15 +234,15 @@ export function responseOptions(
       !magicUsedUp(s, db, player, def.cardNo, 'flash')
     );
   });
-  const evolve = p.field.filter(
+  const evolve = own.filter(
     (id) =>
       canEvolve(s, id) &&
-      p.field.some((o) => o !== id && isSpiritLike(db.get(s.cards[o]!.cardNo)) && s.cards[o]!.cores.length > 0),
+      own.some((o) => o !== id && isSpiritLike(db.get(s.cards[o]!.cardNo)) && s.cards[o]!.cores.length > 0),
   );
   // ดีไวน์เชน: ในการต่อสู้นี้ใช้การ์ดในมือในช่วง Flash ไม่ได้
   const noHand = s.battle?.noHandFlash === player;
   const quick = noHand ? [] : p.hand.filter((id) => canQuickSummon(s, id));
-  const activate = p.field.filter((id) => activatableAbilities(s, db, player, id).length > 0);
+  const activate = own.filter((id) => activatableAbilities(s, db, player, id).length > 0);
   const trash = p.trashCards.filter((id) => trashSummonRule(s, db, player, id) !== null);
   return { magic: noHand ? [] : magic, evolve, quick, activate, trash };
 }
@@ -400,7 +410,9 @@ export function simulateEvolve(s: GameState, cardId: string, cores: string[]): G
 /** สปิริตของฝ่ายป้องกันที่ประกาศป้องกันได้ตอนนี้ */
 export function blockCandidates(s: GameState): string[] {
   if (!s.battle || s.battle.step !== 'declareBlock' || s.choice || s.winner) return [];
-  return blockersFor(s, db, opponentOf(s.turnPlayer));
+  const def = opponentOf(s.turnPlayer);
+  // 2VS2: ป้องกันได้เฉพาะสปิริตของตัวเอง (ที่นั่งที่อยู่ที่ players[p] ตอนนี้)
+  return blockersFor(s, db, def).filter((id) => s.mode !== '2v2' || seatOfCard(s.cards[id]) === activeSeat(s, def));
 }
 
 /**
@@ -412,6 +424,26 @@ function autoAdvance(s: GameState, events: GameEvent[]): GameState {
     if (s.winner || s.choice) return s;
     const fp = flashPlayer(s);
     let action: Action | null = null;
+    // 2VS2: ดูจากมุมของที่นั่งที่ต้องตัดสินใจ (คนแรกที่ยังไม่กด) แล้วกดในนามที่นั่งนั้น
+    // ออนไลน์ทุกเครื่องต้องเดิน state เหมือนกัน: ห้ามขึ้นกับว่า state เก็บในมุมของใคร
+    const actor = actorOf(s);
+    if (s.mode === '2v2' && actor && (fp || (s.battle?.step === 'declareBlock' && !s.choice))) {
+      for (const seat of actorSeats(s)) {
+        const view = structuredClone(s);
+        useSeat(view, actor, seat);
+        if (fp) {
+          const o = responseOptions(view, fp);
+          if (o.magic.length + o.evolve.length + o.quick.length + o.activate.length + o.trash.length === 0) action = { type: 'passFlash', player: fp, ...(seat ? { seat } : {}) };
+        } else if (blockCandidates(view).length === 0) action = { type: 'noBlock', player: actor, ...(seat ? { seat } : {}) };
+        break;
+      }
+      if (!action) return s;
+      const r = applyAction(s, action, db);
+      if (!r.ok) return s;
+      events.push(...r.events);
+      s = r.state;
+      continue;
+    }
     if (fp) {
       const o = responseOptions(s, fp);
       if (o.magic.length + o.evolve.length + o.quick.length + o.activate.length + o.trash.length === 0) action = { type: 'passFlash', player: fp };
@@ -1757,14 +1789,42 @@ export const hiddenFrom = (st: { online: OnlineState | null; hideIdleHand: boole
  * ไม่งั้นสองเครื่องจะเดิน state ต่างกัน
  */
 export function mine(player: PlayerId | null | undefined): boolean {
-  const { online: on, botSeat } = useGame.getState();
-  if (!on && botSeat) return player !== botSeat;
-  return !on || (!on.spectator && player === on.me);
+  const { online: on, botSeat, state } = useGame.getState();
+  if (!on && botSeat) return player !== botSeat && !partnerTurn(state, player);
+  return !on || (!on.spectator && player === on.me && !partnerTurn(state, player));
 }
+
+/** ที่นั่งในทีมของเครื่องนี้ (Team Battle: 0/1 · อื่น ๆ = 0) */
+export const mySeat = (): Seat => useGame.getState().online?.seat ?? 0;
 
 /** ผู้เล่นนี้กดสั่งงานจากเครื่องนี้ได้หรือไม่ (ออนไลน์ = เฉพาะที่นั่งของเรา · ดวลกับบอท = ไม่ใช่ฝั่งบอท: ไม่แสดงตัวเลือก/หน้ากดจั่วของบอท) */
 export const controls = (st: { online: OnlineState | null }, player: PlayerId | null | undefined): boolean =>
-  !st.online ? !player || player !== useGame.getState().botSeat : (!st.online.spectator && st.online.status === 'playing' && player === st.online.me);
+  !st.online
+    ? !player || (player !== useGame.getState().botSeat && !partnerTurn(useGame.getState().state, player))
+    : !st.online.spectator && st.online.status === 'playing' && player === st.online.me && !partnerTurn(useGame.getState().state, player);
+
+/**
+ * 2VS2 (เล่นในเครื่องกับบอท): ตอนนี้เป็นตาของเพื่อนร่วมทีมของผู้เล่น (ที่นั่ง 1) ไม่ใช่ของผู้เล่น
+ * เช่น ผู้เล่นกดพร้อมแล้วรอเพื่อน / ตัวเลือกของเอฟเฟกต์ของเพื่อน / แฟลชที่เพื่อนยังไม่ได้กดผ่าน
+ */
+export function partnerTurn(s: GameState, player: PlayerId | null | undefined): boolean {
+  if (s.mode !== '2v2' || !player || actorOf(s) !== player) return false;
+  const st = useGame.getState();
+  // ฝั่งบอท (คู่แข่ง) / ทีมคู่แข่ง (ออนไลน์) ไม่ใช่ทีมของเรา
+  if (st.botSeat === player) return false;
+  if (st.online && (st.online.spectator || st.online.me !== player)) return false;
+  return !actorSeats(s).includes(mySeat());
+}
+
+/**
+ * Team Battle: เก็บ state ในมุมของที่นั่งตัวเอง (โซนของเราอยู่ที่ players[เรา]) ให้หน้าจอเดิมแสดงมือ/รีเสิร์ฟ/การกดของเราได้เลย
+ * engine รับ state รูปไหนก็ได้ (คืนเป็นที่นั่ง 0 ก่อนทำ action) · แก้ state ที่สร้างใหม่ในที่ (ยังไม่ถูกเก็บ)
+ */
+function asMySeat(s: GameState): GameState {
+  const on = useGame.getState().online;
+  if (on && !on.spectator && on.seat && s.players[on.me].partner) useSeat(s, on.me, on.seat);
+  return s;
+}
 
 /**
  * เอฟเฟกต์ที่กำลังทำงานอยู่ตอนนี้ (หัวคิวที่เริ่มแล้ว): การ์ด + ลำดับบรรทัดเอฟเฟกต์ใน CardDef.effects
@@ -2363,6 +2423,8 @@ interface Store {
   botName: string | null;
   /** รูปโปรไฟล์ของบอท (รหัสการ์ด) · null = รูปสำรอง */
   botAvatar: string | null;
+  /** 2VS2: ชื่อคนที่สองของแต่ละทีม (null = ใช้ชื่อทั่วไป) */
+  teamNames: Record<PlayerId, string> | null;
   /** ก่อนเริ่มเกม: คนชนะการเสี่ยง และผู้เริ่มก่อนที่เลือก (null = ยังเลือกอยู่) */
   pregame: { winner: PlayerId; chosen: PlayerId | null } | null;
   /** คนชนะการเสี่ยงเลือกเริ่มก่อน (true) หรือเริ่มหลัง (false) */
@@ -2463,6 +2525,8 @@ function loadName(): string {
 export interface OnlineState {
   code: string;
   me: PlayerId;
+  /** Team Battle: ที่นั่งในทีม (1 = คนที่สอง · ไม่มี = 0) */
+  seat?: Seat;
   uid: string;
   /** ชื่อ transport ที่ใช้ (Firebase / ทดสอบในเครื่อง) */
   via: string;
@@ -2475,12 +2539,12 @@ export interface OnlineState {
   /** จำนวน action ของรอบนี้ที่ทำแล้ว */
   applied: number;
   opponentHere: boolean;
-  /** ชื่อผู้เล่นในห้อง */
-  names: Partial<Record<PlayerId, string>>;
+  /** ชื่อผู้เล่นในห้อง (Team Battle มี p1b / p2b) */
+  names: Partial<Record<TableSeat, string>>;
   /** รูปโปรไฟล์ (รหัสการ์ด) ของแต่ละที่นั่ง · ไม่มี = ใช้หน้าปกเด็คของที่นั่งนั้น */
-  avatars: Partial<Record<PlayerId, string>>;
+  avatars: Partial<Record<TableSeat, string>>;
   /** เลเวลผู้เล่นของแต่ละที่นั่ง (ห้องจากเครื่องเวอร์ชันเก่าไม่มี) */
-  levels?: Partial<Record<PlayerId, number>>;
+  levels?: Partial<Record<TableSeat, number>>;
   /** ผู้ชมที่อยู่ในห้องเกมตอนนี้ (uid → ชื่อ) จาก rooms/<code>/watchers · ผู้ชมลบตัวเองเมื่อออก/หลุดการเชื่อมต่อ */
   watchers?: Record<string, string>;
 }
@@ -2555,11 +2619,11 @@ const sameMajor = (a: string, b: string) => a.split('.')[0] === b.split('.')[0];
 const versionMismatchText = (other: string) =>
   `อีกฝ่ายใช้เวอร์ชัน ${other} แต่เครื่องนี้ใช้ ${APP_VERSION}: กติกาในเกมไม่ตรงกัน ให้ทั้งสองฝั่งอัปเดตเป็นเวอร์ชันล่าสุด (โหลดหน้าเว็บใหม่) ก่อนเล่นด้วยกัน`;
 
-function enterRoom(code: string, me: PlayerId, uid: string, spectator = false) {
+function enterRoom(code: string, me: PlayerId, uid: string, spectator = false, seat: Seat = 0) {
   stopSync();
-  if (!spectator) sessionStorage.setItem(SESSION, JSON.stringify({ code, me, via: transport.name }));
+  if (!spectator) sessionStorage.setItem(SESSION, JSON.stringify({ code, me, via: transport.name, ...(seat ? { seat } : {}) }));
   useGame.setState({
-    online: { code, me, uid, via: transport.name, status: 'waiting', setup: null, applied: 0, opponentHere: me === 'p2', names: {}, avatars: {}, ...(spectator ? { spectator } : {}) },
+    online: { code, me, uid, via: transport.name, status: 'waiting', setup: null, applied: 0, opponentHere: me === 'p2', names: {}, avatars: {}, ...(spectator ? { spectator } : {}), ...(seat ? { seat } : {}) },
     error: null,
   });
   unsubRoom = transport.watchRoom(code, (info) => onRoom(code, info));
@@ -2583,7 +2647,7 @@ function watcherPath(code: string, uid?: string): string {
 }
 
 /** ที่นั่ง (uid) ของห้องเกมล่าสุด: ฉากเปิดเกมใช้แสดง Player ID */
-let lastSeats: Partial<Record<PlayerId, string>> = {};
+let lastSeats: Partial<Record<TableSeat, string>> = {};
 
 function onRoom(code: string, info: RoomInfo | null) {
   const on = useGame.getState().online;
@@ -2594,13 +2658,16 @@ function onRoom(code: string, info: RoomInfo | null) {
     useGame.setState({ online: null, error: 'ห้องนี้ถูกปิดแล้ว' });
     return;
   }
-  const opponentHere = !!info.seats[opponentOf(on.me)];
-  // คู่แข่งใช้เวอร์ชันที่ engine ไม่ตรงกับเรา: เตือน (เครื่องเวอร์ชันเก่ามากจะไม่มีข้อมูลนี้ = ตรวจไม่ได้)
-  const oppVersion = info.versions?.[opponentOf(on.me)];
-  if (oppVersion && !sameMajor(oppVersion, APP_VERSION) && useGame.getState().error !== versionMismatchText(oppVersion)) {
+  const team = !!info.setup.partnerDecks;
+  // Team Battle: ทุกที่นั่งต้องอยู่ครบ
+  const opponentHere = team ? TEAM_SEATS.every((k) => !!info.seats[k]) : !!info.seats[opponentOf(on.me)];
+  // คนอื่นในห้องใช้เวอร์ชันที่ engine ไม่ตรงกับเรา: เตือน (เครื่องเวอร์ชันเก่ามากจะไม่มีข้อมูลนี้ = ตรวจไม่ได้)
+  const others = (team ? TEAM_SEATS : PLAYERS).filter((k) => k !== seatKey(on.me, on.seat));
+  const oppVersion = others.map((k) => info.versions?.[k]).find((v) => v && !sameMajor(v, APP_VERSION));
+  if (oppVersion && useGame.getState().error !== versionMismatchText(oppVersion)) {
     useGame.setState({ error: versionMismatchText(oppVersion) });
   }
-  const ready = !!info.setup.decks.p2 && !!info.seats.p2;
+  const ready = !!info.setup.decks.p2 && !!info.seats.p2 && (!team || (!!info.seats.p1b && !!info.seats.p2b));
   const names = info.names ?? {};
   const avatars = info.avatars ?? {};
   const levels = info.levels ?? {};
@@ -2637,13 +2704,17 @@ async function startRound(code: string, setup: RoomSetup, opponentHere: boolean)
   const winner = coinWinner(setup.seed);
   const names = st.online.names;
   const avatars = st.online.avatars;
+  // Team Battle: ฉากเปิดเกมแสดงชื่อทั้งทีม (คนที่นั่งเครื่องนี้ก่อน)
+  const mine = seatKey(me, st.online.seat);
+  const mate = seatKey(me, st.online.seat ? 0 : 1);
+  const teamName = (k: TableSeat, other: TableSeat, fallback: string) => (setup.partnerDecks ? `${names[k] ?? fallback} & ${names[other] ?? 'เพื่อนร่วมทีม'}` : (names[k] ?? fallback));
   // ฉากเปิดเกม: จอของคนชนะการเสี่ยงออกหัว จอของอีกฝั่งออกก้อย
   const intro: Fx[] =
     st.animations && existing === 0
       ? matchIntro(
           winner === me,
-          { name: names[me] ?? st.playerName, deck: decks[me], avatar: avatars[me] ?? storedAvatar(), uid: lastSeats[me] ?? st.online.uid, level: st.online.levels?.[me] ?? myLevel() },
-          { name: names[opp] ?? 'คู่แข่ง', deck: decks[opp], avatar: avatars[opp], uid: lastSeats[opp], ...(st.online.levels?.[opp] ? { level: st.online.levels[opp] } : {}) },
+          { name: teamName(mine, mate, st.playerName), deck: decks[me], avatar: avatars[mine] ?? storedAvatar(), uid: lastSeats[mine] ?? st.online.uid, level: st.online.levels?.[mine] ?? myLevel() },
+          { name: teamName(opp, seatKey(opp, 1), 'คู่แข่ง'), deck: decks[opp], avatar: avatars[opp], uid: lastSeats[opp], ...(st.online.levels?.[opp] ? { level: st.online.levels[opp] } : {}) },
         )
       : [];
   const nav = st.screen === 'lobby' ? {} : { screen: 'game' as const };
@@ -2656,7 +2727,7 @@ async function startRound(code: string, setup: RoomSetup, opponentHere: boolean)
   // ยังไม่ได้เลือก: แสดงกระดานชั่วคราว (ผู้ชนะการเสี่ยงเริ่มก่อน) ระหว่างรอคนชนะเลือก
   useGame.setState({
     ...resetUi,
-    state: startGame(setup.seed, decks, winner),
+    state: asMySeat(startGame(setup.seed, decks, winner, setup.partnerDecks ?? null)),
     truth: null,
     seed: setup.seed,
     decks,
@@ -2681,7 +2752,7 @@ function beginPlay(code: string, setup: RoomSetup, opponentHere: boolean, existi
   nextIndex = existing;
   useGame.setState({
     ...resetUi,
-    state: startGame(setup.seed, decks, setup.first),
+    state: asMySeat(startGame(setup.seed, decks, setup.first, setup.partnerDecks ?? null)),
     truth: null,
     seed: setup.seed,
     decks,
@@ -2750,14 +2821,16 @@ const leftGames = new Set<string>();
 let startingTable = false;
 
 /** สมาชิกที่ยังอยู่ในห้อง (คนที่หลุดถูกลบออกจาก members แล้ว ที่นั่งของเขาถือว่าว่าง) */
-export function seatUid(room: DuelRoom, t: string, seat: PlayerId): string | undefined {
+export function seatUid(room: DuelRoom, t: string, seat: TableSeat): string | undefined {
   const uid = room.tables?.[t]?.seats?.[seat];
   return uid && room.members?.[uid] ? uid : undefined;
 }
 export const tableIds = (room: DuelRoom) => Array.from({ length: room.meta.tables }, (_, i) => String(i + 1));
+/** ที่นั่งของโต๊ะในห้องนี้: Team Battle = 4 ที่นั่ง (ทีม p1: p1/p1b · ทีม p2: p2/p2b) */
+export const tableSeats = (room: DuelRoom): readonly TableSeat[] => (room.meta.team ? TEAM_SEATS : PLAYERS);
 /** ที่นั่งของ uid ในห้อง */
-export function seatOf(room: DuelRoom, uid: string): { t: string; seat: PlayerId } | null {
-  for (const t of tableIds(room)) for (const seat of PLAYERS) if (seatUid(room, t, seat) === uid) return { t, seat };
+export function seatOf(room: DuelRoom, uid: string): { t: string; seat: TableSeat } | null {
+  for (const t of tableIds(room)) for (const seat of tableSeats(room)) if (seatUid(room, t, seat) === uid) return { t, seat };
   return null;
 }
 
@@ -2797,38 +2870,56 @@ function onDuel(code: string, uid: string, room: DuelRoom | null) {
   const mine = seatOf(room, uid);
   if (!mine) return;
   const tb = room.tables?.[mine.t] ?? {};
-  // ทั้งสองฝั่งพร้อม: ที่นั่ง p1 เป็นคนสร้างเกม
-  if (!tb.game && mine.seat === 'p1' && seatUid(room, mine.t, 'p2') && tb.ready?.p1 && tb.ready?.p2 && !startingTable) {
+  // ทุกที่นั่งนั่งครบและพร้อม: ที่นั่ง p1 เป็นคนสร้างเกม
+  const allReady = tableSeats(room).every((k) => !!seatUid(room, mine.t, k) && !!tb.ready?.[k]);
+  if (!tb.game && mine.seat === 'p1' && allReady && !startingTable) {
     void startTable(code, room, mine.t, uid);
   }
-  // โต๊ะของเราเริ่มเกมแล้ว: เข้ากระดาน
-  if (tb.game && !leftGames.has(tb.game) && st.online?.code !== tb.game) enterRoom(tb.game, mine.seat, uid);
+  // โต๊ะของเราเริ่มเกมแล้ว: เข้ากระดาน (Team Battle: ฝั่ง + ที่นั่งในทีม)
+  if (tb.game && !leftGames.has(tb.game) && st.online?.code !== tb.game) enterRoom(tb.game, keySide(mine.seat), uid, false, keySeat(mine.seat));
 }
 
-/** levels ของห้องเกม (ไม่ใส่ค่าว่าง: Firebase ไม่รับ undefined) */
-function seatLevels(l1?: number, l2?: number): { levels?: Partial<Record<PlayerId, number>> } {
-  const levels = { ...(l1 ? { p1: l1 } : {}), ...(l2 ? { p2: l2 } : {}) };
-  return Object.keys(levels).length ? { levels } : {};
-}
-
-/** avatars ของห้องเกม (ไม่ใส่ค่าว่าง: Firebase ไม่รับ undefined) */
-function seatAvatars(a1?: string, a2?: string): { avatars?: Partial<Record<PlayerId, string>> } {
-  const avatars = { ...(a1 ? { p1: a1 } : {}), ...(a2 ? { p2: a2 } : {}) };
-  return Object.keys(avatars).length ? { avatars } : {};
+/** ข้อมูลของแต่ละที่นั่งสำหรับห้องเกม (ไม่ใส่ค่าว่าง: Firebase ไม่รับ undefined) */
+function seatData<T>(members: Partial<Record<TableSeat, DuelMember>>, pick: (m: DuelMember) => T | undefined): Partial<Record<TableSeat, T>> {
+  const out: Partial<Record<TableSeat, T>> = {};
+  for (const [k, m] of Object.entries(members) as [TableSeat, DuelMember][]) {
+    const v = pick(m);
+    if (v !== undefined && v !== null && v !== '' && v !== 0) out[k] = v;
+  }
+  return out;
 }
 
 async function startTable(code: string, room: DuelRoom, t: string, uid: string) {
   startingTable = true;
   try {
-    const p2 = seatUid(room, t, 'p2')!;
-    const m1 = room.members![uid]!;
-    const m2 = room.members![p2]!;
+    const keys = tableSeats(room);
+    const seats: Partial<Record<TableSeat, string>> = {};
+    const members: Partial<Record<TableSeat, DuelMember>> = {};
+    for (const k of keys) {
+      seats[k] = seatUid(room, t, k)!;
+      members[k] = room.members![seats[k]!]!;
+    }
     const game = `${code}-${randomCode()}`;
-    const setup: RoomSetup = { round: 1, seed: randomSeed(), decks: { p1: m1.deck, p2: m2.deck } };
-    await transport.createRoom(game, { seats: { p1: uid, p2 }, setup, names: { p1: m1.name, p2: m2.name }, versions: { p1: m1.version, p2: m2.version }, ...seatAvatars(m1.avatar, m2.avatar), ...seatLevels(m1.level, m2.level) });
+    const setup: RoomSetup = {
+      round: 1,
+      seed: randomSeed(),
+      decks: { p1: members.p1!.deck, p2: members.p2!.deck },
+      // Team Battle: เด็คของคนที่สองของแต่ละทีม
+      ...(room.meta.team ? { partnerDecks: { p1: members.p1b!.deck, p2: members.p2b!.deck } } : {}),
+    };
+    const avatars = seatData(members, (m) => m.avatar);
+    const levels = seatData(members, (m) => m.level);
+    await transport.createRoom(game, {
+      seats,
+      setup,
+      names: seatData(members, (m) => m.name),
+      versions: seatData(members, (m) => m.version),
+      ...(Object.keys(avatars).length ? { avatars } : {}),
+      ...(Object.keys(levels).length ? { levels } : {}),
+    });
     const res = await transport.transactPath(`${roomPath(code)}/tables/${t}`, (cur: DuelTable | null) => {
       if (!cur) return cur;
-      if (cur.game || !cur.ready?.p1 || !cur.ready?.p2 || cur.seats?.p1 !== uid || cur.seats?.p2 !== p2) return undefined;
+      if (cur.game || keys.some((k) => !cur.ready?.[k] || cur.seats?.[k] !== seats[k])) return undefined;
       return { ...cur, game };
     });
     if (!res.committed || (res.value as DuelTable | null)?.game !== game) void transport.removePath(roomPath(game)).catch(() => {});
@@ -2852,16 +2943,26 @@ function lobbyCount(code: string, room: DuelRoom | null) {
   void transport.setPath(`lobby/${code}/count`, Object.keys(room.members ?? {}).length).catch(() => {});
 }
 
-export async function duelCreate(meta: { name: string; comment: string; listed: boolean; max: number }, deck: DeckId): Promise<void> {
+export async function duelCreate(meta: { name: string; comment: string; listed: boolean; max: number; team?: boolean }, deck: DeckId): Promise<void> {
   try {
     const uid = await transport.signIn();
     const code = randomCode();
     const name = useGame.getState().playerName;
-    const max = Math.max(2, Math.min(6, meta.max));
+    // Team Battle: โต๊ะละ 4 คน (2VS2) · ห้องละ 4–8 คน
+    const max = meta.team ? Math.max(4, Math.min(8, meta.max)) : Math.max(2, Math.min(6, meta.max));
     const room: DuelRoom = {
       kind: 'duel',
       host: uid,
-      meta: { name: meta.name.trim() || `ห้องของ ${name}`, comment: meta.comment, listed: meta.listed, createdAt: Date.now(), max, tables: Math.ceil(max / 2), version: APP_VERSION },
+      meta: {
+        name: meta.name.trim() || `ห้องของ ${name}`,
+        comment: meta.comment,
+        listed: meta.listed,
+        createdAt: Date.now(),
+        max,
+        tables: meta.team ? Math.floor(max / 4) : Math.ceil(max / 2),
+        version: APP_VERSION,
+        ...(meta.team ? { team: true } : {}),
+      },
       members: { [uid]: myMember(deck) },
     };
     const res = await transport.transactPath(roomPath(code), (cur) => (cur ? undefined : room));
@@ -2869,7 +2970,7 @@ export async function duelCreate(meta: { name: string; comment: string; listed: 
     void transport.removeOnDisconnect(`${roomPath(code)}/members/${uid}`).catch(() => {});
     if (room.meta.listed) {
       void transport
-        .publishRoom({ code, name: room.meta.name, comment: room.meta.comment, host: name, createdAt: room.meta.createdAt, version: APP_VERSION, count: 1, max })
+        .publishRoom({ code, name: room.meta.name, comment: room.meta.comment, host: name, createdAt: room.meta.createdAt, version: APP_VERSION, count: 1, max, ...(meta.team ? { team: true } : {}) })
         .catch(() => {});
     }
     watchDuel(code, uid);
@@ -2928,7 +3029,7 @@ async function duelUpdate(fn: (room: DuelRoom, uid: string) => DuelRoom | undefi
 function vacate(room: DuelRoom, uid: string) {
   for (const t of Object.keys(room.tables ?? {})) {
     const tb = room.tables![t]!;
-    for (const seat of PLAYERS) {
+    for (const seat of TEAM_SEATS) {
       if (tb.seats?.[seat] === uid) {
         delete tb.seats[seat];
         if (tb.ready) delete tb.ready[seat];
@@ -2965,7 +3066,7 @@ export async function duelLeave(): Promise<void> {
   }
 }
 
-export function duelSit(t: string, seat: PlayerId) {
+export function duelSit(t: string, seat: TableSeat) {
   void duelUpdate((room, uid) => {
     const tb = room.tables?.[t] ?? {};
     const taken = tb.seats?.[seat];
@@ -3068,15 +3169,15 @@ async function resumeSession() {
   const raw = sessionStorage.getItem(SESSION);
   if (!raw || !onlineAvailable) return;
   try {
-    const { code, me, via } = JSON.parse(raw) as { code: string; me: PlayerId; via: string };
+    const { code, me, via, seat = 0 } = JSON.parse(raw) as { code: string; me: PlayerId; via: string; seat?: Seat };
     if (via !== transport.name) return;
     const uid = await transport.signIn();
     const info = await transport.readRoom(code);
-    if (!info || info.seats[me] !== uid) {
+    if (!info || info.seats[seatKey(me, seat)] !== uid) {
       clearSession();
       return;
     }
-    enterRoom(code, me, uid);
+    enterRoom(code, me, uid, false, seat);
   } catch {
     clearSession();
   }
@@ -3103,13 +3204,23 @@ function matchIntro(heads: boolean, left: IntroSide, right: IntroSide): Fx[] {
   return [{ id: ++fxSeq, kind: 'intro', heads, left, right }];
 }
 
-function startGame(seed: number, decks: DeckChoice, firstPlayer?: PlayerId): GameState {
+/**
+ * 2VS2 เล่นในเครื่อง (ดวลกับบอท 3 ตัว): เด็คของคนที่สองในแต่ละทีม · null = 1VS1
+ * ผู้เล่นอยู่ทีม p1 ที่นั่ง 0 เสมอ (state ในรูปปกติ = มุมของผู้เล่นพอดี ไม่ต้องสลับที่นั่งเพื่อแสดงผล)
+ */
+let localPartners: DeckChoice | null = null;
+export function setLocalPartners(p: DeckChoice | null): void {
+  localPartners = p;
+}
+
+function startGame(seed: number, decks: DeckChoice, firstPlayer?: PlayerId, partners: DeckChoice | null = null): GameState {
   return createGame({
     db,
     seed,
     // เด็คที่ไม่มีแล้ว (เช่น เด็คตัวอย่างเดิมจากห้องออนไลน์เก่า) ใช้ Starter Deck 01 แทน
     // เด็คที่จัดเอง/หาไม่เจอ: deckInfo จัดการให้ (หาไม่เจอ = Starter Deck 01)
     decks: { p1: expandDeck(deckInfo(decks.p1).entries), p2: expandDeck(deckInfo(decks.p2).entries) },
+    ...(partners ? { partnerDecks: { p1: expandDeck(deckInfo(partners.p1).entries), p2: expandDeck(deckInfo(partners.p2).entries) } } : {}),
     ...(firstPlayer ? { firstPlayer } : {}),
     // Draw Step รอผู้เล่นกดจั่วเอง (DrawPrompt)
     config: { manualDraw: true },
@@ -3172,6 +3283,7 @@ export const useGame = create<Store>((set, get) => {
     botSeat: null,
     botName: null,
     botAvatar: null,
+    teamNames: null,
     deckView: 'sd01',
     deckReturn: 'home',
     deckPick: null,
@@ -3195,7 +3307,7 @@ export const useGame = create<Store>((set, get) => {
         return;
       }
       // เล่นเครื่องเดียว: สร้างเกมใหม่ด้วย seed เดิมและผู้เริ่มก่อนที่เลือก
-      const state = startGame(seed, decks, first);
+      const state = startGame(seed, decks, first, localPartners);
       set({ ...resetUi, state, truth: null, history: [], pregame: { ...pregame, chosen: first }, viewTurn: state.turnPlayer });
     },
     introDone: (id) => {
@@ -3255,7 +3367,7 @@ export const useGame = create<Store>((set, get) => {
       stopSync();
       clearSession();
       if (on) leftGames.add(on.code);
-      if (on && !on.spectator) void transport.leave(on.code, on.me).catch(() => {});
+      if (on && !on.spectator) void transport.leave(on.code, seatKey(on.me, on.seat)).catch(() => {});
       // ผู้ชมออกจากเกม: เอาชื่อออกจากรายชื่อผู้ชมทันที (ไม่ต้องรอหลุดการเชื่อมต่อ)
       if (on?.spectator) void transport.removePath(watcherPath(on.code, on.uid)).catch(() => {});
       if (on?.me === 'p1' && !duel) void transport.unpublishRoom(on.code).catch(() => {});
@@ -3391,7 +3503,7 @@ export const useGame = create<Store>((set, get) => {
 
     newGame() {
       const seed = randomSeed();
-      const state = startGame(seed, get().decks);
+      const state = startGame(seed, get().decks, undefined, localPartners);
       const d = get().decks;
       // ดวลกับบอท: ชื่อเรา / ชื่อและรูปของบอท · สองคนเครื่องเดียว: ผู้เล่น 1 / 2
       const { botSeat, botName, botAvatar, playerName } = get();
@@ -3438,11 +3550,13 @@ export const useGame = create<Store>((set, get) => {
       const { truth, state } = get();
       const list: Action[] = [];
       let base = truth ?? state;
+      // Team Battle: action ของเครื่องนี้ = ที่นั่งของเรา
+      const seated = (a: Action): Action => (on.seat ? { ...a, seat: on.seat } : a);
       if (truth) {
         const moves = netMoves(truth, state);
-        if (moves.length > 0) list.push({ type: 'moveCores', player: truth.turnPlayer, moves });
+        if (moves.length > 0) list.push(seated({ type: 'moveCores', player: truth.turnPlayer, moves }));
       }
-      if (!(action.type === 'moveCores' && action.moves.length === 0)) list.push(action);
+      if (!(action.type === 'moveCores' && action.moves.length === 0)) list.push(seated(action));
       for (const a of list) {
         const r = applyAction(base, a, db);
         if (!r.ok) {
@@ -3496,7 +3610,7 @@ export const useGame = create<Store>((set, get) => {
       const events = [...pre, ...result.events];
       if (!CHAIN_CONTINUES.has(action.type)) chainFloor = base.log.length;
       // ออนไลน์: Auto Pass เปิดเสมอ (ทั้งสองเครื่องต้องเดิน state เหมือนกัน)
-      const next = get().autoPass || get().online ? autoAdvance(result.state, events) : result.state;
+      const next = asMySeat(get().autoPass || get().online ? autoAdvance(result.state, events) : result.state);
       const newFx = eventsToFx(events, next, state, rects, action.type === 'choose' ? action.pick : undefined);
       const fx = animate ? [...get().fx, ...newFx] : [];
       let holds: Record<string, Hold> = {};

@@ -3,8 +3,8 @@
  * ผู้เล่นอยู่ที่นั่ง p1 (ด้านล่างตลอด) · บอทอยู่ p2: ตัดสินใจด้วย botAction ของ engine (ไม่เห็นมือ/เด็ค/เบิร์สของผู้เล่น)
  * บอทรอแอนิเมชันจบก่อนเดินทุกครั้ง · กั้นไม่ให้ผู้เล่นกดแทนฝั่งบอท (ใช้ตัวกั้น action เดียวกับบทเรียน)
  */
-import { actorOf, botAction, type Action, type PlayerId } from '@bs/engine';
-import { db, isFxBlocking, setTutorialHooks, useGame, type Fx } from '../store';
+import { actorOf, actorSeats, botAction, type Action, type PlayerId, type Seat } from '@bs/engine';
+import { db, isFxBlocking, setLocalPartners, setTutorialHooks, useGame, type Fx } from '../store';
 import { setSeatNames } from '../format';
 
 const BOT: PlayerId = 'p2';
@@ -26,6 +26,13 @@ export interface VsBotOptions {
   onEnd?: (won: boolean) => void;
   /** ปุ่มหลักในหน้าผลการดวล (เช่น กลับไปที่ด่าน) แทน "กลับหน้าหลัก" */
   exit?: { label: string; run: () => void };
+  /**
+   * 2VS2 (กติกา 15): เด็คของเพื่อนร่วมทีม (p1 = บอทคู่หูของผู้เล่น) และคู่แข่งคนที่สอง (p2)
+   * ผู้เล่น = ทีม p1 ที่นั่ง 0 · อีก 3 ที่นั่งเป็นบอท
+   */
+  partners?: { p1: string; p2: string };
+  /** 2VS2: ชื่อเพื่อนร่วมทีม / คู่แข่งคนที่สอง */
+  partnerNames?: { p1: string; p2: string };
 }
 
 let unsub: (() => void) | null = null;
@@ -40,21 +47,41 @@ let ended = false;
 const fxBusy = (fx: Fx[]) => fx.some((f) => f.kind === 'banner') || isFxBlocking(fx.filter((f) => f.kind !== 'result'));
 
 /** ท่าสำรองที่ไม่ทำให้เกมค้าง (ท่าที่บอทเลือกใช้ไม่ได้จริง) */
-function fallback(): Action {
+function fallback(player: PlayerId = BOT, seat?: Seat): Action {
   const s = useGame.getState().state;
-  if (s.choice) return { type: 'choose', player: BOT, pick: null };
-  if (s.battle?.flash) return { type: 'passFlash', player: BOT };
-  if (s.battle?.step === 'declareBlock') return { type: 'noBlock', player: BOT };
-  return s.phase === 'main' ? { type: 'endMain', player: BOT } : { type: 'endAttackStep', player: BOT };
+  const base: Action = s.choice
+    ? { type: 'choose', player, pick: null }
+    : s.battle?.flash
+      ? { type: 'passFlash', player }
+      : s.battle?.step === 'declareBlock'
+        ? { type: 'noBlock', player }
+        : s.phase === 'main'
+          ? { type: 'endMain', player }
+          : { type: 'endAttackStep', player };
+  return seat ? { ...base, seat } : base;
+}
+
+/**
+ * 2VS2: ใครในฝั่งบอทต้องเดินตอนนี้ · null = ตาผู้เล่น
+ * ฝั่งคู่แข่ง (p2) = บอททั้งสองที่นั่ง · ฝั่งผู้เล่น (p1) = บอทคู่หูที่นั่ง 1 เมื่อเป็นตาของที่นั่งนั้น
+ */
+function botTurn(): { player: PlayerId; seat?: Seat } | null {
+  const s = useGame.getState().state;
+  if (s.winner) return null;
+  const actor = actorOf(s);
+  if (actor === BOT) return { player: BOT };
+  if (s.mode === '2v2' && actor === 'p1' && actorSeats(s).includes(1)) return { player: 'p1', seat: 1 };
+  return null;
 }
 
 function botMove() {
   const g = useGame.getState();
-  if (!g.botSeat || g.state.winner || actorOf(g.state) !== BOT) return;
-  const a = botAction(g.state, db, BOT, { level: opts.level ?? 5 }) ?? fallback();
+  const turn = botTurn();
+  if (!g.botSeat || !turn) return;
+  const a = botAction(g.state, db, turn.player, { level: opts.level ?? 5, ...(turn.seat !== undefined ? { seat: turn.seat } : {}) }) ?? fallback(turn.player, turn.seat);
   bypass = true;
   try {
-    if (!g.dispatch(a)) g.dispatch(fallback());
+    if (!g.dispatch(a)) g.dispatch(fallback(turn.player, turn.seat));
   } finally {
     bypass = false;
   }
@@ -83,7 +110,7 @@ function tick() {
     return;
   }
   if (fxBusy(g.fx)) return;
-  if (g.state.winner || actorOf(g.state) !== BOT) return;
+  if (!botTurn()) return;
   pending = true;
   setTimeout(() => {
     pending = false;
@@ -103,8 +130,16 @@ export function startVsBot(d: { p1: string; p2: string }, o: VsBotOptions = {}) 
   decks = d;
   ended = false;
   savedFixedView = g.fixedView;
-  setTutorialHooks({ guard: (a) => bypass || a.player !== BOT, after: () => {} });
-  useGame.setState({ fixedView: true, botSeat: BOT, botName: o.botName ?? null, botAvatar: o.botAvatar ?? null });
+  // ผู้เล่นสั่งได้เฉพาะฝั่ง p1 ที่นั่ง 0 (2VS2: ที่นั่ง 1 เป็นบอทคู่หู)
+  setTutorialHooks({ guard: (a) => bypass || (a.player !== BOT && !a.seat), after: () => {} });
+  setLocalPartners(o.partners ?? null);
+  useGame.setState({
+    fixedView: true,
+    botSeat: BOT,
+    botName: o.botName ?? (o.partners ? 'คู่แข่งคนที่ 1 (บอท)' : null),
+    botAvatar: o.botAvatar ?? null,
+    teamNames: o.partners ? { p1: o.partnerNames?.p1 ?? 'เพื่อนร่วมทีม (บอท)', p2: o.partnerNames?.p2 ?? 'คู่แข่งคนที่ 2 (บอท)' } : null,
+  });
   // ข้อความบนกระดาน (ตาของ…, รอ…, ป้ายสนาม): ชื่อเรา / ชื่อคู่แข่ง แทน ผู้เล่น 1/2
   setSeatNames({ p1: g.playerName, [BOT]: o.botName ?? 'บอท' });
   g.startLocal(d);
@@ -136,6 +171,7 @@ export function endVsBot() {
   if (!g.botSeat && savedFixedView === null) return;
   setTutorialHooks(null);
   setSeatNames(null);
-  useGame.setState({ botSeat: null, botName: null, botAvatar: null, localInProgress: false, ...(savedFixedView !== null ? { fixedView: savedFixedView } : {}) });
+  setLocalPartners(null);
+  useGame.setState({ botSeat: null, botName: null, botAvatar: null, teamNames: null, localInProgress: false, ...(savedFixedView !== null ? { fixedView: savedFixedView } : {}) });
   savedFixedView = null;
 }

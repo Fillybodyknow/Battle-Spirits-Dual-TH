@@ -613,7 +613,7 @@ export function matchesFilter(state: GameState, db: CardDatabase, cardId: string
   if (filter.notShown && (state.shownCards ?? []).includes(cardId)) return false;
   if (filter.excludeIds?.includes(cardId)) return false;
   // ---------------- BS08
-  if (filter.textIncludes && !filter.textIncludes.some((w) => effectText(def).includes(w))) return false;
+  if (filter.textIncludes && !filter.textIncludes.some((w) => textHas(def, w))) return false;
   if (filter.noEffectText && effectText(def).trim() !== '') return false;
   if (filter.notInBattle && state.battle && (state.battle.attackerId === cardId || state.battle.blockers.includes(cardId))) return false;
   // ---------------- BS09
@@ -2235,6 +2235,26 @@ export function magicUsedUp(state: GameState, db: CardDatabase, player: PlayerId
 /** ข้อความเอฟเฟกต์ทั้งหมดของการ์ด (ใช้ตรวจคีย์เวิร์ด เช่น Showdown / Rush / Evolution) */
 export function effectText(def: CardDef): string {
   return (def.effects as { text?: string }[]).map((e) => e.text ?? '').join(' ');
+}
+
+/**
+ * ตัวกรอง textIncludes: คำ (ภาษาไทย) = มีคำนี้ในข้อความ · คีย์เวิร์ดภาษาอังกฤษ (Showdown, Rush, Evolution ฯลฯ) = การ์ดมีความสามารถนั้นเอง
+ * ความสามารถ = คีย์เวิร์ดอยู่ต้นบรรทัดเอฟเฟกต์ / ต่อจาก "]" "." "[" / "Flash" / "Soul" / "True -" / "Heaven('s)" (Six Heaven's Rush)
+ * ที่อ้างถึงเฉย ๆ ("สปิริตที่มี Showdown", "โดย Evolution", ได้รับ "True-Rage …") ไม่นับ (กุนซือ โดรเดอร์ดราก้อน เขียนรายชื่อคีย์เวิร์ดไว้ในข้อความตัวเอง)
+ */
+export function textHas(def: CardDef, word: string): boolean {
+  const effects = def.effects as { text?: string; keyword?: string }[];
+  const lines = effects.map((e) => e.text ?? '');
+  if (!/^[A-Za-z]/.test(word)) return lines.some((t) => t.includes(word));
+  // คีย์เวิร์ดที่ตัวแปลงแยกเก็บไว้ (Flash Quick: … → keyword 'Quick')
+  if (effects.some((e) => e.keyword?.includes(word))) return true;
+  for (const t of lines) {
+    for (let i = t.indexOf(word); i >= 0; i = t.indexOf(word, i + 1)) {
+      const before = t.slice(0, i).trimEnd();
+      if (before === '' || /[\].[]$/.test(before) || /(?:Flash|Soul|True\s*-|Heaven(?:'s)?)$/.test(before)) return true;
+    }
+  }
+  return false;
 }
 
 /** ไทรซอร์ดอน: สปิริตนี้ป้องกันสปิริตที่ BP น้อยกว่าไม่ได้ (แอทแท็คสเต็ปของคู่แข่ง) */

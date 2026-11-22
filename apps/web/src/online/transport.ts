@@ -15,12 +15,23 @@
  *
  * action เก็บเป็นสตริง JSON เพราะ Realtime Database ทิ้งค่า null และ array ว่าง
  */
-import type { Action, PlayerId } from '@bs/engine';
+import type { Action, PlayerId, Seat } from '@bs/engine';
+
+/**
+ * ที่นั่งในห้อง/โต๊ะ: p1 / p2 = คนแรกของแต่ละฝั่ง · p1b / p2b = คนที่สองของทีม (Team Battle 2VS2: กติกา 15)
+ */
+export type TableSeat = PlayerId | 'p1b' | 'p2b';
+export const TEAM_SEATS: readonly TableSeat[] = ['p1', 'p1b', 'p2', 'p2b'];
+export const seatKey = (side: PlayerId, seat: Seat = 0): TableSeat => (seat ? (`${side}b` as TableSeat) : side);
+export const keySide = (key: TableSeat): PlayerId => key.slice(0, 2) as PlayerId;
+export const keySeat = (key: TableSeat): Seat => (key.endsWith('b') ? 1 : 0);
 
 export interface RoomSetup {
   round: number;
   seed: number;
   decks: { p1: string; p2: string | null };
+  /** Team Battle (2VS2): เด็คของคนที่สองของแต่ละทีม */
+  partnerDecks?: { p1: string; p2: string };
   /** ผู้เริ่มก่อนที่คนชนะการเสี่ยงเลือกแล้ว (ยังไม่มี = กำลังเลือก) */
   first?: PlayerId;
 }
@@ -46,6 +57,8 @@ export interface LobbyEntry {
   /** จำนวนคนในห้อง / สูงสุด */
   count?: number;
   max?: number;
+  /** ห้อง Team Battle (2VS2) */
+  team?: boolean;
 }
 
 /**
@@ -65,30 +78,31 @@ export interface DuelMember {
   level?: number;
 }
 export interface DuelTable {
-  seats?: Partial<Record<PlayerId, string>>;
-  ready?: Partial<Record<PlayerId, boolean>>;
+  seats?: Partial<Record<TableSeat, string>>;
+  ready?: Partial<Record<TableSeat, boolean>>;
   /** รหัสห้องเกมที่โต๊ะนี้กำลังดวล */
   game?: string;
 }
 export interface DuelRoom {
   kind: 'duel';
   host: string;
-  meta: RoomMeta & { max: number; tables: number; version: string };
+  meta: RoomMeta & { max: number; tables: number; version: string; /** Team Battle: โต๊ะละ 4 ที่นั่ง (2VS2) */ team?: boolean };
   members?: Record<string, DuelMember>;
   tables?: Record<string, DuelTable>;
 }
 
+/** ห้องเกม (Team Battle มีที่นั่ง p1b / p2b เพิ่ม) */
 export interface RoomInfo {
-  seats: Partial<Record<PlayerId, string>>;
+  seats: Partial<Record<TableSeat, string>>;
   setup: RoomSetup;
   /** ชื่อที่ผู้เล่นตั้งเอง */
-  names?: Partial<Record<PlayerId, string>>;
+  names?: Partial<Record<TableSeat, string>>;
   /** เวอร์ชันแอปของแต่ละที่นั่ง (ข้อมูลเสริม: เขียนแยกหลังสร้าง/เข้าห้อง ห้องเก่าหรือเครื่องเวอร์ชันเก่าจะไม่มี) */
-  versions?: Partial<Record<PlayerId, string>>;
+  versions?: Partial<Record<TableSeat, string>>;
   /** รูปโปรไฟล์ (รหัสการ์ด) ของแต่ละที่นั่ง (ข้อมูลเสริม เขียนแยกเหมือน versions) */
-  avatars?: Partial<Record<PlayerId, string>>;
+  avatars?: Partial<Record<TableSeat, string>>;
   /** เลเวลผู้เล่นของแต่ละที่นั่ง (ข้อมูลเสริม เขียนแยกเหมือน avatars) */
-  levels?: Partial<Record<PlayerId, number>>;
+  levels?: Partial<Record<TableSeat, number>>;
   meta?: RoomMeta;
 }
 
@@ -116,7 +130,7 @@ export interface Transport {
   /** เริ่มรอบใหม่ (เล่นใหม่) */
   setSetup(code: string, setup: RoomSetup): Promise<void>;
   /** ออกจากที่นั่ง */
-  leave(code: string, seat: PlayerId): Promise<void>;
+  leave(code: string, seat: TableSeat): Promise<void>;
   /** บันทึกเวอร์ชันแอปของที่นั่งนี้ (ใช้กันคนละเวอร์ชันที่ engine ไม่ตรงกันเล่นด้วยกัน) */
   setVersion(code: string, seat: PlayerId, version: string): Promise<void>;
   /** บันทึกรูปโปรไฟล์ของที่นั่งนี้ (แสดงในเกม/ฉากเปิดเกม) */

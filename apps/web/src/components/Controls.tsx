@@ -22,6 +22,7 @@ import {
   simulateEvolve,
   useGame,
   viewPlayer,
+  partnerTurn,
 } from '../store';
 import { CardFace } from './CardFace';
 import { playOptions } from './Board';
@@ -168,7 +169,19 @@ export function PromptBar() {
     detail = 'คลิกกระดานเพื่อข้าม';
   } else if (state.awaitingDraw) {
     title = 'Draw Step';
-    detail = mine ? 'กดการ์ดที่ลอยขึ้นมาเพื่อจั่ว' : 'รอคู่แข่งจั่วการ์ด…';
+    detail = mine ? 'กดการ์ดที่ลอยขึ้นมาเพื่อจั่ว' : partnerTurn(state, actor) ? 'รอเพื่อนร่วมทีมกดจั่ว (ทั้งทีมจั่วพร้อมกัน)…' : 'รอคู่แข่งจั่วการ์ด…';
+  } else if (!mine && partnerTurn(state, actor)) {
+    // 2VS2: ตาของเพื่อนร่วมทีม (เรากดพร้อม/ผ่าน/โหวตไปแล้ว หรือเป็นตัวเลือกของเอฟเฟกต์ของเพื่อน)
+    title = `รอ${useGame.getState().teamNames?.[actor!] ?? 'เพื่อนร่วมทีม'}…`;
+    detail = choice
+      ? `เพื่อนกำลังเลือก: ${choice.prompt}`
+      : battle?.flash
+        ? 'คุณผ่าน Flash แล้ว · รอเพื่อนกดผ่าน'
+        : battle?.step === 'declareBlock'
+          ? 'คุณโหวตไม่ป้องกันแล้ว · รอเพื่อนตัดสินใจ (ป้องกันด้วยสปิริตของเพื่อน หรือโหวตไม่ป้องกัน)'
+          : state.phase === 'main'
+            ? 'คุณกดจบเมนสเต็ปแล้ว · รอเพื่อนเล่นให้เสร็จ'
+            : 'คุณกดจบแอทแท็คสเต็ปแล้ว · รอเพื่อนโจมตีให้เสร็จ';
   } else if (!mine) {
     // ออนไลน์: ตาของคู่แข่ง
     title = `รอ${actor ? playerLabel(actor) : 'คู่แข่ง'}…`;

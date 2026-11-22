@@ -6,6 +6,8 @@ import { actingPlayer, chainEntries, db, isFxBlocking, useGame, viewPlayer } fro
 import { CardFace } from './CardFace';
 import { CardInspector } from './CardInspector';
 import { GameLog } from './Controls';
+import { seatKey } from '../online/transport';
+import { PileAlloc } from './Board';
 import { Icon } from './Icon';
 import { DiamondAvatar, useSeatAvatar } from './SeatAvatar';
 import { LevelChip, useSeatLevel } from './LevelBadge';
@@ -18,10 +20,12 @@ function useSeatName(p: PlayerId): string {
   const myName = useGame((s) => s.playerName);
   const botSeat = useGame((s) => s.botSeat);
   const botName = useGame((s) => s.botName);
+  const shown = useGame((s) => s.state.players[p].active ?? 0);
   // ดวลกับบอท: เรา = ชื่อที่ตั้ง · บอท = ชื่อคู่แข่งของด่าน
   if (!online && botSeat) return p === botSeat ? (botName ?? 'บอท') : myName;
   if (!online) return playerLabel(p);
-  return online.names[p] ?? (p === online.me ? myName : 'คู่แข่ง');
+  const k = seatKey(p, shown);
+  return online.names[k] ?? (p === online.me && shown === (online.seat ?? 0) ? myName : 'คู่แข่ง');
 }
 
 /** ป้ายผู้เล่น: ฝั่งเรามุมซ้ายล่าง ฝั่งคู่แข่งมุมขวาบน (ชื่อ + Life + จำนวนการ์ดบนมือ) */
@@ -63,6 +67,84 @@ export function PlayerPlate({ player, corner }: { player: PlayerId; corner: 'bot
           <span className="text-xs text-slate-400">· มือ {hand}</span>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** ชื่อคนที่สองของทีม (2VS2) */
+export function partnerName(p: PlayerId, mine: boolean): string {
+  const { teamNames, online, state } = useGame.getState();
+  // ออนไลน์: ชื่อของที่นั่งที่อยู่ใน partner (อีกคนของทีม)
+  if (online) {
+    const other = (state.players[p].active ?? 0) ? 0 : 1;
+    const n = online.names[seatKey(p, other)];
+    if (n) return n;
+  }
+  return teamNames?.[p] ?? (mine ? 'เพื่อนร่วมทีม' : 'คู่แข่งคนที่ 2');
+}
+
+/**
+ * 2VS2 (กติกา 15): ป้ายคนที่สองของทีม ต่อจากป้ายผู้เล่นหลัก · ไลฟ์ มือ รีเสิร์ฟ เด็ค แทรช เบิร์ส ของคนนั้น
+ * เพื่อนร่วมทีม = กดดูมือได้ (เห็นมือกันในทีม) · คลิกการ์ด = แผงรายละเอียด
+ */
+export function TeamPlate({ player, corner }: { player: PlayerId; corner: 'bottom-left' | 'top-right' }) {
+  const z = useGame((s) => s.state.players[player].partner);
+  const ready = useGame((s) => (s.state.turnPlayer === player ? (s.state.seatsReady ?? []).includes((s.state.players[player].active ?? 0) ? 0 : 1) : false));
+  const mine = player === viewPlayer(useGame.getState());
+  const pin = useGame((s) => s.pin);
+  const [open, setOpen] = useState(false);
+  if (!z) return null;
+  const bottom = corner === 'bottom-left';
+  const accent = bottom ? '#7dd3fc' : '#fda4af';
+  const stat = (label: string, v: string | number) => (
+    <span className="flex items-baseline gap-1">
+      <span className="text-[10px] text-slate-400">{label}</span>
+      <span className="text-sm font-black text-white tabular-nums">{v}</span>
+    </span>
+  );
+  // แถบบนจอที่ว่าง: เพื่อนของเรา = ข้างปุ่มมุมซ้ายบน · คนที่สองของคู่แข่ง = ข้างป้ายคู่แข่ง (ไม่ทับสนาม)
+  return (
+    <div data-team-plate={player} className={`fixed z-[42] flex flex-col gap-1 ${bottom ? 'top-3 left-[112px] items-start' : 'top-3 right-[300px] items-end'}`}>
+      <div
+        className="relative flex flex-col gap-0.5 rounded-md bg-slate-950/90 px-2.5 py-1"
+        style={{ borderLeft: `3px solid ${accent}` }}
+        title={`เด็ค ${z.deck.length} · แทรช ${z.trashCards.length} ใบ`}
+      >
+        {/* ส่งคอร์จากรีเสิร์ฟ/แทรชของคนที่สอง (มุโดว / เฮล-สคัล: เลือกจากของคู่แข่งทั้งสองคนรวมกัน) */}
+        <PileAlloc pileId={`pile:reserve:${player}:1`} label="รีเสิร์ฟคนที่ 2" />
+        <PileAlloc pileId={`pile:trash:${player}:1`} label="แทรชคนที่ 2" />
+        <span className="flex items-center gap-1.5">
+          <span className="rounded-full border px-1.5 text-[10px] leading-4 font-black" style={{ color: accent, borderColor: accent }}>
+            {player === 'p1' ? '1' : '2'}-{(useGame.getState().state.players[player].active ?? 0) ? 1 : 2}
+          </span>
+          <span className="max-w-40 truncate text-xs font-bold text-white">{partnerName(player, mine)}</span>
+          {ready && <span className="rounded bg-emerald-400 px-1 text-[10px] font-black text-slate-900">พร้อม</span>}
+          {mine && z.hand.length > 0 && (
+            <button type="button" className="ml-auto rounded border border-sky-300/50 px-1.5 text-[10px] leading-4 font-bold text-sky-100 hover:bg-sky-500/20" onClick={() => setOpen(!open)}>
+              {open ? 'ซ่อนมือ' : 'ดูมือ'}
+            </button>
+          )}
+        </span>
+        <span className="flex items-center gap-2.5">
+          {stat('LIFE', z.life.length)}
+          {stat('มือ', z.hand.length)}
+          {stat('รีเสิร์ฟ', z.reserve.length)}
+          <span className={`text-[10px] font-black ${z.burst ? 'text-amber-300' : 'text-slate-500'}`}>{z.burst ? 'เบิร์ส ✓' : 'เบิร์ส –'}</span>
+        </span>
+      </div>
+      {mine && open && (
+        <div className="flex max-w-[640px] flex-wrap gap-1 rounded-md bg-slate-950/90 p-1.5 ring-1 ring-sky-300/30">
+          {z.hand.map((id) => {
+            const c = useGame.getState().state.cards[id];
+            if (!c) return null;
+            return (
+              <button key={id} type="button" className="h-[84px] w-[60px] transition hover:-translate-y-0.5" onClick={() => pin(id)} onMouseEnter={() => useGame.setState({ hovered: id })}>
+                <CardFace def={db.get(c.cardNo)} size="xs" />
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
