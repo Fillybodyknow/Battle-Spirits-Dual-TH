@@ -47,7 +47,7 @@ export const BS13_SCRIPTS: Record<string, CardScript> = {
   ชุดเกราะเร่าร้อน: [{ kind: 'trigger', on: 'summon', levels: ALL2, steps: [{ do: 'draw', count: 1 }] }, alsoColor(ALL2, 'white')],
   อิจิบันสเปียร์: [
     alsoColor(ALL2, 'red'),
-    { kind: 'handCostSet', levels: ALL2, filter: { nameIncludes: ['จอมมารสวรรค์ ก็อด-เซคส์'] }, cost: 6 },
+    { kind: 'handCostSet', levels: ALL2, filter: { names: [GOD_SECHS] }, cost: 6 },
     // Ultra Shield: แดง/ขาว/ฟ้า
     { kind: 'effectImmune', levels: [2], scope: 'self', colors: ['red', 'white', 'blue'], types: ULTRA },
   ],
@@ -154,12 +154,12 @@ export const BS13_SCRIPTS: Record<string, CardScript> = {
       on: 'allyBattleEnd' as const,
       zone,
       levels: [],
-      subject: { attacker: true as const, nameIncludes: [GOD_SECHS] },
+      subject: { attacker: true as const, names: [GOD_SECHS] },
       steps: [
         may(
           'นำ "จอมมารสวรรค์ ก็อด-เซคส์" ของเรา 1 ตัวกลับขึ้นมือ เพื่ออัญเชิญการ์ดนี้ไม่จ่ายคอสต์',
-          [{ do: 'returnOwnToHand', filter: { nameIncludes: [GOD_SECHS] } }, { do: 'summonCardFree', which: 'self' }],
-          { allyHas: { nameIncludes: [GOD_SECHS] } },
+          [{ do: 'returnOwnToHand', filter: { names: [GOD_SECHS] } }, { do: 'summonCardFree', which: 'self' }],
+          { allyHas: { names: [GOD_SECHS] } },
         ),
       ],
     })),

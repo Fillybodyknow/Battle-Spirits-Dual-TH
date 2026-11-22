@@ -51,10 +51,7 @@ const paySoul = (label: string, steps: Step[], cond?: Condition): Step =>
   may(label, [{ do: 'ownSoulToTrash' }, ...steps], cond ? { all: [soulAvailable, cond] } : soulAvailable);
 
 /** ชื่อ "จอมมารสวรรค์ ก็อด-เซคส์" (ร่างแรก ไม่ใช่ร่างที่มีชื่อต่อท้าย) */
-const GOD_SEXS: CardFilter = {
-  nameIncludes: ['จอมมารสวรรค์ ก็อด-เซคส์'],
-  excludeNames: ['จอมมารสวรรค์ ก็อด-เซคส์ -รูปแบบที่ศูนย์-', 'จอมมารสวรรค์ ก็อด-เซคส์ -รูปแบบทำลายล้าง-'],
-};
+const GOD_SEXS: CardFilter = { names: ['จอมมารสวรรค์ ก็อด-เซคส์'] };
 
 export const BS09_SCRIPTS: Record<string, CardScript> = {
   // ---------------------------------------------------------------- Spirit C

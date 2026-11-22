@@ -339,7 +339,8 @@ function subjectMatches(
   if (f.family && !fam.includes(f.family)) return false;
   if (f.families && !f.families.some((x) => fam.includes(x))) return false;
   if (f.nameIncludes && !nameHas(def, f.nameIncludes)) return false;
-  if (f.soul && !card.cores.some((id) => ctx.s.cores[id]!.isSoul)) return false;
+  if (f.names && !f.names.includes(def.name)) return false;
+  if (f.soul &&!card.cores.some((id) => ctx.s.cores[id]!.isSoul)) return false;
   if (f.holyLife && !(ctx.s.players[card.owner].field.includes(cardId) && hasHolyLife(ctx.s, ctx.db, cardId))) return false;
   return true;
 }
@@ -393,6 +394,7 @@ function findReplacement(ctx: Ctx, cardId: string, byEffect: boolean): { id: str
       if (ab.subject.self && id !== cardId) continue;
       if (ab.subject.inBattle && !(s.battle && (s.battle.attackerId === cardId || s.battle.blockers.includes(cardId)))) continue;
       if (ab.subject.nameIncludes && !ab.subject.nameIncludes.some((w) => name.includes(w))) continue;
+      if (ab.subject.names && !ab.subject.names.includes(name)) continue;
       if (ab.subject.family && !db.get(s.cards[cardId]!.cardNo).family.includes(ab.subject.family)) continue;
       if (ab.if && !conditionHolds(s, id, ab.if, false, false, db)) continue;
       if (ab.discard && !owner.hand.some((h) => matchesFilter(s, db, h, ab.discard!))) continue;
@@ -2794,7 +2796,7 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
 
     case 'opponentCannotAttack':
       if (!holds(step.if)) return;
-      s.attackBans = [...(s.attackBans ?? []), { player: opp, turn: s.turn, types: step.types }];
+      s.attackBans = [...(s.attackBans ?? []), { player: opp, turn: s.turn, types: step.types, sourceId: item.sourceId }];
       emit(ctx, { type: 'attackBanned', player: opp });
       return;
 

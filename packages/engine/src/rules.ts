@@ -588,6 +588,7 @@ export function matchesFilter(state: GameState, db: CardDatabase, cardId: string
   if (filter.maxCost !== undefined && costOf() > filter.maxCost) return false;
   if (filter.cost !== undefined && costOf() !== filter.cost) return false;
   if (filter.nameIncludes && !nameHas(def, filter.nameIncludes)) return false;
+  if (filter.names && !filter.names.includes(def.name)) return false;
   if (filter.hasBurst && !def.burst) return false;
   if (filter.color && !cardColors(state, db, cardId).includes(filter.color)) return false;
   if (filter.minBp !== undefined && currentBp(state, db, cardId) < filter.minBp) return false;
@@ -2036,7 +2037,10 @@ export function canAttackWith(state: GameState, db: CardDatabase, cardId: string
   // BS12 แคพิทัลแคพิทัล: ต้องส่งคอร์ในรีเสิร์ฟลงแทรช
   if (state.players[card.owner].reserve.length < attackReserveTaxFor(state, db, cardId).cores) return false;
   if (coreTaxed(state, card.owner) && !card.cores.some((c) => !state.cores[c]!.isSoul)) return false;
-  return !(state.attackBans ?? []).some((b) => b.player === card.owner && b.turn === state.turn && b.types.includes(def.type));
+  // "ในเทิร์นนี้ สปิริตคู่แข่งทั้งหมดโจมตีไม่ได้" ลงผลกับสปิริตแต่ละตัว: ตัวที่ไม่รับผลเอฟเฟกต์ของการ์ดต้นเหตุยังโจมตีได้ (เจ้าของโปรเจกต์กำหนด)
+  return !(state.attackBans ?? []).some(
+    (b) => b.player === card.owner && b.turn === state.turn && b.types.includes(def.type) && !(b.sourceId && effectBlocked(state, db, b.sourceId, cardId)),
+  );
 }
 
 /** "ในเทิร์นนี้ สปิริตนั้นจะโจมตี/ป้องกันไม่ได้" */

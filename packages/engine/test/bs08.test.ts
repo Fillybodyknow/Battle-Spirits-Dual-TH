@@ -60,6 +60,20 @@ const attack = (s: GameState, attackerId: string) => act(act(s, { type: 'endMain
 const toP2Turn = (s: GameState) => act(act(s, { type: 'endMain', player: 'p1' }), { type: 'endAttackStep', player: 'p1' });
 
 describe('Booster Set 08', () => {
+  it('กำแพงผลึกขาว (โซลคอร์): ในเทิร์นนี้โดนสปิริต 2 เจ็มตี = ไลฟ์ลดแค่ 1', () => {
+    const run = (cap: boolean) => {
+      let s = setup();
+      const atk = put(s, 'p1', no('มัดโควเซรัส'), 1); // เจ็ม 2 เม็ด ไม่มีเอฟเฟกต์
+      if (cap) s.lifeCapOne = [{ player: 'p2', turn: s.turn }];
+      const life = s.players.p2.life.length;
+      s = passAll(attack(s, atk));
+      s = passAll(act(s, { type: 'noBlock', player: 'p2' }));
+      return life - s.players.p2.life.length;
+    };
+    expect(run(false)).toBe(2);
+    expect(run(true)).toBe(1);
+  });
+
   it('การ์ดทุกใบผูกสคริปต์ได้ และทุกบรรทัดเอฟเฟกต์มีสคริปต์ (ยกเว้นอามิตะ Lv2: การ์ดที่อ้างถึงยังไม่มี)', () => {
     const cards = loadBS08Cards().all();
     for (const c of cards) {

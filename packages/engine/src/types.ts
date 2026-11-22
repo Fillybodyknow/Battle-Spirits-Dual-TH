@@ -366,7 +366,7 @@ export interface GameState {
   pendingAttack?: { attackerId: string; fa?: { attackerId: string; holderId: string } };
   burstSetThisTurn: boolean;
   /** "ในเทิร์นนี้ ... โจมตีไม่ได้": การ์ดของ player ประเภท types โจมตีไม่ได้ในเทิร์น turn */
-  attackBans?: { player: PlayerId; turn: number; types: string[] }[];
+  attackBans?: { player: PlayerId; turn: number; types: string[]; /** การ์ดต้นเหตุ: ตัวที่ไม่รับผลเอฟเฟกต์ของการ์ดนี้ (Shield / ก็อด-เซคส์) ยังโจมตีได้ */ sourceId?: string }[];
   /** "ในเทิร์นนี้ สปิริตเราทั้งหมด BP+": สปิริตของ player ที่ตรง filter BP+amount ในเทิร์น turn */
   turnBuffs?: { player: PlayerId; turn: number; amount: number; filter?: CardFilter }[];
   /** เอฟเฟกต์ "เทิร์นละ 1 ครั้ง" ที่ใช้ไปแล้ว (player:cardNo:source) ล้างตอนจบเทิร์น */

@@ -1239,6 +1239,8 @@ function resolveBattle(ctx: Ctx): void {
     if ((s.lifeShields ?? []).some((l) => l.player === defender && l.turn === s.turn && fieldCost(s, db, attacker.id) >= l.minCost)) dmg = 0;
     // BS11 หิมะน้ำแข็ง เซอร์เคิล: การ์ดที่ถูกระบุทำความเสียหายแก่ไลฟ์ไม่ได้ในเทิร์นนี้
     if ((s.noLifeDamageCards ?? []).some((l) => l.cardId === attacker.id && l.player === defender && l.turn === s.turn)) dmg = 0;
+    // BS08 กำแพงผลึกขาว (โซลคอร์): ในเทิร์นนี้ไลฟ์ได้รับความเสียหายมากกว่า 1 ไม่ได้
+    if (dmg > 1 && (s.lifeCapOne ?? []).some((l) => l.player === defender && l.turn === s.turn)) dmg = 1;
     // ลองเคพ: เสียหายได้ 1 เม็ดต่อสปิริต 1 ตัวต่อเทิร์น
     if (dmg > 0 && lifeDamageCapped(s, db, defender)) {
       const rec = s.lifeDamageBy?.turn === s.turn && s.lifeDamageBy.player === defender ? s.lifeDamageBy : { turn: s.turn, player: defender, ids: [] as string[] };

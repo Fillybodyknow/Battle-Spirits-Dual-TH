@@ -236,6 +236,11 @@ describe('Booster Set 13', () => {
     expect(baseCost(s, db, god)).toBe(8);
     put(s, 'p1', no('อิจิบันสเปียร์'), 1);
     expect(baseCost(s, db, god)).toBe(6);
+    // อ้างชื่อการ์ดตรง ๆ (ไม่ได้เขียน "ในชื่อการ์ด"): ร่างที่มีชื่อต่อท้ายไม่ได้รับผล
+    for (const other of ['จอมมารสวรรค์ ก็อด-เซคส์ -รูปแบบทำลายล้าง-', 'จอมมารสวรรค์ ก็อด-เซคส์ -รูปแบบที่ศูนย์-']) {
+      const def = db.get(no(other));
+      expect(baseCost(s, db, card(s, 'p1', def.cardNo, 'hand')), other).toBe(def.cost);
+    }
   });
 
   it('ก็อด-เซคส์ Six Heaven\'s Rush (เจ็ม 3 สี): สปิริตคู่แข่งฟื้นสภาพไม่ได้ ทั้งรีเฟรชสเต็ปและเอฟเฟกต์', () => {

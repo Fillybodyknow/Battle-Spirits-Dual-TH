@@ -126,8 +126,11 @@ describe('SD04 เมจิค', () => {
     expect(payableCost(s, db, 'p1', db.get(TOSENBO))).toBe(1); // 4 - ลดเหลือง 3
     const opp = put(s, 'p2', DARIU, 1);
     const magic = newCard(s, 'p1', TOSENBO, 'hand');
+    // จอมมารสวรรค์ ก็อด-เซคส์: ไม่รับผลเอฟเฟกต์สปิริต/เมจิคของคู่แข่ง = ยังโจมตีได้
+    const god = put(s, 'p2', db.all().find((c) => c.name === 'จอมมารสวรรค์ ก็อด-เซคส์')!.cardNo, 1);
     const x = act(s, { type: 'useMagic', player: 'p1', cardId: magic, payment: pay(s, 'p1', TOSENBO), timing: 'flash' });
     expect(canAttackWith(x, db, opp)).toBe(false);
+    expect(canAttackWith(x, db, god)).toBe(true);
   });
 
   it('เยลโล่รีคัฟเวอร์: ฟื้นสภาพสปิริตเหลือง ใช้ได้เทิร์นละครั้ง', () => {
