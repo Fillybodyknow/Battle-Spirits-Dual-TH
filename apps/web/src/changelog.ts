@@ -16,6 +16,11 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '37.1.1',
+    date: '2026-11-22',
+    items: ["ปรับ: ภาพปกบท สงครามแห่งเซ็นโกคุ เป็น สมรภูมิชี้ชะตาแห่งหอกนับพัน"],
+  },
+  {
     version: '37.1.0',
     date: '2026-11-22',
     items: [
