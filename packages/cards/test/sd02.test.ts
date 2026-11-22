@@ -6,7 +6,7 @@ import { loadAllCards, loadBS02Cards, parseCardText, SD02_DECK, validateDeck } f
 
 describe('Starter Deck 02', () => {
   const parsed2 = () => parseCardText(sd2Text, { setCode: 'SD02', otherCards: loadBS02Cards().all() });
-  // การ์ดทั้ง 14 ชนิดของ SD02 เขียนไว้ใน Booster Set 02 (assets/files/BS02) ที่เดียว
+  // การ์ดทั้ง 14 ชนิดของ SD02 เขียนไว้ใน assets/files/cards/<ต้นรหัส>/ (ชุด: BS02) ที่เดียว
   const db = loadAllCards();
 
   it('JSON ใน data/ ตรงกับ assets/files/SD2.text (ถ้าไม่ตรง ให้รัน npm run cards)', () => {

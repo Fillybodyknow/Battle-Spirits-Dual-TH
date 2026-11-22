@@ -155,7 +155,7 @@ export function parseCardText(text: string, options: ParseOptions): ParsedCardSe
           );
         }
       }
-      if (card && options.typeCounters) card.set = options.setCode;
+      if (card && options.typeCounters && !card.set) card.set = options.setCode;
       if (card) {
         const dup = cards.find((c) => c.cardNo === card.cardNo);
         if (dup) errors.push(`บรรทัด ${block[0]!.no}: รหัสการ์ด ${card.cardNo} ซ้ำกับ "${dup.name}"`);
@@ -227,7 +227,11 @@ function parseCardBlock(block: Line[], autoCardNo: string, errors: string[]): Ca
   const where = `(${name || cardNo})`;
   const errIn = (line: Line, msg: string) => err(line, `${where} ${msg}`);
 
-  const known = new Set(['ชื่อ', 'รหัส', 'ประเภท', 'สี', 'คอสต์', 'ลดคอสต์', 'Gem symbol', 'เผ่า', 'เลเวล', 'Burst', 'เอฟเฟกต์', 'ระดับ', 'Brave']);
+  const known = new Set(['ชื่อ', 'รหัส', 'ชุด', 'ประเภท', 'สี', 'คอสต์', 'ลดคอสต์', 'Gem symbol', 'เผ่า', 'เลเวล', 'Burst', 'เอฟเฟกต์', 'ระดับ', 'Brave']);
+  // ชุดในเกม (BS01, BS02 …) ที่การ์ดใบนี้อยู่: ไฟล์การ์ดแยกโฟลเดอร์ตามต้นรหัส จึงต้องบอกชุดในเกมทุกใบ
+  const setField = fields.get('ชุด');
+  const set = setField?.value.trim().toUpperCase();
+  if (setField && !/^[A-Z]+\d{2}$/.test(set!)) errIn(setField.line, `ชุดต้องเป็นรูปแบบ "BS01": "${setField.value}"`);
   for (const [key, { line }] of fields) {
     if (!known.has(key)) errIn(line, `ไม่รู้จักหัวข้อ "${key}"`);
   }
@@ -393,6 +397,7 @@ function parseCardBlock(block: Line[], autoCardNo: string, errors: string[]): Ca
     ...(teams.length ? { teams } : {}),
     ...(magicTypes.length ? { magicTypes } : {}),
     ...(summonCondition ? { summonCondition } : {}),
+    ...(set ? { set } : {}),
   };
 }
 

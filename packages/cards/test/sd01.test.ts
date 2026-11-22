@@ -1,16 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import sd1Text from '../../../assets/files/SD1.text?raw';
 import sd01Json from '../data/sd01.json';
+import burstWallText from '../../../assets/files/cards/SD06/Magic.text?raw';
 import sd01DeckJson from '../data/sd01-deck.json';
 import { CardTextError, isXRare, loadAllCards, loadBS01Cards, loadSD01Cards, parseCardText, rarityOf, SD01_DECK, validateDeck } from '../src';
 
 describe('Starter Deck 01', () => {
-  // การ์ดส่วนใหญ่ของ SD01 เขียนไว้ใน Booster Set 01 (assets/files/BS01) ที่เดียว
+  // การ์ดเขียนไว้ใน assets/files/cards/<ต้นรหัส>/ (เบิร์สวอลล์ = SD06/ ชุด: SD01) · SD1.text เหลือแค่รายการเด็ค
   const db = loadAllCards();
 
-  it('JSON ใน data/ ตรงกับ assets/files/SD1.text (ถ้าไม่ตรง ให้รัน npm run cards)', () => {
-    const parsed = parseCardText(sd1Text, { setCode: 'SD01', otherCards: loadBS01Cards().all() });
-    expect(parsed.cards).toEqual(sd01Json);
+  it('JSON ใน data/ ตรงกับ assets/files/SD1.text + cards/SD06 (ถ้าไม่ตรง ให้รัน npm run cards)', () => {
+    const wall = parseCardText(burstWallText, { setCode: 'SD06', typeCounters: {}, skipDeck: true });
+    expect(wall.cards).toEqual(sd01Json);
+    const parsed = parseCardText(sd1Text, { setCode: 'SD01', otherCards: [...loadBS01Cards().all(), ...wall.cards] });
+    expect(parsed.cards).toEqual([]);
     expect(parsed.deck).toEqual(sd01DeckJson);
   });
 

@@ -80,7 +80,9 @@ describe('แคชผลคำนวณ (freezeForCache)', () => {
 
   it('ตราแห่งเพลิงรบ Lv2: ไทคูน (ผู้เป็นนาย สีขาว) + ไซอุน (ข้ารับใช้ สีขาว) = Lv สูงสุด ทั้งแคชและไม่แคช', () => {
     const s = board(1);
+    // สนามสุ่มจาก db.all(): ล้างทั้งสองฝั่ง (การ์ดสุ่มฝั่งคู่แข่งอาจมีเอฟเฟกต์เลเวล ทำให้ผลขึ้นกับลำดับการ์ดใน data/)
     s.players.p1.field = [];
+    s.players.p2.field = [];
     let n = 0;
     const put = (cardNo: string, cores: number) => {
       const id = `ff-${++n}`;

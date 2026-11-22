@@ -328,54 +328,6 @@
     "set": "BS04"
   },
   {
-    "cardNo": "BSC22-R140",
-    "name": "ดีไวน์เชน",
-    "type": "magic",
-    "cost": 3,
-    "colors": [
-      "white"
-    ],
-    "reduction": {
-      "white": 3
-    },
-    "symbols": {},
-    "family": [],
-    "levels": [],
-    "burst": false,
-    "effects": [
-      {
-        "timing": "flash",
-        "text": "ในการต่อสู้นี้, คู่แข่งจะใช้งานการ์ดในมือในช่วงแฟลชไทม์มิ่งไม่ได้. เมื่อสปิริตเรามี (โซลคอร์) วางอยู่, คู่แข่งจะสั่งใช้เบิร์สไม่ได้ด้วย"
-      }
-    ],
-    "rarity": "R",
-    "set": "BS04"
-  },
-  {
-    "cardNo": "BSC22-C144",
-    "name": "ดรีมเชส",
-    "type": "magic",
-    "cost": 5,
-    "colors": [
-      "white"
-    ],
-    "reduction": {
-      "white": 3
-    },
-    "symbols": {},
-    "family": [],
-    "levels": [],
-    "burst": false,
-    "effects": [
-      {
-        "timing": "flash",
-        "text": "นำสปิริต 1 ตัวกลับไปไว้บนสุดเด็ค. ถ้าใช้ (โซลคอร์) ร่วมในการจ่ายคอสต์, นำอัลติเมท 1 ตัวกลับไปไว้บนสุดเด็คแทน"
-      }
-    ],
-    "rarity": "C",
-    "set": "BS04"
-  },
-  {
     "cardNo": "BS31-C091",
     "name": "No.1 นอร์ธซีโรด",
     "type": "nexus",
@@ -2216,6 +2168,54 @@
       }
     ],
     "rarity": "R",
+    "set": "BS04"
+  },
+  {
+    "cardNo": "BSC22-R140",
+    "name": "ดีไวน์เชน",
+    "type": "magic",
+    "cost": 3,
+    "colors": [
+      "white"
+    ],
+    "reduction": {
+      "white": 3
+    },
+    "symbols": {},
+    "family": [],
+    "levels": [],
+    "burst": false,
+    "effects": [
+      {
+        "timing": "flash",
+        "text": "ในการต่อสู้นี้, คู่แข่งจะใช้งานการ์ดในมือในช่วงแฟลชไทม์มิ่งไม่ได้. เมื่อสปิริตเรามี (โซลคอร์) วางอยู่, คู่แข่งจะสั่งใช้เบิร์สไม่ได้ด้วย"
+      }
+    ],
+    "rarity": "R",
+    "set": "BS04"
+  },
+  {
+    "cardNo": "BSC22-C144",
+    "name": "ดรีมเชส",
+    "type": "magic",
+    "cost": 5,
+    "colors": [
+      "white"
+    ],
+    "reduction": {
+      "white": 3
+    },
+    "symbols": {},
+    "family": [],
+    "levels": [],
+    "burst": false,
+    "effects": [
+      {
+        "timing": "flash",
+        "text": "นำสปิริต 1 ตัวกลับไปไว้บนสุดเด็ค. ถ้าใช้ (โซลคอร์) ร่วมในการจ่ายคอสต์, นำอัลติเมท 1 ตัวกลับไปไว้บนสุดเด็คแทน"
+      }
+    ],
+    "rarity": "C",
     "set": "BS04"
   },
   {

@@ -135,52 +135,52 @@ export function loadBS04Cards(): CardDatabase {
   return createCardDatabase(attachScripts(bs04, BS04_SCRIPTS));
 }
 
-/** การ์ดชุด Booster Set 06 (assets/files/BS06/*.text + data/bs06-scripts.ts) */
+/** การ์ดชุด Booster Set 06 (การ์ด "ชุด: BS06" ใน assets/files/cards/ + data/bs06-scripts.ts) */
 export function loadBS06Cards(): CardDatabase {
   return createCardDatabase(attachScripts(bs06, BS06_SCRIPTS));
 }
 
-/** การ์ดชุด Booster Set 07 (assets/files/BS07/*.text + data/bs07-scripts.ts) */
+/** การ์ดชุด Booster Set 07 (การ์ด "ชุด: BS07" ใน assets/files/cards/ + data/bs07-scripts.ts) */
 export function loadBS07Cards(): CardDatabase {
   return createCardDatabase(attachScripts(bs07, BS07_SCRIPTS));
 }
 
-/** การ์ดชุด Booster Set 08 (assets/files/BS08/*.text + data/bs08-scripts.ts) */
+/** การ์ดชุด Booster Set 08 (การ์ด "ชุด: BS08" ใน assets/files/cards/ + data/bs08-scripts.ts) */
 export function loadBS08Cards(): CardDatabase {
   return createCardDatabase(attachScripts(bs08, BS08_SCRIPTS));
 }
 
-/** การ์ดชุด Booster Set 09 (assets/files/BS09/*.text + data/bs09-scripts.ts) */
+/** การ์ดชุด Booster Set 09 (การ์ด "ชุด: BS09" ใน assets/files/cards/ + data/bs09-scripts.ts) */
 export function loadBS09Cards(): CardDatabase {
   return createCardDatabase(attachScripts(bs09, BS09_SCRIPTS));
 }
 
-/** การ์ดชุด Booster Set 10 (assets/files/BS10/*.text + data/bs10-scripts.ts) */
+/** การ์ดชุด Booster Set 10 (การ์ด "ชุด: BS10" ใน assets/files/cards/ + data/bs10-scripts.ts) */
 export function loadBS10Cards(): CardDatabase {
   return createCardDatabase(attachScripts(bs10, BS10_SCRIPTS));
 }
 
-/** การ์ดชุด Booster Set 13 (assets/files/BS13/*.text + data/bs13-scripts.ts) */
+/** การ์ดชุด Booster Set 13 (การ์ด "ชุด: BS13" ใน assets/files/cards/ + data/bs13-scripts.ts) */
 export function loadBS13Cards(): CardDatabase {
   return createCardDatabase(attachScripts(bs13, BS13_SCRIPTS));
 }
 
-/** การ์ดชุด Booster Set 12 (assets/files/BS12/*.text + data/bs12-scripts.ts) */
+/** การ์ดชุด Booster Set 12 (การ์ด "ชุด: BS12" ใน assets/files/cards/ + data/bs12-scripts.ts) */
 export function loadBS12Cards(): CardDatabase {
   return createCardDatabase(attachScripts(bs12, BS12_SCRIPTS));
 }
 
-/** การ์ดชุด Booster Set 11 (assets/files/BS11/*.text + data/bs11-scripts.ts) */
+/** การ์ดชุด Booster Set 11 (การ์ด "ชุด: BS11" ใน assets/files/cards/ + data/bs11-scripts.ts) */
 export function loadBS11Cards(): CardDatabase {
   return createCardDatabase(attachScripts(bs11, BS11_SCRIPTS));
 }
 
-/** การ์ดชุด Booster Set 05 (assets/files/BS05/*.text + data/bs05-scripts.ts) */
+/** การ์ดชุด Booster Set 05 (การ์ด "ชุด: BS05" ใน assets/files/cards/ + data/bs05-scripts.ts) */
 export function loadBS05Cards(): CardDatabase {
   return createCardDatabase(attachScripts(bs05, BS05_SCRIPTS));
 }
 
-/** การ์ดชุด Booster Set 01 (assets/files/BS01/*.text + data/bs01-scripts.ts) */
+/** การ์ดชุด Booster Set 01 (การ์ด "ชุด: BS01" ใน assets/files/cards/ + data/bs01-scripts.ts) */
 export function loadBS01Cards(): CardDatabase {
   return createCardDatabase(attachScripts(bs01, BS01_SCRIPTS));
 }

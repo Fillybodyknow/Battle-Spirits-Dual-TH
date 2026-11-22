@@ -24,7 +24,7 @@ export const GEM_IMG: Record<string, string> = Object.fromEntries(
 );
 
 /**
- * ภาพการ์ด: assets/images/cards/<ชุด>/<cardNo>.webp|png|jpg (เช่น SD01/SD01-001.webp)
+ * ภาพการ์ด: assets/images/cards/<ต้นรหัส>/<cardNo>.webp|png|jpg (เช่น BS31/BS31-X01.webp)
  * โหลดอัตโนมัติทุกไฟล์ในโฟลเดอร์ ชื่อไฟล์ (ไม่รวมนามสกุล) = cardNo
  */
 const cardImages = import.meta.glob('../../../assets/images/cards/**/*.{webp,png,jpg,jpeg}', {
@@ -40,7 +40,7 @@ for (const [path, url] of Object.entries(cardImages)) {
 }
 
 /**
- * ภาพการ์ดย่อ (กว้าง CARD_THUMB_W px) จาก npm run thumbs: assets/images/card-thumbs/<ชุด>/<รหัส>.webp
+ * ภาพการ์ดย่อ (กว้าง CARD_THUMB_W px) จาก npm run thumbs: assets/images/card-thumbs/<ต้นรหัส>/<รหัส>.webp
  * ใช้บนกระดาน/มือ/พัดการ์ด (หน่วยความจำภาพลดราว 3/4) · ไม่มีภาพย่อ = ใช้ภาพเต็ม
  */
 const thumbImages = import.meta.glob('../../../assets/images/card-thumbs/**/*.webp', {
