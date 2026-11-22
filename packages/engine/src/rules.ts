@@ -2387,6 +2387,8 @@ export function noRefreshSource(state: GameState, db: CardDatabase, cardId: stri
     for (const a of db.get(state.cards[src]!.cardNo).abilities) {
       if (a.kind !== 'opponentNoRefresh' || !a.levels.includes(level) || (byEffect && !a.anyRefresh)) continue;
       if (!matchesFilter(state, db, cardId, a.filter) || !conditionHolds(state, src, a.if, false, false, db)) continue;
+      // ตัวที่ไม่รับผลเอฟเฟกต์ของการ์ดต้นเหตุ (ก็อด-เซคส์ / Shield) ยังฟื้นสภาพได้ (เจ้าของโปรเจกต์กำหนด เหมือน attackBans)
+      if (effectBlocked(state, db, src, cardId)) continue;
       return { cardId: src, source: a.source };
     }
   }

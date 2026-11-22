@@ -249,11 +249,14 @@ describe('Booster Set 13', () => {
     put(s, 'p1', DOLL, 1); // ม่วง (+ขาว)
     put(s, 'p1', DARIU, 1); // แดง → 3 สี
     const foe = put(s, 'p2', DARIU, 1, false, 'exhausted');
+    // ก็อด-เซคส์ของคู่แข่ง: ไม่รับผลเอฟเฟกต์สปิริตของคู่แข่ง = ฟื้นสภาพได้ตามปกติ
+    const foeGod = put(s, 'p2', no('จอมมารสวรรค์ ก็อด-เซคส์'), 1, false, 'exhausted');
     // จบเทิร์น p1 → รีเฟรชสเต็ปของ p2
     s = act(s, { type: 'endMain', player: 'p1' });
     for (let i = 0; i < 5 && s.turnPlayer === 'p1'; i++) s = act(s, { type: s.phase === 'attack' ? 'endAttackStep' : 'endMain', player: 'p1' } as Action);
     expect(s.turnPlayer).toBe('p2');
     expect(s.cards[foe]!.state).toBe('exhausted');
+    expect(s.cards[foeGod]!.state).toBe('refresh');
   });
 
   it('ก็อด-เซคส์ Six Heaven\'s Rush: คู่แข่งฟื้นสภาพด้วยเอฟเฟกต์ก็ไม่ได้', () => {
