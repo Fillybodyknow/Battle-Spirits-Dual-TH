@@ -79,10 +79,11 @@ const PATHS: Record<IconName, React.ReactNode> = {
     </>
   ),
   check: <path d="M5 12.5l4.5 4.5L19 7.5" />,
+  download: <path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14" />,
   star: <path d="M12 3.5l2.6 5.3 5.9.9-4.25 4.1 1 5.8L12 16.9l-5.25 2.7 1-5.8L3.5 9.7l5.9-.9z" />,
 };
 
-export type IconName = 'home' | 'settings' | 'undo' | 'restart' | 'globe' | 'info' | 'chain' | 'log' | 'eye' | 'back' | 'book' | 'cap' | 'swords' | 'flag' | 'lock' | 'check' | 'star' | 'chevron' | 'close';
+export type IconName = 'home' | 'settings' | 'undo' | 'restart' | 'globe' | 'info' | 'chain' | 'log' | 'eye' | 'back' | 'book' | 'cap' | 'swords' | 'flag' | 'lock' | 'check' | 'star' | 'chevron' | 'close' | 'download';
 
 export function Icon({ name, className = '' }: { name: IconName; className?: string }) {
   return (

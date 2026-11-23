@@ -10,12 +10,14 @@ import { bgmSettings, hasBgm, setBgmSettings } from '../bgm';
 import { useGame, type CutInMode } from '../store';
 import { setPrefs, usePrefs, type HandLayout, type HandSort, type PlayMode } from '../prefs';
 import { BTN, Modal } from './Modal';
+import { GameDataTab } from './GameDataUi';
 
-type Tab = 'graphics' | 'sound' | 'play';
+type Tab = 'graphics' | 'sound' | 'play' | 'data';
 const TABS: { id: Tab; label: string }[] = [
   { id: 'graphics', label: 'กราฟิก' },
   { id: 'sound', label: 'เสียง' },
   { id: 'play', label: 'การเล่น' },
+  { id: 'data', label: 'ข้อมูลเกม' },
 ];
 
 /** ปุ่มเลือกแบบแบ่งช่อง */
@@ -328,6 +330,7 @@ export function SettingsDialog({ onClose, playExtra }: { onClose: () => void; pl
         {tab === 'graphics' && <GraphicsTab />}
         {tab === 'sound' && <SoundTab />}
         {tab === 'play' && <PlayTab extra={playExtra} />}
+        {tab === 'data' && <GameDataTab />}
       </div>
       <div className="flex justify-end">
         <button type="button" className={BTN.primary} onClick={onClose}>

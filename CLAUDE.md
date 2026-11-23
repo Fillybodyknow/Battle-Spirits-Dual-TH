@@ -311,7 +311,9 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
   แล้วให้เจ้าของโปรเจกต์ดูข้อความก่อน commit
 - build เขียน `version.json` (vite.config.ts อ่านเลขจาก changelog.ts) แอปที่เปิดค้างไว้เช็กไฟล์นี้ทุก 10 นาที/ตอนกลับมาที่แท็บ
   ถ้าใหม่กว่า = ขึ้นป้ายให้อัปเดต · เปิดเวอร์ชันใหม่ครั้งแรก = เด้ง "มีอะไรใหม่" (`version.ts`, `components/Updates.tsx`)
-- Service Worker (`public/sw.js`) ห้าม cache `version.json`
+- Service Worker (`public/sw.js`) ห้าม cache `version.json` / `asset-manifest.json` · ชื่อ CACHE `bs-dual-v2` ต้องตรงกับ `src/gameData.ts` (ห้ามเปลี่ยน = ข้อมูลที่ผู้เล่นดาวน์โหลดไว้หาย)
+- **ดาวน์โหลดข้อมูลเกมทั้งหมด** (`src/gameData.ts` + `components/GameDataUi.tsx`, ตั้งค่า → ข้อมูลเกม): build เขียน `asset-manifest.json` (ทุกไฟล์ใน assets/ + ขนาด) → โหลดเก็บใน Cache ทีละ 6 ไฟล์ ·
+  SW ตอบ assets/ จาก cache ก่อนเสมอ (ชื่อไฟล์มีแฮช) + ตัด Range (เพลง) จากไฟล์เต็มที่เก็บไว้ · เลือกโหลดไว้ (`bs-fulldata`) = เวอร์ชันใหม่แพตช์ส่วนที่ขาด + ลบไฟล์เก่าให้เอง · dev = unsupported (ทดสอบด้วย `vite preview` + build ที่ตั้ง `VITE_PERF_HOOKS=1` → `__gameData`)
 - ห้องออนไลน์เก็บเวอร์ชันของแต่ละที่นั่ง (`rooms/<code>/versions`, เขียนแยกหลังสร้าง/เข้าห้อง): MAJOR ไม่ตรง = เข้าห้องไม่ได้ / เจ้าของห้องเห็นคำเตือน
   ดังนั้นการแก้ engine ที่ทำให้ผลการเล่นเปลี่ยน **ต้องขึ้น MAJOR** ไม่งั้นคนละเวอร์ชันจะเข้าห้องเดียวกันแล้วเดินไม่ตรงกัน
 
