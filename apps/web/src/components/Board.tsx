@@ -345,7 +345,9 @@ function OwnerTag({ cardId, top }: { cardId: string; top: boolean }) {
   const card = useGame((s) => s.state.cards[cardId]);
   const me = useGame((s) => viewPlayer(s));
   const names = useGame((s) => s.teamNames);
-  if (!card) return null;
+  // 1VS2: ฝั่งที่เล่นคนเดียวไม่ต้องบอกเจ้าของ
+  const team = useGame((s) => !!card && !!s.state.players[card.owner].partner);
+  if (!card || !team) return null;
   const seat = card.seat ?? 0;
   const ours = card.owner === me;
   // การ์ดของเครื่องนี้ = ที่นั่งของเรา (Team Battle: คนที่สองของทีมก็เห็นการ์ดตัวเองเป็น "เรา")
@@ -932,7 +934,8 @@ function LifeSlot({ player, partner }: { player: PlayerId; partner?: boolean }) 
   const life = zoneOf(state, player, partner).life;
   const heldLife = useShownLife(player);
   const shownLife = partner ? life.length : heldLife;
-  const slots = Math.max(state.config.initialLife, life.length, 6);
+  const slots = Math.max(state.config.initialLife, life.length, state.solo === player ? 10 : 6);
+  const dense = slots > 6;
   // ช่วงประกาศป้องกัน: คลิกแผง Life ของฝ่ายป้องกัน = ไม่ป้องกัน (รับการโจมตีด้วย Life)
   const battle = state.battle;
   const canTake =
@@ -961,13 +964,14 @@ function LifeSlot({ player, partner }: { player: PlayerId; partner?: boolean }) 
           {more ? 'คลิก: ไม่ป้องกันเพิ่ม' : 'คลิก: รับด้วย Life'}
         </span>
       )}
-      <div className="grid grid-cols-3 gap-x-1.5 gap-y-1 self-center">
+      {/* 1VS2: ไลฟ์ 10 เม็ด = ช่องเล็กลง 4 คอลัมน์ (ช่องไม่สูงจนดัน Reserve ตกขอบ) */}
+      <div className={`grid self-center ${dense ? 'grid-cols-4 gap-1' : 'grid-cols-3 gap-x-1.5 gap-y-1'}`}>
         {Array.from({ length: slots }, (_, i) => (
           <div
             key={i}
-            className="life-socket flex h-6 w-6 items-center justify-center rounded-full"
+            className={`life-socket flex items-center justify-center rounded-full ${dense ? 'h-5 w-5' : 'h-6 w-6'}`}
           >
-            {life[i] && <Core coreId={life[i]!} size="md" />}
+            {life[i] && <Core coreId={life[i]!} size={dense ? 'sm' : 'md'} />}
           </div>
         ))}
       </div>

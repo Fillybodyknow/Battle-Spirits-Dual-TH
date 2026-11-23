@@ -381,6 +381,8 @@ export interface GameState {
   config: GameConfig;
   /** โหมดเกม (ไม่มี = 1VS1) */
   mode?: '2v2';
+  /** 1VS2 (กติกา 15 ข้อ 10): ฝั่งที่เล่นคนเดียว (ไม่มี partner) · ไลฟ์ 10, คอร์สเต็ป +2, ดรอว์สเต็ปจั่ว 2 */
+  solo?: PlayerId;
   /** 2VS2: ที่นั่งที่กด "พร้อม" จบเมนสเต็ป/แอทแท็คสเต็ปแล้วในเทิร์นทีมนี้ */
   seatsReady?: Seat[];
   /** สถานะของ seeded RNG (เกมเดิน deterministic) */

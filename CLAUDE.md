@@ -236,6 +236,8 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
     `partnerTurn` (store) = ตาของเพื่อนร่วมทีม → `mine`/`controls` เป็น false + แถบ "รอเพื่อนร่วมทีม" · `TeamPlate` (Hud) ป้ายคนที่สองของแต่ละทีม + ดูมือเพื่อน · `OwnerTag` (Board) ป้ายเจ้าของการ์ดบนสนาม
   · **Team Battle ออนไลน์** (DUEL → Team Battle): ห้องดวล `meta.team` = โต๊ะละ 4 ที่นั่ง `TableSeat` p1/p1b/p2/p2b (`tableSeats`, `seatKey`/`keySide`/`keySeat` ใน online/transport.ts) · ห้องเกมมี `setup.partnerDecks` + ที่นั่ง p1b/p2b
     `OnlineState.seat` · state ในเครื่องเก็บ **ในมุมของที่นั่งตัวเอง** (`asMySeat` หลังทุก action) · `dispatch` ติด `seat` ให้ action · `autoAdvance` ต้องตัดสินตามที่นั่งด้วยสำเนาที่สลับที่นั่ง (ห้ามขึ้นกับมุมของเครื่อง ไม่งั้น 4 เครื่องเดินไม่ตรงกัน)
+  · **1VS2** (กติกา 15 ข้อ 10): `partnerDecks` ระบุแค่ฝั่งเดียว → อีกฝั่งไม่มี partner = `state.solo` (ไลฟ์ `SOLO_LIFE` 10, คอร์สเต็ป +2, ดรอว์สเต็ปจั่ว 2 ใน game.ts) · โค้ด 2VS2 ตรวจ `players[p].partner` ต่อฝั่ง (ห้ามถือว่า mode 2v2 = มี partner ทั้งสองฝั่ง)
+    หน้าเว็บ: VS BOT เลือก 1VS2 / 2VS1 (`startVsBot(..., { partners: { p2 } })`) · Team Battle โต๊ะ 3 คน = 1VS2 (`tablePlayers` ใน store, `gameSeats(setup)` ใน transport) · เทสต์ `1v2.test.ts`
     ทดสอบ: 4 แท็บ `?online=local` (สคริปต์ CDP: import store ด้วย URL เดียวกับที่แอปโหลด จาก `performance.getEntriesByType('resource')` ไม่งั้นได้ store ตัวใหม่)
 - `config.manualDraw` (หน้าเว็บเปิดไว้): Draw Step หยุดรอ action `drawStep` · เทสต์ใช้ค่าเริ่มต้น (จั่วเอง)
 - เปลี่ยนลำดับ action ที่ engine คาดหวัง = ห้องออนไลน์ที่เล่นค้างอยู่จะเล่นต่อไม่ได้ (บอกเจ้าของโปรเจกต์ด้วย)

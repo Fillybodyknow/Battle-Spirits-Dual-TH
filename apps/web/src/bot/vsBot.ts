@@ -30,7 +30,7 @@ export interface VsBotOptions {
    * 2VS2 (กติกา 15): เด็คของเพื่อนร่วมทีม (p1 = บอทคู่หูของผู้เล่น) และคู่แข่งคนที่สอง (p2)
    * ผู้เล่น = ทีม p1 ที่นั่ง 0 · อีก 3 ที่นั่งเป็นบอท
    */
-  partners?: { p1: string; p2: string };
+  partners?: { p1?: string; p2?: string };
   /** 2VS2: ชื่อเพื่อนร่วมทีม / คู่แข่งคนที่สอง */
   partnerNames?: { p1: string; p2: string };
 }
@@ -137,9 +137,15 @@ export function startVsBot(d: { p1: string; p2: string }, o: VsBotOptions = {}) 
   useGame.setState({
     fixedView: true,
     botSeat: BOT,
-    botName: o.botName ?? (o.partners ? 'คู่แข่งคนที่ 1 (บอท)' : null),
+    botName: o.botName ?? (o.partners?.p2 ? 'คู่แข่งคนที่ 1 (บอท)' : null),
     botAvatar: o.botAvatar ?? null,
-    teamNames: o.partners ? { p1: o.partnerNames?.p1 ?? 'เพื่อนร่วมทีม (บอท)', p2: o.partnerNames?.p2 ?? 'คู่แข่งคนที่ 2 (บอท)' } : null,
+    // 1VS2: มีชื่อเฉพาะฝั่งที่เป็นทีม
+    teamNames: o.partners
+      ? {
+          ...(o.partners.p1 ? { p1: o.partnerNames?.p1 ?? 'เพื่อนร่วมทีม (บอท)' } : {}),
+          ...(o.partners.p2 ? { p2: o.partnerNames?.p2 ?? 'คู่แข่งคนที่ 2 (บอท)' } : {}),
+        }
+      : null,
   });
   // ข้อความบนกระดาน (ตาของ…, รอ…, ป้ายสนาม): ชื่อเรา / ชื่อคู่แข่ง แทน ผู้เล่น 1/2
   setSeatNames({ p1: g.playerName, [BOT]: o.botName ?? 'บอท' });

@@ -25,13 +25,20 @@ export const TEAM_SEATS: readonly TableSeat[] = ['p1', 'p1b', 'p2', 'p2b'];
 export const seatKey = (side: PlayerId, seat: Seat = 0): TableSeat => (seat ? (`${side}b` as TableSeat) : side);
 export const keySide = (key: TableSeat): PlayerId => key.slice(0, 2) as PlayerId;
 export const keySeat = (key: TableSeat): Seat => (key.endsWith('b') ? 1 : 0);
+/** ที่นั่งที่อยู่ในเกมนี้ (1VS1 = p1/p2 · Team Battle = p1/p2 + คนที่สองของฝั่งที่มีเด็ค) */
+export const gameSeats = (setup: Pick<RoomSetup, 'partnerDecks'>): TableSeat[] => [
+  'p1',
+  ...(setup.partnerDecks?.p1 ? (['p1b'] as const) : []),
+  'p2',
+  ...(setup.partnerDecks?.p2 ? (['p2b'] as const) : []),
+];
 
 export interface RoomSetup {
   round: number;
   seed: number;
   decks: { p1: string; p2: string | null };
-  /** Team Battle (2VS2): เด็คของคนที่สองของแต่ละทีม */
-  partnerDecks?: { p1: string; p2: string };
+  /** Team Battle (2VS2): เด็คของคนที่สองของแต่ละทีม · มีฝั่งเดียว = 1VS2 (อีกฝั่งเล่นคนเดียว) */
+  partnerDecks?: { p1?: string; p2?: string };
   /** ผู้เริ่มก่อนที่คนชนะการเสี่ยงเลือกแล้ว (ยังไม่มี = กำลังเลือก) */
   first?: PlayerId;
 }

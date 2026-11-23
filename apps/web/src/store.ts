@@ -6,7 +6,7 @@ import { prefs, setPrefs, type HandSort } from './prefs';
 import { firebaseConfigured, firebaseTransport } from './online/firebase';
 import { localTransport } from './online/local';
 import type { DuelMember, DuelRoom, DuelTable, LobbyEntry, RoomInfo, RoomSetup, TableSeat, Transport } from './online/transport';
-import { keySeat, keySide, seatKey, TEAM_SEATS } from './online/transport';
+import { gameSeats, keySeat, keySide, seatKey, TEAM_SEATS } from './online/transport';
 import { expandDeck, loadAllCards, validateDeck } from '@bs/cards';
 import { deckChoices, deckInfo, deckToken, STARTER_DECKS, type DeckId } from './decks';
 import { rarityOf, type TextEffect } from '@bs/cards';
@@ -2442,7 +2442,7 @@ interface Store {
   /** รูปโปรไฟล์ของบอท (รหัสการ์ด) · null = รูปสำรอง */
   botAvatar: string | null;
   /** 2VS2: ชื่อคนที่สองของแต่ละทีม (null = ใช้ชื่อทั่วไป) */
-  teamNames: Record<PlayerId, string> | null;
+  teamNames: Partial<Record<PlayerId, string>> | null;
   /** 2VS2: ซ่อนพัดมือของเพื่อนร่วมทีม (มือเรากางเต็มจอ) · จำไว้ในเครื่อง */
   partnerHandHidden: boolean;
   setPartnerHandHidden(v: boolean): void;
@@ -2680,15 +2680,15 @@ function onRoom(code: string, info: RoomInfo | null) {
     return;
   }
   const team = !!info.setup.partnerDecks;
-  // Team Battle: ทุกที่นั่งต้องอยู่ครบ
-  const opponentHere = team ? TEAM_SEATS.every((k) => !!info.seats[k]) : !!info.seats[opponentOf(on.me)];
+  // Team Battle: ทุกที่นั่งของเกมต้องอยู่ครบ (1VS2 = 3 ที่นั่ง)
+  const opponentHere = team ? gameSeats(info.setup).every((k) => !!info.seats[k]) : !!info.seats[opponentOf(on.me)];
   // คนอื่นในห้องใช้เวอร์ชันที่ engine ไม่ตรงกับเรา: เตือน (เครื่องเวอร์ชันเก่ามากจะไม่มีข้อมูลนี้ = ตรวจไม่ได้)
-  const others = (team ? TEAM_SEATS : PLAYERS).filter((k) => k !== seatKey(on.me, on.seat));
+  const others = (team ? gameSeats(info.setup) : PLAYERS).filter((k) => k !== seatKey(on.me, on.seat));
   const oppVersion = others.map((k) => info.versions?.[k]).find((v) => v && !sameMajor(v, APP_VERSION));
   if (oppVersion && useGame.getState().error !== versionMismatchText(oppVersion)) {
     useGame.setState({ error: versionMismatchText(oppVersion) });
   }
-  const ready = !!info.setup.decks.p2 && !!info.seats.p2 && (!team || (!!info.seats.p1b && !!info.seats.p2b));
+  const ready = !!info.setup.decks.p2 && !!info.seats.p2 && (!team || gameSeats(info.setup).every((k) => !!info.seats[k]));
   const names = info.names ?? {};
   const avatars = info.avatars ?? {};
   const levels = info.levels ?? {};
@@ -2730,7 +2730,7 @@ async function startRound(code: string, setup: RoomSetup, opponentHere: boolean)
   const mate = seatKey(me, st.online.seat ? 0 : 1);
   /** คนที่สองของทีม (Team Battle) สำหรับฉากเปิดเกม */
   const mateOf = (k: TableSeat, fallback: string): Pick<IntroSide, 'mate'> =>
-    setup.partnerDecks
+    setup.partnerDecks?.[keySide(k)]
       ? { mate: { name: names[k] ?? fallback, ...(avatars[k] ? { avatar: avatars[k] } : {}), ...(st.online!.levels?.[k] ? { level: st.online!.levels[k] } : {}), ...(lastSeats[k] ? { uid: lastSeats[k] } : {}) } }
       : {};
   // ฉากเปิดเกม: จอของคนชนะการเสี่ยงออกหัว จอของอีกฝั่งออกก้อย
@@ -2853,6 +2853,15 @@ export function seatUid(room: DuelRoom, t: string, seat: TableSeat): string | un
 export const tableIds = (room: DuelRoom) => Array.from({ length: room.meta.tables }, (_, i) => String(i + 1));
 /** ที่นั่งของโต๊ะในห้องนี้: Team Battle = 4 ที่นั่ง (ทีม p1: p1/p1b · ทีม p2: p2/p2b) */
 export const tableSeats = (room: DuelRoom): readonly TableSeat[] => (room.meta.team ? TEAM_SEATS : PLAYERS);
+/**
+ * ที่นั่งที่จะเข้าเกมของโต๊ะนี้ · null = ยังเริ่มไม่ได้
+ * 1VS1 = ครบ 2 ที่นั่ง · Team Battle = p1 + p2 ต้องมีคน และคนที่สองอย่างน้อยหนึ่งฝั่ง (ครบ 4 = 2VS2, 3 คน = 1VS2: ฝั่งที่ไม่มีคนที่สองเล่นคนเดียว)
+ */
+export function tablePlayers(room: DuelRoom, t: string): TableSeat[] | null {
+  const keys = tableSeats(room).filter((k) => !!seatUid(room, t, k));
+  if (!room.meta.team) return keys.length === 2 ? keys : null;
+  return keys.includes('p1') && keys.includes('p2') && keys.length >= 3 ? keys : null;
+}
 /** ที่นั่งของ uid ในห้อง */
 export function seatOf(room: DuelRoom, uid: string): { t: string; seat: TableSeat } | null {
   for (const t of tableIds(room)) for (const seat of tableSeats(room)) if (seatUid(room, t, seat) === uid) return { t, seat };
@@ -2896,7 +2905,8 @@ function onDuel(code: string, uid: string, room: DuelRoom | null) {
   if (!mine) return;
   const tb = room.tables?.[mine.t] ?? {};
   // ทุกที่นั่งนั่งครบและพร้อม: ที่นั่ง p1 เป็นคนสร้างเกม
-  const allReady = tableSeats(room).every((k) => !!seatUid(room, mine.t, k) && !!tb.ready?.[k]);
+  const players = tablePlayers(room, mine.t);
+  const allReady = !!players && players.every((k) => !!tb.ready?.[k]);
   if (!tb.game && mine.seat === 'p1' && allReady && !startingTable) {
     void startTable(code, room, mine.t, uid);
   }
@@ -2917,7 +2927,7 @@ function seatData<T>(members: Partial<Record<TableSeat, DuelMember>>, pick: (m: 
 async function startTable(code: string, room: DuelRoom, t: string, uid: string) {
   startingTable = true;
   try {
-    const keys = tableSeats(room);
+    const keys = tablePlayers(room, t) ?? [];
     const seats: Partial<Record<TableSeat, string>> = {};
     const members: Partial<Record<TableSeat, DuelMember>> = {};
     for (const k of keys) {
@@ -2930,7 +2940,8 @@ async function startTable(code: string, room: DuelRoom, t: string, uid: string) 
       seed: randomSeed(),
       decks: { p1: members.p1!.deck, p2: members.p2!.deck },
       // Team Battle: เด็คของคนที่สองของแต่ละทีม
-      ...(room.meta.team ? { partnerDecks: { p1: members.p1b!.deck, p2: members.p2b!.deck } } : {}),
+      // 1VS2: ฝั่งที่ไม่มีคนที่สอง = เล่นคนเดียว (ไม่มีเด็คคนที่สองของฝั่งนั้น)
+      ...(room.meta.team ? { partnerDecks: { ...(members.p1b ? { p1: members.p1b.deck } : {}), ...(members.p2b ? { p2: members.p2b.deck } : {}) } } : {}),
     };
     const avatars = seatData(members, (m) => m.avatar);
     const levels = seatData(members, (m) => m.level);
@@ -3235,19 +3246,22 @@ function matchIntro(heads: boolean, left: IntroSide, right: IntroSide): Fx[] {
  * 2VS2 เล่นในเครื่อง (ดวลกับบอท 3 ตัว): เด็คของคนที่สองในแต่ละทีม · null = 1VS1
  * ผู้เล่นอยู่ทีม p1 ที่นั่ง 0 เสมอ (state ในรูปปกติ = มุมของผู้เล่นพอดี ไม่ต้องสลับที่นั่งเพื่อแสดงผล)
  */
-let localPartners: DeckChoice | null = null;
-export function setLocalPartners(p: DeckChoice | null): void {
+let localPartners: Partial<DeckChoice> | null = null;
+export function setLocalPartners(p: Partial<DeckChoice> | null): void {
   localPartners = p;
 }
 
-function startGame(seed: number, decks: DeckChoice, firstPlayer?: PlayerId, partners: DeckChoice | null = null): GameState {
+function startGame(seed: number, decks: DeckChoice, firstPlayer?: PlayerId, partners: Partial<DeckChoice> | null = null): GameState {
   return createGame({
     db,
     seed,
     // เด็คที่ไม่มีแล้ว (เช่น เด็คตัวอย่างเดิมจากห้องออนไลน์เก่า) ใช้ Starter Deck 01 แทน
     // เด็คที่จัดเอง/หาไม่เจอ: deckInfo จัดการให้ (หาไม่เจอ = Starter Deck 01)
     decks: { p1: expandDeck(deckInfo(decks.p1).entries), p2: expandDeck(deckInfo(decks.p2).entries) },
-    ...(partners ? { partnerDecks: { p1: expandDeck(deckInfo(partners.p1).entries), p2: expandDeck(deckInfo(partners.p2).entries) } } : {}),
+    // 1VS2: ระบุเด็คคนที่สองแค่ฝั่งเดียว = อีกฝั่งเล่นคนเดียว
+    ...(partners
+      ? { partnerDecks: Object.fromEntries((['p1', 'p2'] as const).filter((p) => partners[p]).map((p) => [p, expandDeck(deckInfo(partners[p]!).entries)])) }
+      : {}),
     ...(firstPlayer ? { firstPlayer } : {}),
     // Draw Step รอผู้เล่นกดจั่วเอง (DrawPrompt)
     config: { manualDraw: true },
@@ -3560,7 +3574,7 @@ export const useGame = create<Store>((set, get) => {
             ? { name: 'ผู้เล่น 1', deck: d.p1, avatar: storedAvatar() }
             : { name: 'ผู้เล่น 2', deck: d.p2 };
       const teamNames = get().teamNames;
-      const withMate = (p: PlayerId): IntroSide => ({ ...side(p), ...(localPartners && teamNames ? { mate: { name: teamNames[p] } } : {}) });
+      const withMate = (p: PlayerId): IntroSide => ({ ...side(p), ...(localPartners?.[p] && teamNames?.[p] ? { mate: { name: teamNames[p] } } : {}) });
       const fx: Fx[] = get().animations ? matchIntro(true, withMate('p1'), withMate('p2')) : [];
       // คนชนะการเสี่ยง = ผู้เริ่มก่อนชั่วคราวที่ seed สุ่มได้ (ไม่มีแอนิเมชัน = ใช้ตามนั้นเลย)
       set({ pregame: { winner: state.turnPlayer, chosen: get().animations ? null : state.turnPlayer } });

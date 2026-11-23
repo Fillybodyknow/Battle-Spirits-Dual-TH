@@ -60,7 +60,8 @@ function toInfo(v: unknown): RoomInfo | null {
       seed: r.setup.seed,
       decks: { p1: r.setup.decks.p1, p2: r.setup.decks.p2 ?? null },
       ...(r.setup.first ? { first: r.setup.first } : {}),
-      ...(pd?.p1 && pd?.p2 ? { partnerDecks: { p1: pd.p1, p2: pd.p2 } } : {}),
+      // 1VS2: มีเด็คคนที่สองแค่ฝั่งเดียว
+      ...(pd?.p1 || pd?.p2 ? { partnerDecks: { ...(pd.p1 ? { p1: pd.p1 } : {}), ...(pd.p2 ? { p2: pd.p2 } : {}) } } : {}),
     },
   };
 }

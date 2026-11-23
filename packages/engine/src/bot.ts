@@ -241,7 +241,7 @@ function handCost(s: GameState, db: CardDatabase, p: PlayerId, id: string, def: 
  * สองคนในทีมเล่นพร้อมกันได้ (กติกา 15 ข้อ 3) ไม่ต้องรอให้อีกคนกดพร้อมก่อน
  */
 export function seatFree(s: GameState, me: PlayerId, seat: Seat): boolean {
-  if (s.mode !== '2v2' || s.winner || s.choice || s.awaitingDraw || s.turnPlayer !== me) return false;
+  if (s.mode !== '2v2' || s.winner || s.choice || s.awaitingDraw || s.turnPlayer !== me || !seatsOf(s, me).includes(seat)) return false;
   if (!(s.phase === 'main' || (s.phase === 'attack' && !s.battle))) return false;
   return !(s.seatsReady ?? []).includes(seat);
 }

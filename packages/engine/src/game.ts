@@ -90,9 +90,12 @@ export interface CreateGameOptions {
   firstPlayer?: PlayerId;
   /** false = ใช้ลำดับเด็คตามที่ส่งมา (ใช้ในเทส); ค่าเริ่มต้น true */
   shuffleDecks?: boolean;
-  /** โหมด 2VS2 (กติกา 15): เด็คของคนที่สองในแต่ละทีม (ที่นั่ง 1) · ไม่ระบุ = 1VS1 */
-  partnerDecks?: Record<PlayerId, string[]>;
+  /** โหมด 2VS2 (กติกา 15): เด็คของคนที่สองในแต่ละทีม (ที่นั่ง 1) · ไม่ระบุ = 1VS1 · ระบุฝั่งเดียว = 1VS2 (อีกฝั่งเล่นคนเดียว) */
+  partnerDecks?: Partial<Record<PlayerId, string[]>>;
 }
+
+/** 1VS2: ไลฟ์เริ่มต้นของฝั่งที่เล่นคนเดียว */
+export const SOLO_LIFE = 10;
 
 const emptyPlayer = (): PlayerState => ({
   deck: [],
@@ -136,12 +139,15 @@ export function createGame(options: CreateGameOptions): { state: GameState; even
   const partners = options.partnerDecks;
   if (partners) {
     s.mode = '2v2';
-    for (const player of PLAYERS) s.players[player].partner = { deck: [], hand: [], trashCards: [], burst: null, life: [], reserve: [], trashCores: [] };
+    for (const player of PLAYERS) {
+      if (partners[player]) s.players[player].partner = { deck: [], hand: [], trashCards: [], burst: null, life: [], reserve: [], trashCores: [] };
+      else s.solo = player;
+    }
   }
 
   for (const player of PLAYERS) {
     for (const seat of seatsOf(s, player)) {
-      const list = seat === 1 ? partners![player] : decks[player];
+      const list = seat === 1 ? partners![player]! : decks[player];
       useSeat(s, player, seat);
       for (const cardNo of list) db.get(cardNo); // โยน error ถ้าไม่มีการ์ดนี้
       let shuffled = list;
@@ -154,7 +160,8 @@ export function createGame(options: CreateGameOptions): { state: GameState; even
       });
 
       const p = s.players[player];
-      for (let i = 0; i < config.initialLife; i++) p.life.push(newCore(ctx, player));
+      // 1VS2: ฝั่งที่เล่นคนเดียวไลฟ์ 10
+      for (let i = 0; i < (s.solo === player ? SOLO_LIFE : config.initialLife); i++) p.life.push(newCore(ctx, player));
       for (let i = 0; i < config.initialReserve; i++) p.reserve.push(newCore(ctx, player));
       p.reserve.push(newCore(ctx, player, true));
       for (let i = 0; i < config.initialHand; i++) drawCard(ctx, player);
@@ -218,9 +225,12 @@ function afterStart(ctx: Ctx): void {
     // 2VS2: ทั้งสองคนในทีมได้คอร์ (กติกา 15 ข้อ 3)
     for (const seat of seatsOf(s, player)) {
       asSeat(s, player, seat, () => {
-        const coreId = newCore(ctx, player);
-        p.reserve.push(coreId);
-        emit(ctx, { type: 'coreGained', player, coreId });
+        // 1VS2: ฝั่งที่เล่นคนเดียวได้คอร์ +2
+        for (let i = 0; i < (s.solo === player ? 2 : 1); i++) {
+          const coreId = newCore(ctx, player);
+          p.reserve.push(coreId);
+          emit(ctx, { type: 'coreGained', player, coreId });
+        }
       });
     }
   }
@@ -289,7 +299,8 @@ function continueDraw(ctx: Ctx): void {
 function drawStep(ctx: Ctx): void {
   const { s, db } = ctx;
   const player = s.turnPlayer;
-  let count = 1 + (s.drawStepExtra ?? 0);
+  // 1VS2: ฝั่งที่เล่นคนเดียวจั่ว 2 ใบ
+  let count = (s.solo === player ? 2 : 1) + (s.drawStepExtra ?? 0);
   delete s.drawStepExtra;
   const team = !!s.players[player].partner;
   const perSeat = s.drawStepExtraSeats ?? [0, 0];

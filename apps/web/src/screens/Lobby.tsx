@@ -26,6 +26,7 @@ import {
   onlineVia,
   playableDecks,
   seatOf,
+  tablePlayers,
   tableSeats,
   seatUid,
   tableIds,
@@ -542,8 +543,11 @@ function TableCard({ room, t, uid }: { room: DuelRoom; t: string; uid: string })
   const game = tb.game;
   const ready = (s: TableSeat) => !!tb.ready?.[s];
   const iAmReady = mySeat ? ready(mySeat) : false;
-  const full = keys.every((k) => !!seatUid(room, t, k));
-  const allReady = keys.every(ready);
+  // Team Battle: 3 คน = 1VS2 (ฝั่งที่ไม่มีคนที่สองเล่นคนเดียว) · 4 คน = 2VS2
+  const players = tablePlayers(room, t);
+  const full = !!players;
+  const allReady = !!players && players.every(ready);
+  const solo = team && players?.length === 3 ? (players.includes('p1b') ? 'ทีม B' : 'ทีม A') : null;
   const starting = !!game && !!online && online.code === game && online.status === 'waiting';
 
   let center: React.ReactNode;
@@ -571,6 +575,11 @@ function TableCard({ room, t, uid }: { room: DuelRoom; t: string; uid: string })
         >
           {iAmReady ? 'พร้อมแล้ว ✓' : 'พร้อม'}
         </button>
+        {solo && (
+          <div className="rounded bg-amber-400/15 px-2 py-0.5 text-xs font-black text-amber-200" title="ฝั่งที่เล่นคนเดียว: ไลฟ์ 10 · คอร์สเต็ป +2 · ดรอว์สเต็ปจั่ว 2 ใบ">
+            1VS2 · {solo} เล่นคนเดียว (ไลฟ์ 10 · คอร์ +2 · จั่ว 2)
+          </div>
+        )}
         <div className="text-xs text-slate-300">{allReady ? 'กำลังเริ่มเกม…' : iAmReady ? 'รอคนอื่นกดพร้อม (กดอีกครั้งเพื่อยกเลิก)' : `กดพร้อมเมื่อเลือกเด็คเสร็จ · ${team ? 'ทุกคนพร้อม' : 'ทั้งสองฝ่ายพร้อม'} = เริ่มดวล`}</div>
       </>
     ) : (
@@ -580,7 +589,7 @@ function TableCard({ room, t, uid }: { room: DuelRoom; t: string; uid: string })
     center = (
       <>
         <div className="text-3xl font-black text-white/40 italic">VS</div>
-        <div className="text-sm text-sky-200">{mySeat ? (team ? 'รอผู้เล่นให้ครบ 4 คน…' : 'รอคู่แข่งมานั่ง…') : 'กดที่นั่งว่างเพื่อนั่ง'}</div>
+        <div className="text-sm text-sky-200">{mySeat ? (team ? 'รอผู้เล่น (3 คน = 1VS2 · 4 คน = 2VS2)…' : 'รอคู่แข่งมานั่ง…') : 'กดที่นั่งว่างเพื่อนั่ง'}</div>
       </>
     );
   }
