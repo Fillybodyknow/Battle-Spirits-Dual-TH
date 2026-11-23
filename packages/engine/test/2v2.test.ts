@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { loadAllCards } from '@bs/cards';
 import { applyAction, createGame, payableCost, type Action, type GameState, type PlayerId, type Seat } from '../src';
 import { zonesOf } from '../src/seats';
+import { conditionHolds } from '../src/rules';
 
 /** โหมด 2VS2 (กติกา 15): สนามร่วม แยกโซนส่วนตัว เล่นพร้อมกันในเทิร์นทีม */
 const db = loadAllCards();
@@ -174,6 +175,51 @@ describe('2VS2', () => {
     expect(z(s, 'p1', 1).hand).toHaveLength(h1);
   });
 
+  it('จั่วแล้วทิ้ง: ให้เพื่อนจั่ว = เพื่อนเป็นคนทิ้งด้วย', () => {
+    let s = setup();
+    const src = z(s, 'p1', 1).hand[0]!;
+    const h0 = z(s, 'p1', 0).hand.length;
+    const h1 = z(s, 'p1', 1).hand.length;
+    s.queue = [{ controller: 'p1', sourceId: src, steps: [{ do: 'draw', count: 2 }, { do: 'discard', count: 1 }], paidWithSoul: false, trashWhenDone: false }];
+    s = act(s, { type: 'endMain', player: 'p1' });
+    expect((s.choice as { options: string[] }).options).toEqual(['เราจั่ว (และทิ้ง)', 'ให้เพื่อนร่วมทีมจั่ว (และทิ้ง)']);
+    s = act(s, { type: 'choose', player: 'p1', seat: 1, pick: 1 });
+    // ทิ้ง: เลือกจากมือของเพื่อน (ที่นั่ง 0)
+    expect(s.choice?.kind).toBe('card');
+    const cands = (s.choice as { candidates: string[] }).candidates;
+    expect(cands.every((id) => (s.cards[id]!.seat ?? 0) === 0)).toBe(true);
+    s = act(s, { type: 'choose', player: 'p1', pick: cands[0]! });
+    expect(z(s, 'p1', 0).hand).toHaveLength(h0 + 1);
+    expect(z(s, 'p1', 1).hand).toHaveLength(h1);
+  });
+
+  it('แทรชเรา = แทรชทั้งทีม: นำทั้งหมดกลับใต้เด็ค (วันโคมะ) = การ์ดกลับเด็คของเจ้าของแต่ละใบ', () => {
+    let s = setup();
+    const a = z(s, 'p1', 0).deck.splice(0, 2);
+    const b = z(s, 'p1', 1).deck.splice(0, 2);
+    z(s, 'p1', 0).trashCards.push(...a);
+    z(s, 'p1', 1).trashCards.push(...b);
+    const src = z(s, 'p1', 0).hand[0]!;
+    s.queue = [{ controller: 'p1', sourceId: src, steps: [{ do: 'trashToDeckBottom' }], paidWithSoul: false, trashWhenDone: false }];
+    s = act(s, { type: 'endMain', player: 'p1' });
+    // เรียงทีละกอง (ของเรา แล้วของเพื่อน) ถ้าการ์ดต่างชื่อ
+    for (let i = 0; i < 4 && s.choice?.kind === 'arrange'; i++) {
+      const ids = (s.choice as { cardIds: string[] }).cardIds;
+      s = act(s, { type: 'choose', player: 'p1', ...(ids.some((id) => (s.cards[id]!.seat ?? 0) === 1) ? { seat: 1 as Seat } : {}), pick: { order: ids } });
+    }
+    expect(z(s, 'p1', 0).trashCards).toHaveLength(0);
+    expect(z(s, 'p1', 1).trashCards).toHaveLength(0);
+    expect(z(s, 'p1', 0).deck.slice(-2).sort()).toEqual([...a].sort());
+    expect(z(s, 'p1', 1).deck.slice(-2).sort()).toEqual([...b].sort());
+  });
+
+  it('เงื่อนไขนับแทรช (trashAtLeast) นับแทรชทั้งทีม', () => {
+    const s = setup();
+    z(s, 'p1', 1).trashCards.push(...z(s, 'p1', 1).deck.splice(0, 3));
+    const src = z(s, 'p1', 0).hand[0]!;
+    expect(conditionHolds(s, src, { trashAtLeast: 3 })).toBe(true);
+  });
+
   it('ป้องกัน: คนใดคนหนึ่งประกาศป้องกัน = ทีมป้องกัน (โหวตไม่ป้องกันที่ค้างอยู่ถูกล้าง)', () => {
     let s = setup();
     const a = summon(s, 0);
@@ -264,6 +310,45 @@ describe('2VS2', () => {
     expect(z(s, 'p1', 0).burst).toBe(b0);
     expect(z(s, 'p1', 1).burst).toBe(b1);
     expect(fails(s, { type: 'setBurst', player: 'p1', cardId: b0b })).toBe('BURST_ALREADY_SET');
+  });
+
+  it('Catalyze สั่งใช้เบิร์สของเพื่อนร่วมทีมได้ · มีทั้งสองใบ = เลือก', () => {
+    const SOUL = no('โยไร สปาร์ค'); // [Soul Burst]
+    let s = setup();
+    const src = z(s, 'p1', 0).hand[0]!;
+    const b1 = z(s, 'p1', 1).hand[0]!;
+    s.cards[b1]!.cardNo = SOUL;
+    s = act(s, { type: 'setBurst', player: 'p1', seat: 1, cardId: b1 });
+    expect(conditionHolds(s, src, { catalyzable: 'any' })).toBe(false); // ยังไม่มีโซลคอร์บนการ์ดต้นเหตุ (ไม่ได้อยู่บนสนาม)
+    // เราไม่มีเบิร์ส: Catalyze ใช้เบิร์สของเพื่อนทันที
+    s.queue = [{ controller: 'p1', sourceId: src, steps: [{ do: 'catalyze' }], paidWithSoul: false, trashWhenDone: false }];
+    s = act(s, { type: 'endMain', player: 'p1' });
+    expect(z(s, 'p1', 1).burst).toBeNull();
+    // ทั้งสองคนมีโซลเบิร์ส: ถามว่าจะใช้ของใคร
+    let t = setup();
+    const src2 = z(t, 'p1', 0).hand[0]!;
+    const m0 = z(t, 'p1', 0).hand[1]!;
+    const m1 = z(t, 'p1', 1).hand[0]!;
+    t.cards[m0]!.cardNo = SOUL;
+    t.cards[m1]!.cardNo = SOUL;
+    t = act(t, { type: 'setBurst', player: 'p1', cardId: m0 });
+    t = act(t, { type: 'setBurst', player: 'p1', seat: 1, cardId: m1 });
+    t.queue = [{ controller: 'p1', sourceId: src2, steps: [{ do: 'catalyze' }], paidWithSoul: false, trashWhenDone: false }];
+    t = act(t, { type: 'endMain', player: 'p1' });
+    expect((t.choice as { options: string[] }).options).toEqual(['Catalyze: สั่งใช้เบิร์สของเรา', 'Catalyze: สั่งใช้เบิร์สของเพื่อนร่วมทีม']);
+    t = act(t, { type: 'choose', player: 'p1', pick: 1 });
+    expect(z(t, 'p1', 1).burst).toBeNull();
+    expect(z(t, 'p1', 0).burst).toBe(m0);
+  });
+
+  it('เงื่อนไข "มีเบิร์สของเราเซ็ทอยู่" นับเบิร์สของเพื่อนร่วมทีมด้วย (นัมบังมุฉะฮาคุไร)', () => {
+    let s = setup();
+    const mine = z(s, 'p1', 0).hand[0]!;
+    const b1 = z(s, 'p1', 1).hand[0]!;
+    s.cards[b1]!.cardNo = no('เบิร์สวอลล์');
+    expect(conditionHolds(s, mine, { ownBurstSet: true })).toBe(false);
+    s = act(s, { type: 'setBurst', player: 'p1', seat: 1, cardId: b1 });
+    expect(conditionHolds(s, mine, { ownBurstSet: true })).toBe(true);
   });
 
   it('ทีมแพ้เมื่อไลฟ์เป็น 0 ทั้งคู่', () => {

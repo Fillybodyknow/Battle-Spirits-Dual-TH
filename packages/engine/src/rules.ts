@@ -1,6 +1,6 @@
 import type { Ability, CardDatabase, CardDef, CardFilter, Condition, Step, SymbolColor } from '@bs/cards';
 import type { CardInstance, GameState, PlayerId } from './types';
-import { allZones, ownerZones } from './seats';
+import { allZones, ownerZones, teamTrash } from './seats';
 
 /** ข้อผิดพลาดจากการทำ action ผิดกติกา */
 export class RuleError extends Error {
@@ -400,7 +400,8 @@ export function conditionHolds(
   }
   if ('trashHas' in cond) {
     if (!db) return false;
-    return owner.trashCards.some((id) => matchesFilter(state, db, id, cond.trashHas));
+    // 2VS2: "แทรชเรา" = แทรชของทั้งทีม (เจ้าของโปรเจกต์กำหนด)
+    return teamTrash(state, card.owner).some((id) => matchesFilter(state, db, id, cond.trashHas));
   }
   if ('alliesAtLeast' in cond) {
     if (!db) return false;
@@ -429,13 +430,14 @@ export function conditionHolds(
   if ('kageTargeted' in cond) return card.kageTurn === state.turn;
   // ---------------- BS09
   if ('any' in cond) return cond.any.some((c) => conditionHolds(state, sourceId, c, paidWithSoul, catalyzed, db));
-  if ('trashAtLeast' in cond) return owner.trashCards.length >= cond.trashAtLeast;
+  if ('trashAtLeast' in cond) return teamTrash(state, card.owner).length >= cond.trashAtLeast;
   // ---------------- BS10
   if ('ownGemColor' in cond) return !!db && ownGemColors(state, db, card.owner).has(cond.ownGemColor);
-  if ('trashCoreAtLeast' in cond) return owner.trashCores.filter((c) => !state.cores[c]!.isSoul).length >= cond.trashCoreAtLeast;
+  if ('trashCoreAtLeast' in cond) return allZones(state, card.owner).flatMap((z) => z.trashCores).filter((c) => !state.cores[c]!.isSoul).length >= cond.trashCoreAtLeast;
   // ---------------- BS11
   // ---------------- BS12
-  if ('ownBurstSet' in cond) return owner.burst !== null && owner.burst !== undefined;
+  // 2VS2: "มีเบิร์สของเราเซ็ทอยู่" นับเบิร์สของทั้งทีม (เจ้าของโปรเจกต์กำหนด)
+  if ('ownBurstSet' in cond) return allZones(state, card.owner).some((z) => z.burst !== null && z.burst !== undefined);
   // ---------------- BS13
   if ('rush' in cond) {
     if (!db) return false;
@@ -459,9 +461,13 @@ export function conditionHolds(
   // ตรวจได้เฉพาะตอนประมวลผลเอฟเฟกต์ในคิว (ดู holds ใน effects.ts)
   if ('summonedByOnStage' in cond || 'summonedBy' in cond) return false;
   if ('catalyzable' in cond) {
-    if (!card.cores.some((id) => state.cores[id]!.isSoul) || !owner.burst || !db) return false;
-    const def = db.get(state.cards[owner.burst]!.cardNo);
-    return (cond.catalyzable === 'any' || def.colors.includes(cond.catalyzable)) && def.abilities.some((a) => a.kind === 'burst' && a.soul);
+    if (!card.cores.some((id) => state.cores[id]!.isSoul) || !db) return false;
+    // 2VS2: Catalyze สั่งใช้เบิร์สของเพื่อนร่วมทีมได้ (เจ้าของโปรเจกต์กำหนด)
+    return allZones(state, card.owner).some((z) => {
+      if (!z.burst) return false;
+      const def = db.get(state.cards[z.burst]!.cardNo);
+      return (cond.catalyzable === 'any' || def.colors.includes(cond.catalyzable)) && def.abilities.some((a) => a.kind === 'burst' && a.soul);
+    });
   }
   return paidWithSoul;
 }
@@ -574,7 +580,7 @@ export function costBoostSources(state: GameState, db: CardDatabase, cardId: str
 export function matchesFilter(state: GameState, db: CardDatabase, cardId: string, filter: CardFilter): boolean {
   const def = db.get(state.cards[cardId]!.cardNo);
   // การ์ดในแทรช: ใช้คอสต์ในแทรช ("การ์ดนี้ในแทรชถือว่ามีคอสต์ N": นาราคุ ↔ คุรามะ "คอสต์ไม่เกิน 4 ในแทรช")
-  const inTrash = state.players[state.cards[cardId]!.owner].trashCards.includes(cardId);
+  const inTrash = ownerZones(state, cardId).trashCards.includes(cardId);
   const costOf = () => (inTrash ? baseCost(state, db, cardId) : fieldCost(state, db, cardId, !!filter.ignoreBraveCost));
   // "การ์ดสปิริตนี้ ถือว่าเป็นการ์ดเมจิคด้วย" (ยูคิเกิร์ล / โบคุโบคุ)
   if (filter.types && !filter.types.includes(def.type) && !(filter.types.includes('magic') && def.abilities.some((a) => a.kind === 'alsoMagic'))) return false;
@@ -934,7 +940,7 @@ export function cardGems(state: GameState, db: CardDatabase, cardId: string): { 
 export function baseCost(state: GameState, db: CardDatabase, cardId: string): number {
   const card = state.cards[cardId]!;
   const def = db.get(card.cardNo);
-  const owner = state.players[card.owner];
+  const owner = ownerZones(state, cardId);
   // การ์ดที่วางแสดงนอกมือ (อันโกะ) ไม่ใช่การ์ดในมือ: ไม่รับผล "การ์ดในมือเรา...คอสต์" (กติกา 14 นอกมือ)
   const zone = owner.trashCards.includes(cardId) ? 'trash' : owner.hand.includes(cardId) && !(state.shownCards ?? []).includes(cardId) ? 'hand' : null;
   // BS07: "การ์ดสปิริตนี้, เมื่อมี ... ของเราอยู่, จะถือว่ามีคอสต์ N" / "ในเทิร์นนี้ การ์ด...ในมือ/นอกมือเรา คอสต์ -1" (ในมือหรือนอกมือ)
