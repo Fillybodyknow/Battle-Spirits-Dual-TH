@@ -1078,10 +1078,11 @@ type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K>
  * 2VS2: step ที่ลงผลกับโซนส่วนตัวของคู่แข่ง (เด็ค มือ เบิร์ส รีเสิร์ฟ) = ทำกับคู่แข่งทีละคน ทั้งสองคน (กติกา 15 ข้อ 8)
  * ไลฟ์ของคู่แข่ง (loseLife) ลดทั้งสองคนอยู่แล้ว ไม่ต้องอยู่ในนี้
  */
+/** 2VS2: "ทิ้ง/ดูเบิร์สคู่แข่ง 1 ใบ" = รวมทั้งทีม 1 ใบ (เจ้าของเอฟเฟกต์เลือกว่าของใคร) */
+const OPP_ONE_BURST_STEPS = new Set<string>(['discardOpponentBurst', 'peekOpponentBurst']);
+
 const OPP_ZONE_STEPS = new Set<string>([
   'mill',
-  'discardOpponentBurst',
-  'peekOpponentBurst',
   'opponentDiscardHandDraw',
   'opponentTrashSameNameToBottom',
   'peekHandDiscard',
@@ -1152,6 +1153,17 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
           { label: `ให้เพื่อนร่วมทีม${what}`, steps: [{ do: 'selfSeat', seat: other }, step, ...follow, { do: 'selfSeat', seat: null }] },
         ],
       });
+      return;
+    }
+    // "ทิ้ง/ดูเบิร์สคู่แข่ง 1 ใบ": ทั้งทีมคู่แข่งรวม 1 ใบ · เจ้าของเอฟเฟกต์เลือกว่าของใคร (มีใบเดียว = ไม่ถาม)
+    if (item.oppSeat === undefined && OPP_ONE_BURST_STEPS.has(step.do) && s.players[opponentOf(me)].partner) {
+      const opp = opponentOf(me);
+      const seats = ([0, 1] as const).filter((k) => zonesOf(s, opp, k).burst != null);
+      if (seats.length === 0) return;
+      const run = (k: 0 | 1): Step[] => [{ do: 'oppSeat', seat: k }, step, { do: 'oppSeat', seat: null }];
+      const verb = step.do === 'discardOpponentBurst' ? 'ทิ้ง' : 'ดู';
+      if (seats.length === 1) item.steps.unshift(...run(seats[0]!));
+      else item.steps.unshift({ do: 'chooseOne', options: seats.map((k) => ({ label: `${verb}เบิร์สของคู่แข่งคนที่ ${k + 1}`, steps: run(k) })) });
       return;
     }
     if (item.oppSeat === undefined && OPP_ZONE_STEPS.has(step.do) && s.players[opponentOf(me)].partner) {

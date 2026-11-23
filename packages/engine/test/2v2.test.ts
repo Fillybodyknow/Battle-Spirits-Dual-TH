@@ -341,6 +341,27 @@ describe('2VS2', () => {
     expect(z(t, 'p1', 0).burst).toBe(m0);
   });
 
+  it('ทิ้งเบิร์สคู่แข่ง 1 ใบ = ทั้งทีมคู่แข่งรวม 1 ใบ · มีทั้งสองใบ = เลือกว่าของใคร', () => {
+    let s = setup();
+    const src = z(s, 'p1', 0).hand[0]!;
+    const b0 = z(s, 'p2', 0).hand.shift()!;
+    const b1 = z(s, 'p2', 1).hand.shift()!;
+    z(s, 'p2', 0).burst = b0;
+    z(s, 'p2', 1).burst = b1;
+    s.queue = [{ controller: 'p1', sourceId: src, steps: [{ do: 'discardOpponentBurst' }], paidWithSoul: false, trashWhenDone: false }];
+    s = act(s, { type: 'endMain', player: 'p1' });
+    expect((s.choice as { options: string[] }).options).toEqual(['ทิ้งเบิร์สของคู่แข่งคนที่ 1', 'ทิ้งเบิร์สของคู่แข่งคนที่ 2']);
+    s = act(s, { type: 'choose', player: 'p1', pick: 1 });
+    expect(z(s, 'p2', 0).burst).toBe(b0);
+    expect(z(s, 'p2', 1).burst).toBeNull();
+    expect(z(s, 'p2', 1).trashCards).toContain(b1);
+    // เหลือใบเดียว: ทิ้งใบนั้นเลยไม่ถาม
+    s.queue = [{ controller: 'p1', sourceId: src, steps: [{ do: 'discardOpponentBurst' }], paidWithSoul: false, trashWhenDone: false }];
+    s = act(s, { type: 'endMain', player: 'p1', seat: 1 });
+    expect(z(s, 'p2', 0).burst).toBeNull();
+    expect(z(s, 'p2', 0).trashCards).toContain(b0);
+  });
+
   it('เงื่อนไข "มีเบิร์สของเราเซ็ทอยู่" นับเบิร์สของเพื่อนร่วมทีมด้วย (นัมบังมุฉะฮาคุไร)', () => {
     let s = setup();
     const mine = z(s, 'p1', 0).hand[0]!;
