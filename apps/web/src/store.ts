@@ -16,6 +16,7 @@ import {
   activeSeat,
   actorOf,
   actorSeats,
+  seatFree,
   burstSetDone,
   ownField,
   seatOfCard,
@@ -1826,6 +1827,8 @@ export function partnerTurn(s: GameState, player: PlayerId | null | undefined): 
   // ฝั่งบอท (คู่แข่ง) / ทีมคู่แข่ง (ออนไลน์) ไม่ใช่ทีมของเรา
   if (st.botSeat === player) return false;
   if (st.online && (st.online.spectator || st.online.me !== player)) return false;
+  // เมน/แอทแท็คสเต็ปของทีมเรา: สองคนเล่นพร้อมกันได้ (กติกา 15 ข้อ 3) ไม่ต้องรอคนแรกกดพร้อมก่อน
+  if (seatFree(s, player, mySeat())) return false;
   return !actorSeats(s).includes(mySeat());
 }
 
