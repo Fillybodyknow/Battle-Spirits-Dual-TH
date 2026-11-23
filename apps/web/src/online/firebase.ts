@@ -43,8 +43,10 @@ function toInfo(v: unknown): RoomInfo | null {
     avatars?: RoomInfo['avatars'];
     levels?: RoomInfo['levels'];
     meta?: RoomInfo['meta'];
-    setup?: { round: number; seed: number; decks?: { p1?: string; p2?: string }; first?: 'p1' | 'p2' };
+    setup?: { round: number; seed: number; decks?: { p1?: string; p2?: string }; first?: 'p1' | 'p2'; partnerDecks?: { p1?: string; p2?: string } };
   };
+  // Team Battle (2VS2): เด็คของคนที่สองของแต่ละทีม · ต้องส่งต่อ ไม่งั้นทุกเครื่องสร้างเกม 1VS1
+  const pd = r.setup?.partnerDecks;
   if (!r.setup || !r.setup.decks?.p1) return null;
   return {
     seats: r.seats ?? {},
@@ -58,6 +60,7 @@ function toInfo(v: unknown): RoomInfo | null {
       seed: r.setup.seed,
       decks: { p1: r.setup.decks.p1, p2: r.setup.decks.p2 ?? null },
       ...(r.setup.first ? { first: r.setup.first } : {}),
+      ...(pd?.p1 && pd?.p2 ? { partnerDecks: { p1: pd.p1, p2: pd.p2 } } : {}),
     },
   };
 }

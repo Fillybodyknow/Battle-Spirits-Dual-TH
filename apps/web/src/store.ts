@@ -3441,7 +3441,8 @@ export const useGame = create<Store>((set, get) => {
       const on = get().online;
       if (!on || on.spectator || on.me !== 'p1' || !on.setup) return;
       // รอบใหม่: โยนเหรียญและเลือกผู้เริ่มก่อนใหม่ (ไม่เอา first ของรอบก่อน)
-      void transport.setSetup(on.code, { round: on.setup.round + 1, seed: randomSeed(), decks: on.setup.decks });
+      // Team Battle: เก็บเด็คของคนที่สองไว้ด้วย ไม่งั้นรอบใหม่กลายเป็น 1VS1
+      void transport.setSetup(on.code, { round: on.setup.round + 1, seed: randomSeed(), decks: on.setup.decks, ...(on.setup.partnerDecks ? { partnerDecks: on.setup.partnerDecks } : {}) });
     },
     fx: [{ id: ++fxSeq, kind: 'banner', tone: 'turn', title: 'เทิร์นที่ 1', sub: 'เริ่มเกม' }],
     selectedHandCard: null,

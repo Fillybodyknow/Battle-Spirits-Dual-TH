@@ -16,6 +16,11 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '42.1.1',
+    date: '2026-11-23',
+    items: ['แก้: Team Battle ออนไลน์ เริ่มเกมแล้วกลายเป็นดวล 1VS1 (ตอนนี้เป็น 2VS2 ครบ 4 คน) · กดเล่นใหม่ก็ยังเป็น 2VS2'],
+  },
+  {
     version: '42.1.0',
     date: '2026-11-23',
     items: [
