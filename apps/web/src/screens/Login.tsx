@@ -116,10 +116,26 @@ function Emblem() {
 /**
  * hold = ค้างฉากนี้ไว้ (ID ใหม่: รอเลือกเริ่มบทเรียน/ข้าม) การ์ดพุ่งวนไม่หยุด ไม่มีแสงวาบ
  * leaving = แสงวาบทันที (ออกจากฉากค้าง)
+ * layer = ชั้นของฉาก (ค่าเริ่มต้นทับทุกอย่าง · หน้า Solo ใช้เป็นพื้นหลัง: `<WarpOut hold layer="z-0" />`)
+ * cards = จำนวนการ์ดที่พุ่ง (ค่าเริ่มต้น 12 / กราฟิกต่ำ 7) · slow = คูณเวลาการ์ดพุ่ง (มาก = ช้าลง)
  */
-function WarpOut({ hold = false, leaving = false, progress = null }: { hold?: boolean; leaving?: boolean; progress?: PreloadProgress | null }) {
+export function WarpOut({
+  hold = false,
+  leaving = false,
+  progress = null,
+  layer = 'z-50',
+  cards: cardCount,
+  slow = 1,
+}: {
+  hold?: boolean;
+  leaving?: boolean;
+  progress?: PreloadProgress | null;
+  layer?: string;
+  cards?: number;
+  slow?: number;
+}) {
   // การ์ดน้อย ใหญ่ ช้า ให้มองเห็นแต่ละใบชัด (เจ้าของโปรเจกต์ปรับ: เดิม 28 ใบ เล็กและเร็วเกินไป)
-  const count = effects().blur ? 12 : 7;
+  const count = cardCount !== undefined ? (effects().blur ? cardCount : Math.ceil(cardCount * 0.6)) : effects().blur ? 12 : 7;
   const fronts = useMemo(
     () =>
       db
@@ -129,21 +145,29 @@ function WarpOut({ hold = false, leaving = false, progress = null }: { hold?: bo
     [],
   );
   const cards = Array.from({ length: count }, (_, i) => {
-    const a = (i * 137.5 * Math.PI) / 180;
-    const r = 55 + ((i * 23) % 50);
+    // อุโมงค์ทรงกระบอก 3 มิติ (เจ้าของโปรเจกต์กำหนด): การ์ดทุกใบอยู่บนผนังกระบอกรัศมีเดียวกัน วางรอบวงเท่า ๆ กัน
+    // แล้ววิ่งตามแกนลึก (z) เข้าหากล้อง · ตำแหน่ง x/y คงที่ perspective ทำให้ไกล = ใกล้กลางจอ ใกล้ = ขยายออกขอบจอเอง จึงเห็นเป็นวงอุโมงค์
+    const a = ((i * 360) / count + ((i * 37) % 23) - 11) * (Math.PI / 180);
+    const R = 30 + ((i * 13) % 4);
+    const x = `${Math.cos(a) * R}vmax`;
+    const y = `${Math.sin(a) * R * 0.8}vmax`;
     return {
-      dx: `${Math.cos(a) * r}vmax`,
-      dy: `${Math.sin(a) * r * 0.75}vmax`,
-      rx: `${((i * 71) % 140) - 70}deg`,
-      ry: `${((i * 53) % 160) - 80}deg`,
-      rz: `${((i * 97) % 360) - 180}deg`,
-      delay: i * 0.1,
-      dur: 1.8 + ((i * 7) % 5) * 0.15,
+      sx: x,
+      sy: y,
+      dx: x,
+      dy: y,
+      // การ์ดนอนแนบผนังอุโมงค์: หมุนตามมุมรอบกลาง (หัวชี้เข้ากลาง) แล้วพับลงเกือบขนานกับแกนลึก หน้าการ์ดหันเข้าหาแกนกลาง
+      rx: `${74 + ((i * 7) % 3) * 4}deg`,
+      ry: '0deg',
+      rz: `${(a * 180) / Math.PI - 90}deg`,
+      // เริ่มกลางทาง (ดีเลย์ติดลบ) ที่ความลึกต่างกัน: อุโมงค์เต็มตั้งแต่เฟรมแรก ไม่ต้องรอการ์ดค่อย ๆ ออกมา
+      delay: -((i * 0.618) % 1) * (4.4 + ((i * 7) % 5) * 0.3) * slow,
+      dur: (4.4 + ((i * 7) % 5) * 0.3) * slow,
       art: i % 3 === 0 && fronts.length ? cardArt(fronts[(i * 31) % fronts.length]!) : IMG.cardBack,
     };
   });
   return (
-    <div className="pointer-events-none absolute inset-0 z-50 overflow-hidden bg-[#05030c]" style={{ animation: 'login-warp-bg 0.35s ease-out both' }}>
+    <div className={`pointer-events-none absolute inset-0 ${layer} overflow-hidden bg-[#05030c]`} style={{ animation: 'login-warp-bg 0.35s ease-out both' }}>
       {/* เนบิวลาม่วง-ฟ้าหมุนวนเข้าศูนย์กลาง (ดำแค่รูตรงกลาง) */}
       <div
         className="absolute top-1/2 left-1/2 h-[280vmax] w-[280vmax] -translate-x-1/2 -translate-y-1/2 rounded-full"
@@ -189,7 +213,7 @@ function WarpOut({ hold = false, leaving = false, progress = null }: { hold?: bo
         );
       })}
       {/* การ์ดพุ่งเข้าหากล้อง */}
-      <div className="absolute inset-0" style={{ perspective: '900px' }}>
+      <div className="absolute inset-0" style={{ perspective: '380px' }}>
         {cards.map((c, i) => (
           <img
             key={i}
@@ -199,12 +223,14 @@ function WarpOut({ hold = false, leaving = false, progress = null }: { hold?: bo
             className="absolute top-1/2 left-1/2 w-[15vw] min-w-28 rounded-lg shadow-[0_0_24px_rgba(167,139,250,0.55)] ring-1 ring-amber-200/40"
             style={
               {
+                '--sx': c.sx,
+                '--sy': c.sy,
                 '--dx': c.dx,
                 '--dy': c.dy,
                 '--rx': c.rx,
                 '--ry': c.ry,
                 '--rz': c.rz,
-                animation: `login-warp-card ${c.dur}s cubic-bezier(.55,0,.9,.5) ${c.delay}s ${hold ? 'infinite' : 'both'}`,
+                animation: `login-warp-card ${c.dur}s linear ${c.delay}s ${hold ? 'infinite backwards' : 'both'}`,
               } as React.CSSProperties
             }
           />

@@ -15,6 +15,12 @@ const BLINK = () => card('เคล็ดวิชาเคลื่อนย้
 const NOMIKAGE = () => card('นินจาผีเสื้อราตรีสวมเกราะ โนมิคาเงะ');
 const DARIU = () => card('มุฉะดาริว');
 
+// ---------------------------------------------------------------- แคว้นเปลวเพลิง: เด็คทัพมังกรยุทธ์
+const SHIPPU = () => card('ชิปปูดราก้อน'); // True-Rage: เมื่อโจมตี คู่แข่งต้องป้องกันถ้าทำได้ · Lv1 BP 4000
+const HIRIN = () => card('วาคะมุฉะ ฮิรินมารุ'); // Lv2 (2 คอร์) เมื่อโจมตี: ทำลายเน็กซัส 1 ใบ + มีโซลคอร์ = ทำลายสปิริต BP ≤ 8000 อีก 1 ตัว
+const JINRAI_D = () => card('จินไรดราก้อน'); // เมื่อโจมตี BP+3000
+const VALLEY = () => card('หุบเหวร้อยปราชญ์'); // เน็กซัสของคู่แข่ง (เป้าของฮิรินมารุ)
+
 const flashMine = (s: GameState) => s.battle?.flash?.priority === 'p1';
 
 export const STORY_LESSONS: Lesson[] = [
@@ -140,6 +146,95 @@ export const STORY_LESSONS: Lesson[] = [
         text: (s) =>
           s.winner === 'p1'
             ? 'ชนะในเทิร์นเดียว! นี่คือวิถีของวายุนินจา\n· โซลคอร์บนนินจาปลดล็อกเอฟเฟกต์\n· ทำให้คู่แข่งเสื่อมสภาพ (ป้องกันไม่ได้ และชิโนบิริกะนำกลับขึ้นมือได้)\n· ฟื้นสภาพนินจาเพื่อโจมตีซ้ำ\nในเด็คยังมีคุวากะสเลเยอร์ (อัญเชิญนินจาจากเด็คฟรี) และคิริคาเงะ (อัญเชิญด้วยโซลคอร์เม็ดเดียว) ลองใช้ในการดวลจริงดู!'
+            : 'Life ของเราหมดก่อน… ลองใหม่อีกครั้ง',
+      },
+    ],
+  },
+  {
+    id: 'war-dragon',
+    title: 'วิถีแห่งทัพมังกร',
+    sub: 'เด็คทัพมังกรยุทธ์: True-Rage บังคับคู่แข่งป้องกัน · โซลคอร์ปลุกพลังมังกร',
+    passed: (s) => s.winner === 'p1',
+    setup: () => {
+      let s = game([], { firstPlayerSkipsAttackStep: false, initialReserve: 8 });
+      s = act(s, { type: 'drawStep', player: 'p1' });
+      s = structuredClone(s);
+      const shippu = put(s, 'p1', SHIPPU(), 1);
+      const hirin = put(s, 'p1', HIRIN(), 1);
+      // โซลคอร์ของเราย้ายจากรีเสิร์ฟไปวางบนฮิรินมารุ (2 คอร์ = Lv2 และเปิดเอฟเฟกต์โซลคอร์)
+      const soul = s.players.p1.reserve.find((c) => s.cores[c]!.isSoul)!;
+      s.players.p1.reserve = s.players.p1.reserve.filter((c) => c !== soul);
+      s.cards[hirin]!.cores.push(soul);
+      const jinrai = put(s, 'p1', JINRAI_D(), 1);
+      // คู่แข่ง: ตัวเล็ก BP 3000 · ตัวใหญ่ BP 8000 · เน็กซัส 1 ใบ · Life 2
+      const small = put(s, 'p2', card('มุฉะดาริว'), 1);
+      const guard = put(s, 'p2', card('มุฉะดาริว'), 5);
+      const nexus = put(s, 'p2', VALLEY(), 0);
+      s.players.p2.life = s.players.p2.life.slice(0, 2);
+      return { state: s, ids: { shippu, hirin, jinrai, small, guard, nexus } };
+    },
+    // True-Rage บังคับป้องกัน: คู่แข่งเลือกเสียตัวเล็ก · อื่น ๆ = บอทพื้นฐาน (ป้องกันเมื่อ BP สูงกว่า)
+    bot: (s, ids) =>
+      s.battle?.step === 'declareBlock' && s.battle.attackerId === ids.shippu && s.players.p2.field.includes(ids.small!)
+        ? { type: 'declareBlock', player: 'p2', blockerId: ids.small! }
+        : null,
+    steps: [
+      {
+        text: 'เด็คทัพมังกรยุทธ์: มังกรนักรบที่บุกไม่ถอย บังคับให้ศัตรูต้องรับดาบ\nบทนี้จะพาดูลูกเล่น 2 อย่างของเด็คนี้ แล้วปิดเกมให้ได้ในเทิร์นเดียว',
+      },
+      {
+        text: 'สนามคู่แข่ง: มุฉะดาริวตัวเล็ก (BP 3,000) ตัวใหญ่ (BP 8,000) และเน็กซัส 1 ใบ · Life เหลือ 2\nถ้าโจมตีตามปกติ คู่แข่งจะเก็บตัวใหญ่ไว้ป้องกันทุกครั้ง',
+        focus: (ids) => [field(ids.small!), field(ids.guard!), field(ids.nexus!)],
+      },
+      {
+        text: 'ลูกเล่นที่ 1: True-Rage\nชิปปูดราก้อน: เมื่อโจมตี คู่แข่งต้องสั่งสปิริตเข้าป้องกัน ถ้าทำได้\nคู่แข่งรับด้วย Life ไม่ได้ ต้องเสียสปิริตมาป้องกัน แม้จะไม่อยากก็ตาม',
+        focus: (ids) => [field(ids.shippu!)],
+      },
+      {
+        text: 'ไป Attack Step: กดป้ายสเต็ปกลางจอ แล้วเลือก "Attack"',
+        focus: () => ['[data-tutorial="turn-badge"]', '[data-tutorial="step-attack"]'],
+        expect: (a) => a.type === 'endMain',
+        until: (s) => s.phase === 'attack',
+      },
+      {
+        text: 'โจมตีด้วยชิปปูดราก้อน · คลิกสปิริต แล้วกดปุ่มดาบ',
+        focus: (ids) => [field(ids.shippu!), SWORD],
+        expect: (a, ids) => a.type === 'declareAttack' && a.attackerId === ids.shippu,
+        // มือว่าง: Flash ผ่านให้อัตโนมัติ การต่อสู้จบเอง
+        until: (s) => !s.battle,
+      },
+      {
+        text: 'True-Rage ทำงาน! คู่แข่งรับด้วย Life ไม่ได้ ถูกบังคับให้ส่งตัวเล็กมาป้องกัน และแพ้ BP ของชิปปูดราก้อน (4,000) จึงถูกทำลาย\nTrue-Rage ช่วยเคลียร์ตัวป้องกันของคู่แข่งทีละตัว',
+        focus: (ids) => [field(ids.shippu!)],
+      },
+      {
+        text: 'ลูกเล่นที่ 2: โซลคอร์ปลุกพลังมังกร\nวาคะมุฉะ ฮิรินมารุ (Lv2): เมื่อโจมตี ทำลายเน็กซัสคู่แข่ง 1 ใบ และเมื่อมีโซลคอร์ ทำลายสปิริต BP ไม่เกิน 8,000 อีก 1 ตัว\nโจมตีด้วยฮิรินมารุ · คลิกสปิริต แล้วกดปุ่มดาบ',
+        focus: (ids) => [field(ids.hirin!), SWORD],
+        expect: (a, ids) => a.type === 'declareAttack' && a.attackerId === ids.hirin,
+        until: (s) => s.choice?.kind === 'card' || flashMine(s),
+      },
+      {
+        text: 'ฮิรินมารุทำงาน! เลือกเน็กซัสของคู่แข่งเพื่อทำลาย',
+        focus: (ids) => [field(ids.nexus!)],
+        expect: (a, ids) => a.type === 'choose' && a.pick === ids.nexus,
+        until: (s, ids) => (s.choice?.kind === 'card' && s.choice.candidates.includes(ids.guard!)) || !s.players.p2.field.includes(ids.guard!),
+      },
+      {
+        text: 'ฮิรินมารุมีโซลคอร์: ทำลายสปิริต BP ไม่เกิน 8,000 ได้อีก 1 ตัว\nเลือกมุฉะดาริวตัวใหญ่ที่คู่แข่งเก็บไว้ป้องกัน',
+        focus: (ids) => [field(ids.guard!)],
+        expect: (a, ids) => a.type === 'choose' && a.pick === ids.guard,
+        until: (s, ids) => !s.players.p2.field.includes(ids.guard!) && !s.choice && !s.battle,
+      },
+      {
+        text: 'ตัวป้องกันหมดแล้ว ฮิรินมารุโจมตีเข้า Life ได้! คู่แข่งเหลือ Life 1 · โจมตีปิดเกมด้วยจินไรดราก้อน',
+        focus: (ids) => [field(ids.jinrai!), SWORD],
+        free: true,
+        until: (s) => !!s.winner,
+      },
+      {
+        text: (s) =>
+          s.winner === 'p1'
+            ? 'ชนะในเทิร์นเดียว! นี่คือวิถีของทัพมังกรยุทธ์\n· True-Rage บังคับคู่แข่งเสียสปิริตมาป้องกัน\n· โซลคอร์ปลุกเอฟเฟกต์ของมังกร (ฮิรินมารุทำลายตัวป้องกันได้)\nในเด็คยังมีจินไรดราก้อน (มีโซลคอร์ = ได้ True-Rage), เอ็นชินสไตรค์ (ทำลายตัวเล็ก 2 ตัว) และปราสาทมังกรระอุ (ให้ True-Rage ทั้งทัพ) ลองใช้ในการดวลจริงดู!'
             : 'Life ของเราหมดก่อน… ลองใหม่อีกครั้ง',
       },
     ],

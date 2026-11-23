@@ -22,14 +22,21 @@ import { CardArt, DeckTile } from './shared';
 import { startTutorial, useTutorial } from '../tutorial/tutorial';
 import { addExp } from '../progression/level';
 import { LESSONS } from '../tutorial/lessons';
+import { WarpOut } from './Login';
+import { IMG } from '../assets';
 
 export function Solo() {
   const view = useSolo((s) => s.view);
   const intro = useSolo((s) => s.intro);
   const reading = useSolo((s) => s.reading);
   return (
-    <div className="game-bg relative flex h-screen min-w-[1200px] flex-col overflow-hidden">
-      {view === 'home' ? <SoloHome /> : view === 'stories' ? <Stories /> : <GateMap />}
+    <div className="relative flex h-screen min-w-[1200px] flex-col overflow-hidden bg-[#05030c]">
+      {/* พื้นหลัง = ฉากวาร์ปเดียวกับหน้าโหลดก่อนเข้าเมนูหลัก (วนค้าง ไม่มีแสงวาบ) + ชั้นมืดบาง ๆ ให้อ่านง่าย */}
+      <WarpOut hold layer="z-0" cards={5} slow={1.65} />
+      <div className="pointer-events-none absolute inset-0 z-0 bg-[radial-gradient(ellipse_at_center,rgba(2,1,10,0.25),rgba(2,1,10,0.6))]" />
+      <div className="relative z-10 flex min-h-0 flex-1 flex-col">
+        {view === 'home' ? <SoloHome /> : view === 'stories' ? <Stories /> : <GateMap />}
+      </div>
       {view === 'gate' && intro && <GateIntro />}
       {view === 'gate' && reading && <Reader />}
     </div>
@@ -146,7 +153,7 @@ function SoloHome() {
           <section className="flex-1 rounded-2xl border border-white/20 bg-slate-900/50 p-4">
             <div className="mb-2 text-lg font-bold text-white">เล่นล่าสุด</div>
             {last ? (
-              <GateTile gate={last} className="h-56 w-full" onClick={() => openGate(last.id, false)} />
+              <GateTile gate={last} className="h-56 w-full" onClick={() => openGate(last.id, true)} />
             ) : (
               <div className="flex h-56 items-center justify-center rounded-lg border border-dashed border-white/20 text-sm text-slate-400">ยังไม่ได้เล่นด่านไหน</div>
             )}
@@ -251,22 +258,59 @@ function Stories() {
 
 // ---------------------------------------------------------------- ฉากเปิดการ์ด
 
+/** เวลาฉากเปิดการ์ดทั้งหมด (ms): ลอยออกจากกลางจอ เอียงขวา หงายไปพร้อมกับลอยเข้ามา → พุ่งเข้าหน้าจอ + แสงวาบ → แสงจางเผยแผนที่ */
+const GATE_INTRO_MS = 3600;
+
+/**
+ * ฉากเข้าเนื้อเรื่อง: ฉากวาร์ปเต็มจอ (ไม่เห็นแผนที่จนแสงวาบ) · การ์ดของบทลอยออกมาจากกลางจอแบบเอียงและคว่ำ แล้วหงายหน้า
+ * จากนั้นพุ่งเข้าหน้าจอพร้อมแสงวาบขาวเต็มจอ แล้วจางเผยแผนที่ · แตะ = ข้าม (แสงวาบทันที)
+ */
 function GateIntro() {
   const gate = gateById(useSolo((s) => s.gateId));
+  const [skip, setSkip] = useState(false);
   useEffect(() => {
-    const t = setTimeout(() => useSolo.setState({ intro: false }), 2400);
+    const t = setTimeout(() => useSolo.setState({ intro: false }), skip ? 450 : GATE_INTRO_MS);
     return () => clearTimeout(t);
-  }, []);
+  }, [skip]);
   if (!gate) return null;
+  const ms = GATE_INTRO_MS;
   return (
-    <div className="absolute inset-0 z-40 flex cursor-pointer items-center justify-center overflow-hidden bg-slate-950/95" onClick={() => useSolo.setState({ intro: false })}>
-      <div className="absolute h-[140%] w-[140%]" style={{ background: 'radial-gradient(circle, rgba(129,140,248,0.45), rgba(76,29,149,0.25) 35%, transparent 65%)', animation: 'solo-intro-glow 2.4s ease-out both' }} />
-      <div style={{ animation: 'solo-card-in 2.4s cubic-bezier(.2,.8,.2,1) both' }}>
-        <CardArt cardNo={gate.cardNo} className="h-[26rem] w-auto rounded-2xl shadow-[0_0_60px_rgba(165,180,252,0.6)]" />
+    <div className="absolute inset-0 z-40 cursor-pointer overflow-hidden" onClick={() => setSkip(true)}>
+      {/* ฉากวาร์ปทึบเต็มจอ ซ่อนแผนที่จนถึงแสงวาบ */}
+      <div className="absolute inset-0 bg-[#05030c]" style={{ animation: `solo-gate-bg ${skip ? 450 : ms}ms linear both` }}>
+        {/* การ์ดฉากวาร์ปน้อยและช้า: ไม่ให้แย่งสายตาจากการ์ดของบทที่ลอยออกจากกลางจอ */}
+        <WarpOut hold layer="z-0" cards={4} slow={1} />
       </div>
-      <div className="absolute bottom-10 text-3xl font-black tracking-wide text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]" style={{ animation: 'fx-slide-up 0.6s 0.9s ease-out both' }}>
-        {gate.title}
-      </div>
+      {!skip && (
+        <div className="absolute inset-0 flex items-center justify-center" style={{ perspective: '1100px' }}>
+          {/* แสงหลังการ์ด */}
+          <div
+            className="absolute h-[70vmin] w-[70vmin] rounded-full"
+            style={{ background: 'radial-gradient(circle, rgba(196,181,253,0.6), rgba(76,29,149,0.28) 45%, transparent 70%)', animation: `solo-gate-glow ${ms}ms ease-in both` }}
+          />
+          {/* การ์ดของบท: ลอยออกจากกลางจอแบบเอียง (คว่ำ) → หงาย → พุ่งเข้าจอ */}
+          <div className="relative h-[26rem] w-[18.6rem]" style={{ transformStyle: 'preserve-3d', animation: `solo-gate-card ${ms}ms linear both` }}>
+            <div className="absolute inset-0" style={{ transformStyle: 'preserve-3d', animation: `solo-gate-flip ${ms}ms linear both` }}>
+              <CardArt
+                cardNo={gate.cardNo}
+                className="absolute inset-0 h-full w-full rounded-2xl shadow-[0_0_60px_rgba(196,181,253,0.7)] ring-2 ring-amber-200/50 [backface-visibility:hidden]"
+              />
+              <img
+                src={IMG.cardBack}
+                alt=""
+                draggable={false}
+                className="absolute inset-0 h-full w-full rounded-2xl shadow-[0_0_40px_rgba(167,139,250,0.6)] [backface-visibility:hidden]"
+                style={{ transform: 'rotateY(180deg)' }}
+              />
+            </div>
+          </div>
+          <div className="absolute bottom-10 text-3xl font-black tracking-wide text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]" style={{ animation: `solo-gate-title ${ms}ms ease-out both` }}>
+            {gate.title}
+          </div>
+        </div>
+      )}
+      {/* แสงวาบตอนการ์ดพุ่งเข้าจอ แล้วจางเผยแผนที่ */}
+      <div className="pointer-events-none absolute inset-0 bg-white" style={{ animation: skip ? 'solo-gate-flash-skip 450ms ease-out both' : `solo-gate-flash ${ms}ms linear both` }} />
     </div>
   );
 }
@@ -277,6 +321,8 @@ const NODE_W = 150;
 const NODE_H = 170;
 const GAP_X = 50;
 const GAP_Y = 70;
+/** ช่องไฟแนวตั้งของแผนที่ 3 แถว */
+const GAP_Y_3 = 20;
 const KIND: Record<GateNode['kind'], { label: string; icon: IconName }> = {
   scenario: { label: 'เนื้อเรื่อง', icon: 'book' },
   practice: { label: 'ฝึกซ้อม', icon: 'cap' },
@@ -299,9 +345,12 @@ function GateMap() {
     return () => clearTimeout(t);
   }, [picked]);
   if (!gate) return null;
-  const pos = (n: GateNode) => ({ x: n.col * (NODE_W + GAP_X), y: n.row * (NODE_H + GAP_Y) });
+  // แผนที่ 2 หรือ 3 แถว (3 แถว = ช่องไฟแนวตั้งแคบลงให้พอดีจอ)
+  const rows = Math.max(...gate.nodes.map((n) => n.row)) + 1;
+  const gapY = rows > 2 ? GAP_Y_3 : GAP_Y;
+  const pos = (n: GateNode) => ({ x: n.col * (NODE_W + GAP_X), y: n.row * (NODE_H + gapY) });
   const width = Math.max(...gate.nodes.map((n) => pos(n).x)) + NODE_W;
-  const height = NODE_H * 2 + GAP_Y;
+  const height = NODE_H * Math.max(2, rows) + gapY * (Math.max(2, rows) - 1);
   const here = nextNode(progress, gate);
   // ตำแหน่งของเรา (รูปโปรไฟล์หกเหลี่ยม): โหนดที่ต้องเล่นต่อ · ผ่านครบแล้ว = โหนดสุดท้ายที่ผ่าน
   const at = here ?? [...gate.nodes].reverse().find((n) => nodeCleared(progress, gate, n)) ?? null;
@@ -333,33 +382,41 @@ function GateMap() {
         <div ref={mapRef} className={`flex items-center overflow-x-auto overflow-y-hidden transition-[width] duration-300 ${node ? 'w-[44%]' : 'w-full'}`} onClick={() => setPicked(null)}>
           <div className="relative mx-auto shrink-0 px-16" style={{ width: width + 128, height }}>
             <svg className="absolute inset-y-0 left-16 overflow-visible" width={width} height={height}>
-              {gate.nodes.flatMap((n) =>
-                (n.after ?? []).map((id) => {
-                  const prev = gate.nodes.find((x) => x.id === id);
+              {gate.nodes
+                // after = ต้องผ่านทุกเส้น · afterAny = ทางแยกที่ผ่านเส้นไหนก็ได้ (เส้นเหมือนกัน)
+                .flatMap((n) => [...(n.after ?? []), ...(n.afterAny ?? [])].map((id) => ({ n, prev: gate.nodes.find((x) => x.id === id) })))
+                // เส้นที่ผ่านแล้ว (เรืองแสง) วาดทีหลัง: ทางแยกที่ใช้แนวตั้งร่วมกัน เส้นเทาจะไม่ทับเส้นเรืองแสง
+                .sort((x, y) => Number(!!x.prev && nodeCleared(progress, gate, x.prev)) - Number(!!y.prev && nodeCleared(progress, gate, y.prev)))
+                .map(({ n, prev }) => {
                   if (!prev) return null;
+                  const id = prev.id;
                   const a = pos(prev);
                   const b = pos(n);
                   const lit = nodeCleared(progress, gate, prev);
-                  const x1 = a.x + NODE_W;
-                  const y1 = a.y + (a.y > b.y ? 0 : a.y < b.y ? NODE_H : NODE_H / 2);
-                  const x2 = b.x;
-                  const y2 = b.y + NODE_H / 2;
-                  const sameCol = prev.col === n.col;
+                  // เส้นตั้งตรง/นอนราบเท่านั้น (เจ้าของโปรเจกต์กำหนด): คอลัมน์เดียวกัน = เส้นตั้ง · ต่างคอลัมน์ = ออกขอบขวา → เลี้ยวตั้งตรงกลางช่องว่าง → เข้าขอบซ้าย
+                  let d: string;
+                  if (prev.col === n.col) {
+                    const x = a.x + NODE_W / 2;
+                    d = a.y < b.y ? `M${x} ${a.y + NODE_H} V${b.y}` : `M${x} ${a.y} V${b.y + NODE_H}`;
+                  } else {
+                    const y1 = a.y + NODE_H / 2;
+                    const y2 = b.y + NODE_H / 2;
+                    const mid = b.x - GAP_X / 2;
+                    d = y1 === y2 ? `M${a.x + NODE_W} ${y1} H${b.x}` : `M${a.x + NODE_W} ${y1} H${mid} V${y2} H${b.x}`;
+                  }
                   return (
-                    <line
+                    <path
                       key={`${id}-${n.id}`}
-                      x1={sameCol ? a.x + NODE_W / 2 : x1}
-                      y1={sameCol ? (a.y > b.y ? a.y : a.y + NODE_H) : y1}
-                      x2={sameCol ? b.x + NODE_W / 2 : x2}
-                      y2={sameCol ? (a.y > b.y ? b.y + NODE_H : b.y) : y2}
+                      d={d}
+                      fill="none"
                       stroke={lit ? '#d9f99d' : '#475569'}
                       strokeWidth={8}
                       strokeLinecap="round"
+                      strokeLinejoin="round"
                       style={lit ? { filter: 'drop-shadow(0 0 6px rgba(190,242,100,0.8))' } : undefined}
                     />
                   );
-                }),
-              )}
+                })}
             </svg>
             {gate.nodes.map((n) => {
               const p = pos(n);
@@ -389,12 +446,13 @@ function GateMap() {
                   } ${playable && !selected ? 'hover:-translate-y-1 hover:shadow-[0_0_26px_rgba(190,242,100,0.8)]' : playable ? '' : 'cursor-default'}`}
                   style={{ left: p.x + 64, top: p.y, width: NODE_W, height: NODE_H }}
                 >
-                  {/* พื้นหลังจาง ๆ = รูปคู่แข่งของด่าน */}
-                  {fight && unlocked && (
-                    <div className="absolute inset-0 overflow-hidden opacity-35">
-                      <CardArt cardNo={n.avatar ?? gate.cardNo} className="absolute top-[-6%] left-1/2 w-[175%] max-w-none -translate-x-1/2 rounded-none" />
-                    </div>
-                  )}
+                  {/* พื้นหลังจาง ๆ ทุกโหนด: ดวล/ฝึกซ้อม = รูปคู่แข่ง · เนื้อเรื่อง/เป้าหมาย = ภาพของฉาก (art) · ยังไม่ปลดล็อก = ขาวดำ จางกว่า */}
+                  <div className={`absolute inset-0 overflow-hidden ${unlocked ? 'opacity-40' : 'opacity-25 grayscale'}`}>
+                    <CardArt
+                      cardNo={(fight ? n.avatar : n.art) ?? gate.cardNo}
+                      className="absolute top-[-6%] left-1/2 w-[175%] max-w-none -translate-x-1/2 rounded-none"
+                    />
+                  </div>
                   <div className="relative flex items-center justify-between bg-gradient-to-r from-slate-800 to-slate-900 px-2.5 py-1 text-base font-bold text-white">
                     <span>{n.kind === 'locked' && unlocked ? 'เปิดแล้ว' : k.label}</span>
                     {n.kind === 'goal' && <Icon name="flag" className="text-lime-200" />}

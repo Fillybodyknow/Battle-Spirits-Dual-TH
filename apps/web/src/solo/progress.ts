@@ -13,11 +13,21 @@ export interface SoloProgress {
   last: string | null;
 }
 
+/**
+ * รายการ "ด่าน/โหนด" ที่ยังมีอยู่จริง: บทที่เขียนใหม่ (เปลี่ยน id โหนด) = ความคืบหน้าเดิมของบทนั้นถูกล้างทิ้ง
+ * (ป่าวายุเขียนใหม่ 41.1.0 · เจ้าของโปรเจกต์กำหนดให้ล้าง) · ด่านที่ไม่รู้จัก (เช่น จากเวอร์ชันใหม่กว่า) คงไว้
+ */
+function stillExists(entry: string): boolean {
+  const [gateId, nodeId] = entry.split('/');
+  const gate = gateId ? gateById(gateId) : undefined;
+  return !gate || gate.nodes.some((n) => n.id === nodeId);
+}
+
 function load(): SoloProgress {
   try {
     const p = JSON.parse(localStorage.getItem(KEY) ?? 'null') as Partial<SoloProgress> | null;
     return {
-      cleared: Array.isArray(p?.cleared) ? p.cleared.filter((x): x is string => typeof x === 'string') : [],
+      cleared: Array.isArray(p?.cleared) ? p.cleared.filter((x): x is string => typeof x === 'string' && stillExists(x)) : [],
       last: typeof p?.last === 'string' ? p.last : null,
     };
   } catch {
@@ -57,12 +67,14 @@ export function nodeCleared(p: SoloProgress, gate: Gate, node: GateNode): boolea
   return p.cleared.includes(key(gate.id, node.id));
 }
 
-/** เล่นโหนดนี้ได้หรือยัง (โหนดใน after ผ่านครบ) */
+/** เล่นโหนดนี้ได้หรือยัง (โหนดใน after ผ่านครบ และโหนดใน afterAny ผ่านอย่างน้อยหนึ่ง) */
 export function nodeUnlocked(p: SoloProgress, gate: Gate, node: GateNode): boolean {
-  return (node.after ?? []).every((id) => {
+  const done = (id: string) => {
     const prev = gate.nodes.find((n) => n.id === id);
     return !prev || nodeCleared(p, gate, prev);
-  });
+  };
+  const any = node.afterAny ?? [];
+  return (node.after ?? []).every(done) && (any.length === 0 || any.some(done));
 }
 
 /** ผ่านด่านแล้ว (ถึงเป้าหมาย) · บทที่ยังไม่เปิด/ไม่มีเป้าหมาย = ยังไม่ผ่าน */
@@ -88,7 +100,17 @@ export const gateComplete = (p: SoloProgress, gate: Gate) => gate.nodes.length >
 
 /** โหนดถัดไปที่ควรเล่น (เล่นได้แต่ยังไม่ผ่าน ตัวแรกตามลำดับ) */
 export function nextNode(p: SoloProgress, gate: Gate): GateNode | null {
-  return gate.nodes.find((n) => n.kind !== 'locked' && nodeUnlocked(p, gate, n) && !nodeCleared(p, gate, n)) ?? null;
+  // ทางแยกที่ไม่ได้เลือก (อีกทางผ่านแล้ว จนโหนดที่รวมทางปลดล็อก) ไม่นับเป็นด่านถัดไป: ยังกลับไปเล่นได้ แต่ไม่ชี้ไปหา
+  // ทั้งสาย: โหนดที่ทุกทางต่อไปจบที่ทางแยกที่ไม่ได้เลือก ก็ข้ามด้วย
+  const skipped = (n: GateNode, seen = new Set<string>()): boolean => {
+    if (seen.has(n.id)) return false;
+    seen.add(n.id);
+    if (gate.nodes.some((m) => m.afterAny?.includes(n.id) && nodeUnlocked(p, gate, m))) return true;
+    const next = gate.nodes.filter((m) => m.after?.includes(n.id));
+    return next.length > 0 && next.every((m) => skipped(m, seen));
+  };
+  const playable = (n: GateNode) => n.kind !== 'locked' && nodeUnlocked(p, gate, n) && !nodeCleared(p, gate, n);
+  return gate.nodes.find((n) => playable(n) && !skipped(n)) ?? gate.nodes.find(playable) ?? null;
 }
 
 export function markCleared(gateId: string, nodeId: string) {

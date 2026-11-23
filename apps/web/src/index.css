@@ -657,10 +657,11 @@ input:-webkit-autofill:focus {
 @keyframes login-vortex-loop { from { transform: translate(-50%, -50%) rotate(-220deg) scale(1.25); } to { transform: translate(-50%, -50%) rotate(-580deg) scale(1.25); } }
 @keyframes login-streak { 0% { transform: translateX(4vmax) scaleX(0.05); opacity: 0; } 30% { opacity: 1; } 100% { transform: translateX(30vmax) scaleX(1); opacity: 0; } }
 @keyframes login-warp-card {
-  0% { transform: translate(-50%, -50%) translate3d(0, 0, -2000px) rotateZ(0deg); opacity: 0; }
+  /* จุดเริ่มกระจายรอบกลางจอ (--sx / --sy จาก WarpOut) · มุมการ์ดคงที่ตลอดทาง = แผ่นบนผนังอุโมงค์ (หมุนตามมุมรอบกลาง แล้วเอนหัวเข้าหาจุดกลาง) */
+  0% { transform: translate(-50%, -50%) translate3d(var(--sx, 0px), var(--sy, 0px), -2600px) rotateZ(var(--rz)) rotateX(var(--rx)) rotateY(var(--ry)); opacity: 0; }
   12% { opacity: 1; }
   85% { opacity: 1; }
-  100% { transform: translate(-50%, -50%) translate3d(var(--dx), var(--dy), 650px) rotateX(var(--rx)) rotateY(var(--ry)) rotateZ(var(--rz)); opacity: 0; }
+  100% { transform: translate(-50%, -50%) translate3d(var(--dx), var(--dy), 200px) rotateZ(var(--rz)) rotateX(var(--rx)) rotateY(var(--ry)); opacity: 0; }
 }
 @keyframes login-hero-in { from { opacity: 0; transform: translateX(6vw) scale(1.04); filter: blur(6px); } to { opacity: 1; transform: none; filter: blur(0); } }
 @keyframes login-band { from { translate: -4vw 0; opacity: 0.75; } to { translate: 4vw 0; opacity: 1; } }
@@ -1114,3 +1115,38 @@ html.gfx-no-blur *::after {
     transform: none;
   }
 }
+
+/* ฉากเข้าเนื้อเรื่อง (Solo GateIntro · 3.6 วิ): ลอยออกจากกลางจอ เอียงไปทางขวาตลอดทาง
+   ลอยเข้ามาและหงายการ์ดไปพร้อมกันด้วยความเร็วคงที่ 0–66% (จบพร้อมกัน) · ค้างใกล้จอ 66–75% · พุ่งเข้าจอ 75–84% · แสงวาบ 79–91% แล้วจาง */
+@keyframes solo-gate-card {
+  0% { transform: translateZ(-1800px) rotateX(18deg) rotateZ(16deg) scale(0.7); opacity: 0; animation-timing-function: linear; }
+  5% { opacity: 1; }
+  66% { transform: translateZ(-240px) rotateX(18deg) rotateZ(16deg) scale(0.85); opacity: 1; animation-timing-function: ease-out; }
+  75% { transform: translateZ(-170px) rotateX(18deg) rotateZ(16deg) scale(0.9); animation-timing-function: cubic-bezier(.6,0,1,.6); }
+  84% { transform: translateZ(900px) rotateX(18deg) rotateZ(16deg) scale(1.6); opacity: 1; }
+  85%, 100% { transform: translateZ(900px) rotateX(18deg) rotateZ(16deg) scale(1.6); opacity: 0; }
+}
+@keyframes solo-gate-flip {
+  0% { transform: rotateY(180deg); }
+  66%, 100% { transform: rotateY(0deg); }
+}
+@keyframes solo-gate-glow {
+  0%, 5% { transform: scale(0.3); opacity: 0; }
+  60% { transform: scale(1); opacity: 0.9; }
+  75% { transform: scale(1.15); opacity: 1; }
+  84% { transform: scale(3); opacity: 1; }
+  90%, 100% { transform: scale(3); opacity: 0; }
+}
+@keyframes solo-gate-title {
+  0%, 45% { transform: translateY(16px); opacity: 0; }
+  56%, 73% { transform: translateY(0); opacity: 1; }
+  80%, 100% { transform: translateY(0) scale(1.1); opacity: 0; }
+}
+@keyframes solo-gate-flash {
+  0%, 79% { opacity: 0; }
+  85% { opacity: 1; }
+  91% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes solo-gate-flash-skip { 0% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes solo-gate-bg { 0%, 88% { opacity: 1; } 89%, 100% { opacity: 0; } }
