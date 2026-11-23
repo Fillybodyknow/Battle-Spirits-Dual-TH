@@ -1,6 +1,6 @@
 import type { Ability, CardDatabase, CardDef, CardFilter, Condition, Step, SymbolColor } from '@bs/cards';
 import type { CardInstance, GameState, PlayerId } from './types';
-import { allZones, ownerZones, teamTrash } from './seats';
+import { allZones, ownField, ownerZones, teamTrash } from './seats';
 
 /** ข้อผิดพลาดจากการทำ action ผิดกติกา */
 export class RuleError extends Error {
@@ -486,7 +486,7 @@ function currentBpRaw(state: GameState, db: CardDatabase, cardId: string): numbe
   let bp = (baseDef.levels.find((l) => l.level === ownLevel)?.bp ?? 0) + card.turnBp + (card.battleBp ?? 0);
   // "ในเทิร์นนี้ สปิริตเราทั้งหมด BP+": รวมตัวที่ลงสนามหลังเอฟเฟกต์ทำงาน
   for (const b of state.turnBuffs ?? []) {
-    if (b.player === card.owner && b.turn === state.turn && (def.type === 'spirit' || def.type === 'brave') && (!b.filter || matchesFilter(state, db, cardId, b.filter)))
+    if (b.player === card.owner && b.turn === state.turn && (def.type === 'spirit' || def.type === 'brave') && (!b.filter || matchesFilter(state, db, cardId, b.filter)) && !namedOnlyBlocker(state, db, b.sourceId, cardId))
       bp += b.amount;
   }
   // เอฟเฟกต์ติดตัวที่ Brave ให้ผู้ร่วมร่าง
@@ -502,6 +502,8 @@ function currentBpRaw(state: GameState, db: CardDatabase, cardId: string): numbe
     const isBrave = srcId !== holder;
     const level = isBrave ? 0 : cardLevel(state, db, srcId);
     if (effectsNegated(state, db, holder)) continue;
+    // ทาเคะนาชิ ฟอร์เทรส: BP+ ถาวรจากการ์ดอื่นที่ไม่ใช่ชื่อที่ยกเว้น ไม่มีผล
+    if (holder !== cardId && namedOnlyBlocker(state, db, srcId, cardId)) continue;
     for (const ab of srcDef.abilities) {
       if (ab.kind !== 'staticBp') continue;
       if (isBrave ? !ab.granted : ab.granted || !ab.levels.includes(level)) continue;
@@ -1079,18 +1081,29 @@ export function effectBlocked(state: GameState, db: CardDatabase, sourceId: stri
  * การ์ดที่ทำให้การ์ด targetId ไม่รับผลเอฟเฟกต์ของ sourceId (Ultra/Heavy Shield ฯลฯ)
  * 'battle' = กันด้วยผลในการต่อสู้นี้ (ไม่ใช่ความสามารถถาวร) · null = ไม่ถูกกัน
  */
+/**
+ * ทาเคะนาชิ ฟอร์เทรส (effectImmune.exceptNamed): "ไม่รับผลเอฟเฟกต์ใด ๆ ยกเว้นจากสปิริตที่มีคำว่า … ในชื่อ" = รวมเอฟเฟกต์ของเราเอง/เพื่อนร่วมทีม
+ * sourceId ว่าง = ไม่รู้ต้นเหตุ (ถือว่าไม่ใช่การ์ดที่ยกเว้น)
+ */
+export function namedOnlyBlocker(state: GameState, db: CardDatabase, sourceId: string | undefined, targetId: string): StaticSource | null {
+  const target = state.cards[targetId];
+  if (!target || sourceId === targetId || !state.players[target.owner].field.includes(targetId) || effectsNegated(state, db, targetId)) return null;
+  const lv = cardLevel(state, db, targetId);
+  const src = sourceId ? state.cards[sourceId] : undefined;
+  for (const ab of db.get(target.cardNo).abilities) {
+    if (ab.kind !== 'effectImmune' || !ab.exceptNamed || !ab.levels.includes(lv)) continue;
+    if (!src || !nameHas(db.get(src.cardNo), ab.exceptNamed)) return { cardId: targetId, source: ab.source };
+  }
+  return null;
+}
+
 export function effectBlocker(state: GameState, db: CardDatabase, sourceId: string, targetId: string): StaticSource | 'battle' | null {
   const src = state.cards[sourceId];
   const target = state.cards[targetId];
   if (!src || !target) return null;
   // ทาเคะนาชิ ฟอร์เทรส: ไม่รับผลเอฟเฟกต์ใด ๆ (รวมของเรา) ยกเว้นการ์ดที่ชื่อมีคำที่ระบุ
-  if (state.players[target.owner].field.includes(targetId) && !effectsNegated(state, db, targetId)) {
-    const lv = cardLevel(state, db, targetId);
-    for (const ab of db.get(target.cardNo).abilities) {
-      if (ab.kind !== 'effectImmune' || !ab.exceptNamed || !ab.levels.includes(lv) || sourceId === targetId) continue;
-      if (!nameHas(db.get(src.cardNo), ab.exceptNamed)) return { cardId: targetId, source: ab.source };
-    }
-  }
+  const named = namedOnlyBlocker(state, db, sourceId, targetId);
+  if (named) return named;
   if (src.owner === target.owner) return null;
   const tDef = db.get(target.cardNo);
   const hostOf = (braveId: string) => braveHostOf(state, braveId);
@@ -1945,7 +1958,8 @@ export function kagemushaOptions(state: GameState, db: CardDatabase, targetId: s
     });
     if (!ok) return [];
   }
-  const cores = p.reserve.length + p.field.reduce((n, id) => n + state.cards[id]!.cores.length, 0);
+  // 2VS2: การ์ดในมือ / คอร์ของที่นั่งที่ทำงานอยู่ (เรียกผ่าน asSeat ต่อที่นั่ง)
+  const cores = p.reserve.length + ownField(state, owner).reduce((n, id) => n + state.cards[id]!.cores.length, 0);
   return handCards(state, owner)
     .filter((id) => db.get(state.cards[id]!.cardNo).abilities.some((a) => a.kind === 'kagemusha'))
     .map((id) => {
@@ -1959,7 +1973,8 @@ export function kagemushaOptions(state: GameState, db: CardDatabase, targetId: s
 
 /** เน็กซัสที่ให้อัญเชิญโดย Kagemusha ไม่จ่ายคอสต์ได้ (ฟื้นสภาพอยู่) */
 export function kagemushaFreeNexus(state: GameState, db: CardDatabase, owner: PlayerId): string | undefined {
-  return state.players[owner].field.find((id) => {
+  // 2VS2: เน็กซัสของที่นั่งที่ใช้ Kagemusha เอง
+  return ownField(state, owner).find((id) => {
     const card = state.cards[id]!;
     if (card.state !== 'refresh' || effectsNegated(state, db, id)) return false;
     const level = cardLevel(state, db, id);

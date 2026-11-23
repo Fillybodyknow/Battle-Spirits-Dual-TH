@@ -249,6 +249,8 @@ export interface QueuedEffect {
   asMagic?: boolean;
   /** trigger oppHandIncreased: จำนวนการ์ดที่มือคู่แข่งเพิ่มขึ้น */
   handIncrease?: number;
+  /** 2VS2: ที่นั่งของคู่แข่งที่มือเพิ่มขึ้น (ทิ้งการ์ด "ต่อจำนวนที่เพิ่มขึ้น" = คนนั้นคนเดียว) */
+  handSeat?: Seat;
   /** เอฟเฟกต์นี้ทิ้งเบิร์สของคู่แข่งได้ */
   burstDiscarded?: boolean;
   /** เอฟเฟกต์นี้มาจาก "เมื่อสปิริตนี้โจมตี" */
@@ -408,7 +410,7 @@ export interface GameState {
   /** "ในเทิร์นนี้ ... โจมตีไม่ได้": การ์ดของ player ประเภท types โจมตีไม่ได้ในเทิร์น turn */
   attackBans?: { player: PlayerId; turn: number; types: string[]; /** การ์ดต้นเหตุ: ตัวที่ไม่รับผลเอฟเฟกต์ของการ์ดนี้ (Shield / ก็อด-เซคส์) ยังโจมตีได้ */ sourceId?: string }[];
   /** "ในเทิร์นนี้ สปิริตเราทั้งหมด BP+": สปิริตของ player ที่ตรง filter BP+amount ในเทิร์น turn */
-  turnBuffs?: { player: PlayerId; turn: number; amount: number; filter?: CardFilter }[];
+  turnBuffs?: { player: PlayerId; turn: number; amount: number; filter?: CardFilter; sourceId?: string }[];
   /** เอฟเฟกต์ "เทิร์นละ 1 ครั้ง" ที่ใช้ไปแล้ว (player:cardNo:source) ล้างตอนจบเทิร์น */
   usedOncePerTurn?: string[];
   /** การ์ดที่ฟื้นสภาพไม่ได้ในรีเฟรชสเต็ปครั้งถัดไปของเจ้าของ (ล้างเมื่อผ่านรีเฟรชสเต็ปนั้น) */

@@ -547,7 +547,7 @@ function TableCard({ room, t, uid }: { room: DuelRoom; t: string; uid: string })
   const players = tablePlayers(room, t);
   const full = !!players;
   const allReady = !!players && players.every(ready);
-  const solo = team && players?.length === 3 ? (players.includes('p1b') ? 'ทีม B' : 'ทีม A') : null;
+  const solo = team && players?.length === 3 ? (players.filter((k) => k.startsWith('p1')).length === 1 ? 'ทีม A' : 'ทีม B') : null;
   const starting = !!game && !!online && online.code === game && online.status === 'waiting';
 
   let center: React.ReactNode;

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { loadAllCards } from '@bs/cards';
 import { applyAction, createGame, payableCost, type Action, type GameState, type PlayerId, type Seat } from '../src';
 import { zonesOf } from '../src/seats';
-import { conditionHolds } from '../src/rules';
+import { conditionHolds, currentBp } from '../src/rules';
 
 /** โหมด 2VS2 (กติกา 15): สนามร่วม แยกโซนส่วนตัว เล่นพร้อมกันในเทิร์นทีม */
 const db = loadAllCards();
@@ -218,6 +218,111 @@ describe('2VS2', () => {
     z(s, 'p1', 1).trashCards.push(...z(s, 'p1', 1).deck.splice(0, 3));
     const src = z(s, 'p1', 0).hand[0]!;
     expect(conditionHolds(s, src, { trashAtLeast: 3 })).toBe(true);
+  });
+
+  it('มือคู่แข่งเพิ่มขึ้นโดยเอฟเฟกต์ → ทิ้งต่อจำนวนที่เพิ่ม: เฉพาะคนที่จั่ว (ฟุบุกิโกะเซน)', () => {
+    let s = setup();
+    const fubuki = z(s, 'p2', 0).hand.shift()!;
+    s.cards[fubuki]!.cardNo = no('ฟุบุกิโกะเซน');
+    s.players.p2.field.push(fubuki);
+    for (const c of z(s, 'p2', 0).reserve.filter((c) => !s.cores[c]!.isSoul).slice(0, 3)) {
+      z(s, 'p2', 0).reserve.splice(z(s, 'p2', 0).reserve.indexOf(c), 1);
+      s.cards[fubuki]!.cores.push(c);
+    }
+    const src = z(s, 'p1', 0).hand[0]!;
+    const h0 = z(s, 'p1', 0).hand.length;
+    const h1 = z(s, 'p1', 1).hand.length;
+    s.queue = [{ controller: 'p1', sourceId: src, steps: [{ do: 'draw', count: 1 }], paidWithSoul: false, trashWhenDone: false }];
+    s = act(s, { type: 'endMain', player: 'p1' });
+    s = act(s, { type: 'choose', player: 'p1', pick: 1 }); // ให้เพื่อนจั่ว
+    for (let i = 0; i < 3 && s.choice?.kind === 'card'; i++) {
+      const cands = (s.choice as { candidates: string[] }).candidates;
+      expect(cands.every((id) => (s.cards[id]!.seat ?? 0) === 1)).toBe(true);
+      s = act(s, { type: 'choose', player: 'p1', seat: 1, pick: cands[0]! });
+    }
+    expect(z(s, 'p1', 0).hand).toHaveLength(h0);
+    expect(z(s, 'p1', 1).hand).toHaveLength(h1); // จั่ว 1 ทิ้ง 1
+  });
+
+  it('Kagemusha ในมือของเพื่อนร่วมทีม: ถามคนที่มีการ์ด (เจ้าของสปิริตที่ถูกเล็งไม่มี)', () => {
+    let s = setup();
+    // สปิริตของ p2 ที่นั่ง 0 มีโซลคอร์ ถูกเล็ง
+    const target = z(s, 'p2', 0).hand.shift()!;
+    s.players.p2.field.push(target);
+    const soul = z(s, 'p2', 0).reserve.find((c) => s.cores[c]!.isSoul)!;
+    z(s, 'p2', 0).reserve.splice(z(s, 'p2', 0).reserve.indexOf(soul), 1);
+    s.cards[target]!.cores.push(soul);
+    // S23 (Kagemusha) อยู่ในมือของ p2 ที่นั่ง 1
+    const s23 = z(s, 'p2', 1).hand[0]!;
+    s.cards[s23]!.cardNo = no('นักรบเครื่องกล S23');
+    for (let i = 0; i < 4; i++) z(s, 'p2', 1).reserve.push(...[0].map(() => { const id = `kc-${i}`; s.cores[id] = { id, owner: 'p2', isSoul: false, seat: 1 }; return id; }));
+    const src = z(s, 'p1', 0).hand[0]!;
+    s.queue = [{ controller: 'p1', sourceId: src, steps: [{ do: 'exhaustOpponent', count: 1, filter: { types: ['spirit'] } }], paidWithSoul: false, trashWhenDone: false }];
+    s = act(s, { type: 'endMain', player: 'p1' });
+    s = act(s, { type: 'choose', player: 'p1', pick: target });
+    expect(s.choice?.kind).toBe('option');
+    expect(s.choice?.player).toBe('p2');
+    expect(s.queue[0]!.seat).toBe(1);
+    expect((s.choice as { options: string[] }).options.some((o) => o.includes('Kagemusha: อัญเชิญ'))).toBe(true);
+  });
+
+  it('Kagemusha ทั้งสองคนมี: ถามเจ้าของสปิริตก่อน · ไม่ใช้ = ถามเพื่อนต่อ', () => {
+    let s = setup();
+    const target = z(s, 'p2', 0).hand.shift()!;
+    s.players.p2.field.push(target);
+    const soul = z(s, 'p2', 0).reserve.find((c) => s.cores[c]!.isSoul)!;
+    z(s, 'p2', 0).reserve.splice(z(s, 'p2', 0).reserve.indexOf(soul), 1);
+    s.cards[target]!.cores.push(soul);
+    for (const seat of [0, 1] as Seat[]) {
+      s.cards[z(s, 'p2', seat).hand[0]!]!.cardNo = no('นักรบเครื่องกล S23');
+      for (let i = 0; i < 4; i++) {
+        const id = `kc-${seat}-${i}`;
+        s.cores[id] = { id, owner: 'p2', isSoul: false, ...(seat ? { seat } : {}) };
+        z(s, 'p2', seat).reserve.push(id);
+      }
+    }
+    const src = z(s, 'p1', 0).hand[0]!;
+    s.queue = [{ controller: 'p1', sourceId: src, steps: [{ do: 'exhaustOpponent', count: 1, filter: { types: ['spirit'] } }], paidWithSoul: false, trashWhenDone: false }];
+    s = act(s, { type: 'endMain', player: 'p1' });
+    s = act(s, { type: 'choose', player: 'p1', pick: target });
+    expect(s.queue[0]!.seat).toBe(0);
+    const opts = (s.choice as { options: string[] }).options;
+    s = act(s, { type: 'choose', player: 'p2', pick: opts.indexOf('ไม่ใช้ Kagemusha') });
+    expect(s.choice?.kind).toBe('option');
+    expect(s.choice?.player).toBe('p2');
+    expect(s.queue[0]!.seat).toBe(1);
+    s = act(s, { type: 'choose', player: 'p2', seat: 1, pick: (s.choice as { options: string[] }).options.indexOf('ไม่ใช้ Kagemusha') });
+    // ไม่มีใครใช้: เอฟเฟกต์เลือกเป้าเดิม
+    expect(s.choice).toMatchObject({ kind: 'card', player: 'p1', candidates: [target] });
+    s = act(s, { type: 'choose', player: 'p1', pick: target });
+    expect(s.cards[target]!.state).toBe('exhausted');
+  });
+
+  it('ทาเคะนาชิ ฟอร์เทรส: ไม่รับผลเอฟเฟกต์ของเรา/เพื่อน (ยกเว้นสปิริตชื่อ เก็นจิ)', () => {
+    let s = setup();
+    const take = z(s, 'p1', 0).hand.shift()!;
+    s.cards[take]!.cardNo = no('แปดอัศวินเก็นจิ ทาเคะนาชิ ฟอร์เทรส');
+    const dariu = z(s, 'p1', 0).hand.shift()!;
+    for (const id of [take, dariu]) {
+      s.players.p1.field.push(id);
+      const c = z(s, 'p1', 0).reserve.find((x) => !s.cores[x]!.isSoul)!;
+      z(s, 'p1', 0).reserve.splice(z(s, 'p1', 0).reserve.indexOf(c), 1);
+      s.cards[id]!.cores.push(c);
+      s.cards[id]!.state = 'exhausted';
+    }
+    const bp = currentBp(s, db, take);
+    // เอฟเฟกต์ของเพื่อนร่วมทีม (ไม่ใช่เก็นจิ): ฟื้นสภาพ 1 ตัว = เลือกได้แค่มุฉะดาริว · BP+ ทั้งหมด = ไม่รับผล
+    const src = z(s, 'p1', 1).hand[0]!;
+    s.queue = [{ controller: 'p1', sourceId: src, steps: [{ do: 'buffAllies', amount: 3000 }, { do: 'refreshChosenAlly', filter: { types: ['spirit'] } }], paidWithSoul: false, trashWhenDone: false }];
+    s = act(s, { type: 'endMain', player: 'p1' });
+    expect(currentBp(s, db, take)).toBe(bp);
+    expect(currentBp(s, db, dariu)).toBe(3000 + 3000);
+    if (s.choice) {
+      expect((s.choice as { candidates: string[] }).candidates).toEqual([dariu]);
+      s = act(s, { type: 'choose', player: 'p1', pick: dariu });
+    }
+    expect(s.cards[take]!.state).toBe('exhausted');
+    expect(s.cards[dariu]!.state).toBe('refresh');
   });
 
   it('ป้องกัน: คนใดคนหนึ่งประกาศป้องกัน = ทีมป้องกัน (โหวตไม่ป้องกันที่ค้างอยู่ถูกล้าง)', () => {

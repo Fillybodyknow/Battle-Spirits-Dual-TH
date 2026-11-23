@@ -2860,7 +2860,15 @@ export const tableSeats = (room: DuelRoom): readonly TableSeat[] => (room.meta.t
 export function tablePlayers(room: DuelRoom, t: string): TableSeat[] | null {
   const keys = tableSeats(room).filter((k) => !!seatUid(room, t, k));
   if (!room.meta.team) return keys.length === 2 ? keys : null;
-  return keys.includes('p1') && keys.includes('p2') && keys.length >= 3 ? keys : null;
+  // ทีมละอย่างน้อย 1 คน (นั่งช่องไหนก็ได้) รวมอย่างน้อย 3 คน
+  const has = (side: PlayerId) => keys.some((k) => keySide(k) === side);
+  return has('p1') && has('p2') && keys.length >= 3 ? keys : null;
+}
+/** ที่นั่งในเกมของที่นั่งโต๊ะนี้: ฝั่งที่มีคนเดียวแต่นั่งช่องที่สอง = ผู้เล่นหลักของฝั่ง (p1/p2) */
+export function gameSeatOf(room: DuelRoom, t: string, seat: TableSeat): TableSeat {
+  if (!room.meta.team || keySeat(seat) === 0) return seat;
+  const side = keySide(seat);
+  return seatUid(room, t, side) ? seat : side;
 }
 /** ที่นั่งของ uid ในห้อง */
 export function seatOf(room: DuelRoom, uid: string): { t: string; seat: TableSeat } | null {
@@ -2907,11 +2915,14 @@ function onDuel(code: string, uid: string, room: DuelRoom | null) {
   // ทุกที่นั่งนั่งครบและพร้อม: ที่นั่ง p1 เป็นคนสร้างเกม
   const players = tablePlayers(room, mine.t);
   const allReady = !!players && players.every((k) => !!tb.ready?.[k]);
-  if (!tb.game && mine.seat === 'p1' && allReady && !startingTable) {
+  if (!tb.game && gameSeatOf(room, mine.t, mine.seat) === 'p1' && allReady && !startingTable) {
     void startTable(code, room, mine.t, uid);
   }
   // โต๊ะของเราเริ่มเกมแล้ว: เข้ากระดาน (Team Battle: ฝั่ง + ที่นั่งในทีม)
-  if (tb.game && !leftGames.has(tb.game) && st.online?.code !== tb.game) enterRoom(tb.game, keySide(mine.seat), uid, false, keySeat(mine.seat));
+  if (tb.game && !leftGames.has(tb.game) && st.online?.code !== tb.game) {
+    const g = gameSeatOf(room, mine.t, mine.seat);
+    enterRoom(tb.game, keySide(g), uid, false, keySeat(g));
+  }
 }
 
 /** ข้อมูลของแต่ละที่นั่งสำหรับห้องเกม (ไม่ใส่ค่าว่าง: Firebase ไม่รับ undefined) */
@@ -2931,8 +2942,9 @@ async function startTable(code: string, room: DuelRoom, t: string, uid: string) 
     const seats: Partial<Record<TableSeat, string>> = {};
     const members: Partial<Record<TableSeat, DuelMember>> = {};
     for (const k of keys) {
-      seats[k] = seatUid(room, t, k)!;
-      members[k] = room.members![seats[k]!]!;
+      const g = gameSeatOf(room, t, k);
+      seats[g] = seatUid(room, t, k)!;
+      members[g] = room.members![seats[g]!]!;
     }
     const game = `${code}-${randomCode()}`;
     const setup: RoomSetup = {
@@ -2955,7 +2967,7 @@ async function startTable(code: string, room: DuelRoom, t: string, uid: string) 
     });
     const res = await transport.transactPath(`${roomPath(code)}/tables/${t}`, (cur: DuelTable | null) => {
       if (!cur) return cur;
-      if (cur.game || keys.some((k) => !cur.ready?.[k] || cur.seats?.[k] !== seats[k])) return undefined;
+      if (cur.game || keys.some((k) => !cur.ready?.[k] || cur.seats?.[k] !== seats[gameSeatOf(room, t, k)])) return undefined;
       return { ...cur, game };
     });
     if (!res.committed || (res.value as DuelTable | null)?.game !== game) void transport.removePath(roomPath(game)).catch(() => {});

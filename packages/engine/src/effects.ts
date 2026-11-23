@@ -57,6 +57,7 @@ import { cardColors,
   type StaticSource,
   levelBoostSources,
   effectBlocker,
+  namedOnlyBlocker,
   negatedBy,
   staticSources,
   handImmune,
@@ -79,8 +80,8 @@ import { cardColors,
 import { shuffle } from './rng';
 import { teamHand, teamTrash } from './seats';
 import { allZones } from './seats';
-import { activeSeat, asSeat, itemSeat, normalizeSeats, ownField, ownerZones, seatsOf, useSeat, zonesOf } from './seats';
-import { PLAYERS, opponentOf, type ChoicePick, type GameState, type PendingChoice, type PlayerId, type QueuedEffect } from './types';
+import { activeSeat, asSeat, itemSeat, normalizeSeats, ownField, ownerZones, seatOfCard, seatsOf, useSeat, zonesOf } from './seats';
+import { PLAYERS, opponentOf, type ChoicePick, type GameState, type PendingChoice, type PlayerId, type QueuedEffect, type Seat } from './types';
 import type { Ability, Color } from '@bs/cards';
 
 /**
@@ -168,6 +169,8 @@ export function queueTriggers(
     summonFrom?: string;
     /** oppHandIncreased: จำนวนการ์ดที่เพิ่มขึ้น */
     handIncrease?: number;
+    /** 2VS2 oppHandIncreased: ที่นั่งที่มือเพิ่มขึ้น */
+    handSeat?: Seat;
     /** BS07 allyDestroyed: การ์ดของคู่แข่งที่ทำลาย / ทำลายโดยสปิริต/อัลติเมทของคู่แข่ง */
     destroyerId?: string;
     subjectBySpirit?: boolean;
@@ -274,6 +277,7 @@ export function queueTriggers(
       ...(opts.lifeLost !== undefined ? { lifeLost: opts.lifeLost } : {}),
       ...(opts.summonFrom ? { summonFrom: opts.summonFrom } : {}),
       ...(opts.handIncrease ? { handIncrease: opts.handIncrease } : {}),
+      ...(opts.handSeat !== undefined ? { handSeat: opts.handSeat } : {}),
       // เบิร์ส "หลังจาก [เมื่อสปิริต/เบรฟนี้ถูกอัญเชิญ] ของคู่แข่งทำงาน" (กติกา 06 ข้อ 3.3): เฉพาะสปิริต/เบรฟ
       // ไม่นับ "เมื่อเน็กซัสนี้ถูกวาง" (trigger summon เหมือนกัน) และอัลติเมท
       ...(on === 'summon' && ['spirit', 'brave'].includes(db.get(s.cards[src]!.cardNo).type) ? { onSummon: true } : {}),
@@ -968,6 +972,18 @@ function addTurnBp(ctx: Ctx, cardId: string, amount: number): void {
 }
 
 function ask(ctx: Ctx, item: QueuedEffect, choice: DistributiveOmit<PendingChoice, 'player' | 'sourceId'>, player: PlayerId = item.controller): void {
+  // ทาเคะนาชิ ฟอร์เทรส: ไม่รับผลเอฟเฟกต์ใด ๆ รวมของเรา (ยกเว้นการ์ดชื่อที่ระบุ) = เลือกเป็นเป้าของเอฟเฟกต์นี้ไม่ได้
+  if (choice.kind === 'card' || choice.kind === 'multiCard') {
+    const kept = choice.candidates.filter((id) => {
+      const b = namedOnlyBlocker(ctx.s, ctx.db, item.sourceId, id);
+      if (b) emitStatic(ctx, b);
+      return !b;
+    });
+    if (kept.length === 0) return;
+    if (kept.length < choice.candidates.length) {
+      choice = choice.kind === 'multiCard' ? { ...choice, candidates: kept, count: Math.min(choice.count, kept.length) } : { ...choice, candidates: kept };
+    }
+  }
   // Kagemusha: การเลือกครั้งถัดไปของเอฟเฟกต์นี้ต้องเล็งการ์ด Kagemusha ที่อัญเชิญมา (ไม่อัญเชิญ = เป้าเดิม)
   const onField = (id: string) => PLAYERS.some((p) => ctx.s.players[p].field.includes(id));
   if (item.kageForce && choice.kind === 'card' && (player === item.controller || ownerPicksTarget(choice, player, item))) {
@@ -1166,6 +1182,11 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       else item.steps.unshift({ do: 'chooseOne', options: seats.map((k) => ({ label: `${verb}เบิร์สของคู่แข่งคนที่ ${k + 1}`, steps: run(k) })) });
       return;
     }
+    // "ต่อจำนวนการ์ดที่มือคู่แข่งเพิ่มขึ้น ... คู่แข่งทิ้ง": เฉพาะคนที่มือเพิ่มขึ้น
+    if (item.oppSeat === undefined && item.handSeat !== undefined && OPP_ZONE_STEPS.has(step.do) && s.players[opponentOf(me)].partner) {
+      item.steps.unshift({ do: 'oppSeat', seat: item.handSeat }, step, { do: 'oppSeat', seat: null });
+      return;
+    }
     if (item.oppSeat === undefined && OPP_ZONE_STEPS.has(step.do) && s.players[opponentOf(me)].partner) {
       item.steps.unshift({ do: 'oppSeat', seat: 0 }, step, { do: 'oppSeat', seat: 1 }, step, { do: 'oppSeat', seat: null });
       return;
@@ -1287,7 +1308,9 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
         // "เมื่อมือของคู่แข่งเพิ่มขึ้นโดยเอฟเฟกต์" ของอีกฝ่าย (ทำงานต่อจากเอฟเฟกต์นี้)
         queueRightAfterCurrent(ctx, () => {
           const batch = newBatch(ctx);
-          for (const id of [...s.players[opp].field]) queueTriggers(ctx, id, 'oppHandIncreased', batch, { handIncrease: n });
+          // 2VS2: จดที่นั่งที่จั่ว (มือของคนนั้นเพิ่มขึ้น)
+          const handSeat = s.players[me].partner ? activeSeat(s, me) : undefined;
+          for (const id of [...s.players[opp].field]) queueTriggers(ctx, id, 'oppHandIncreased', batch, { handIncrease: n, ...(handSeat !== undefined ? { handSeat } : {}) });
         });
       }
       return;
@@ -2148,7 +2171,7 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
         if ((def.type === 'spirit' || def.type === 'brave') && (!step.filter || matchesFilter(s, db, id, step.filter)))
           emit(ctx, { type: 'bpBuffed', cardId: id, amount: step.amount });
       }
-      s.turnBuffs = [...(s.turnBuffs ?? []).filter((b) => b.turn === s.turn), { player: me, turn: s.turn, amount: step.amount, ...(step.filter ? { filter: step.filter } : {}) }];
+      s.turnBuffs = [...(s.turnBuffs ?? []).filter((b) => b.turn === s.turn), { player: me, turn: s.turn, amount: step.amount, ...(step.filter ? { filter: step.filter } : {}), sourceId: item.sourceId }];
       return;
 
     case 'summonFromTrashFree': {
@@ -5225,11 +5248,20 @@ function applyCardPick(ctx: Ctx, cur: QueuedEffect, choice: Extract<PendingChoic
 function kagemusha(ctx: Ctx, cur: QueuedEffect, step: Step, pick: string, fromExec = false): boolean {
   const { s, db } = ctx;
   const owner = s.cards[pick]!.owner;
-  const free = kagemushaFreeNexus(s, db, owner);
-  const usable = kagemushaOptions(s, db, pick).filter((o) => o.payable || (free && o.placeable));
-  if (usable.length === 0) return false;
   const name = (id: string) => db.get(s.cards[id]!.cardNo).name;
-  const options = usable.flatMap((o) => [
+  // 2VS2: Kagemusha ในมือของทั้งสองคนในทีม · ถามเจ้าของสปิริตที่ถูกเล็งก่อน แล้วอีกคน (เลือก "ไม่ใช้" = ถามคนถัดไป)
+  const seats = s.players[owner].partner ? [seatOfCard(s.cards[pick]), seatOfCard(s.cards[pick]) ? 0 : 1] as Seat[] : [activeSeat(s, owner)];
+  const per = seats
+    .map((seat) =>
+      asSeat(s, owner, seat, () => {
+        const free = kagemushaFreeNexus(s, db, owner);
+        const usable = kagemushaOptions(s, db, pick).filter((o) => o.payable || (free && o.placeable));
+        return { seat, free, usable };
+      }),
+    )
+    .filter((x) => x.usable.length > 0);
+  if (per.length === 0) return false;
+  const optionsOf = ({ free, usable }: (typeof per)[number]) => usable.flatMap((o) => [
     ...(o.payable
       ? [{ label: `Kagemusha: อัญเชิญ ${name(o.cardId)} (จ่ายคอสต์ ${o.cost})`, steps: [{ do: 'payForSummon', cardId: o.cardId, cost: o.cost }, { do: 'kageSet', cardId: o.cardId }] as Step[] }]
       : []),
@@ -5237,14 +5269,19 @@ function kagemusha(ctx: Ctx, cur: QueuedEffect, step: Step, pick: string, fromEx
       ? [{ label: `Kagemusha: เสื่อมสภาพ ${name(free)} เพื่ออัญเชิญ ${name(o.cardId)} ไม่จ่ายคอสต์`, steps: [{ do: 'exhaustCard', cardId: free }, { do: 'placeCores', cardId: o.cardId }, { do: 'kageSet', cardId: o.cardId }] as Step[] }]
       : []),
   ]);
+  const [first, second] = per;
+  const noUse: Step[] = second
+    ? [{ do: 'selfSeat', seat: second.seat }, { do: 'chooseOne', options: [...optionsOf(second), { label: 'ไม่ใช้ Kagemusha', steps: [] }] }, { do: 'selfSeat', seat: null }]
+    : [];
   cur.kageDone = [...(cur.kageDone ?? []), pick];
   cur.kageForce = { orig: pick };
   // เอฟเฟกต์ที่เล็งอยู่เลือกใหม่หลัง Kagemusha (ครั้งนั้นบังคับเป้า)
   cur.steps.unshift(step);
   s.queue.unshift({
     controller: owner,
-    sourceId: usable[0]!.cardId,
-    steps: [{ do: 'chooseOne', options: [...options, { label: 'ไม่ใช้ Kagemusha', steps: [] }] }],
+    sourceId: first!.usable[0]!.cardId,
+    ...(s.players[owner].partner ? { seat: first!.seat } : {}),
+    steps: [{ do: 'chooseOne', options: [...optionsOf(first!), { label: 'ไม่ใช้ Kagemusha', steps: noUse }] }],
     paidWithSoul: false,
     trashWhenDone: false,
     started: true,
