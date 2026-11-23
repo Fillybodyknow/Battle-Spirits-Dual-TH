@@ -90,6 +90,20 @@ describe('Booster Set 08', () => {
     expect(run(true)).toBe(1);
   });
 
+  it('กำแพงผลึกขาว (โซลคอร์): ทั้งเทิร์นไลฟ์เสียรวมไม่เกิน 1 · โดนตี 2 ตัว = เสีย 1 (เจ้าของโปรเจกต์กำหนด)', () => {
+    let s = setup();
+    const a1 = put(s, 'p1', no('มัดโควเซรัส'), 1);
+    const a2 = put(s, 'p1', no('มัดโควเซรัส'), 1);
+    s.lifeCapOne = [{ player: 'p2', turn: s.turn }];
+    const life = s.players.p2.life.length;
+    s = passAll(attack(s, a1));
+    s = passAll(act(s, { type: 'noBlock', player: 'p2' }));
+    expect(s.players.p2.life.length).toBe(life - 1);
+    s = passAll(act(s, { type: 'declareAttack', player: 'p1', attackerId: a2 }));
+    s = passAll(act(s, { type: 'noBlock', player: 'p2' }));
+    expect(s.players.p2.life.length).toBe(life - 1);
+  });
+
   it('การ์ดทุกใบผูกสคริปต์ได้ และทุกบรรทัดเอฟเฟกต์มีสคริปต์ (ยกเว้นอามิตะ Lv2: การ์ดที่อ้างถึงยังไม่มี)', () => {
     const cards = loadBS08Cards().all();
     for (const c of cards) {

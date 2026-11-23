@@ -737,6 +737,9 @@ function returnToDeckBottomAny(ctx: Ctx, id: string): void {
 /** ผู้เล่นเสียไลฟ์: trigger "เมื่อเราเสียไลฟ์" ของการ์ดบนสนามของผู้เล่นนั้น */
 export function queueLifeLostTriggers(ctx: Ctx, player: PlayerId, amount = 1): void {
   if (ctx.s.winner) return;
+  // นับตามที่ไลฟ์ลดจริง (เพดานความเสียหายอาจตัดเหลือน้อยกว่าที่สั่ง หรือไม่ลดเลย = ไม่มี trigger)
+  if (ctx.lastLifeLost?.player === player) amount = ctx.lastLifeLost.amount;
+  if (amount <= 0) return;
   // เอฟเฟกต์ของคู่แข่งกำลังทำงานอยู่ = ไลฟ์ลดเพราะเอฟเฟกต์ (ไม่ใช่การโจมตี)
   const cur = ctx.s.queue[0];
   const byEffect = !!cur?.started && cur.controller !== player;

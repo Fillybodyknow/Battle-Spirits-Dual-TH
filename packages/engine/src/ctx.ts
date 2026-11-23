@@ -11,6 +11,14 @@ export interface Ctx {
   events: GameEvent[];
   /** state ก่อน action นี้ (อ่านอย่างเดียว): ใช้เทียบว่าความสามารถถาวรเพิ่งมีผลใน action นี้หรือไม่ */
   start?: GameState;
+  /** loseLife ครั้งล่าสุด: ไลฟ์ลดจริงเท่าไร (หลังเพดานความเสียหาย) · queueLifeLostTriggers ใช้ค่านี้ */
+  lastLifeLost?: { player: PlayerId; amount: number };
+}
+
+/** ไลฟ์เสียได้อีกเท่าไรในเทิร์นนี้ (กำแพงผลึกขาว: รวมทั้งเทิร์นไม่เกิน 1) · ไม่มีเพดาน = Infinity */
+export function lifeDamageLeft(s: GameState, player: PlayerId): number {
+  const cap = (s.lifeCapOne ?? []).find((l) => l.player === player && l.turn === s.turn);
+  return cap ? Math.max(0, 1 - (cap.used ?? 0)) : Infinity;
 }
 
 /**
@@ -181,6 +189,17 @@ export function destroy(ctx: Ctx, cardId: string, by?: PlayerId, bySource?: stri
 
 /** ไลฟ์ไปรีเสิร์ฟของเจ้าของ; คืน true ถ้าไลฟ์หมดแล้วจบเกม */
 export function loseLife(ctx: Ctx, player: PlayerId, amount: number, winner: PlayerId, to: 'reserve' | 'trash' = 'reserve', attack = false, opts: { selfOnly?: boolean } = {}): boolean {
+  // กำแพงผลึกขาว: ทั้งเทิร์นไลฟ์เสียรวมไม่เกิน 1 (ทุกความเสียหาย ทั้งโจมตีและเอฟเฟกต์ · ไม่นับการจ่ายไลฟ์ของเราเอง)
+  const cap = opts.selfOnly ? undefined : (ctx.s.lifeCapOne ?? []).find((l) => l.player === player && l.turn === ctx.s.turn);
+  if (cap) amount = Math.min(amount, Math.max(0, 1 - (cap.used ?? 0)));
+  if (amount <= 0) {
+    ctx.lastLifeLost = { player, amount: 0 };
+    return false;
+  }
+  const lostNow = (n: number) => {
+    if (cap) cap.used = (cap.used ?? 0) + n;
+    ctx.lastLifeLost = { player, amount: n };
+  };
   // 2VS2: ไลฟ์ของคู่แข่งลดพร้อมกันทั้งสองคน · ทีมแพ้เมื่อไลฟ์เป็น 0 ทั้งคู่ (กติกา 15 ข้อ 4, 7) · selfOnly = เฉพาะที่นั่งที่ทำอยู่ (จ่ายไลฟ์ของเราเอง)
   if (ctx.s.players[player].partner) {
     const zones = opts.selfOnly ? [ctx.s.players[player]] : allZones(ctx.s, player);
@@ -190,6 +209,7 @@ export function loseLife(ctx: Ctx, player: PlayerId, amount: number, winner: Pla
       (to === 'trash' ? z.trashCores : z.reserve).push(...z.life.splice(z.life.length - k, k));
       lost = Math.max(lost, k);
     }
+    lostNow(lost);
     emit(ctx, { type: 'lifeLost', player, amount: lost, ...(attack ? { attack: true } : {}) });
     if (lost > 0 && !(ctx.s.lifeDamagedThisTurn ?? []).includes(player)) ctx.s.lifeDamagedThisTurn = [...(ctx.s.lifeDamagedThisTurn ?? []), player];
     if (lost > 0) pendBurst(ctx, player, 'afterLifeLost');
@@ -200,6 +220,7 @@ export function loseLife(ctx: Ctx, player: PlayerId, amount: number, winner: Pla
   const p = ctx.s.players[player];
   const n = Math.min(amount, p.life.length);
   (to === 'trash' ? p.trashCores : p.reserve).push(...p.life.splice(p.life.length - n, n));
+  lostNow(n);
   emit(ctx, { type: 'lifeLost', player, amount: n, ...(attack ? { attack: true } : {}) });
   if (n > 0 && !(ctx.s.lifeDamagedThisTurn ?? []).includes(player)) ctx.s.lifeDamagedThisTurn = [...(ctx.s.lifeDamagedThisTurn ?? []), player];
   if (n > 0) pendBurst(ctx, player, 'afterLifeLost');

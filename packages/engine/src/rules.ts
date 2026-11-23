@@ -1886,8 +1886,9 @@ export function attackLifeDamage(state: GameState, db: CardDatabase, attackerId:
   if (symbolsZeroCard(state, attackerId, db)) dmg = 0;
   if ((state.lifeShields ?? []).some((l) => l.player === defender && l.turn === state.turn && fieldCost(state, db, attackerId) >= l.minCost)) dmg = 0;
   if ((state.noLifeDamageCards ?? []).some((l) => l.cardId === attackerId && l.player === defender && l.turn === state.turn)) dmg = 0;
-  // กำแพงผลึกขาว: ในเทิร์นนี้ไลฟ์เสียหายได้ไม่เกิน 1
-  if (dmg > 1 && (state.lifeCapOne ?? []).some((l) => l.player === defender && l.turn === state.turn)) dmg = 1;
+  // กำแพงผลึกขาว: ในเทิร์นนี้ไลฟ์เสียหายรวมได้ไม่เกิน 1 (ที่เสียไปแล้วหลังเริ่มมีผลนับด้วย)
+  const capOne = (state.lifeCapOne ?? []).find((l) => l.player === defender && l.turn === state.turn);
+  if (capOne) dmg = Math.min(dmg, Math.max(0, 1 - (capOne.used ?? 0)));
   if (dmg > 0 && lifeDamageCapped(state, db, defender)) {
     const rec = state.lifeDamageBy?.turn === state.turn && state.lifeDamageBy.player === defender ? state.lifeDamageBy : null;
     dmg = rec?.ids.includes(attackerId) ? 0 : 1;

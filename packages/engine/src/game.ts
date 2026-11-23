@@ -1,5 +1,5 @@
 import type { CardDatabase, CardDef, Step } from '@bs/cards';
-import { assertUsableCore, checkDepletion, destroy, drawCard, emit, emitStatic, endGame, loseLife, newCore, payCost, pendBurst, setPhase, type Ctx } from './ctx';
+import { assertUsableCore, checkDepletion, destroy, drawCard, emit, emitStatic, endGame, lifeDamageLeft, loseLife, newCore, payCost, pendBurst, setPhase, type Ctx } from './ctx';
 import { destroyCard, enqueue, fireTriggers, refreshByEffect, newBatch, queueExhaustTriggers, queueLifeLostTriggers, queueMagicUsedTriggers, queueSummonTriggers, queueTriggers, resolveChoice, runQueue } from './effects';
 import { nextRandom, shuffle } from './rng';
 import { normalizeSeats } from './seats';
@@ -1356,8 +1356,8 @@ function resolveBattle(ctx: Ctx): void {
     if ((s.lifeShields ?? []).some((l) => l.player === defender && l.turn === s.turn && fieldCost(s, db, attacker.id) >= l.minCost)) dmg = 0;
     // BS11 หิมะน้ำแข็ง เซอร์เคิล: การ์ดที่ถูกระบุทำความเสียหายแก่ไลฟ์ไม่ได้ในเทิร์นนี้
     if ((s.noLifeDamageCards ?? []).some((l) => l.cardId === attacker.id && l.player === defender && l.turn === s.turn)) dmg = 0;
-    // BS08 กำแพงผลึกขาว (โซลคอร์): ในเทิร์นนี้ไลฟ์ได้รับความเสียหายมากกว่า 1 ไม่ได้
-    if (dmg > 1 && (s.lifeCapOne ?? []).some((l) => l.player === defender && l.turn === s.turn)) dmg = 1;
+    // BS08 กำแพงผลึกขาว (โซลคอร์): ในเทิร์นนี้ไลฟ์เสียหายรวมได้ไม่เกิน 1 (loseLife ตัดซ้ำอีกชั้นสำหรับความเสียหายทุกแบบ)
+    dmg = Math.min(dmg, lifeDamageLeft(s, defender));
     // ลองเคพ: เสียหายได้ 1 เม็ดต่อสปิริต 1 ตัวต่อเทิร์น
     if (dmg > 0 && lifeDamageCapped(s, db, defender)) {
       const rec = s.lifeDamageBy?.turn === s.turn && s.lifeDamageBy.player === defender ? s.lifeDamageBy : { turn: s.turn, player: defender, ids: [] as string[] };

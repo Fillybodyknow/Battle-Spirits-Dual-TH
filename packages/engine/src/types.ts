@@ -505,8 +505,8 @@ export interface GameState {
   turnSymbolBuffs?: { player: PlayerId; turn: number; filter?: CardFilter; color: string; count: number }[];
   /** player ข้ามสเต็ปเหล่านี้ในเทิร์น turn */
   skipSteps?: { player: PlayerId; turn: number; steps: ('refresh' | 'main')[] }[];
-  /** ในเทิร์นนี้ ไลฟ์ของ player เสียหายได้ไม่เกิน 1 ต่อครั้ง */
-  lifeCapOne?: { player: PlayerId; turn: number }[];
+  /** ในเทิร์นนี้ ไลฟ์ของ player เสียหายรวมได้ไม่เกิน 1 (กำแพงผลึกขาว · used = ที่เสียไปแล้วหลังเริ่มมีผล) */
+  lifeCapOne?: { player: PlayerId; turn: number; used?: number }[];
   /** ในเทิร์นนี้ การ์ดนี้โจมตีไม่ได้ */
   turnNoAttack?: { cardId: string; turn: number }[];
   /** เทิร์นที่ [เมื่อป้องกัน] ทำงานตอนโจมตีแทน (แอทแท็คชิฟท์) */
