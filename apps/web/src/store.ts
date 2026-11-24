@@ -2667,6 +2667,7 @@ function enterRoom(code: string, me: PlayerId, uid: string, spectator = false, s
     if (on?.code === code) useGame.setState({ online: { ...on, watchers: (v as Record<string, string> | null) ?? {} } });
   });
   unsubNet = startNet(transport, code, spectator ? null : seatKey(me, seat));
+  if (!spectator) touchRoom(code);
   if (spectator) {
     const path = watcherPath(code, uid);
     void transport
@@ -2679,6 +2680,58 @@ function enterRoom(code: string, me: PlayerId, uid: string, spectator = false, s
 /** รายชื่อผู้ชมของห้องเกม (uid = ผู้ชมคนนั้น) */
 function watcherPath(code: string, uid?: string): string {
   return `rooms/${code}/watchers${uid ? `/${uid}` : ''}`;
+}
+
+// ---------------------------------------------------------------- เก็บกวาดห้องค้าง
+// Realtime Database ไม่ลบข้อมูลหมดอายุเอง: ห้องที่เจ้าของปิดแท็บไป / ห้องเกมของโต๊ะที่เล่นจบแล้วจะค้างอยู่ตลอด
+// ทุกห้องจดเวลาที่มีความเคลื่อนไหวล่าสุดที่ rooms/~index/<code> (ตอนเข้า + ทุก ROOM_TOUCH_MS ระหว่างอยู่ในห้อง)
+// เปิดหน้ารายการห้องเมื่อไร = ลบห้องที่เงียบเกิน ROOM_STALE_MS (ทำไม่เกินชั่วโมงละครั้งต่อเครื่อง)
+// อยู่ใต้ rooms (กฎเดิมให้เขียนได้) จึงไม่ต้องแก้ database.rules.json · อ่านแค่ดัชนี ไม่อ่านทั้ง rooms (ใหญ่ + กฎไม่ให้อ่าน)
+const ROOM_INDEX = 'rooms/~index';
+const ROOM_STALE_MS = 12 * 3600_000;
+const ROOM_TOUCH_MS = 10 * 60_000;
+const SWEEP_KEY = 'bs-room-sweep';
+let roomTouchTimer: ReturnType<typeof setInterval> | null = null;
+
+/** จดว่าห้องนี้ยังมีคนอยู่ (และเริ่มจดซ้ำเป็นระยะระหว่างที่เครื่องนี้อยู่ในห้อง) */
+function touchRoom(code: string) {
+  void transport.setPath(`${ROOM_INDEX}/${code}`, Date.now()).catch(() => {});
+  if (roomTouchTimer) return;
+  roomTouchTimer = setInterval(() => {
+    const st = useGame.getState();
+    if (st.duel) void transport.setPath(`${ROOM_INDEX}/${st.duel.code}`, Date.now()).catch(() => {});
+    if (st.online && !st.online.spectator) void transport.setPath(`${ROOM_INDEX}/${st.online.code}`, Date.now()).catch(() => {});
+  }, ROOM_TOUCH_MS);
+}
+
+/** ลบห้องหนึ่งทั้งหมด (ข้อมูลห้อง แชท รายการห้อง ดัชนี) */
+async function removeRoom(code: string) {
+  await transport.removePath(`rooms/${code}`).catch(() => {});
+  await transport.removePath(chatPath(code)).catch(() => {});
+  await transport.unpublishRoom(code).catch(() => {});
+  await transport.removePath(`${ROOM_INDEX}/${code}`).catch(() => {});
+}
+
+/** ลบห้องที่เงียบเกิน ROOM_STALE_MS · คืนจำนวนห้องที่ลบ (force = ไม่สนว่าเพิ่งกวาดไป) */
+export async function sweepRooms(force = false): Promise<number> {
+  try {
+    if (!force && Date.now() - Number(localStorage.getItem(SWEEP_KEY) ?? 0) < 3600_000) return 0;
+    localStorage.setItem(SWEEP_KEY, String(Date.now()));
+  } catch {
+    /* โหมดส่วนตัว: กวาดได้ทุกครั้ง */
+  }
+  try {
+    await transport.signIn();
+    const index = ((await transport.readPath(ROOM_INDEX)) ?? {}) as Record<string, unknown>;
+    const cut = Date.now() - ROOM_STALE_MS;
+    const stale = Object.entries(index)
+      .filter(([, t]) => typeof t !== 'number' || t < cut)
+      .map(([code]) => code);
+    for (const code of stale) await removeRoom(code);
+    return stale.length;
+  } catch {
+    return 0;
+  }
 }
 
 /** ที่นั่ง (uid) ของห้องเกมล่าสุด: ฉากเปิดเกมใช้แสดง Player ID */
@@ -2931,6 +2984,7 @@ function stopDuel() {
 
 function watchDuel(code: string, uid: string) {
   stopDuel();
+  touchRoom(code);
   try {
     sessionStorage.setItem(DUEL_SESSION, code);
   } catch {
@@ -3145,9 +3199,14 @@ export async function duelLeave(): Promise<void> {
   const host = d.room?.host === d.uid;
   try {
     if (host) {
-      await transport.removePath(roomPath(d.code));
-      await transport.removePath(chatPath(d.code)).catch(() => {});
-      await transport.unpublishRoom(d.code);
+      // ห้องเกมของแต่ละโต๊ะอยู่แยก (rooms/<code>-<id>): ไม่มีใครนั่งแล้ว = ลบตามไปด้วย
+      // ยังเล่นกันอยู่ = ปล่อยให้เล่นจนจบ (คนสุดท้ายที่ออกลบ / ไม่งั้นถูกกวาดเมื่อเงียบเกิน 12 ชม.)
+      for (const tb of Object.values(d.room?.tables ?? {})) {
+        if (!tb?.game) continue;
+        const seats = await transport.readPath(`rooms/${tb.game}/seats`).catch(() => ({}));
+        if (!seats || Object.keys(seats as object).length === 0) await removeRoom(tb.game);
+      }
+      await removeRoom(d.code);
     } else {
       const res = await transport.transactPath(roomPath(d.code), (cur: DuelRoom | null) => {
         if (!cur) return cur;
@@ -3483,7 +3542,18 @@ export const useGame = create<Store>((set, get) => {
       stopSync();
       clearSession();
       if (on) leftGames.add(on.code);
-      if (on && !on.spectator) void transport.leave(on.code, seatKey(on.me, on.seat)).catch(() => {});
+      if (on && !on.spectator) {
+        const code = on.code;
+        void transport
+          .leave(code, seatKey(on.me, on.seat))
+          // ผู้เล่นออกครบทุกที่นั่งแล้ว (เกมของโต๊ะจบ): ลบห้องเกมทิ้ง · ห้องที่เข้าด้วยรหัสแบบเดิม (ไม่มีห้องดวล) เจ้าของลบเมื่อออก
+          .then(async () => {
+            if (!duel) return;
+            const seats = await transport.readPath(`rooms/${code}/seats`);
+            if (!seats || Object.keys(seats as object).length === 0) await removeRoom(code);
+          })
+          .catch(() => {});
+      }
       // ผู้ชมออกจากเกม: เอาชื่อออกจากรายชื่อผู้ชมทันที (ไม่ต้องรอหลุดการเชื่อมต่อ)
       if (on?.spectator) void transport.removePath(watcherPath(on.code, on.uid)).catch(() => {});
       if (on?.me === 'p1' && !duel) void transport.unpublishRoom(on.code).catch(() => {});

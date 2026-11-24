@@ -22,6 +22,7 @@ import {
   duelSpectate,
   duelStand,
   listRooms,
+  sweepRooms,
   onlineAvailable,
   onlineVia,
   playableDecks,
@@ -415,6 +416,8 @@ function RoomList({ onOpen, team }: { onOpen: (code: string) => void; team: bool
   const load = () => {
     setRooms(null);
     setError(null);
+    // ลบห้องค้าง (ไม่มีความเคลื่อนไหวเกิน 12 ชม.) ทำเบื้องหลัง ไม่รอ
+    void sweepRooms();
     listRooms().then((list) => setRooms(list.filter((x) => !!x.team === team)), (e: Error) => {
       setRooms([]);
       setError(`โหลดรายการห้องไม่ได้ (${e.message}) · ยังเข้าห้องด้วยรหัสได้`);

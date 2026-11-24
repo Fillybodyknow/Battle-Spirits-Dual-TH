@@ -194,6 +194,9 @@ export const firebaseTransport: Transport = {
   watchPath(path, cb) {
     return onValue(ref(database(), path), (snap) => cb(snap.val()));
   },
+  async readPath(path) {
+    return (await get(ref(database(), path))).val();
+  },
   async setPath(path, value) {
     await set(ref(database(), path), value);
   },

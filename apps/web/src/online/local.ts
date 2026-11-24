@@ -230,6 +230,9 @@ export const localTransport: Transport = {
     queueMicrotask(check);
     return subscribe(check);
   },
+  async readPath(path) {
+    return getAt(readTree(), path);
+  },
   async setPath(path, value) {
     await lag();
     setAt(path, value);

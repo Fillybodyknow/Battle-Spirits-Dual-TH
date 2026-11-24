@@ -10,6 +10,7 @@
  *   rooms/<code>/actions/<round>/<000000> = JSON ของ action (ลำดับต่อเนื่อง ไม่มีช่องว่าง)
  *   rooms/<code>/avatars/{p1,p2}  รูปโปรไฟล์ (รหัสการ์ด) ของแต่ละที่นั่ง
  *   rooms/<code>/levels/{p1,p2}   เลเวลผู้เล่นของแต่ละที่นั่ง
+ *   rooms/~index/<code>            เวลาที่ห้องมีความเคลื่อนไหวล่าสุด (ms) · ใช้ลบห้องค้าง (sweepRooms ใน store.ts)
  *   rooms/<code>/pings/<ที่นั่ง>   { ms, n } ปิงของที่นั่งนั้น (online/net.ts · ลบเองเมื่อหลุด)
  *   rooms/<code>/meta               { name, comment, listed, createdAt } ข้อมูลห้อง (Duel Room)
  *   lobby/<code>                    LobbyEntry: รายการห้องที่เปิดให้เห็น (ลบเมื่อห้องเต็ม/เจ้าของออก/หลุด)
@@ -155,6 +156,8 @@ export interface Transport {
 
   // ---- อ่าน/เขียนตาม path (ใช้กับห้องดวล) ----
   watchPath(path: string, cb: (value: unknown) => void): () => void;
+  /** อ่านค่าที่ path หนึ่งครั้ง (ไม่มี = null) */
+  readPath(path: string): Promise<unknown>;
   setPath(path: string, value: unknown): Promise<void>;
   removePath(path: string): Promise<void>;
   /** ทรานแซกชัน: fn คืน undefined = ยกเลิก · คืน value หลังเขียน (null = ไม่มีข้อมูล) */

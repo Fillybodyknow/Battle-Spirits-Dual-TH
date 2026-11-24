@@ -281,6 +281,8 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
   ทั้งสองที่นั่งกดพร้อม → เครื่องที่นั่ง p1 สร้างห้องเกม `rooms/<code>-<id>` (โครงสร้างห้องเกม 2 คนเดิม: setup/actions) แล้วตั้ง `tables/<n>/game`
   ผู้เล่นทั้งสองเข้าด้วย `enterRoom` เดิม · ผู้ชม = `enterRoom(..., spectator)` (`online.spectator`: mine/controls เป็น false, มือคว่ำทั้งสองฝ่าย)
   ผู้เล่นออกจากเกม = โต๊ะกลับไปรอพร้อมใหม่ · รายการห้องอยู่ที่ `lobby/<code>` (count/max) · โหมด `?online=local` ใช้ path tree ใน localStorage
+  **ห้องค้าง**: ทุกห้องจดเวลาล่าสุดที่ `rooms/~index/<code>` (`touchRoom` ตอนเข้า + ทุก 10 นาทีระหว่างอยู่) · เปิดรายการห้อง = `sweepRooms` ลบห้องที่เงียบเกิน 12 ชม. (`removeRoom`: ห้อง + `-chat` + lobby + ดัชนี, ชั่วโมงละครั้งต่อเครื่อง) ·
+  เจ้าของปิดห้องดวล = ลบห้องเกมของโต๊ะที่ไม่มีคนนั่งด้วย · ผู้เล่นคนสุดท้ายออกจากเกมของโต๊ะ = ลบห้องเกม · ห้องใหม่ที่มีข้อมูลยาวต้องเข้าทาง `removeRoom` ไม่งั้นค้าง
   กฎ Realtime Database อยู่ที่ `database.rules.json` (+ `firebase.json`) ไม่ได้ deploy อัตโนมัติ: แก้ path ใหม่ใน DB ต้องแก้ไฟล์นี้
   แล้วให้เจ้าของโปรเจกต์วางใน Firebase Console → Realtime Database → Rules (หรือ `npx firebase-tools deploy --only database`)
   ไม่งั้น path ใหม่ถูกปฏิเสธ (เช่น `lobby` ใช้ไม่ได้ = รายการห้องว่าง แต่เข้าด้วยรหัสยังได้)
