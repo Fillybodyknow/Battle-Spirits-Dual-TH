@@ -499,3 +499,44 @@ describe('2VS2', () => {
     expect(s.winner).toBe('p1');
   });
 });
+
+describe('2VS2: Draw Step จั่วอัตโนมัติ (config.manualDraw)', () => {
+  const deck = Array<string>(40).fill(DARIU);
+  const game = (partnerDecks: { p1?: string[]; p2?: string[] }, firstPlayer: PlayerId) =>
+    createGame({ db, decks: { p1: deck, p2: deck }, partnerDecks, seed: 1, firstPlayer, shuffleDecks: false, config: { manualDraw: true } }).state;
+
+  it('ฝั่งที่มีเพื่อนร่วมทีม: ไม่รอกดจั่ว ทั้งสองคนจั่วเองแล้วเข้าเมนสเต็ป', () => {
+    const s = game({ p1: deck, p2: deck }, 'p1');
+    expect(s.awaitingDraw).toBeUndefined();
+    expect(z(s, 'p1', 0).hand).toHaveLength(5);
+    expect(z(s, 'p1', 1).hand).toHaveLength(5);
+  });
+
+  it('1VS2: ฝั่งที่เล่นคนเดียวยังกดจั่วเอง', () => {
+    const s = game({ p1: deck }, 'p2');
+    expect(s.awaitingDraw).toBe('p2');
+  });
+});
+
+describe('2VS2: อัญเชิญการ์ดของเพื่อนด้วยเอฟเฟกต์ของเรา', () => {
+  it('อัญเชิญจากแทรชเพื่อน (คำสาปวิญญาณย้อนกลับ ฯลฯ): เพื่อนวางคอร์จากรีเสิร์ฟของเพื่อน ไม่ใช้คอร์ของเรา', () => {
+    let s = setup();
+    const target = z(s, 'p1', 1).deck.shift()!;
+    z(s, 'p1', 1).trashCards.push(target);
+    const src = z(s, 'p1', 0).hand[0]!;
+    const myReserve = [...z(s, 'p1', 0).reserve];
+    s.queue = [{ controller: 'p1', sourceId: src, steps: [{ do: 'summonFromTrashFree', filter: { types: ['spirit'] } }], paidWithSoul: false, trashWhenDone: false }];
+    s = act(s, { type: 'endMain', player: 'p1' });
+    expect(s.choice?.kind).toBe('card');
+    s = act(s, { type: 'choose', player: 'p1', pick: target });
+    expect(s.choice?.kind).toBe('placeCores');
+    // ถามเพื่อน (ที่นั่ง 1) · เราตอบแทนไม่ได้
+    const theirs = z(s, 'p1', 1).reserve.filter((c) => !s.cores[c]!.isSoul);
+    expect(fails(s, { type: 'choose', player: 'p1', pick: { pay: [myReserve.find((c) => !s.cores[c]!.isSoul)!] } })).not.toBe('ok');
+    s = act(s, { type: 'choose', player: 'p1', seat: 1, pick: { pay: [theirs[0]!] } });
+    expect(s.players.p1.field).toContain(target);
+    expect(s.cards[target]!.cores).toEqual([theirs[0]]);
+    expect(s.cores[theirs[0]!]!.seat ?? 0).toBe(1);
+    expect(z(s, 'p1', 0).reserve.sort()).toEqual(myReserve.sort());
+  });
+});

@@ -239,7 +239,8 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
   · **1VS2** (กติกา 15 ข้อ 10): `partnerDecks` ระบุแค่ฝั่งเดียว → อีกฝั่งไม่มี partner = `state.solo` (ไลฟ์ `SOLO_LIFE` 10, คอร์สเต็ป +2, ดรอว์สเต็ปจั่ว 2 ใน game.ts) · โค้ด 2VS2 ตรวจ `players[p].partner` ต่อฝั่ง (ห้ามถือว่า mode 2v2 = มี partner ทั้งสองฝั่ง)
     หน้าเว็บ: VS BOT เลือก 1VS2 / 2VS1 (`startVsBot(..., { partners: { p2 } })`) · Team Battle โต๊ะ 3 คน = 1VS2 (`tablePlayers` ใน store, `gameSeats(setup)` ใน transport) · เทสต์ `1v2.test.ts`
     ทดสอบ: 4 แท็บ `?online=local` (สคริปต์ CDP: import store ด้วย URL เดียวกับที่แอปโหลด จาก `performance.getEntriesByType('resource')` ไม่งั้นได้ store ตัวใหม่)
-- `config.manualDraw` (หน้าเว็บเปิดไว้): Draw Step หยุดรอ action `drawStep` · เทสต์ใช้ค่าเริ่มต้น (จั่วเอง)
+- `config.manualDraw` (หน้าเว็บเปิดไว้): Draw Step หยุดรอ action `drawStep` · เทสต์ใช้ค่าเริ่มต้น (จั่วเอง) · ฝั่งที่มีเพื่อนร่วมทีม (2VS2) จั่วอัตโนมัติเสมอ (เจ้าของโปรเจกต์กำหนด · 1VS2 ฝั่งคนเดียวยังกดเอง)
+- 2VS2 หน้าเว็บ: ช่อง Burst แต่ละที่นั่ง = `data-burst-seat="<p>:<seat>"` (แอนิเมชันเบิร์สใช้ `burstSeatSel` / `burstRect` ตาม `card.seat`) · ภาพร่างจัด Core (`truth`) ไม่หายเมื่อ action ของที่นั่งอื่นมาถึง (`restoreDraft` ใน receive)
 - เปลี่ยนลำดับ action ที่ engine คาดหวัง = ห้องออนไลน์ที่เล่นค้างอยู่จะเล่นต่อไม่ได้ (บอกเจ้าของโปรเจกต์ด้วย)
 - ความสามารถถาวร (ไม่ผ่านคิว) ไม่มี `effectResolving` → ตรงจุดที่มัน "ลงมือจริง" ให้เรียก `emitStatic(ctx, { cardId, source })` (event `staticApplied`)
   หน้าเว็บจะเรืองแสงการ์ดต้นเหตุ + ป้าย "เอฟเฟกต์ถาวร" · ตัวช่วยหาต้นเหตุ: `staticSources` / `effectBlocker` / `negatedBy` / `bounceBottomSource` ใน rules.ts
@@ -264,7 +265,9 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
   · แอนิเมชันที่วนตลอดให้ขยับเฉพาะ transform/opacity และไม่ใช้ตัวแปร CSS ใน keyframes (การ์ดจอทำแทนไม่ได้)
 - ไอคอนใช้ SVG ใน `components/Icon.tsx` (อีโมจิ/สัญลักษณ์พิเศษเป็นกล่องว่างบน Windows 7)
 - สี Tailwind v4 เป็น `oklch()`: ถ้าอัปเดต Tailwind ให้รัน `npm run legacy-colors`
-- โหมดออนไลน์: `?online=local` ใช้ transport ในเครื่อง (ทดสอบสองแท็บได้โดยไม่ต้องมี Firebase)
+- โหมดออนไลน์: `?online=local` ใช้ transport ในเครื่อง (ทดสอบสองแท็บได้โดยไม่ต้องมี Firebase) · `&lag=<ms>` = จำลองเน็ตช้าของแท็บนั้น
+- **ปิง / การเชื่อมต่อ (`online/net.ts` + `components/NetStatus.tsx`)**: ทุกที่นั่งเขียน `rooms/<code>/pings/<ที่นั่ง>` = `{ ms, n }` ทุก 3 วิ (ms = เวลาที่เซิร์ฟเวอร์ตอบรับครั้งก่อน, ลบเองเมื่อหลุด) ·
+  `SeatPing` ข้างชื่อบน PlayerPlate / TeamMiniPlate · `NetWarning` = หลุด (`.info/connected` ผ่าน `transport.watchConnected`) / action ที่ส่งแล้วยังไม่กลับ (`markSent` ใน sendActions → `markEchoed` ใน receive) / ที่นั่งอื่นเงียบเกิน `STALE_MS`
 - **บัญชีผู้ใช้ (`src/account/`)**: Firebase Auth (Google / Email) ผูกกับ uid ไม่ระบุตัวเดิม (`linkWithPopup` / `linkWithCredential`) · ซิงก์ชื่อ รูปโปรไฟล์ (`bs-avatar`) เด็ค และการตั้งค่า
   - **ต้องล็อกอินก่อนเข้าเกม** (เจ้าของโปรเจกต์กำหนด): `App` แสดง `screens/Login.tsx` (หน้าไตเติล + แผงเข้าสู่ระบบ) จนกว่าจะล็อกอินและแตะเริ่ม · ออกจากระบบ = กลับหน้าไตเติล
     ทดสอบ UI ด้วย `?online=local` (บัญชีจำลอง) หรือเรียก `account.signUpEmail(...)` จาก `/src/account/account.ts` ก่อนเรียก `__game`

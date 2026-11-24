@@ -10,6 +10,7 @@
  *   rooms/<code>/actions/<round>/<000000> = JSON ของ action (ลำดับต่อเนื่อง ไม่มีช่องว่าง)
  *   rooms/<code>/avatars/{p1,p2}  รูปโปรไฟล์ (รหัสการ์ด) ของแต่ละที่นั่ง
  *   rooms/<code>/levels/{p1,p2}   เลเวลผู้เล่นของแต่ละที่นั่ง
+ *   rooms/<code>/pings/<ที่นั่ง>   { ms, n } ปิงของที่นั่งนั้น (online/net.ts · ลบเองเมื่อหลุด)
  *   rooms/<code>/meta               { name, comment, listed, createdAt } ข้อมูลห้อง (Duel Room)
  *   lobby/<code>                    LobbyEntry: รายการห้องที่เปิดให้เห็น (ลบเมื่อห้องเต็ม/เจ้าของออก/หลุด)
  *
@@ -160,6 +161,8 @@ export interface Transport {
   transactPath(path: string, fn: (cur: any) => unknown): Promise<{ committed: boolean; value: unknown }>;
   /** ลบ path นี้เองเมื่อเครื่องนี้หลุด (ปิดแท็บ/เน็ตหลุด) ทำไม่ได้ก็ข้าม */
   removeOnDisconnect(path: string): Promise<void>;
+  /** สถานะการเชื่อมต่อกับเซิร์ฟเวอร์ (true = ต่ออยู่) · ไม่มี = ถือว่าต่ออยู่เสมอ */
+  watchConnected?(cb: (connected: boolean) => void): () => void;
 }
 
 export const actionKey = (index: number) => String(index).padStart(6, '0');

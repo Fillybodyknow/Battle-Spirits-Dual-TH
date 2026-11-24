@@ -6,6 +6,10 @@ import { actionKey, decodeAction, encodeAction, type LobbyEntry, type RoomInfo, 
 
 const LOBBY = 'bs-local-lobby';
 
+/** ?lag=<ms> = จำลองเน็ตช้า (หน่วงการส่ง action / เขียนข้อมูลของแท็บนี้) ใช้ทดสอบป้ายปิง */
+const LAG = typeof location !== 'undefined' ? Number(new URLSearchParams(location.search).get('lag')) || 0 : 0;
+const lag = () => (LAG ? new Promise<void>((r) => setTimeout(r, LAG)) : Promise.resolve());
+
 /** ข้อมูลแบบต้นไม้ (ห้องดวล) เก็บแยกคีย์ ใช้ path แบบ Firebase */
 const TREE = 'bs-local-tree';
 const readTree = (): Record<string, unknown> => {
@@ -145,6 +149,7 @@ export const localTransport: Transport = {
     return subscribe(check);
   },
   async pushAction(code, round, index, action) {
+    await lag();
     const s = read();
     const room = s[code];
     if (!room) return false;
@@ -226,6 +231,7 @@ export const localTransport: Transport = {
     return subscribe(check);
   },
   async setPath(path, value) {
+    await lag();
     setAt(path, value);
   },
   async removePath(path) {

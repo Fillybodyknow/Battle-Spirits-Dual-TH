@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { opponentOf, type PlayerId } from '@bs/engine';
 import { cardArt, GEM_IMG } from '../assets';
-import { braveSlot, CAST_MS, CHARGE_HIT, CHARGE_MS, CHARGE_WIND, DRAW_FLIP_MS, DRAW_TIER, LETHAL_RELEASE, LETHAL_SLOW, LETHAL_SLOW_EXTRA, CUTIN_MS, CUTIN_SLAM, castCards, castHandSlots, castTone, controls, CHARGE_KNOCK, actingPlayer, chainEntries, viewPlayer, db, fieldScaleOf, GHOST_MS, isFxBlocking, layoutRect, MILL_MS, millBreakAt, millDuration, PLAY_HIT, useGame, type Fx, type Rect, hiddenFrom } from '../store';
+import { braveSlot, CAST_MS, CHARGE_HIT, CHARGE_MS, CHARGE_WIND, DRAW_FLIP_MS, DRAW_TIER, LETHAL_RELEASE, LETHAL_SLOW, LETHAL_SLOW_EXTRA, CUTIN_MS, CUTIN_SLAM, castCards, castHandSlots, castTone, controls, CHARGE_KNOCK, actingPlayer, chainEntries, viewPlayer, db, fieldScaleOf, GHOST_MS, isFxBlocking, layoutRect, MILL_MS, millBreakAt, millDuration, PLAY_HIT, useGame, type Fx, type Rect, hiddenFrom, burstSeatSel } from '../store';
 import { CardBack, CardFace } from './CardFace';
 import { usePrefs } from '../prefs';
 import { setSfxTimeScale, sfx } from '../sfx';
@@ -2095,7 +2095,8 @@ function liftFromSlot(slot: Rect): Rect {
  */
 export function restRect(owner: PlayerId, tone: 'main' | 'flash' | 'burst', cardId?: string): Rect {
   if (tone === 'burst') {
-    const r = rectOf(document.querySelector(`[data-burst-card="${owner}"]`));
+    // ช่อง Burst ของที่นั่งเจ้าของใบ (2VS2) ก่อน แล้วค่อยช่องหลักของฝั่ง
+    const r = rectOf(document.querySelector(burstSeatSel(useGame.getState().state, owner, cardId))) ?? rectOf(document.querySelector(`[data-burst-card="${owner}"]`));
     if (r) return r;
   }
   const g = useGame.getState();

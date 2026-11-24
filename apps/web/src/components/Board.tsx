@@ -1010,6 +1010,9 @@ function BurstSlot({ player, partner }: { player: PlayerId; partner?: boolean })
   const hiddenBurst = useGame((s) => hiddenFrom(s, player));
   const { hover, pin } = useGame.getState();
   const setBurst = zoneOf(state, player, partner).burst;
+  // ที่นั่งของช่องนี้ (2VS2: ช่องของคนที่สองแยกจากช่องหลัก) → แอนิเมชันเบิร์สเริ่ม/จบที่ช่องของเจ้าของใบ
+  const active = state.players[player].active ?? 0;
+  const slotSeat = partner ? (active ? 0 : 1) : active;
   // ใบที่กำลังบินมาเซ็ท: ช่องยังว่างจนบินถึง
   const flyingIn = useFlying(setBurst ?? '');
   const burst = flyingIn ? null : setBurst;
@@ -1041,6 +1044,7 @@ function BurstSlot({ player, partner }: { player: PlayerId; partner?: boolean })
       <div className="flex flex-1 items-center justify-center">
         <div
           data-burst-card={partner ? undefined : player}
+          data-burst-seat={`${player}:${slotSeat}`}
           className={`relative h-24 w-[4.2rem] shrink-0 ${burst ? 'rounded-lg ring-2 ring-orange-400' : ''} ${visible ? 'cursor-pointer' : ''} ${dragging ? 'opacity-40' : ''}`}
           onMouseEnter={() => visible && hover(burst)}
           onMouseLeave={() => {

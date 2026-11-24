@@ -1154,6 +1154,15 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       useSeat(s, me, itemSeat(s, item));
       return;
     }
+    // อัญเชิญการ์ดของเพื่อนร่วมทีม (เช่น จากแทรชทีม): คอร์บนการ์ดเป็นของเจ้าของการ์ด (กติกา 15 ข้อ 2)
+    // → วางคอร์จากรีเสิร์ฟ/การ์ดของเพื่อน และเพื่อนเป็นคนเลือกวาง (เดิมใช้คอร์ของเราแล้วกลายเป็นของเพื่อน)
+    if (step.do === 'placeCores' && item.seatPrev === undefined) {
+      const card = s.cards[step.cardId];
+      if (card && card.owner === me && s.players[me].partner && seatOfCard(card) !== itemSeat(s, item)) {
+        item.steps.unshift({ do: 'selfSeat', seat: seatOfCard(card) }, step, { do: 'selfSeat', seat: null });
+        return;
+      }
+    }
     // เอฟเฟกต์จั่วการ์ดของเรา: เจ้าของเอฟเฟกต์เลือกว่าใครในทีมจั่ว (กติกา 15 ข้อ 8)
     if ((step.do === 'draw' || step.do === 'addDrawStepDraw') && item.seatPrev === undefined && s.players[me].partner && drawAsks(ctx, item, step)) {
       const mine = itemSeat(s, item);

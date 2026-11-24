@@ -7,6 +7,7 @@ import { firebaseConfigured, firebaseTransport } from './online/firebase';
 import { localTransport } from './online/local';
 import type { DuelMember, DuelRoom, DuelTable, LobbyEntry, RoomInfo, RoomSetup, TableSeat, Transport } from './online/transport';
 import { gameSeats, keySeat, keySide, seatKey, TEAM_SEATS } from './online/transport';
+import { clearPending, markEchoed, markSent, startNet } from './online/net';
 import { expandDeck, loadAllCards, validateDeck } from '@bs/cards';
 import { deckChoices, deckInfo, deckToken, STARTER_DECKS, type DeckId } from './decks';
 import { rarityOf, type TextEffect } from '@bs/cards';
@@ -699,6 +700,11 @@ function virtualFieldRect(prev: GameState, owner: PlayerId, rects: Record<string
   return { x: edge.x + dir * (edge.w + 12), y: edge.y, w, h };
 }
 
+/** ช่อง Burst ของที่นั่งเจ้าของการ์ด (2VS2 แต่ละคนมีช่องของตัวเอง) */
+export const burstSeatSel = (s: GameState, player: PlayerId, cardId?: string) => `[data-burst-seat="${player}:${(cardId && s.cards[cardId]?.seat) || 0}"]`;
+const burstRect = (rects: Record<string, Rect>, s: GameState, player: PlayerId, cardId?: string): Rect | undefined =>
+  rects[`burstSeat:${player}:${(cardId && s.cards[cardId]?.seat) || 0}`] ?? rects[`burst:${player}`];
+
 function snapRects(): Record<string, Rect> {
   const out: Record<string, Rect> = {};
   if (typeof document === 'undefined') return out;
@@ -712,6 +718,7 @@ function snapRects(): Record<string, Rect> {
   grab('[data-song-card]', (el) => `song:${el.dataset.songCard}`);
   grab('[data-field-card] > div:first-child', (el) => `field:${el.parentElement!.dataset.fieldCard}`);
   grab('[data-burst-card]', (el) => `burst:${el.dataset.burstCard}`);
+  grab('[data-burst-seat]', (el) => `burstSeat:${el.dataset.burstSeat}`);
   grab('[data-brave-card]', (el) => `brave:${el.dataset.braveCard}`);
   grab('[data-trash]', (el) => `trash:${el.dataset.trash}`);
   return out;
@@ -1145,7 +1152,7 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
             : origin === 'deck'
               ? fromReveal(e.cardId, `[data-deck="${e.player}"]`)
               : origin === 'burst'
-                ? (rects[`burst:${e.player}`] ?? 'center')
+                ? (burstRect(rects, s, e.player, e.cardId) ?? 'center')
                 : origin === 'trash' || (e.type === 'summoned' && e.fromTrash)
                   ? (rects[`trash:${e.player}`] ?? 'center')
                   : (rects[`hand:${e.cardId}`] ?? null);
@@ -1349,7 +1356,7 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
           owner: e.player,
           tone: 'burst',
           from: 'burst',
-          ...(rects[`burst:${e.player}`] ? { fromRect: rects[`burst:${e.player}`] } : {}),
+          ...(burstRect(rects, s, e.player, e.cardId) ? { fromRect: burstRect(rects, s, e.player, e.cardId) } : {}),
           delay: t,
           pulses: [t + T.castGlow],
           end: 0,
@@ -1639,22 +1646,25 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         });
         break;
       case 'burstDiscarded': {
-        const slot = rects[`burst:${e.player}`];
+        const slot = burstRect(rects, s, e.player, e.cardId);
         // ถูกเอฟเฟกต์ทำลาย: หงายการ์ดที่ช่อง Burst ให้เห็น → ร้าวแล้วแตก → ดวงวิญญาณลอยลง Trash (แบบเดียวกับสปิริตถูกทำลาย)
         if (e.byEffect && slot) {
-          out.push({ kind: 'float', anchor: `[data-burst-card="${e.player}"]`, text: 'BURST ถูกทำลาย!', tone: 'bad', delay: t });
+          out.push({ kind: 'float', anchor: burstSeatSel(s, e.player, e.cardId), text: 'BURST ถูกทำลาย!', tone: 'bad', delay: t });
           out.push({ kind: 'ghost', cardId: e.cardId, owner: e.player, slot: -1, cardNo: s.cards[e.cardId]!.cardNo, rect: slot, mode: 'destroy', delay: t + 150 });
           t += 150 + T.ghost;
           break;
         }
-        out.push({ kind: 'fly', cardId: e.cardId, from: slot ?? `[data-burst-card="${e.player}"]`, to: `[data-trash="${e.player}"]`, mode: 'move', shrink: true, delay: t, hideTarget: false });
+        out.push({ kind: 'fly', cardId: e.cardId, from: slot ?? burstSeatSel(s, e.player, e.cardId), to: `[data-trash="${e.player}"]`, mode: 'move', shrink: true, delay: t, hideTarget: false });
         break;
       }
       case 'burstSet': {
         if (e.replacedCardId) {
-          out.push({ kind: 'fly', cardId: e.replacedCardId, from: rects[`burst:${e.player}`] ?? null, to: `[data-trash="${e.player}"]`, mode: 'move', shrink: true, delay: t, hideTarget: false });
+          out.push({ kind: 'fly', cardId: e.replacedCardId, from: burstRect(rects, s, e.player, e.replacedCardId) ?? null, to: `[data-trash="${e.player}"]`, mode: 'move', shrink: true, delay: t, hideTarget: false });
         }
-        const set = s.players[e.player].burst;
+        // 2VS2: ใบที่เพิ่งเซ็ทอาจอยู่ในช่องของเพื่อนร่วมทีม (players[p].burst = เฉพาะที่นั่งที่สลับอยู่)
+        const nowSet = [s.players[e.player].burst, s.players[e.player].partner?.burst];
+        const before = [prev.players[e.player].burst, prev.players[e.player].partner?.burst];
+        const set = nowSet.find((b) => b && !before.includes(b)) ?? s.players[e.player].burst;
         // ใบใหม่: ออกจากมือแบบหงาย (เฉพาะคนที่เห็นมือนั้น) แล้วพลิกคว่ำกลางทาง · ใบเดิมออกจากช่องก่อนเล็กน้อย
         // ช่อง Burst ซ่อนใบใหม่ไว้จนบินถึง (hideTarget)
         if (set) {
@@ -1662,7 +1672,7 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
             kind: 'fly',
             cardId: set,
             from: rects[`hand:${set}`] ?? rects[`field:${set}`] ?? null,
-            to: `[data-burst-card="${e.player}"]`,
+            to: burstSeatSel(s, e.player, set),
             mode: 'move',
             delay: t + (e.replacedCardId ? 250 : 0),
             hideTarget: true,
@@ -2620,6 +2630,8 @@ const clearSession = () => sessionStorage.removeItem(SESSION);
 let unsubRoom: (() => void) | null = null;
 let unsubActions: (() => void) | null = null;
 let unsubWatchers: (() => void) | null = null;
+/** วัดปิง / สถานะการเชื่อมต่อของห้องเกม (online/net.ts) */
+let unsubNet: (() => void) | null = null;
 /** ช่องถัดไปที่จะเขียน action ของเรา */
 let nextIndex = 0;
 /** action ที่มาก่อนลำดับ (รอจนลำดับต่อเนื่อง) */
@@ -2631,7 +2643,8 @@ function stopSync() {
   unsubRoom?.();
   unsubActions?.();
   unsubWatchers?.();
-  unsubRoom = unsubActions = unsubWatchers = null;
+  unsubNet?.();
+  unsubRoom = unsubActions = unsubWatchers = unsubNet = null;
   buffer.clear();
 }
 
@@ -2653,6 +2666,7 @@ function enterRoom(code: string, me: PlayerId, uid: string, spectator = false, s
     const on = useGame.getState().online;
     if (on?.code === code) useGame.setState({ online: { ...on, watchers: (v as Record<string, string> | null) ?? {} } });
   });
+  unsubNet = startNet(transport, code, spectator ? null : seatKey(me, seat));
   if (spectator) {
     const path = watcherPath(code, uid);
     void transport
@@ -2775,6 +2789,7 @@ function beginPlay(code: string, setup: RoomSetup, opponentHere: boolean, existi
   const decks = { p1: setup.decks.p1, p2: setup.decks.p2 ?? setup.decks.p1 } as DeckChoice;
   silentBelow = existing;
   nextIndex = existing;
+  clearPending();
   useGame.setState({
     ...resetUi,
     state: asMySeat(startGame(setup.seed, decks, setup.first, setup.partnerDecks ?? null)),
@@ -2791,7 +2806,30 @@ function beginPlay(code: string, setup: RoomSetup, opponentHere: boolean, existi
 }
 
 function receive(code: string, round: number, index: number, action: Action) {
+  markEchoed(index);
   buffer.set(index, action);
+  const draft: { coreId: string; to: CoreTarget }[] = [];
+  try {
+    applyBuffered(code, round, draft);
+  } finally {
+    if (draft.length) restoreDraft(draft);
+  }
+}
+
+/** จัด Core ในภาพร่างเดิมกลับหลังทำ action ที่มาจากห้อง (ข้ามตัวที่ย้ายไม่ได้แล้ว / อยู่ที่ปลายทางแล้ว) */
+function restoreDraft(moves: { coreId: string; to: CoreTarget }[]) {
+  const { state, truth } = useGame.getState();
+  if (truth) return;
+  let view = state;
+  for (const m of moves) {
+    if (!canMoveCore(view, m.coreId) || alreadyAt(view, m.coreId, m.to)) continue;
+    if ('cardId' in m.to && !view.players[view.turnPlayer].field.includes(m.to.cardId)) continue;
+    view = draftMove(view, [m.coreId], m.to);
+  }
+  if (netMoves(state, view).length > 0) useGame.setState({ state: view, truth: state });
+}
+
+function applyBuffered(code: string, round: number, draft: { coreId: string; to: CoreTarget }[]) {
   for (;;) {
     const st = useGame.getState();
     const on = st.online;
@@ -2800,7 +2838,14 @@ function receive(code: string, round: number, index: number, action: Action) {
     if (!a) return;
     buffer.delete(on.applied);
     // action ที่มาถึงทับภาพร่างการจัด Core ของเรา: ใช้สถานะจริงแล้วทำตามลำดับในห้อง
-    if (st.truth) useGame.setState({ state: st.truth, truth: null });
+    // แล้วจัดภาพร่างเดิมกลับให้ (2VS2: เพื่อนกดยืนยันการจัดของเขา ภาพร่างของเราต้องไม่หาย)
+    // action ของเราเอง = ส่งภาพร่างไปพร้อมกันแล้ว (dispatch รวม moveCores ไว้) → ไม่ต้องจัดกลับ
+    const own = !on.spectator && a.player === on.me && (a.seat ?? 0) === (on.seat ?? 0);
+    if (own) draft.length = 0;
+    if (st.truth) {
+      if (!own) draft.push(...netMoves(st.truth, st.state));
+      useGame.setState({ state: st.truth, truth: null });
+    }
     st.applyLocal(a, { silent: on.applied < silentBelow, remote: true });
     const after = useGame.getState().online!;
     useGame.setState({ online: { ...after, applied: on.applied + 1 } });
@@ -2813,14 +2858,17 @@ async function sendActions(list: Action[]) {
   if (!on?.setup) return;
   for (const a of list) {
     const index = nextIndex++;
+    markSent(index);
     try {
       const ok = await transport.pushAction(on.code, on.setup.round, index, a);
       if (!ok) {
+        clearPending();
         useGame.setState({ error: 'ส่ง action ไม่สำเร็จ: มี action อื่นมาก่อน ลองใหม่อีกครั้ง' });
         nextIndex = useGame.getState().online?.applied ?? nextIndex;
         return;
       }
     } catch (e) {
+      clearPending();
       useGame.setState({ error: `ส่ง action ไม่สำเร็จ: ${(e as Error).message}` });
       return;
     }

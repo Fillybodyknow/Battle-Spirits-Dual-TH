@@ -276,7 +276,8 @@ function afterStart(ctx: Ctx): void {
 function startDraw(ctx: Ctx): void {
   const { s } = ctx;
   const player = s.turnPlayer;
-  if (s.config.manualDraw) {
+  // 2VS2 (ฝั่งที่มีเพื่อนร่วมทีม): จั่วอัตโนมัติ ไม่ต้องรอใครกด (เจ้าของโปรเจกต์กำหนด) · 1VS2 ฝั่งที่เล่นคนเดียวยังกดจั่วเอง
+  if (s.config.manualDraw && !s.players[player].partner) {
     // รอผู้เล่นกดจั่ว (action 'drawStep')
     s.awaitingDraw = player;
     return;

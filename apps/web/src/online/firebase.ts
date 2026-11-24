@@ -207,4 +207,13 @@ export const firebaseTransport: Transport = {
   async removeOnDisconnect(path) {
     await onDisconnect(ref(database(), path)).remove();
   },
+  watchConnected(cb) {
+    // ตอนเปิดแอปค่าแรกเป็น false ชั่วครู่ก่อนต่อติด: รายงาน false เฉพาะหลังจากเคยต่อติดแล้ว
+    let was = false;
+    return onValue(ref(database(), '.info/connected'), (snap) => {
+      const c = snap.val() === true;
+      if (c) was = true;
+      if (c || was) cb(c);
+    });
+  },
 };

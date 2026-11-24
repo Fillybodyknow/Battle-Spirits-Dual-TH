@@ -12,6 +12,7 @@ import { DiamondAvatar, useSeatAvatar } from './SeatAvatar';
 import { LevelChip, useSeatLevel } from './LevelBadge';
 import { setTouchInspected, useLastInputTouch, useTouchInspected } from '../touch';
 import { useShownLife } from './useHeld';
+import { SeatPing } from './NetStatus';
 
 /** ชื่อที่แสดงของผู้เล่น (ออนไลน์ = ชื่อที่ตั้ง, เครื่องเดียว = ผู้เล่น 1/2) */
 function useSeatName(p: PlayerId): string {
@@ -37,6 +38,7 @@ export function PlayerPlate({ player, corner }: { player: PlayerId; corner: 'bot
   const name = useSeatName(player);
   const avatar = useSeatAvatar(player);
   const level = useSeatLevel(player);
+  const activeSeat = useGame((s) => s.state.players[player].active ?? 0);
   const bottom = corner === 'bottom-left';
   const accent = bottom ? '#38bdf8' : '#f43f5e';
   return (
@@ -58,6 +60,7 @@ export function PlayerPlate({ player, corner }: { player: PlayerId; corner: 'bot
         >
           {level !== null && <LevelChip level={level} className="text-xs" />}
           <span className="max-w-40 truncate">{name}</span>
+          <SeatPing player={player} seat={activeSeat} />
           {turn && <span className="rounded bg-yellow-300 px-1 text-[10px] font-black text-slate-900">เทิร์น</span>}
         </div>
         <div className={`flex items-baseline gap-2 px-3 ${bottom ? 'bg-gradient-to-r from-slate-950/95 to-transparent' : 'justify-end bg-gradient-to-l from-slate-950/95 to-transparent'}`}>
@@ -99,6 +102,7 @@ export function TeamMiniPlate({ player, corner }: { player: PlayerId; corner: 'b
       <div className={`flex flex-col rounded-md bg-slate-950/85 px-2 py-0.5 ${bottom ? 'items-end' : ''}`} style={{ borderTop: `2px solid ${accent}` }}>
         <span className={`flex items-center gap-1.5 ${bottom ? 'flex-row-reverse' : ''}`}>
           <span className="max-w-36 truncate text-xs font-bold text-white">{partnerName(player, mine)}</span>
+          <SeatPing player={player} seat={otherSeat} />
           {ready && <span className="rounded bg-emerald-400 px-1 text-[9px] font-black text-slate-900">พร้อม</span>}
           {acting && !ready && <span className="rounded bg-yellow-300 px-1 text-[9px] font-black text-slate-900">เทิร์น</span>}
         </span>
