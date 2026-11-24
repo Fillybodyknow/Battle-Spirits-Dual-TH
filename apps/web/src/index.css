@@ -667,7 +667,10 @@ input:-webkit-autofill:focus {
 @keyframes login-band { from { translate: -4vw 0; opacity: 0.75; } to { translate: 4vw 0; opacity: 1; } }
 @keyframes login-ring { 0% { transform: scale(1); opacity: 0.9; } 100% { transform: scale(1.7); opacity: 0; } }
 @keyframes login-core { 0%, 100% { transform: scale(0.92); filter: brightness(1); } 50% { transform: scale(1.06); filter: brightness(1.35); } }
-@keyframes home-sheen { 0%, 55% { left: -50%; } 100% { left: 150%; } }
+/* ขยับด้วย transform (การ์ดจอทำแทนได้) · กว้าง 1/3 ของกรอบ: เลื่อน 600% ของตัวเอง = ข้ามกรอบ 200% (จาก -50% ถึง 150%) */
+@keyframes home-sheen { 0%, 55% { transform: translateX(0) skewX(-20deg); } 100% { transform: translateX(600%) skewX(-20deg); } }
+@keyframes showcase-in { from { opacity: 0; transform: translateX(6%); } to { opacity: 1; transform: none; } }
+@keyframes showcase-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(6%); } }
 @keyframes lobby-in-left { from { transform: translateX(-60px); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes lobby-in-right { from { transform: translateX(60px); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes lobby-vs { 0% { transform: scale(3) rotate(-12deg); opacity: 0; } 50% { transform: scale(0.9) rotate(2deg); opacity: 1; } 100% { transform: scale(1) rotate(0); } }

@@ -29,21 +29,37 @@ function useShowcase(): string[][] {
   }, []);
 }
 
-/** ภาพการ์ดคู่ลอยทางขวา: สลับชุดทุก 7 วินาที */
+/** ภาพการ์ดคู่ลอยทางขวา: สลับชุดทุก 7 วินาที
+ * วาดแค่ชุดที่แสดง + ชุดที่กำลังจางออก (เดิมวาดทุกชุดแล้วซ่อนด้วย opacity: ภาพเต็ม X-Rare ทุกใบถูกถอดรหัสค้างในหน่วยความจำ
+ * + แสงเบลอ/แอนิเมชันของทุกชุดวิ่งตลอด = หน้าหลักหนักมากบนมือถือ) */
 function Showcase() {
   const pairs = useShowcase();
   const [i, setI] = useState(0);
+  const [prev, setPrev] = useState<number | null>(null);
   useEffect(() => {
-    const t = setInterval(() => setI((x) => (x + 1) % pairs.length), 7000);
+    const t = setInterval(() => {
+      setI((x) => {
+        setPrev(x);
+        return (x + 1) % pairs.length;
+      });
+    }, 7000);
     return () => clearInterval(t);
   }, [pairs.length]);
+  // ชุดเดิมจางออกจบแล้ว: เอาออกจากหน้า
+  useEffect(() => {
+    if (prev === null) return;
+    const t = setTimeout(() => setPrev(null), 1000);
+    return () => clearTimeout(t);
+  }, [prev, i]);
+  const shown = prev !== null && prev !== i ? [prev, i] : [i];
   return (
     <div className="pointer-events-none absolute inset-y-0 right-0 w-[62%]">
-      {pairs.map((pair, k) => {
+      {shown.map((k) => {
+        const pair = pairs[k]!;
         const glow = GLOW[db.get(pair[0]!).colors[0] ?? 'blue'] ?? GLOW.blue!;
         const on = k === i;
         return (
-          <div key={k} className="absolute inset-0 transition-[opacity,transform] duration-1000" style={{ opacity: on ? 1 : 0, transform: on ? 'none' : 'translateX(6%)' }}>
+          <div key={k} className="absolute inset-0" style={{ animation: `${on ? 'showcase-in' : 'showcase-out'} 1s ease both` }}>
             {/* แสงหลังการ์ด */}
             <div className="absolute top-1/2 left-[55%] h-[70vh] w-[70vh] -translate-x-1/2 -translate-y-1/2 rounded-full blur-3xl" style={{ background: `radial-gradient(circle, ${glow}66, transparent 65%)` }} />
             {pair[1] && (
@@ -54,7 +70,7 @@ function Showcase() {
             <div className="absolute top-[18%] left-[44%] w-[min(27vw,400px)]" style={{ animation: 'home-float 6s ease-in-out infinite' }}>
               <CardArt cardNo={pair[0]!} className="w-full rotate-[6deg] shadow-[0_40px_80px_rgba(0,0,0,0.75)] ring-2 ring-white/20" />
               <div className="absolute inset-0 rotate-[6deg] overflow-hidden rounded-xl">
-                <div className="absolute inset-y-0 -left-1/2 w-1/3 skew-x-[-20deg] bg-gradient-to-r from-transparent via-white/25 to-transparent" style={{ animation: 'home-sheen 5s ease-in-out infinite' }} />
+                <div className="absolute inset-y-0 -left-1/2 w-1/3 bg-gradient-to-r from-transparent via-white/25 to-transparent" style={{ animation: 'home-sheen 5s ease-in-out infinite' }} />
               </div>
             </div>
           </div>

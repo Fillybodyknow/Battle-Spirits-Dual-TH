@@ -394,12 +394,21 @@ export function PromptBar() {
   const titleRef = useRef<HTMLSpanElement>(null);
   const detailRef = useRef<HTMLSpanElement>(null);
   const [truncated, setTruncated] = useState(false);
-  useLayoutEffect(() => {
-    const cut = (el: HTMLElement | null) => !!el && el.scrollWidth > el.clientWidth + 1;
-    const t = cut(titleRef.current) || cut(detailRef.current);
-    if (t !== truncated) setTruncated(t);
-  });
   const panelKey = `${tag}|${typeof title === 'string' ? title : ''}|${source}|${actions.map((a) => a.key).join(',')}`;
+  // วัดว่าข้อความถูกตัดไหม เฉพาะตอนข้อความ / ชุดปุ่ม / ความกว้างจอเปลี่ยน และวัดหลังจอวาดเสร็จ (setTimeout)
+  // เดิมวัดใน useLayoutEffect ทุกครั้งที่วาดใหม่: อ่าน scrollWidth ทันทีหลังแก้ DOM = บังคับคำนวณ layout ทั้งหน้า → กระตุกระหว่างแอนิเมชัน
+  // (textContent อ่านได้โดยไม่บังคับ layout · หลังวาดเสร็จ layout คำนวณไว้แล้ว อ่านได้แทบฟรี)
+  const measuredKey = useRef('');
+  useEffect(() => {
+    const key = `${titleRef.current?.textContent ?? ''}${detailRef.current?.textContent ?? ''}${panelKey}${window.innerWidth}`;
+    if (key === measuredKey.current) return;
+    const t = setTimeout(() => {
+      measuredKey.current = key;
+      const cut = (el: HTMLElement | null) => !!el && el.scrollWidth > el.clientWidth + 1;
+      setTruncated(cut(titleRef.current) || cut(detailRef.current));
+    }, 0);
+    return () => clearTimeout(t);
+  });
   const actionsInPanel = mine && (tag === 'option' || actions.length >= 3) && actions.length > 0;
   const [hiddenKey, setHiddenKey] = useState<string | null>(null);
   const [openKey, setOpenKey] = useState<string | null>(null);

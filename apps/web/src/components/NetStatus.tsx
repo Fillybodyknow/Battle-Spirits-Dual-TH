@@ -9,13 +9,14 @@ import { pingLevel, shownRtt, STALE_MS, useNet } from '../online/net';
 import { seatKey, type TableSeat } from '../online/transport';
 import { useGame } from '../store';
 
-/** รีเฟรชทุก ms (ตัวเลขที่ขึ้นกับเวลา: รอนานเท่าไร / ไม่ได้ข่าวนานเท่าไร) */
-function useNow(ms = 500): number {
+/** รีเฟรชทุก ms (ตัวเลขที่ขึ้นกับเวลา: รอนานเท่าไร / ไม่ได้ข่าวนานเท่าไร) · ไม่ใช่ออนไลน์ = ไม่ตั้งเวลา (ไม่วาดใหม่เปล่า ๆ) */
+function useNow(ms: number, enabled: boolean): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
+    if (!enabled) return;
     const t = setInterval(() => setNow(Date.now()), ms);
     return () => clearInterval(t);
-  }, [ms]);
+  }, [ms, enabled]);
   return now;
 }
 
@@ -39,7 +40,7 @@ export function PingBars({ level, className = '' }: { level: 0 | 1 | 2 | 3; clas
 function useSeatPing(key: TableSeat | null): { ms: number | null; level: 0 | 1 | 2 | 3; label: string } | null {
   const net = useNet();
   const online = useGame((s) => s.online);
-  const now = useNow();
+  const now = useNow(500, !!online);
   if (!online || !key) return null;
   const mine = !online.spectator && key === seatKey(online.me, online.seat ?? 0);
   if (mine) {
@@ -81,7 +82,7 @@ function seatName(names: Partial<Record<TableSeat, string>>, k: TableSeat): stri
 export function NetWarning() {
   const online = useGame((s) => s.online);
   const net = useNet();
-  const now = useNow(250);
+  const now = useNow(250, !!online && online.status !== 'waiting');
   if (!online || online.status === 'waiting') return null;
   let tone: 'red' | 'amber' | 'sky' | null = null;
   let text = '';

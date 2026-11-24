@@ -4313,10 +4313,11 @@ export function AttackArrow() {
         last = key;
         setLines(next);
       }
-      raf = requestAnimationFrame(tick);
+      // อ่านตำแหน่งการ์ดทุก 100 ms (เดิมทุกเฟรม: getBoundingClientRect ระหว่างแอนิเมชัน = บังคับคำนวณ layout ทุกเฟรม → กระตุกตอนต่อสู้)
+      raf = window.setTimeout(tick, 100);
     };
     tick();
-    return () => cancelAnimationFrame(raf);
+    return () => clearTimeout(raf);
   }, [attacker, blockers, turnPlayer]);
 
   if (lines.length === 0) return null;
