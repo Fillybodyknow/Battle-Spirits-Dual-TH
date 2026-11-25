@@ -136,6 +136,13 @@ export type Condition =
   | { assaultAlt: true }
   /** การ์ดนี้ใช้ "เทิร์นละไม่เกิน max ครั้ง" ชื่อนี้ไปน้อยกว่า max ครั้ง (นับจาก step markOnce) */
   | { usedFewerThan: { key: string; max: number } }
+  // ---------------- BS14
+  /** ระหว่างการต่อสู้ครั้งแรกในเทิร์นนี้ */
+  | { firstBattleOfTurn: true }
+  /** การ์ดที่เอฟเฟกต์นี้เพิ่งเลือก (revealPickRestTrash ฯลฯ) ตรงตัวกรอง (ตรวจใน holds ของ effects.ts ใช้ซ้อนใน all/not ไม่ได้) */
+  | { chosenIs: CardFilter }
+  /** ยังไม่เคยใช้ "เกมละ 1 ครั้ง" ชื่อนี้ (ของผู้เล่นเจ้าของการ์ด) */
+  | { oncePerGameFree: string }
   // ---------------- BS13
   /**
    * Rush (กติกา 14 Rush): มีเจ็มสี color บนฟิลด์เราอย่างน้อย count เม็ด
@@ -188,6 +195,14 @@ export interface CountPer {
   burstKills?: true;
   /** BS12 โดจิ ห้ามงคล: การ์ดที่ mill ล่าสุดของเอฟเฟกต์นี้ทิ้งไป ที่ตรงตัวกรอง */
   milledByThis?: CardFilter;
+  /** BS14 U Trigger: คอสต์ของการ์ดที่ถูกวางที่แทรช (ต่อคอสต์ 1) */
+  uTriggerCost?: true;
+  /** BS14: จำนวนเจ็มของสปิริตนี้ (รวมเจ็มที่ได้รับเพิ่ม) */
+  selfSymbols?: true;
+  /** BS14: จำนวนคอร์บนการ์ดนี้ (เน็กซัส "ต่อคอร์ 1 เม็ดบนเน็กซัสนี้") */
+  selfCores?: true;
+  /** BS14 ซัพเพรสชัน: จำนวนสปิริตที่ฟื้นสภาพโดยเอฟเฟกต์นี้ */
+  refreshedByThis?: true;
   /** หารด้วย (ต่อ 2 ตัว = 2) ไม่ระบุ = 1 */
   div?: number;
 }
@@ -286,6 +301,10 @@ export interface CardFilter {
   minReductionColors?: number;
   /** มี Ultra Shield (ของตัวเอง หรือได้รับจากการ์ดอื่น) */
   hasUltraShield?: true;
+  /** BS14: เป็นสปิริตร่วมร่าง (มีเบรฟร่วมร่างอยู่) */
+  hasBraves?: true;
+  /** BS14: เลเวลปัจจุบันไม่เกิน N (เฉพาะบนสนาม) */
+  maxLevel?: number;
 }
 
 /** ปลายทางของ Core จากวอยด์ */
@@ -325,7 +344,13 @@ export type Step =
   /** สปิริตต้นเหตุ (subject) BP+ ในเทิร์นนี้ */
   | { do: 'buffSubject'; amount: number }
   /** [True-Rage]: คู่แข่งต้องป้องกันถ้าทำได้ (ใช้ระหว่างการต่อสู้) */
-  | { do: 'mustBlock'; if?: Condition; subject?: true }
+  | {
+      do: 'mustBlock';
+      if?: Condition;
+      subject?: true;
+      /** BS14 Rage / U Trigger ของอัลติเมทแดง: บังคับเฉพาะสปิริต (อัลติเมทไม่ต้องป้องกัน) */
+      spiritsOnly?: true;
+    }
   /** ทำลายการ์ดของคู่แข่งทั้งหมดที่ตรงตัวกรอง */
   | { do: 'destroyAllOpponent'; filter: CardFilter }
   /** แสดงใบบนสุดเด็ค N ใบ เลือก 1 ใบที่ตรงตัวกรองขึ้นมือ ที่เหลือลง Trash */
@@ -362,7 +387,7 @@ export type Step =
   /** ส่งคอร์ทั้งหมดบนเน็กซัสคู่แข่งทั้งหมดลงแทรชคู่แข่ง */
   | { do: 'opponentNexusCoresToTrash' }
   /** "ในเทิร์นนี้, เมื่อสปิริตของเราถูกทำลาย": ทำ steps (subject = สปิริตที่ถูกทำลาย) */
-  | { do: 'turnTrigger'; on: 'allyDestroyed'; steps: Step[] }
+  | { do: 'turnTrigger'; /** turnEnd = "เมื่อจบเทิร์นนี้" (ทำในเอนด์สเต็ป) */ on: 'allyDestroyed' | 'turnEnd'; steps: Step[] }
   /** นำการ์ดต้นเหตุ (subject) ในแทรชเรากลับขึ้นมือ */
   | { do: 'subjectToHand'; if?: Condition }
   /** ส่ง Soul Core บนสปิริตนี้ไปที่แทรชเรา */
@@ -983,7 +1008,19 @@ export type Step =
    * Soul Drive ของการ์ด = ตัวเลือกใน chooseOne ที่ขึ้นต้นด้วย soulToVoid (ทำส่วนที่ต่อจาก soulToVoid โดยไม่ต้องจ่ายโซลคอร์ของตัวนั้น)
    * colorIdx / used = (engine ใช้ภายใน) สีถัดไปที่ต้องเลือก / ตัวที่เลือกแล้ว
    */
-  | { do: 'soulDriveOthers'; excludeNames: string[]; colorIdx?: number; used?: string[] };
+  | { do: 'soulDriveOthers'; excludeNames: string[]; colorIdx?: number; used?: string[] }
+  // ---------------- BS14
+  /**
+   * U Trigger (กติกา 05 ข้อ 4): นำการ์ดใบบนสุดเด็คคู่แข่ง 1 ใบไปวางที่แทรช (ไม่ใช่ [เอฟเฟกต์ทิ้งเด็ค])
+   * คอสต์ของการ์ดนั้นต่ำกว่าคอสต์ของอัลติเมทนี้ (บนสนาม) = ฮิต → ทำ then (CountPer uTriggerCost = คอสต์ของการ์ดที่วาง)
+   */
+  | { do: 'uTrigger'; then: Step[]; /** (engine ใช้ภายใน) 2VS2: เลือกเด็คของคู่แข่งแล้ว (then ทำหลังคืนที่นั่งคู่แข่ง) */ seatPicked?: true }
+  /** "หลังจบเทิร์นนี้ เราได้เล่นเทิร์นของเราอีก 1 เทิร์น" · key = เกมละ 1 ครั้ง (เงื่อนไข oncePerGameFree) */
+  | { do: 'extraTurn'; key?: string }
+  /** "ในเอฟเฟกต์นี้ คู่แข่งไม่สามารถสั่งใช้เบิร์ส 'หลังจากสปิริตของเราถูกทำลายโดยคู่แข่ง'" (เฟลมบรีซ) */
+  | { do: 'noDestroyBurstThisEffect' }
+  /** นำเบรฟของสปิริตร่วมร่างของคู่แข่ง 1 ใบกลับขึ้นมือ / กลับไปไว้บนสุดเด็ค (optional = "สามารถ") */
+  | { do: 'bounceOpponentBrave'; to?: 'hand' | 'deckTop'; optional?: true };
 
 /** ขอบเขตของ BP+ ถาวร */
 export type StaticScope =
@@ -1060,6 +1097,8 @@ export type TriggerEvent =
   | 'ownAttackStepStart'
   /** คู่แข่งจั่วการ์ด */
   | 'oppDrew'
+  /** BS14: เราจั่วการ์ด (ทุกแบบ) */
+  | 'selfDrew'
   /** เบิร์สของคู่แข่งถูกสั่งใช้ (ใช้กับ zone: 'hand') */
   | 'oppBurstActivated'
   /** การ์ดนี้สูญสลายโดยเอฟเฟกต์ของคู่แข่ง (ถูกถอดคอร์) */
@@ -1212,6 +1251,8 @@ export type Ability =
       oncePerTurnByName?: true;
       /** การ์ดหลายใบเป็นต้นเหตุพร้อมกันในครั้งเดียว (เช่น อัญเชิญหลายตัวพร้อมกัน): ทำงานครั้งเดียว ไม่ใช่ใบละครั้ง */
       oncePerBatch?: true;
+      /** "เอฟเฟกต์นี้ไม่แสดงผลซ้ำซ้อน" (ต่อเหตุการณ์): การ์ดชื่อเดียวกันของเจ้าของเดียวกันหลายใบทำงานแค่ใบเดียวต่อเหตุการณ์ (ไม่จำกัดต่อเทิร์น) */
+      noStack?: true;
       /** oppDeckMilled: การ์ดที่ถูกทิ้งต้องมีอย่างน้อย 1 ใบตรงตัวกรองนี้ */
       milled?: CardFilter;
       /** ทำงานขณะการ์ดอยู่บนมือ / ในแทรช (ไม่ดูเลเวล) */
@@ -1348,7 +1389,7 @@ export type Ability =
       exceptNamed?: string[];
     }
   /** ป้องกันได้แม้อยู่ในรูปแบบเสื่อมสภาพ */
-  | { kind: 'blockWhileExhausted'; source: number; levels: number[]; if?: Condition }
+  | { kind: 'blockWhileExhausted'; source: number; levels: number[]; if?: Condition; /** BS14 การ์เน็ตดราก้อน: สปิริตของเราที่ตรงตัวกรองทั้งหมด (ไม่ระบุ = การ์ดนี้) */ allies?: CardFilter }
   /** "สปิริต/อัลติเมทของคู่แข่งทั้งหมดที่จะกลับขึ้นมือจะกลับไปไว้ใต้สุดเด็คแทน" */
   | { kind: 'bounceToBottom'; source: number; levels: number[]; if?: Condition; attackStepOnly?: true }
   /** "เน็กซัสทั้งหมดของคู่แข่งที่ไม่มีคำว่า ... ในชื่อจะสูญเสียเอฟเฟกต์ทั้งหมด" */
@@ -1583,6 +1624,18 @@ export type Ability =
   | { kind: 'millCap'; source: number; levels: number[]; max: number }
   /** มิดไนท์-ซัน: [ร่วมร่าง] Rush ของผู้ร่วมร่างไม่สนเงื่อนไข */
   | { kind: 'rushIgnore'; source: number; levels: number[]; granted: true }
+  // ---------------- BS14
+  /** "สปิริต/อัลติเมทของเราที่ตรงตัวกรอง ถือว่ามีเลเวลสูงขึ้น amount เลเวล" (ไม่เกินเลเวลสูงสุดของการ์ด) */
+  | { kind: 'levelPlus'; source: number; levels: number[]; filter: CardFilter; amount: number; if?: Condition }
+  /** คิงรู: "เมื่อสปิริต BP ไม่เกิน maxBp ถูกทำลาย ผู้เล่นทุกคนสั่งใช้เบิร์ส 'หลังจากสปิริตของเราถูกทำลายโดยคู่แข่ง' ไม่ได้" */
+  | { kind: 'destroyBurstBan'; source: number; levels: number[]; maxBp: number }
+  /** เอคลิปส์ ดราก้อน: แอทแท็คสเต็ปของผู้เล่นทุกคน การโจมตีของสปิริตคอสต์ไม่เกิน maxCost ไลฟ์ของผู้เล่นทุกคนไม่ลดลง */
+  | { kind: 'lifeImmuneLowCost'; source: number; levels: number[]; maxCost: number }
+  /**
+   * คิงฟอร์เทรส: สปิริตของเราที่ตรงตัวกรอง เมื่อจะสูญสลายโดยเอฟเฟกต์ที่ไม่ใช่ของอัลติเมทของคู่แข่ง
+   * นำคอร์จากรีเสิร์ฟมาวางให้ถึง Lv1 แล้วอยู่ต่อในรูปแบบฟื้นสภาพ (ทำเองเมื่อรีเสิร์ฟพอ)
+   */
+  | { kind: 'depletionSave'; source: number; levels: number[]; filter: CardFilter }
   // ---------------- BS13 หกเทพพิสุทธิ์
   /** เจียส: คอร์ที่ได้รับในคอร์สเต็ปของเรา +amount */
   | { kind: 'coreStepBonus'; source: number; levels: number[]; amount: number; if?: Condition }

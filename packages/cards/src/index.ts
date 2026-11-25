@@ -45,6 +45,8 @@ import bs12 from '../data/bs12.json';
 import { BS12_SCRIPTS } from '../data/bs12-scripts';
 import bs13 from '../data/bs13.json';
 import { BS13_SCRIPTS } from '../data/bs13-scripts';
+import bs14 from '../data/bs14.json';
+import { BS14_SCRIPTS } from '../data/bs14-scripts';
 import { attachScripts } from './abilities';
 import { createCardDatabase, type CardDatabase } from './database';
 import type { DeckEntry } from './deck';
@@ -120,6 +122,7 @@ export function loadAllCards(): CardDatabase {
     ...loadBS11Cards().all(),
     ...loadBS12Cards().all(),
     ...loadBS13Cards().all(),
+    ...loadBS14Cards().all(),
   ]);
 }
 
@@ -163,6 +166,11 @@ export function loadBS10Cards(): CardDatabase {
 /** การ์ดชุด Booster Set 13 (การ์ด "ชุด: BS13" ใน assets/files/cards/ + data/bs13-scripts.ts) */
 export function loadBS13Cards(): CardDatabase {
   return createCardDatabase(attachScripts(bs13, BS13_SCRIPTS));
+}
+
+/** การ์ดชุด Booster Set 14 (การ์ด "ชุด: BS14" ใน assets/files/cards/ + data/bs14-scripts.ts) */
+export function loadBS14Cards(): CardDatabase {
+  return createCardDatabase(attachScripts(bs14, BS14_SCRIPTS));
 }
 
 /** การ์ดชุด Booster Set 12 (การ์ด "ชุด: BS12" ใน assets/files/cards/ + data/bs12-scripts.ts) */

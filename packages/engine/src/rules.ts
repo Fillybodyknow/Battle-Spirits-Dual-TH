@@ -135,8 +135,63 @@ function cardLevelRaw(state: GameState, db: CardDatabase, cardId: string): numbe
     if (state.players[card.owner].field.includes(cardId) && maxLevelAllySource(state, db, cardId)) return def.levels.at(-1)?.level ?? level;
     // BS10 สวนลอยฟ้าของเหล่าเจ้าหญิง: ในเทิร์นนี้สปิริตทั้งหมดของผู้เล่นนี้ถือว่าเป็น Lv1
     if ((def.type === 'spirit' || def.type === 'brave') && (state.levelOneTurn ?? []).some((t) => t.player === card.owner && t.turn === state.turn)) return 1;
+    // BS14 ริวแมน วัลคา / คาราเวล โกเล็ม: "ถือว่ามีเลเวลสูงขึ้น N เลเวล" (ไม่เกินเลเวลสูงสุดของการ์ด)
+    const plus = state.players[card.owner].field.includes(cardId) ? levelPlusFor(state, db, cardId) : 0;
+    if (plus > 0) return Math.min(def.levels.at(-1)?.level ?? level, level + plus);
   }
   return level;
+}
+
+/** BS14: จำนวนเลเวลที่สปิริต/อัลติเมทนี้ "ถือว่าสูงขึ้น" จากการ์ดของเจ้าของ (กันวนซ้ำ: ระหว่างตรวจ = ไม่นับ levelPlus) */
+function levelPlusFor(state: GameState, db: CardDatabase, cardId: string): number {
+  if (checkingLevelPlus) return 0;
+  const owner = state.cards[cardId]!.owner;
+  checkingLevelPlus = true;
+  try {
+    let n = 0;
+    for (const id of state.players[owner].field) {
+      const abs = db.get(state.cards[id]!.cardNo).abilities.filter((a) => a.kind === 'levelPlus');
+      if (abs.length === 0 || effectsNegated(state, db, id)) continue;
+      const lv = cardLevel(state, db, id);
+      for (const a of abs) {
+        if (a.kind !== 'levelPlus' || !a.levels.includes(lv) || !conditionHolds(state, id, a.if, false, false, db)) continue;
+        if (matchesFilter(state, db, cardId, a.filter)) n += a.amount;
+      }
+    }
+    return n;
+  } finally {
+    checkingLevelPlus = false;
+  }
+}
+let checkingLevelPlus = false;
+
+/** BS14 คิงฟอร์เทรส: การ์ดของเจ้าของที่ช่วยไม่ให้สปิริตนี้สูญสลาย */
+export function depletionSaveSource(state: GameState, db: CardDatabase, cardId: string): StaticSource | null {
+  const owner = state.cards[cardId]!.owner;
+  for (const src of staticSources(state, db, [owner], 'depletionSave')) {
+    const ab = db.get(state.cards[src.cardId]!.cardNo).abilities.find((a) => a.kind === 'depletionSave' && a.source === src.source);
+    if (ab?.kind === 'depletionSave' && matchesFilter(state, db, cardId, ab.filter)) return src;
+  }
+  return null;
+}
+
+/** BS14 คิงรู: การ์ดที่ห้ามเบิร์ส "หลังจากสปิริตของเราถูกทำลายโดยคู่แข่ง" เมื่อสปิริต BP นี้ถูกทำลาย */
+export function destroyBurstBanSource(state: GameState, db: CardDatabase, bp: number): StaticSource | null {
+  for (const src of staticSources(state, db, ['p1', 'p2'], 'destroyBurstBan')) {
+    const ab = db.get(state.cards[src.cardId]!.cardNo).abilities.find((a) => a.kind === 'destroyBurstBan' && a.source === src.source);
+    if (ab?.kind === 'destroyBurstBan' && bp <= ab.maxBp) return src;
+  }
+  return null;
+}
+
+/** BS14 เอคลิปส์ ดราก้อน: แอทแท็คสเต็ป การโจมตีของสปิริตคอสต์ต่ำ ไลฟ์ของผู้เล่นทุกคนไม่ลดลง */
+export function lifeImmuneLowCostSource(state: GameState, db: CardDatabase, attackerId: string): StaticSource | null {
+  if (state.phase !== 'attack' || !['spirit', 'brave'].includes(db.get(state.cards[attackerId]!.cardNo).type)) return null;
+  for (const src of staticSources(state, db, ['p1', 'p2'], 'lifeImmuneLowCost')) {
+    const ab = db.get(state.cards[src.cardId]!.cardNo).abilities.find((a) => a.kind === 'lifeImmuneLowCost' && a.source === src.source);
+    if (ab?.kind === 'lifeImmuneLowCost' && fieldCost(state, db, attackerId) <= ab.maxCost) return src;
+  }
+  return null;
 }
 
 /** การ์ดของเราที่ทำให้สปิริตนี้ถือว่าเป็น Lv สูงสุด (maxLevelAllies) */
@@ -430,6 +485,9 @@ export function conditionHolds(
   if ('kageTargeted' in cond) return card.kageTurn === state.turn;
   // ---------------- BS09
   if ('any' in cond) return cond.any.some((c) => conditionHolds(state, sourceId, c, paidWithSoul, catalyzed, db));
+  // ---------------- BS14
+  if ('firstBattleOfTurn' in cond) return !!state.battle && (state.battlesThisTurn?.turn === state.turn ? state.battlesThisTurn.count : 0) <= 1;
+  if ('oncePerGameFree' in cond) return !(state.usedOncePerGame ?? []).includes(`${card.owner}:${cond.oncePerGameFree}`);
   if ('trashAtLeast' in cond) return teamTrash(state, card.owner).length >= cond.trashAtLeast;
   // ---------------- BS10
   if ('ownGemColor' in cond) return !!db && ownGemColors(state, db, card.owner).has(cond.ownGemColor);
@@ -461,7 +519,7 @@ export function conditionHolds(
     return colors.size === 1 && colors.has(cond.onlyGemColor);
   }
   // ตรวจได้เฉพาะตอนประมวลผลเอฟเฟกต์ในคิว (ดู holds ใน effects.ts)
-  if ('subjectIs' in cond || 'lifeLostByOpponentEffect' in cond) return false;
+  if ('subjectIs' in cond || 'chosenIs' in cond || 'lifeLostByOpponentEffect' in cond) return false;
   if ('ownGemColorsAtLeast' in cond) return !!db && gemColorCount(state, db, card.owner) >= cond.ownGemColorsAtLeast;
   if ('selfIs' in cond) return !!db && matchesFilter(state, db, sourceId, cond.selfIs);
   if ('usedFewerThan' in cond) return (state.usedOncePerTurn ?? []).filter((k) => k === `${sourceId}:${cond.usedFewerThan.key}`).length < cond.usedFewerThan.max;
@@ -621,6 +679,8 @@ export function matchesFilter(state: GameState, db: CardDatabase, cardId: string
   if (filter.anyOf && !filter.anyOf.some((f) => matchesFilter(state, db, cardId, f))) return false;
   if (filter.maxCores !== undefined && card.cores.length > filter.maxCores) return false;
   if (filter.noBraves && card.braves.length > 0) return false;
+  if (filter.hasBraves && card.braves.length === 0) return false;
+  if (filter.maxLevel !== undefined && (!state.players[card.owner].field.includes(cardId) || cardLevel(state, db, cardId) > filter.maxLevel)) return false;
   if (filter.minSymbols !== undefined && cardSymbolTotal(state, db, cardId) < filter.minSymbols) return false;
   // ---------------- BS07
   if (filter.team && !def.teams.includes(filter.team)) return false;
@@ -1077,11 +1137,19 @@ export function attackerUnblockable(state: GameState, attackerId: string, blocke
 /** สปิริตนี้ป้องกันได้แม้อยู่ในรูปแบบเสื่อมสภาพ */
 export function canBlockExhausted(state: GameState, db: CardDatabase, cardId: string): boolean {
   if ((state.turnBlockExhausted ?? []).some((t) => t.cardId === cardId && t.turn === state.turn)) return true;
+  // BS14 การ์เน็ตดราก้อน: "สปิริตเราเผ่า ... ทั้งหมด ป้องกันได้แม้อยู่ในรูปแบบเสื่อมสภาพ"
+  const owner = state.cards[cardId]!.owner;
+  for (const id of state.players[owner].field) {
+    const abs = db.get(state.cards[id]!.cardNo).abilities.filter((a) => a.kind === 'blockWhileExhausted' && a.allies);
+    if (abs.length === 0 || effectsNegated(state, db, id)) continue;
+    const lv = cardLevel(state, db, id);
+    if (abs.some((a) => a.kind === 'blockWhileExhausted' && a.levels.includes(lv) && conditionHolds(state, id, a.if, false, false, db) && matchesFilter(state, db, cardId, a.allies!))) return true;
+  }
   if (effectsNegated(state, db, cardId)) return false;
   const level = cardLevel(state, db, cardId);
   return db
     .get(state.cards[cardId]!.cardNo)
-    .abilities.some((a) => a.kind === 'blockWhileExhausted' && a.levels.includes(level) && conditionHolds(state, cardId, a.if, false, false, db));
+    .abilities.some((a) => a.kind === 'blockWhileExhausted' && !a.allies && a.levels.includes(level) && conditionHolds(state, cardId, a.if, false, false, db));
 }
 
 /**
@@ -2162,7 +2230,9 @@ export function blockForced(state: GameState, db: CardDatabase): boolean {
   if (b.levelBlock) return false;
   if (b.blockTax && !b.blockTax.paid) return false;
   const defender = state.cards[b.attackerId]!.owner === 'p1' ? 'p2' : 'p1';
-  return blockersFor(state, db, defender).some((id) => !effectBlocked(state, db, b.attackerId, id));
+  // Rage: นับเฉพาะสปิริต (มีแต่อัลติเมทที่ป้องกันได้ = ไม่บังคับ)
+  const spiritOk = (id: string) => !b.mustBlockSpirits || ['spirit', 'brave'].includes(db.get(state.cards[id]!.cardNo).type);
+  return blockersFor(state, db, defender).some((id) => spiritOk(id) && !effectBlocked(state, db, b.attackerId, id));
 }
 
 /** เอฟเฟกต์ Flash ที่เบรฟที่ร่วมร่างอยู่ให้ผู้ร่วมร่าง (มุราซาเมะ) */
@@ -2388,7 +2458,7 @@ export function freezeForCache(state: GameState): void {
   frozenStates.add(state);
 }
 function memo<T>(state: GameState, db: CardDatabase, key: string, compute: () => T): T {
-  if (!frozenStates.has(state) || checkingMaxLevel || boostingLevel.size > 0 || levelBoostDepth > 0 || checkingNegation || checkingAllColor || checkingCopy || checkingBpZero || checkingSymbolOverride) return compute();
+  if (!frozenStates.has(state) || checkingMaxLevel || checkingLevelPlus || boostingLevel.size > 0 || levelBoostDepth > 0 || checkingNegation || checkingAllColor || checkingCopy || checkingBpZero || checkingSymbolOverride) return compute();
   let entry = memoStore.get(state);
   if (!entry || entry.db !== db) {
     entry = { db, map: new Map() };

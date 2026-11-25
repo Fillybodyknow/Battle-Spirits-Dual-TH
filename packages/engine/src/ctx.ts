@@ -1,5 +1,5 @@
 import type { CardDatabase, CardDef } from '@bs/cards';
-import { cardLevel, fail, noLoseSource, noRefreshSource, fieldCost, isSpiritLike, levelOf, locateCore, minCores, levelBoostSources, payableCost, removeCore, removeFrom, summonLevelCostBoost, type StaticSource } from './rules';
+import { cardLevel, currentBp, destroyBurstBanSource, fail, noLoseSource, noRefreshSource, fieldCost, isSpiritLike, levelOf, locateCore, minCores, levelBoostSources, payableCost, removeCore, removeFrom, summonLevelCostBoost, type StaticSource } from './rules';
 import { PLAYERS, opponentOf, type EndReason, type GameEvent, type GameState, type Phase, type PlayerId } from './types';
 import { newBatch, queueLifeLostTriggers, queueTriggers } from './effects';
 import { activeSeat, allZones, ownerZones, seatOfCard, zonesOf } from './seats';
@@ -67,6 +67,14 @@ export function drawCard(ctx: Ctx, player: PlayerId, byEffect = false): void {
   p.hand.push(id);
   emit(ctx, { type: 'cardDrawn', player, cardId: id });
   if (byEffect) handIncreasedByEffect(ctx, player);
+  // BS14 "เมื่อเราจั่วการ์ด" (สมรภูมิโบราณหมื่นหอก)
+  {
+    const own = ctx.s.players[player].field;
+    if (own.length > 0) {
+      const batch = newBatch(ctx);
+      for (const fid of [...own]) queueTriggers(ctx, fid, 'selfDrew', batch);
+    }
+  }
   // "เมื่อคู่แข่งจั่วการ์ด"
   const opp = ctx.s.players[opponentOf(player)];
   if (opp.field.length > 0) {
@@ -179,12 +187,16 @@ export function destroy(ctx: Ctx, cardId: string, by?: PlayerId, bySource?: stri
   // เบิร์ส "หลังจากสปิริต(/อัลติเมท)ของเราถูกทำลายโดยคู่แข่ง": เฉพาะสปิริต/อัลติเมท (รวมเบรฟที่อยู่เป็นสปิริตเอง) ไม่ใช่เน็กซัส
   // ตรวจก่อนลงแทรช (ร่างแยก Bunshin ถูกคืนเป็นการ์ดจริงตอนออกจากสนาม)
   const spirit = isSpiritLike(ctx.db.get(ctx.s.cards[cardId]!.cardNo));
+  // BS14 คิงรู: สปิริต BP ไม่เกิน N ถูกทำลาย = ห้ามเบิร์สนั้น · เฟลมบรีซ: ในเอฟเฟกต์นี้ห้ามเบิร์สนั้น (เอฟเฟกต์ที่กำลังทำงาน = หัวคิว)
+  const bpBan = spirit && by && by !== owner ? destroyBurstBanSource(ctx.s, ctx.db, currentBp(ctx.s, ctx.db, cardId)) : null;
+  const effectBan = !!ctx.s.queue[0]?.started && !!ctx.s.queue[0]?.noDestroyBurst && ctx.s.queue[0]?.controller === by;
   sendToTrash(ctx, cardId);
   // BS12 มิสึรุกิ: ถูกทำลายโดยเอฟเฟกต์ของเบิร์สที่นับอยู่
   const bk = ctx.s.burstKills;
   if (bk && spirit && bySource === bk.burstId && owner !== bk.controller) bk.count++;
   emit(ctx, { type: 'destroyed', cardId, cost, ...(bySource ? { bySource } : {}) });
-  if (by && by !== owner && spirit) pendBurst(ctx, owner, 'afterAllyDestroyedByOpponent');
+  if (bpBan) emitStatic(ctx, bpBan);
+  if (by && by !== owner && spirit && !bpBan && !effectBan) pendBurst(ctx, owner, 'afterAllyDestroyedByOpponent');
 }
 
 /** ไลฟ์ไปรีเสิร์ฟของเจ้าของ; คืน true ถ้าไลฟ์หมดแล้วจบเกม */

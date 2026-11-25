@@ -403,11 +403,17 @@ function parseCardBlock(block: Line[], autoCardNo: string, errors: string[]): Ca
 
 /**
  * เงื่อนไขอัญเชิญของอัลติเมท → Condition ของ DSL (engine ตรวจตอนอัญเชิญ)
- * รูปแบบที่รองรับ: "ไลฟ์เราไม่เกิน N"
+ * รูปแบบที่รองรับ: "ไลฟ์เราไม่เกิน N" · "สปิริตสีX ของเราตั้งแต่ N ตัว[ขึ้นไป]" (หลายเงื่อนไขคั่นด้วย "และ")
  */
 function parseSummonCondition(text: string, err: (msg: string) => void): unknown {
   const life = text.match(/^ไลฟ์เราไม่เกิน\s*(\d+)$/);
   if (life) return { lifeAtMost: Number(life[1]), text };
+  // BS24: "สปิริตสีแดงของเราตั้งแต่ 1 ตัวขึ้นไป" / "สปิริตสีแดงของเราตั้งแต่ 1 ตัว และสปิริตสีขาวของเราตั้งแต่ 1 ตัวขึ้นไป"
+  const parts = text.split(/\s+และ\s*/).map((p) => p.trim().match(/^สปิริตสี(\S+?)ของเราตั้งแต่\s*(\d+)\s*ตัว(ขึ้นไป)?$/));
+  if (parts.length > 0 && parts.every((m) => m && COLOR_TH[m[1]!])) {
+    const conds = parts.map((m) => ({ alliesMatchAtLeast: { filter: { types: ['spirit', 'brave'], color: COLOR_TH[m![1]!] }, count: Number(m![2]) } }));
+    return conds.length === 1 ? { ...conds[0], text } : { all: conds, text };
+  }
   err(`ยังไม่รองรับเงื่อนไขอัญเชิญ "${text}"`);
   return undefined;
 }

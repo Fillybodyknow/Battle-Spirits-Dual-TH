@@ -216,6 +216,10 @@ export function formatEvent(e: GameEvent, s: GameState): string | null {
       return `[Showdown] ${name(e.cardId)} (BP ${e.bp.toLocaleString()}) vs ${name(e.targetId)} (BP ${e.targetBp.toLocaleString()})`;
     case 'soulDrive':
       return `[Soul Drive] ${name(e.cardId)} นำโซลคอร์ออกจากเกม`;
+    case 'uTrigger':
+      return `[U Trigger] ${name(e.cardId)} เปิด ${name(e.revealedId)} (คอสต์ ${e.cost}) → ${e.hit ? 'ฮิต!' : 'Guard'}`;
+    case 'extraTurn':
+      return `${playerLabel(e.player)} จะได้เล่นอีก 1 เทิร์น (${name(e.cardId)})`;
     case 'gameOver':
       return `🏆 ${playerLabel(e.winner)} ชนะ (${END_REASON[e.reason]})`;
   }

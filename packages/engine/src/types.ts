@@ -120,6 +120,8 @@ export interface Battle {
   flash: FlashWindow | null;
   /** [True-Rage]: ฝ่ายป้องกันต้องบล็อกถ้าทำได้ */
   mustBlock: boolean;
+  /** BS14 Rage: บังคับป้องกันเฉพาะด้วยสปิริต (อัลติเมทไม่บังคับ) · True-Rage ทับ = บังคับทั้งหมด */
+  mustBlockSpirits?: true;
   /** จบ Attack Step เมื่อการต่อสู้นี้จบ (เบิร์สวอลล์) */
   endAttackStepAfter: boolean;
   /** เอฟเฟกต์ที่ทำงาน "เมื่อจบการต่อสู้นี้" */
@@ -249,6 +251,10 @@ export interface QueuedEffect {
   asMagic?: boolean;
   /** trigger oppHandIncreased: จำนวนการ์ดที่มือคู่แข่งเพิ่มขึ้น */
   handIncrease?: number;
+  /** BS14 U Trigger: คอสต์ของการ์ดที่ถูกวางที่แทรช (ล่าสุด) */
+  uTriggerCost?: number;
+  /** BS14 เฟลมบรีซ: ในเอฟเฟกต์นี้ คู่แข่งสั่งใช้เบิร์ส "หลังจากสปิริตของเราถูกทำลายโดยคู่แข่ง" ไม่ได้ */
+  noDestroyBurst?: true;
   /** 2VS2: ที่นั่งของคู่แข่งที่มือเพิ่มขึ้น (ทิ้งการ์ด "ต่อจำนวนที่เพิ่มขึ้น" = คนนั้นคนเดียว) */
   handSeat?: Seat;
   /** เอฟเฟกต์นี้ทิ้งเบิร์สของคู่แข่งได้ */
@@ -433,7 +439,7 @@ export interface GameState {
   /** สปิริตที่ไม่ถูกป้องกันในเทิร์นนี้ */
   unblockableTurn?: { cardId: string; turn: number }[];
   /** "ในเทิร์นนี้, เมื่อ..." ที่เมจิคตั้งไว้ (ล้างเมื่อจบเทิร์น) */
-  turnTriggers?: { player: PlayerId; turn: number; on: 'allyDestroyed'; steps: Step[]; sourceId: string; paidWithSoul: boolean }[];
+  turnTriggers?: { player: PlayerId; turn: number; on: 'allyDestroyed' | 'turnEnd'; steps: Step[]; sourceId: string; paidWithSoul: boolean }[];
   /** Draw Step แบบกดจั่วเอง: ผู้เล่นที่ต้องกดจั่ว (ระหว่างนี้ทำ action อื่นไม่ได้) */
   awaitingDraw?: PlayerId;
   /** "ในเทิร์นนี้ สปิริตนั้นจะโจมตี/ป้องกันไม่ได้" */
@@ -459,6 +465,10 @@ export interface GameState {
   turnHandCost?: { player: PlayerId; turn: number; filter: CardFilter; delta: number }[];
   /** ความสามารถ "เกมละ 1 ครั้ง" ที่ใช้แล้ว (player:cardNo:source) */
   usedOncePerGame?: string[];
+  /** BS14 จัดจ์เมนต์ ดราโกนิส: ผู้เล่นที่ได้เล่นเทิร์นของตัวเองอีก 1 เทิร์นหลังจบเทิร์นนี้ (turn = เทิร์นที่ได้สิทธิ์) */
+  extraTurn?: { player: PlayerId; turn: number };
+  /** BS14: จำนวนการต่อสู้ที่เกิดในเทิร์นนี้ (นับตอนเริ่มการต่อสู้) */
+  battlesThisTurn?: { turn: number; count: number };
   // ---------------- BS08
   /** ในเทิร์นนี้ player อัญเชิญการ์ดประเภท types คอสต์ไม่เกิน maxCost ไม่ได้ */
   summonBans?: { player: PlayerId; turn: number; maxCost: number; types: string[] }[];
@@ -696,7 +706,11 @@ export type GameEvent =
   /** Showdown: เทียบ BP ของการ์ดนี้กับเป้าของคู่แข่ง */
   | { type: 'showdown'; cardId: string; targetId: string; bp: number; targetBp: number }
   /** Soul Drive: โซลคอร์บนการ์ดนี้ออกจากเกม */
-  | { type: 'soulDrive'; cardId: string };
+  | { type: 'soulDrive'; cardId: string }
+  /** BS14 U Trigger: เปิดการ์ด revealedId (คอสต์ cost) จากเด็คคู่แข่งไปแทรช · hit = คอสต์ต่ำกว่าอัลติเมท */
+  | { type: 'uTrigger'; cardId: string; revealedId: string; cost: number; hit: boolean }
+  /** BS14: ได้เล่นเทิร์นของตัวเองอีก 1 เทิร์น */
+  | { type: 'extraTurn'; player: PlayerId; cardId: string };
 
 export type ActionResult =
   | { ok: true; state: GameState; events: GameEvent[] }

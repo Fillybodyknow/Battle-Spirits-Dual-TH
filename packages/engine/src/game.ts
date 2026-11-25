@@ -27,6 +27,7 @@ import {
   activeForcedAttack,
   quickAbility,
   lifeDamageCapped,
+  lifeImmuneLowCostSource,
   staticSources,
   handCostDeltaSources,
   noReductionBlocked,
@@ -454,6 +455,11 @@ function endTurn(ctx: Ctx): void {
   const batch = newBatch(ctx);
   for (const id of [...s.players[s.turnPlayer].field, ...teamTrash(s, s.turnPlayer)]) queueTriggers(ctx, id, 'endStep', batch);
   for (const id of [...s.players[opponentOf(s.turnPlayer)].field]) queueTriggers(ctx, id, 'oppEndStep', batch);
+  // BS14 เฟรยา: "เมื่อจบเทิร์นนี้, ..." (เอฟเฟกต์ที่ทำงานไปแล้วในเทิร์นนี้)
+  for (const t of s.turnTriggers ?? []) {
+    if (t.on !== 'turnEnd' || t.turn !== s.turn) continue;
+    enqueue(ctx, { controller: t.player, sourceId: t.sourceId, steps: [...t.steps], paidWithSoul: t.paidWithSoul, trashWhenDone: false, batch });
+  }
   if (s.queue.length > 0) {
     runQueue(ctx);
     if (s.winner) return;
@@ -475,7 +481,12 @@ function finishTurn(ctx: Ctx): void {
   s.usedOncePerTurn = [];
   if (s.turnTriggers?.length) s.turnTriggers = [];
   s.turn += 1;
-  s.turnPlayer = opponentOf(s.turnPlayer);
+  // BS14 จัดจ์เมนต์ ดราโกนิส: ได้เล่นเทิร์นของตัวเองอีก 1 เทิร์น
+  if (s.extraTurn && s.extraTurn.turn === s.turn - 1 && s.extraTurn.player === s.turnPlayer) delete s.extraTurn;
+  else {
+    delete s.extraTurn;
+    s.turnPlayer = opponentOf(s.turnPlayer);
+  }
   s.burstSetThisTurn = false;
   delete s.burstSetSeats;
   beginTurn(ctx);
@@ -1299,6 +1310,8 @@ function beginAttack(ctx: Ctx, player: PlayerId, attackerId: string, fa: { attac
   const { s } = ctx;
   const card = s.cards[attackerId]!;
     card.state = 'exhausted';
+    // BS14 "การต่อสู้ครั้งแรกในเทิร์น" (สตีม ไทรเซรา)
+    s.battlesThisTurn = { turn: s.turn, count: (s.battlesThisTurn?.turn === s.turn ? s.battlesThisTurn.count : 0) + 1 };
     s.battle = {
       attackerId,
       blockers: [],
@@ -1384,6 +1397,14 @@ function resolveBattle(ctx: Ctx): void {
     // ทิพบอล: ในเทิร์นนี้การ์ดที่มีเจ็มตั้งแต่ N เม็ดถือว่ามีเจ็ม 0
     if (s.symbolsZero?.turn === s.turn && dmg >= s.symbolsZero.minSymbols) dmg = 0;
     if (symbolsZeroCard(s, attacker.id, db)) dmg = 0;
+    // BS14 เอคลิปส์ ดราก้อน: การโจมตีของสปิริตคอสต์ไม่เกิน N ไลฟ์ของผู้เล่นทุกคนไม่ลดลง
+    {
+      const low = lifeImmuneLowCostSource(s, db, attacker.id);
+      if (low && dmg > 0) {
+        emitStatic(ctx, low);
+        dmg = 0;
+      }
+    }
     // ลิมิเต็ดบาเรีย: ไลฟ์ไม่ได้รับความเสียหายจากการโจมตีของสปิริตคอสต์ตั้งแต่ N
     if ((s.lifeShields ?? []).some((l) => l.player === defender && l.turn === s.turn && fieldCost(s, db, attacker.id) >= l.minCost)) dmg = 0;
     // BS11 หิมะน้ำแข็ง เซอร์เคิล: การ์ดที่ถูกระบุทำความเสียหายแก่ไลฟ์ไม่ได้ในเทิร์นนี้

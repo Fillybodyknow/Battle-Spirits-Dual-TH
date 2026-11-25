@@ -1384,6 +1384,18 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         out.push({ kind: 'float', anchor: `[data-field-card="${e.cardId}"]`, text: 'Soul Core ออกจากเกม', tone: 'bad', delay: t + Math.round(T.soulDrive * SOUL_DRIVE_BREAK) + 300 });
         t += T.soulDrive;
         break;
+      case 'uTrigger': {
+        // BS14 U Trigger: ป้ายผลการเช็ค (การ์ดที่เปิดบินลงแทรชด้วย event milled ก่อนหน้า)
+        const nm = (id: string) => db.get(s.cards[id]!.cardNo).name;
+        out.push({ kind: 'banner', tone: e.hit ? 'burst' : 'step', title: e.hit ? 'U TRIGGER · HIT!' : 'U TRIGGER · GUARD', sub: `${nm(e.revealedId)} คอสต์ ${e.cost} · ${nm(e.cardId)}`, delay: t });
+        out.push({ kind: 'float', anchor: `[data-field-card="${e.cardId}"]`, text: e.hit ? 'HIT!' : 'Guard', tone: e.hit ? 'good' : 'bad', delay: t + 200 });
+        t += 1100;
+        break;
+      }
+      case 'extraTurn':
+        out.push({ kind: 'banner', tone: 'turn', title: 'EXTRA TURN!', sub: `${db.get(s.cards[e.cardId]!.cardNo).name} · ได้เล่นอีก 1 เทิร์นหลังจบเทิร์นนี้`, delay: t });
+        t += 1100;
+        break;
       case 'magicNegated':
         out.push({ kind: 'banner', tone: 'step', title: 'ไร้ผล!', sub: `เอฟเฟกต์ของ ${db.get(s.cards[e.cardId]!.cardNo).name}`, delay: t });
         t += 800;

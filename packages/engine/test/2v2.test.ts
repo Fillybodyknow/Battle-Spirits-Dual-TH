@@ -325,6 +325,25 @@ describe('2VS2', () => {
     expect(s.cards[dariu]!.state).toBe('refresh');
   });
 
+  it('U Trigger: เลือกได้ว่าจะเปิดเด็คของคู่แข่งคนไหน', () => {
+    let s = setup();
+    const src = z(s, 'p1', 0).hand.shift()!;
+    s.cards[src]!.cardNo = no('อัลติเมท ดรากซอรัส');
+    s.players.p1.field.push(src);
+    for (const c of z(s, 'p1', 0).reserve.filter((x) => !s.cores[x]!.isSoul).slice(0, 3)) {
+      z(s, 'p1', 0).reserve.splice(z(s, 'p1', 0).reserve.indexOf(c), 1);
+      s.cards[src]!.cores.push(c);
+    }
+    const top0 = z(s, 'p2', 0).deck[0]!;
+    const top1 = z(s, 'p2', 1).deck[0]!;
+    s.queue = [{ controller: 'p1', sourceId: src, steps: [{ do: 'uTrigger', then: [] }], paidWithSoul: false, trashWhenDone: false }];
+    s = act(s, { type: 'endMain', player: 'p1' });
+    expect((s.choice as { options: string[] }).options).toEqual(['U Trigger: เปิดเด็คของคู่แข่งคนที่ 1', 'U Trigger: เปิดเด็คของคู่แข่งคนที่ 2']);
+    s = act(s, { type: 'choose', player: 'p1', pick: 1 });
+    expect(z(s, 'p2', 1).trashCards).toContain(top1);
+    expect(z(s, 'p2', 0).deck[0]).toBe(top0);
+  });
+
   it('ป้องกัน: คนใดคนหนึ่งประกาศป้องกัน = ทีมป้องกัน (โหวตไม่ป้องกันที่ค้างอยู่ถูกล้าง)', () => {
     let s = setup();
     const a = summon(s, 0);
