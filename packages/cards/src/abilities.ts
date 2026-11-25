@@ -145,7 +145,16 @@ export type Condition =
   /** "เมนสเต็ปของเรา" */
   | { ownMainStep: true }
   /** กลับเงื่อนไข */
-  | { not: Condition };
+  | { not: Condition }
+  // ---------------- BS13 หกเทพพิสุทธิ์
+  /** การ์ดในแทรชเราที่ตรงตัวกรองอย่างน้อย count ใบ */
+  | { trashMatchAtLeast: { filter: CardFilter; count: number } }
+  /** ในแทรชคู่แข่งมีการ์ดอย่างน้อย N ใบ */
+  | { opponentTrashAtLeast: number }
+  /** คอร์บนฟิลด์/รีเสิร์ฟ/แทรชของเรารวมกันอย่างน้อย N เม็ด (รวมโซลคอร์) */
+  | { totalCoresAtLeast: number }
+  /** เจ็มสี color บนฟิลด์เราอย่างน้อย count เม็ด (เหมือน rush แต่ไม่ใช่ Rush) */
+  | { ownGemsAtLeast: { color: Color; count: number } };
 
 /** "ต่อจำนวน ... N ตัว/ใบ": ตัวคูณของ step (ได้ 0 = ไม่ทำ) */
 export interface CountPer {
@@ -963,7 +972,18 @@ export type Step =
   /** ในเทิร์นนี้ เอฟเฟกต์ของสปิริตเราที่ชื่อมีคำเหล่านี้ ถือว่าได้ส่งโซลคอร์ลงแทรชแล้ว (ลองฟิลด์) */
   | { do: 'soulCostFreeThisTurn'; nameIncludes: string[] }
   /** (engine ใช้ภายใน) นำการ์ดเหล่านี้บนสนามกลับไปที่ to (เด็คหลายใบ = เรียงลำดับได้) */
-  | { do: 'returnCardsTo'; cardIds: string[]; to: 'hand' | 'deckTop' | 'deckBottom' };
+  | { do: 'returnCardsTo'; cardIds: string[]; to: 'hand' | 'deckTop' | 'deckBottom' }
+  // ---------------- BS13 หกเทพพิสุทธิ์
+  /** ส่งคอร์ทั้งหมด (รวมโซลคอร์) บนการ์ดของคู่แข่งที่ตรงตัวกรองทั้งหมดลงแทรชคู่แข่ง (เดธ-กัล-วาดอส) */
+  | { do: 'opponentAllCoresToTrash'; filter: CardFilter }
+  /** ทำลายการ์ดต้นเหตุ (subject) ของคู่แข่ง (เจียส: ตัวที่เสื่อมสภาพโดยเอฟเฟกต์ของเรา) */
+  | { do: 'destroySubject' }
+  /**
+   * เทนคาฟุบุ: อัลติเมทของเราสีละ 1 ตัว (แดง/ม่วง/เขียว/ขาว/เหลือง/ฟ้า ตัวละครั้ง) ที่ไม่ใช่ชื่อ excludeNames แสดงผล Soul Drive ของตัวเอง
+   * Soul Drive ของการ์ด = ตัวเลือกใน chooseOne ที่ขึ้นต้นด้วย soulToVoid (ทำส่วนที่ต่อจาก soulToVoid โดยไม่ต้องจ่ายโซลคอร์ของตัวนั้น)
+   * colorIdx / used = (engine ใช้ภายใน) สีถัดไปที่ต้องเลือก / ตัวที่เลือกแล้ว
+   */
+  | { do: 'soulDriveOthers'; excludeNames: string[]; colorIdx?: number; used?: string[] };
 
 /** ขอบเขตของ BP+ ถาวร */
 export type StaticScope =
@@ -1090,7 +1110,10 @@ export type TriggerEvent =
   /** สปิริตของเรา (subject) สูญสลายโดยเอฟเฟกต์ของคู่แข่ง (ข้อความ "ถูกทำลาย/สูญสลาย") */
   | 'allyDepletedByOpponent'
   /** เริ่มเมนสเต็ปของคู่แข่ง */
-  | 'oppMainStepStart';
+  | 'oppMainStepStart'
+  // ---------------- BS13 หกเทพพิสุทธิ์
+  /** การ์ดนี้ถูกนำกลับขึ้นมือ/เด็คจากฟิลด์โดยเอฟเฟกต์ของคู่แข่ง (ใช้คู่กับ destroyedByOpponentEffect / depletedByOpponent = "ออกจากฟิลด์โดยเอฟเฟกต์ของคู่แข่ง") */
+  | 'leftByOpponentEffect';
 
 /** เงื่อนไขของสปิริตที่ทำให้ trigger แบบ ally* ทำงาน */
 export interface SubjectFilter {
@@ -1135,6 +1158,8 @@ export interface SubjectFilter {
   families?: string[];
   /** สปิริตต้นเหตุมี Holy Life (ของตัวเอง หรือได้รับจากการ์ดอื่น) */
   holyLife?: true;
+  /** BS13 เจียส (oppExhausted): เสื่อมสภาพโดยเอฟเฟกต์ของเรา (ผู้ควบคุมเอฟเฟกต์ = เจ้าของการ์ดที่รอ trigger) */
+  byOwnEffect?: true;
   // ---------------- BS07
   /** อยู่ในทีมนี้ */
   team?: string;
@@ -1545,11 +1570,30 @@ export type Ability =
   | { kind: 'attackReserveTax'; source: number; levels: number[]; cores: number; soulBonus: number }
   // ---------------- BS13
   /** อิจิบันสเปียร์: การ์ดในมือเราที่ตรงตัวกรองทั้งหมดถือว่ามีคอสต์ cost */
-  | { kind: 'handCostSet'; source: number; levels: number[]; filter: CardFilter; cost: number }
+  | {
+      kind: 'handCostSet';
+      source: number;
+      levels: number[];
+      filter: CardFilter;
+      /** life = เท่ากับจำนวนไลฟ์ของเรา (เทนคาฟุบุ) */
+      cost: number | 'life';
+      if?: Condition;
+    }
   /** สถานที่ศักดิ์สิทธิ์ต้องห้าม: ต่อ 1 เทิร์น เด็คเราถูกทิ้งโดยเอฟเฟกต์ของคู่แข่งได้มากสุด max ใบ */
   | { kind: 'millCap'; source: number; levels: number[]; max: number }
   /** มิดไนท์-ซัน: [ร่วมร่าง] Rush ของผู้ร่วมร่างไม่สนเงื่อนไข */
-  | { kind: 'rushIgnore'; source: number; levels: number[]; granted: true };
+  | { kind: 'rushIgnore'; source: number; levels: number[]; granted: true }
+  // ---------------- BS13 หกเทพพิสุทธิ์
+  /** เจียส: คอร์ที่ได้รับในคอร์สเต็ปของเรา +amount */
+  | { kind: 'coreStepBonus'; source: number; levels: number[]; amount: number; if?: Condition }
+  /** เอล-ราฟิล: ไลฟ์ของเราเป็น 0 แล้วยังไม่แพ้ (เงื่อนไขหายไปตอนไลฟ์ 0 = แพ้ทันทีที่จบ action) */
+  | { kind: 'noLoseAtZeroLife'; source: number; levels: number[]; if?: Condition }
+  /** เอล-ราฟิล: สปิริต/อัลติเมทของคู่แข่งทั้งหมดกลายเป็น BP0 */
+  | { kind: 'opponentBpZero'; source: number; levels: number[]; if?: Condition }
+  /** ดรากุ-แม็กนา: เจ็มของการ์ดของเราที่ตรงตัวกรองทั้งหมดกลายเป็นเจ็มสี color จำนวน count เม็ด (แทนเจ็มทั้งหมดรวมเบรฟ) */
+  | { kind: 'symbolOverrideAllies'; source: number; levels: number[]; if?: Condition; filter: CardFilter; color: Color; count: number }
+  /** ชโตรม-ไฮด์: ผู้เล่นทุกคน เพิ่มการ์ดในมือจากเด็ค / เพิ่มคอร์จากวอยด์ ด้วยเอฟเฟกต์ที่ไม่ใช่สี color ไม่ได้ */
+  | { kind: 'gainLockExceptColor'; source: number; levels: number[]; color: Color };
 
 /** สคริปต์ของการ์ดหนึ่งใบ เรียงตาม effects (null = ยังไม่รองรับ, array = บรรทัดเดียวมีหลายความสามารถ) */
 export type CardScript = (DistributiveOmit<Ability, 'source'> | DistributiveOmit<Ability, 'source'>[] | null)[];

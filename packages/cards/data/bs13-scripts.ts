@@ -20,6 +20,7 @@ const ALL3 = [1, 2, 3];
 const L23 = [2, 3];
 const soulOnSelf: Condition = { soulOnSelf: true };
 const GOD_SECHS = 'จอมมารสวรรค์ ก็อด-เซคส์';
+const TENKAFUBU = 'เทพมังกรเซ็นโงคุ เทนคาฟุบุ';
 const paidSoul: Condition = { paidWithSoul: true };
 const NO = { label: 'ไม่ใช้', steps: [] as Step[] };
 
@@ -273,4 +274,58 @@ export const BS13_SCRIPTS: Record<string, CardScript> = {
     { kind: 'effectImmune', levels: [2], scope: { own: { types: SPIRIT, anyOf: [{ color: 'purple' }, { color: 'white' }] } }, colors: ['purple', 'white'], types: HEAVY },
   ],
   ปราสาทหกสวรรค์ที่ถูกย้อมไปด้วยสีแดงฉาน: [alsoColor(ALL2, 'purple'), { kind: 'drawStep', levels: [2], extraDraw: [{ amount: 1 }], after: [{ do: 'discard', count: 1 }] }],
+
+  // ---------------------------------------------------------------- หกเทพพิสุทธิ์ (XX)
+  'หกเทพพิสุทธิ์ เดธ-กัล-วาดอส แห่งกิเลส': [
+    { kind: 'trigger', on: 'summon', levels: ALL3, if: { trashMatchAtLeast: { filter: { color: 'purple' }, count: 5 } }, steps: [{ do: 'draw', count: 5 }] },
+    { kind: 'trigger', on: 'destroyed', levels: [3], if: { handAtLeast: 20 }, steps: [{ do: 'opponentAllCoresToTrash', filter: { types: SPIRITISH } }] },
+  ],
+  'หกเทพพิสุทธิ์ โครม-ริเซลฟาร์ แห่งปราการเหล็ก': [
+    // คอสต์ 8 ขณะมีสปิริตที่ไม่ใช่สีขาวบนฟิลด์เรา (การ์ดในมือ: คอสต์อัญเชิญ)
+    { kind: 'selfCostIf', cost: 8, if: { allyHas: { types: SPIRIT, notColors: ['white'] } } },
+    // Ultra Shield: แดง/ม่วง/เขียว/ขาว/เหลือง/ฟ้า
+    { kind: 'effectImmune', levels: ALL2, scope: 'self', colors: ['red', 'purple', 'green', 'white', 'yellow', 'blue'], types: ULTRA },
+    // ไลฟ์เหลือ 1: สปิริตสีขาวทั้งหมดของเราไม่รับผลเอฟเฟกต์ทั้งหมดของคู่แข่ง
+    { kind: 'effectImmune', levels: [2], scope: { own: { types: SPIRIT, color: 'white' } }, if: { all: [{ lifeAtMost: 1 }, { not: { lifeAtMost: 0 } }] } },
+  ],
+  'หกเทพพิสุทธิ์ เจียส แห่งความอุดม': [
+    { kind: 'coreStepBonus', levels: ALL3, amount: 3, if: { onlyGemColor: 'green' } },
+    // ถาวร: สปิริต/อัลติเมทคู่แข่งที่เสื่อมสภาพโดยเอฟเฟกต์ของเรา (ขณะคอร์รวมครบ 30) ถูกทำลาย
+    { kind: 'trigger', on: 'oppExhausted', levels: [3], subject: { byOwnEffect: true, types: SPIRITISH }, if: { totalCoresAtLeast: 30 }, steps: [{ do: 'destroySubject' }] },
+  ],
+  'หกเทพพิสุทธิ์ เอล-ราฟิล แห่งความเมตตา': [
+    { kind: 'noLoseAtZeroLife', levels: ALL3, if: { onlyGemColor: 'yellow' } },
+    { kind: 'trigger', on: 'startStep', levels: ALL3, if: { lifeAtMost: 0 }, oncePerTurnByName: true, steps: [{ do: 'millSelf', count: 6 }] },
+    { kind: 'opponentBpZero', levels: [3], if: { all: [{ attackStep: true }, { ownGemsAtLeast: { color: 'yellow', count: 10 } }] } },
+  ],
+  'หกเทพพิสุทธิ์ ดรากุ-แม็กนา แห่งพละกำลัง': [
+    { kind: 'trigger', on: 'allyAttack', levels: ALL3, ownTurnOnly: true, subject: { color: 'red', types: SPIRIT }, steps: [{ do: 'buffSelf', amount: 10000 }] },
+    { kind: 'trigger', on: 'attack', levels: L23, steps: [{ do: 'buffChosen', amount: 10000, ally: true, filter: { types: SPIRIT, color: 'red' } }] },
+    { kind: 'symbolOverrideAllies', levels: [3], if: { ownAttackStep: true }, filter: { types: SPIRIT, minBp: 30000 }, color: 'red', count: 3 },
+  ],
+  'หกเทพพิสุทธิ์ ชโตรม-ไฮด์ แห่งการผนึก': [
+    { kind: 'gainLockExceptColor', levels: ALL2, color: 'blue' },
+    {
+      kind: 'trigger',
+      on: ['destroyedByOpponentEffect', 'depletedByOpponent', 'leftByOpponentEffect'],
+      levels: [2],
+      if: { opponentTrashAtLeast: 20 },
+      steps: [{ do: 'destroyAllBoth', filter: { types: SPIRITISH, notColors: ['blue'] } }],
+    },
+  ],
+  'เทพมังกรเซ็นโงคุ เทนคาฟุบุ': [
+    { kind: 'handCostSet', levels: [3, 4, 5], filter: { types: ['ultimate'], nameIncludes: ['หกขุนศึกเซ็นโงคุ'] }, cost: 'life', if: { ownMainStep: true } },
+    {
+      kind: 'trigger',
+      on: 'attack',
+      levels: [4, 5],
+      steps: [
+        may(
+          'Soul Drive: นำโซลคอร์ออกจากเกม เพื่อให้อัลติเมทของเราสีละ 1 ตัวแสดงผล Soul Drive',
+          [{ do: 'soulToVoid' }, { do: 'soulDriveOthers', excludeNames: [TENKAFUBU] }],
+          { all: [soulOnSelf, { otherAllyHas: { types: ['ultimate'], textIncludes: ['Soul Drive'], excludeNames: [TENKAFUBU] } }] },
+        ),
+      ],
+    },
+  ],
 };

@@ -526,7 +526,7 @@ export type Fx =
   | {
       id: number;
       kind: 'idol';
-      variant: 'onStage' | 'myUnit' | 'soloPart' | 'notes' | 'notesBurst';
+      variant: 'onStage' | 'myUnit' | 'soloPart' | 'notes' | 'notesBurst' | 'soulDrive';
       /** onStage: การ์ดที่ขึ้นเวทีเป็น X-Rare ขึ้นไป (ฉากฉบับ X-Rare แทน Cut-in) */
       special?: boolean;
       cardId?: string;
@@ -851,11 +851,16 @@ export const LETHAL_RELEASE = LETHAL_SLOW.hold + Math.round(LETHAL_SLOW.ramp * 0
  * ฉากขึ้นเวที On Stage (IdolFx): สัดส่วนเวลาของแต่ละจังหวะ (ใช้ทั้งแอนิเมชันและเสียง)
  * ม่านเปิด → การ์ดพลิกขึ้นจากพื้นเวที (เผยหน้า) → ค้างโชว์ → ส่งต่อให้การ์ดบินลงสนาม
  */
+/** ฉาก Soul Drive: สัดส่วนของเวลาฉากที่โซลคอร์เริ่มถูกบีบ / โซลคอร์แตก (ตรงกับ keyframes sd-* ใน index.css) */
+export const SOUL_DRIVE_SQUEEZE = 0.18;
+export const SOUL_DRIVE_BREAK = 0.46;
 export const ON_STAGE_CURTAIN = 0.24;
 export const ON_STAGE_REVEAL = 0.46;
 export const ON_STAGE_HANDOFF = 0.86;
 
 const T = {
+  /** ฉาก Soul Drive: บีบโซลคอร์จนแตก (จังหวะแตก = SOUL_DRIVE_BREAK) */
+  soulDrive: 2100,
   /** ฉากขึ้นเวที On Stage ทั้งฉาก (ms) · ฉบับ X-Rare ยาวขึ้น (ค้างโชว์นานขึ้น) */
   onStage: 2700,
   onStageX: 3200,
@@ -1374,9 +1379,10 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         break;
       }
       case 'soulDrive':
-        out.push({ kind: 'banner', tone: 'burst', title: 'SOUL DRIVE', sub: db.get(s.cards[e.cardId]!.cardNo).name, delay: t });
-        out.push({ kind: 'float', anchor: `[data-field-card="${e.cardId}"]`, text: 'Soul Core ออกจากเกม', tone: 'bad', delay: t + 200 });
-        t += 1000;
+        // บีบโซลคอร์เหนือการ์ดจนแตกกระจาย + ป้าย SOUL DRIVE (ผลของ Soul Drive เกิดหลังฉากจบ)
+        out.push({ kind: 'idol', variant: 'soulDrive', cardId: e.cardId, title: db.get(s.cards[e.cardId]!.cardNo).name, delay: t, duration: T.soulDrive });
+        out.push({ kind: 'float', anchor: `[data-field-card="${e.cardId}"]`, text: 'Soul Core ออกจากเกม', tone: 'bad', delay: t + Math.round(T.soulDrive * SOUL_DRIVE_BREAK) + 300 });
+        t += T.soulDrive;
         break;
       case 'magicNegated':
         out.push({ kind: 'banner', tone: 'step', title: 'ไร้ผล!', sub: `เอฟเฟกต์ของ ${db.get(s.cards[e.cardId]!.cardNo).name}`, delay: t });
@@ -1997,7 +2003,7 @@ export function isFxBlocking(fx: Fx[]): boolean {
       f.kind === 'chainAdd' ||
       f.kind === 'target' ||
       f.kind === 'finalBlow' ||
-      (f.kind === 'idol' && (f.variant === 'onStage' || f.variant === 'myUnit')) ||
+      (f.kind === 'idol' && (f.variant === 'onStage' || f.variant === 'myUnit' || f.variant === 'soulDrive')) ||
       (f.kind === 'banner' && f.tone === 'win' && (f.delay ?? 0) > 0) ||
       (f.kind === 'result' && f.delay > 0) ||
       f.kind === 'charge' ||
@@ -2189,6 +2195,15 @@ function playFxSounds(list: Fx[]) {
         sfx('burst', f.delay + LETHAL_RELEASE + 40);
         break;
       case 'idol':
+        // Soul Drive: พลังรวม → บีบ (ล็อก) → แตก (กระจก + ระเบิด) → ป้ายกระแทก
+        if (f.variant === 'soulDrive') {
+          sfx('buff', f.delay + 60);
+          sfx('chainLockHeavy', f.delay + Math.round(f.duration * SOUL_DRIVE_SQUEEZE));
+          sfx('chainLock', f.delay + Math.round(f.duration * 0.34));
+          sfx('shatter', f.delay + Math.round(f.duration * SOUL_DRIVE_BREAK));
+          sfx('bigdamage', f.delay + Math.round(f.duration * SOUL_DRIVE_BREAK) + 20);
+          sfx('impact', f.delay + Math.round(f.duration * 0.5));
+        }
         // ฉากขึ้นเวที: ม่านเปิด (ลม) → การ์ดเผยหน้า (เสียงระยิบ + ไฮไลต์)
         if (f.variant === 'onStage') {
           sfx('whoosh', f.delay + Math.round(f.duration * ON_STAGE_CURTAIN));

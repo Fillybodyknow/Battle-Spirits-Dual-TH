@@ -72,7 +72,7 @@ const summon = (s: GameState, cardId: string, place = 1, extra: Partial<Extract<
 describe('Booster Set 13', () => {
   it('การ์ดทุกใบผูกสคริปต์ได้ และทุกบรรทัดมีสคริปต์', () => {
     const cards = loadBS13Cards().all();
-    expect(cards).toHaveLength(22);
+    expect(cards).toHaveLength(29);
     for (const c of cards) {
       const covered = new Set(c.abilities.map((a) => a.source));
       c.effects.forEach((_, i) => expect(covered.has(i), `${c.name} บรรทัด ${i + 1}`).toBe(true));
@@ -363,5 +363,183 @@ describe('Booster Set 13', () => {
     s.queue = [{ controller: 'p1', sourceId: typhon, steps: [{ do: 'when', if: { rush: { color: 'purple', count: 1 } }, steps: [{ do: 'draw', count: 1 }] }], paidWithSoul: false, trashWhenDone: false }];
     s = act(s, { type: 'endMain', player: 'p1' });
     expect(s.players.p1.hand.length).toBe(hand + 1);
+  });
+});
+
+describe('BS13 หกเทพพิสุทธิ์ / เทนคาฟุบุ (XX)', () => {
+  const VADOS = no('หกเทพพิสุทธิ์ เดธ-กัล-วาดอส แห่งกิเลส');
+  const CHROM = no('หกเทพพิสุทธิ์ โครม-ริเซลฟาร์ แห่งปราการเหล็ก');
+  const ZIAS = no('หกเทพพิสุทธิ์ เจียส แห่งความอุดม');
+  const RAFIL = no('หกเทพพิสุทธิ์ เอล-ราฟิล แห่งความเมตตา');
+  const MAGNA = no('หกเทพพิสุทธิ์ ดรากุ-แม็กนา แห่งพละกำลัง');
+  const HIDE = no('หกเทพพิสุทธิ์ ชโตรม-ไฮด์ แห่งการผนึก');
+  const TENKA = no('เทพมังกรเซ็นโงคุ เทนคาฟุบุ');
+  const LEON = no('หกขุนศึกเซ็นโงคุ เลออนแลนเซอร์');
+  const SENRYU = no('หกขุนศึกเซ็นโงคุ เซ็นริวดาคุ');
+  const pickAll = (s: GameState) => {
+    let x = s;
+    for (let i = 0; i < 10 && x.choice; i++) {
+      const c = x.choice;
+      if (c.kind === 'card') x = choose(x, c.candidates[0]!);
+      else if (c.kind === 'option') x = choose(x, 0);
+      else break;
+    }
+    return x;
+  };
+
+  it('เดธ-กัล-วาดอส: อัญเชิญเมื่อแทรชมีการ์ดสีม่วงตั้งแต่ 5 ใบ = จั่ว 5 ใบ (4 ใบไม่จั่ว)', () => {
+    for (const [purple, drawn] of [[5, 5], [4, 0]] as const) {
+      let s = setup();
+      for (let i = 0; i < purple; i++) card(s, 'p1', DOLL, 'trashCards');
+      const v = card(s, 'p1', VADOS, 'hand');
+      const hand = s.players.p1.hand.length - 1;
+      s = pickAll(summon(s, v));
+      expect(s.players.p1.field).toContain(v);
+      expect(s.players.p1.hand.length).toBe(hand + drawn);
+    }
+  });
+
+  it('เดธ-กัล-วาดอส Lv3: ถูกทำลายขณะมือ 20 ใบ = คอร์ทั้งหมดบนสปิริตคู่แข่งลงแทรชคู่แข่ง', () => {
+    let s = setup();
+    const v = put(s, 'p1', VADOS, 5);
+    for (let i = 0; i < 20; i++) card(s, 'p1', DARIU, 'hand');
+    const big = put(s, 'p2', ZIAS, 7); // Lv3 BP 18000 > 13000
+    const other = put(s, 'p2', DARIU, 3, true);
+    const trash = s.players.p2.trashCores.length;
+    s = attack(s, v);
+    s = passAll(s);
+    s = act(s, { type: 'declareBlock', player: 'p2', blockerId: big });
+    s = pickAll(passAll(s));
+    expect(s.players.p1.field).not.toContain(v);
+    expect(s.players.p2.field).not.toContain(big);
+    expect(s.players.p2.field).not.toContain(other);
+    expect(s.players.p2.trashCores.length).toBe(trash + 10);
+  });
+
+  it('โครม-ริเซลฟาร์: มีสปิริตที่ไม่ใช่สีขาวบนฟิลด์เรา = การ์ดในมือคอสต์ 8', () => {
+    const s = setup();
+    const c = card(s, 'p1', CHROM, 'hand');
+    expect(baseCost(s, db, c)).toBe(0);
+    put(s, 'p1', DARIU, 1);
+    expect(baseCost(s, db, c)).toBe(8);
+  });
+
+  it('เจียส: มีแต่เจ็มเขียว = คอร์สเต็ป +3', () => {
+    let s = setup();
+    put(s, 'p1', ZIAS, 1);
+    const before = s.players.p1.reserve.length;
+    s = act(s, { type: 'endMain', player: 'p1' });
+    for (let i = 0; i < 12 && !(s.turnPlayer === 'p1' && s.turn === 3); i++) {
+      const p = s.turnPlayer;
+      s = act(s, { type: s.phase === 'attack' ? 'endAttackStep' : 'endMain', player: p } as Action);
+    }
+    expect(s.turn).toBe(3);
+    expect(s.players.p1.reserve.length).toBe(before + 1 + 3);
+  });
+
+  it('เจียส Lv3: คอร์รวม 30 = สปิริตคู่แข่งที่เสื่อมสภาพโดยเอฟเฟกต์ของเราถูกทำลาย', () => {
+    let s = setup();
+    put(s, 'p1', ZIAS, 7);
+    for (let i = 0; i < 12; i++) {
+      const id = `xx-core-${i}`;
+      s.cores[id] = { id, owner: 'p1', isSoul: false };
+      s.players.p1.reserve.push(id);
+    }
+    const foe = put(s, 'p2', DARIU, 1);
+    s = pickAll(useMagic(s, 'เคล็ดวิชาพลิกเสื่อทาทามิ'));
+    expect(s.players.p2.field).not.toContain(foe);
+    expect(s.players.p2.trashCards).toContain(foe);
+  });
+
+  it('เอล-ราฟิล: มีแต่เจ็มเหลือง = ไลฟ์ 0 ไม่แพ้ · เงื่อนไขหาย = แพ้', () => {
+    let s = setup();
+    put(s, 'p1', RAFIL, 1);
+    s.players.p1.reserve.push(...s.players.p1.life.splice(0));
+    s = act(s, { type: 'endMain', player: 'p1' });
+    expect(s.winner).toBeNull();
+    put(s, 'p1', DARIU, 1); // เจ็มแดง → ไม่ใช่เหลืองอย่างเดียว
+    s = act(s, { type: 'endAttackStep', player: 'p1' });
+    expect(s.winner).toBe('p2');
+  });
+
+  it('เอล-ราฟิล Lv3: เจ็มเหลือง 10 เม็ด = แอทแท็คสเต็ปสปิริตคู่แข่ง BP0', () => {
+    const s = setup();
+    put(s, 'p1', RAFIL, 5);
+    for (let i = 0; i < 9; i++) put(s, 'p1', RAFIL, 1);
+    const foe = put(s, 'p2', DARIU, 1);
+    expect(currentBp(s, db, foe)).toBe(3000);
+    s.phase = 'attack';
+    expect(currentBp(s, db, foe)).toBe(0);
+  });
+
+  it('ดรากุ-แม็กนา: สปิริตแดงของเราโจมตี = สปิริตนี้ BP+10000 · Lv3 BP ตั้งแต่ 30000 = เจ็มแดง 3 เม็ด', () => {
+    let s = setup();
+    const m = put(s, 'p1', MAGNA, 5);
+    const d = put(s, 'p1', DARIU, 1);
+    s = pickAll(attack(s, d));
+    expect(currentBp(s, db, m)).toBe(25000);
+    s.cards[d]!.turnBp = 30000;
+    expect(cardGems(s, db, d).gems).toEqual([{ color: 'red', count: 3, also: [] }]);
+    expect(fieldSymbols(s, db, 'p1').red).toBe(1 + 3);
+  });
+
+  it('ดรากุ-แม็กนา Lv2: เมื่อโจมตี สปิริตแดงของเรา 1 ตัว BP+10000', () => {
+    let s = setup();
+    const m = put(s, 'p1', MAGNA, 3);
+    const d = put(s, 'p1', DARIU, 1);
+    s = attack(s, m);
+    for (let i = 0; i < 5 && s.choice; i++) {
+      const c = s.choice;
+      s = choose(s, c.kind === 'card' ? (c.candidates.includes(d) ? d : c.candidates[0]!) : 0);
+    }
+    expect(currentBp(s, db, d)).toBe(13000);
+  });
+
+  it('ชโตรม-ไฮด์: เอฟเฟกต์ที่ไม่ใช่สีฟ้าจั่วการ์ดไม่ได้', () => {
+    let s = setup();
+    put(s, 'p2', HIDE, 1);
+    for (let i = 0; i < 5; i++) card(s, 'p1', DOLL, 'trashCards');
+    const v = card(s, 'p1', VADOS, 'hand');
+    const hand = s.players.p1.hand.length - 1;
+    s = pickAll(summon(s, v));
+    expect(s.players.p1.hand.length).toBe(hand);
+  });
+
+  it('ชโตรม-ไฮด์ Lv2: ถูกนำกลับขึ้นมือโดยเอฟเฟกต์ของคู่แข่ง ขณะแทรชคู่แข่ง 20 ใบ = ทำลายสปิริตที่ไม่ใช่สีฟ้าทั้งหมด', () => {
+    let s = setup();
+    const h = put(s, 'p2', HIDE, 4);
+    for (let i = 0; i < 20; i++) card(s, 'p1', DARIU, 'trashCards');
+    const mine = put(s, 'p1', DARIU, 1);
+    const theirs = put(s, 'p2', DARIU, 1);
+    s = useMagic(s, 'กำแพงผลึกขาว');
+    for (let i = 0; i < 5 && s.choice; i++) {
+      const c = s.choice;
+      s = choose(s, c.kind === 'card' ? (c.candidates.includes(h) ? h : c.candidates[0]!) : 0);
+    }
+    expect(s.players.p2.hand).toContain(h);
+    expect(s.players.p1.field).not.toContain(mine);
+    expect(s.players.p2.field).not.toContain(theirs);
+  });
+
+  it('เทนคาฟุบุ: เมนสเต็ปของเรา "หกขุนศึกเซ็นโงคุ" ในมือคอสต์ = จำนวนไลฟ์', () => {
+    const s = setup();
+    put(s, 'p1', TENKA, 1);
+    const u = card(s, 'p1', SENRYU, 'hand');
+    expect(baseCost(s, db, u)).toBe(s.players.p1.life.length);
+    s.players.p1.reserve.push(...s.players.p1.life.splice(0, 3));
+    expect(baseCost(s, db, u)).toBe(s.players.p1.life.length);
+  });
+
+  it('เทนคาฟุบุ Lv4: Soul Drive = อัลติเมทสีแดงของเรา (เลออนแลนเซอร์) แสดงผล Soul Drive', () => {
+    let s = setup();
+    const t = put(s, 'p1', TENKA, 3, true);
+    put(s, 'p1', LEON, 1);
+    const foes = [put(s, 'p2', DARIU, 1), put(s, 'p2', DARIU, 1)];
+    s = attack(s, t);
+    expect(s.choice?.kind).toBe('option');
+    s = choose(s, 0);
+    s = pickAll(s);
+    expect(s.cards[t]!.cores.some((c) => s.cores[c]?.isSoul)).toBe(false);
+    for (const f of foes) expect(s.players.p2.field).not.toContain(f);
   });
 });

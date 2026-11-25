@@ -5,8 +5,8 @@
  * action `choose` จะทำ step นั้นให้จบแล้วเดินคิวต่อ ระหว่างรอเลือก action อื่นถูกปฏิเสธ
  */
 import type { CardFilter, Condition, CountPer, Step, SubjectFilter, TriggerEvent } from '@bs/cards';
-import { assertUsableCore, checkDepletion, destroy, drawCard, emit, emitStatic, endGame, handIncreasedByEffect, leaveField, loseLife, newCore, payCost, pendBurst, sendToTrash, type Ctx } from './ctx';
-import { cardColors,
+import { assertUsableCore, checkDepletion, destroy, drawCard, emit, emitStatic, endGame, handIncreasedByEffect, leaveField, lifeZeroLose, loseLife, newCore, payCost, pendBurst, sendToTrash, type Ctx } from './ctx';
+import { gainLockSource, cardColors,
   bpDestroyBoostFor,
   bounceImmuneSource,
   cardBanSource,
@@ -187,6 +187,8 @@ export function queueTriggers(
     subjectCatalyzed?: boolean;
     /** BS12 ทรูธ-อีเด็น: เอฟเฟกต์ "เมื่อการ์ดนี้ถูกอัญเชิญ" ของการ์ดนี้ไม่ทำงาน */
     noSummonTrigger?: boolean;
+    /** BS13 เจียส (oppExhausted): ผู้ควบคุมเอฟเฟกต์ที่ทำให้เสื่อมสภาพ (ไม่มี = โจมตี/ป้องกัน) */
+    subjectExhaustedBy?: PlayerId;
   } = {},
 ): void {
   const { s, db } = ctx;
@@ -213,7 +215,8 @@ export function queueTriggers(
       // BS09 เมียวโอสยบมาร: การ์ดในแทรชใช้เอฟเฟกต์ไม่ได้
       if (trashLockSource(s, db)) continue;
     } else {
-      if (inHand) continue;
+      // การ์ดที่ออกจากฟิลด์ขึ้นมือไปแล้ว (leftByOpponentEffect ส่งเลเวลตอนอยู่บนฟิลด์มา) ยังทำงานได้
+      if (inHand && opts.level === undefined) continue;
       // การ์ดในแทรช: ทำงานเฉพาะเอฟเฟกต์ zone 'trash' (เน็กซัสในแทรชมีคอร์ 0 = นับเป็น Lv1 ได้: No.1 นอร์ธซีโรด)
       // ยกเว้น "เมื่อถูกทำลาย/สูญสลาย" ที่ส่งเลเวลตอนอยู่บนสนามมา (opts.level)
       if (inTrash && opts.level === undefined) continue;
@@ -308,6 +311,7 @@ function subjectMatches(
     subjectByOpponentEffect?: boolean;
     subjectCatalyzed?: boolean;
     victimSoul?: boolean;
+    subjectExhaustedBy?: PlayerId;
   } = {},
 ): boolean {
   const card = ctx.s.cards[cardId]!;
@@ -331,6 +335,7 @@ function subjectMatches(
   if (f.byOpponent && !extra.subjectByOpponent) return false;
   if (f.byOpponentEffect && !extra.subjectByOpponentEffect) return false;
   if (f.catalyzed && !extra.subjectCatalyzed) return false;
+  if (f.byOwnEffect && extra.subjectExhaustedBy !== ctx.s.cards[holderId]?.owner) return false;
   if (f.firstOfTurn) {
     const fs = ctx.s.firstSummon;
     if (fs?.turn !== ctx.s.turn || fs[card.owner] !== cardId) return false;
@@ -594,12 +599,14 @@ export function destroyCard(ctx: Ctx, cardId: string, by: PlayerId, opts: { bySo
 }
 
 /** การ์ดเสื่อมสภาพโดยเอฟเฟกต์: "เมื่อ...ของเราเสื่อมสภาพ" ของการ์ดบนสนามของเจ้าของ (ทำงานต่อจากเอฟเฟกต์ที่กำลังทำงาน) */
-export function queueExhaustTriggers(ctx: Ctx, cardId: string): void {
+export function queueExhaustTriggers(ctx: Ctx, cardId: string, byEffect = true): void {
   const owner = ctx.s.cards[cardId]!.owner;
+  // BS13 เจียส: "ที่เสื่อมสภาพโดยเอฟเฟกต์ของเรา" = ผู้ควบคุมเอฟเฟกต์ที่กำลังทำงาน
+  const by = byEffect ? ctx.s.queue[0]?.controller : undefined;
   queueRightAfterCurrent(ctx, () => {
     const batch = newBatch(ctx);
     for (const id of [...ctx.s.players[owner].field]) queueTriggers(ctx, id, 'allyExhausted', batch, { subject: cardId });
-    for (const id of [...ctx.s.players[opponentOf(owner)].field]) queueTriggers(ctx, id, 'oppExhausted', batch, { subject: cardId });
+    for (const id of [...ctx.s.players[opponentOf(owner)].field]) queueTriggers(ctx, id, 'oppExhausted', batch, { subject: cardId, ...(by ? { subjectExhaustedBy: by } : {}) });
   });
 }
 
@@ -614,6 +621,13 @@ function returnCard(ctx: Ctx, cardId: string, to: 'hand' | 'deckTop' | 'deckBott
   emitStatic(ctx, bottom);
   const dest = bottom ? 'deckBottom' : to;
   const spirit = isSpiritLike(db.get(s.cards[cardId]!.cardNo)) && db.get(s.cards[cardId]!.cardNo).type !== 'ultimate';
+  // BS13 ชโตรม-ไฮด์: "เมื่อสปิริตนี้จะออกจากฟิลด์โดยเอฟเฟกต์ของคู่แข่ง" (กลับขึ้นมือ/เด็ค) · เลเวลตอนอยู่บนฟิลด์
+  const leaver = s.queue[0];
+  const byOppEffect = !!leaver?.started && leaver.controller !== owner && s.players[owner].field.includes(cardId);
+  const leftLevel = byOppEffect ? cardLevel(s, db, cardId) : 0;
+  const leftTrigger = () => {
+    if (byOppEffect) queueRightAfterCurrent(ctx, () => queueTriggers(ctx, cardId, 'leftByOpponentEffect', newBatch(ctx), { level: leftLevel }));
+  };
   if (leaveField(ctx, cardId, 'hand') === 'trash') {
     emit(ctx, { type: 'cloneDiscarded', player: owner, cardId });
     return;
@@ -628,6 +642,7 @@ function returnCard(ctx: Ctx, cardId: string, to: 'hand' | 'deckTop' | 'deckBott
         for (const id of [...s.players[owner].field]) queueTriggers(ctx, id, 'allyBouncedByOpponent', batch, { subject: cardId });
       });
     }
+    leftTrigger();
     return;
   }
   const p = ownerZones(s, cardId);
@@ -635,6 +650,7 @@ function returnCard(ctx: Ctx, cardId: string, to: 'hand' | 'deckTop' | 'deckBott
   if (dest === 'deckTop') p.deck.unshift(cardId);
   else p.deck.push(cardId);
   emit(ctx, { type: 'returnedToDeck', player: owner, cardId, where: dest === 'deckTop' ? 'top' : 'bottom' });
+  leftTrigger();
 }
 
 /** การ์ดสูญสลายเพราะเอฟเฟกต์ของคู่แข่งถอดคอร์: ลงแทรชทันที + "เมื่อสปิริตนี้สูญสลายโดยคู่แข่ง" + Burst */
@@ -1304,6 +1320,7 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
   switch (step.do) {
     case 'draw': {
       if (!holds(step.if)) return;
+      if (gainLocked(ctx, item.sourceId)) return;
       const before = s.players[me].hand.length;
       for (let i = 0; i < step.count * (step.perLifeLost ? (item.lifeLost ?? 0) : 1); i++) drawCard(ctx, me, true);
       const n = s.players[me].hand.length - before;
@@ -1591,7 +1608,9 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       if (revealed.length === 0) return;
       emit(ctx, { type: 'cardsRevealed', player: me, cardIds: revealed });
       const names = new Set<string>();
+      const locked = gainLocked(ctx, item.sourceId);
       const take = revealed.filter((id) => {
+        if (locked) return false;
         if (!matchesFilter(s, db, id, step.filter)) return false;
         if (!step.distinctNames) return true;
         const name = db.get(s.cards[id]!.cardNo).name;
@@ -1835,7 +1854,7 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
         emit(ctx, { type: 'discarded', player: me, cardId: id });
       }
       const n = s.players[opp].hand.length;
-      for (let i = 0; i < n; i++) drawCard(ctx, me, true);
+      if (!gainLocked(ctx, item.sourceId)) for (let i = 0; i < n; i++) drawCard(ctx, me, true);
       return;
     }
 
@@ -2194,7 +2213,7 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       const revealed = s.players[me].deck.slice(0, step.count);
       if (revealed.length === 0) return;
       emit(ctx, { type: 'cardsRevealed', player: me, cardIds: revealed });
-      const candidates = revealed.filter((id) => matchesFilter(s, db, id, step.filter));
+      const candidates = gainLocked(ctx, item.sourceId) ? [] : revealed.filter((id) => matchesFilter(s, db, id, step.filter));
       if (candidates.length === 0) {
         if (step.rest === 'bottom') item.steps.unshift({ do: 'toDeckBottom', cardIds: revealed });
         else if (step.rest === 'top') item.steps.unshift({ do: 'toDeckTop', cardIds: revealed });
@@ -2360,6 +2379,7 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
     }
 
     case 'gainLifeFromVoid': {
+      if (step.count > 0 && gainLocked(ctx, item.sourceId)) return;
       // องเมียววาราชิ: คอร์มาจากไลฟ์ของเจ้าของเอฟเฟกต์เอง = ไลฟ์ไม่เปลี่ยน
       // ฟุทสึโนะมิทามะ: ผู้เล่นทุกคนนำคอร์จากวอยด์มาวางที่ไลฟ์ไม่ได้
       {
@@ -2700,7 +2720,7 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       s.cards[step.cardId]!.cores.push(...moved);
       emit(ctx, { type: 'coresMoved', player: me, count: moved.length });
       // ไลฟ์เป็น 0 = แพ้ (2VS2: ไลฟ์ของทั้งทีมเป็น 0)
-      if (allZones(s, me).every((z) => z.life.length === 0)) endGame(ctx, opp, 'lifeZero');
+      if (allZones(s, me).every((z) => z.life.length === 0)) lifeZeroLose(ctx, me, opp);
       return;
     }
 
@@ -2802,7 +2822,7 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
         s.players[opp].trashCards.push(id);
         emit(ctx, { type: 'discarded', player: opp, cardId: id });
       }
-      for (let i = 0; i < step.draw; i++) drawCard(ctx, opp, true);
+      if (!gainLocked(ctx, item.sourceId)) for (let i = 0; i < step.draw; i++) drawCard(ctx, opp, true);
       return;
     }
 
@@ -3602,7 +3622,7 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
         if (left.length > 0) mill(ctx, me, left);
         return;
       }
-      const candidates = left.filter((id) => matchesFilter(s, db, id, step.filters[i]!));
+      const candidates = gainLocked(ctx, item.sourceId) ? [] : left.filter((id) => matchesFilter(s, db, id, step.filters[i]!));
       if (candidates.length === 0) {
         item.steps.unshift({ ...step, index: i + 1 });
         return;
@@ -4145,6 +4165,56 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       return;
     }
 
+    // ---------------- BS13 หกเทพพิสุทธิ์
+    case 'opponentAllCoresToTrash': {
+      // เดธ-กัล-วาดอส: คอร์ทั้งหมด (รวมโซลคอร์) บนสปิริต/อัลติเมทของคู่แข่งลงแทรชคู่แข่ง
+      const steps: Step[] = [];
+      for (const id of s.players[opp].field) {
+        if (s.cards[id]!.cores.length === 0 || !matchesFilter(s, db, id, step.filter) || !hits(id)) continue;
+        steps.push({ do: 'coresOff', cardId: id, n: s.cards[id]!.cores.length, to: 'trash', byOpponent: true, soul: true });
+      }
+      item.steps.unshift(...steps);
+      return;
+    }
+
+    case 'destroySubject': {
+      const id = item.subjectId;
+      if (!id || !s.cards[id] || s.cards[id]!.owner === me || !s.players[s.cards[id]!.owner].field.includes(id) || !hits(id)) return;
+      recordDestroyed(ctx, item, id);
+      destroyCard(ctx, id, me, { bySource: item.sourceId, effect: true });
+      return;
+    }
+
+    case 'soulDriveOthers': {
+      // เทนคาฟุบุ: เลือกอัลติเมทสีละ 1 ตัว (ตามลำดับสี) แล้วทำ Soul Drive ของแต่ละตัวต่อจากเอฟเฟกต์นี้
+      const used = step.used ?? [];
+      for (let i = step.colorIdx ?? 0; i < SOUL_DRIVE_COLORS.length; i++) {
+        const [color, th] = SOUL_DRIVE_COLORS[i]!;
+        const cands = s.players[me].field.filter((id) => {
+          const d = db.get(s.cards[id]!.cardNo);
+          return !used.includes(id) && d.type === 'ultimate' && !nameHas(d, step.excludeNames) && cardColors(s, db, id).includes(color) && !!soulDriveOf(ctx, id);
+        });
+        if (cands.length === 0) continue;
+        const next = (id: string): Step => ({ ...step, colorIdx: i + 1, used: [...used, id] });
+        if (cands.length === 1) {
+          item.steps.unshift(next(cands[0]!));
+          return;
+        }
+        item.steps.unshift({ do: 'chooseOne', options: cands.map((id) => ({ label: `Soul Drive สี${th}: ${db.get(s.cards[id]!.cardNo).name}`, steps: [next(id)] })) });
+        return;
+      }
+      if (used.length === 0) return;
+      queueRightAfterCurrent(ctx, () => {
+        for (const id of used) {
+          const sd = onField(ctx, id) ? soulDriveOf(ctx, id) : null;
+          if (!sd) continue;
+          emit(ctx, { type: 'abilityTriggered', cardId: id, source: sd.source });
+          enqueue(ctx, { controller: me, sourceId: id, source: sd.source, steps: [...sd.steps], paidWithSoul: false, trashWhenDone: false, batch: newBatch(ctx) });
+        }
+      });
+      return;
+    }
+
     case 'chooseOne': {
       // BS11 ลองฟิลด์: ตัวเลือกที่จ่ายด้วยการส่งโซลคอร์บนสปิริตนี้ ถือว่าส่งแล้ว = ไม่ต้องมีโซลคอร์
       const soulFree = onField(ctx, self) && !!soulCostFreeSource(s, db, self) && step.options.some((o) => o.steps[0]?.do === 'soulToTrash');
@@ -4169,6 +4239,49 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       return;
     }
   }
+}
+
+/** BS13 ชโตรม-ไฮด์: เอฟเฟกต์ของการ์ดนี้เพิ่มการ์ดในมือจากเด็ค / คอร์จากวอยด์ไม่ได้ (เรืองแสงต้นเหตุ) */
+function gainLocked(ctx: Ctx, sourceId: string | undefined): boolean {
+  const lock = gainLockSource(ctx.s, ctx.db, sourceId);
+  if (lock) emitStatic(ctx, lock);
+  return !!lock;
+}
+
+/** เทนคาฟุบุ: สีที่ไล่เลือก (แดง/ม่วง/เขียว/ขาว/เหลือง/ฟ้า) */
+const SOUL_DRIVE_COLORS: [Color, string][] = [['red', 'แดง'], ['purple', 'ม่วง'], ['green', 'เขียว'], ['white', 'ขาว'], ['yellow', 'เหลือง'], ['blue', 'ฟ้า']];
+
+/**
+ * Soul Drive ของการ์ดนี้ (ที่ใช้ได้ที่เลเวลตอนนี้): ตัวเลือกใน chooseOne ที่ขึ้นต้นด้วย soulToVoid → steps ที่ต่อจาก soulToVoid
+ * (เทนคาฟุบุ "แสดงผล Soul Drive" = ทำผลโดยไม่ต้องนำโซลคอร์ของตัวนั้นออกจากเกม)
+ */
+function soulDriveOf(ctx: Ctx, cardId: string): { source: number; steps: Step[] } | null {
+  const { s, db } = ctx;
+  if (effectsNegated(s, db, cardId)) return null;
+  const level = cardLevel(s, db, cardId);
+  const find = (steps: Step[]): Step[] | null => {
+    for (const st of steps) {
+      if (st.do === 'chooseOne') {
+        for (const o of st.options) {
+          if (o.steps[0]?.do === 'soulToVoid') return o.steps.slice(1);
+          const r = find(o.steps);
+          if (r) return r;
+        }
+      }
+      if (st.do === 'when') {
+        const r = find(st.steps) ?? (st.else ? find(st.else) : null);
+        if (r) return r;
+      }
+    }
+    return null;
+  };
+  for (const ab of db.get(s.cards[cardId]!.cardNo).abilities) {
+    if (ab.kind !== 'trigger' && ab.kind !== 'activated') continue;
+    if (!ab.levels.includes(level)) continue;
+    const r = find(ab.steps);
+    if (r) return { source: ab.source, steps: r };
+  }
+  return null;
 }
 
 /** สปิริตของผู้เล่นที่ Brave ใบนี้ร่วมร่างได้ (คอสต์ถึง, ยังไม่มี Brave) */
@@ -4197,6 +4310,7 @@ function addVoidCores(ctx: Ctx, player: PlayerId, cardId: string, count: number)
  */
 function takeVoid(ctx: Ctx, player: PlayerId, count: number): string[] {
   const { s, db } = ctx;
+  if (count > 0 && gainLocked(ctx, s.queue[0]?.sourceId)) return [];
   if (!voidFromLife(s, db)) {
     if (count > 0) s.voidGained = { ...(s.voidGained ?? {}), [player]: (s.voidGained?.[player] ?? 0) + count };
     return Array.from({ length: count }, () => newCore(ctx, player));
@@ -4205,7 +4319,7 @@ function takeVoid(ctx: Ctx, player: PlayerId, count: number): string[] {
   const life = s.players[player].life;
   const got = life.splice(Math.max(0, life.length - count), count);
   if (got.length > 0) emit(ctx, { type: 'lifeLost', player, amount: got.length });
-  if (allZones(s, player).every((z) => z.life.length === 0)) endGame(ctx, opponentOf(player), 'lifeZero');
+  if (allZones(s, player).every((z) => z.life.length === 0)) lifeZeroLose(ctx, player, opponentOf(player));
   return got;
 }
 

@@ -1,5 +1,5 @@
 import type { CardDatabase, CardDef } from '@bs/cards';
-import { cardLevel, fail, noRefreshSource, fieldCost, isSpiritLike, levelOf, locateCore, minCores, levelBoostSources, payableCost, removeCore, removeFrom, summonLevelCostBoost, type StaticSource } from './rules';
+import { cardLevel, fail, noLoseSource, noRefreshSource, fieldCost, isSpiritLike, levelOf, locateCore, minCores, levelBoostSources, payableCost, removeCore, removeFrom, summonLevelCostBoost, type StaticSource } from './rules';
 import { PLAYERS, opponentOf, type EndReason, type GameEvent, type GameState, type Phase, type PlayerId } from './types';
 import { newBatch, queueLifeLostTriggers, queueTriggers } from './effects';
 import { activeSeat, allZones, ownerZones, seatOfCard, zonesOf } from './seats';
@@ -214,8 +214,7 @@ export function loseLife(ctx: Ctx, player: PlayerId, amount: number, winner: Pla
     if (lost > 0 && !(ctx.s.lifeDamagedThisTurn ?? []).includes(player)) ctx.s.lifeDamagedThisTurn = [...(ctx.s.lifeDamagedThisTurn ?? []), player];
     if (lost > 0) pendBurst(ctx, player, 'afterLifeLost');
     if (allZones(ctx.s, player).some((z) => z.life.length > 0)) return false;
-    endGame(ctx, winner, 'lifeZero');
-    return true;
+    return lifeZeroLose(ctx, player, winner);
   }
   const p = ctx.s.players[player];
   const n = Math.min(amount, p.life.length);
@@ -225,8 +224,26 @@ export function loseLife(ctx: Ctx, player: PlayerId, amount: number, winner: Pla
   if (n > 0 && !(ctx.s.lifeDamagedThisTurn ?? []).includes(player)) ctx.s.lifeDamagedThisTurn = [...(ctx.s.lifeDamagedThisTurn ?? []), player];
   if (n > 0) pendBurst(ctx, player, 'afterLifeLost');
   if (p.life.length > 0) return false;
+  return lifeZeroLose(ctx, player, winner);
+}
+
+/** ไลฟ์ (ทั้งทีม) เป็น 0: แพ้ เว้นแต่มี "ไลฟ์ 0 แล้วไม่แพ้" (BS13 เอล-ราฟิล) · คืน true ถ้าจบเกม */
+export function lifeZeroLose(ctx: Ctx, player: PlayerId, winner: PlayerId): boolean {
+  const keep = noLoseSource(ctx.s, ctx.db, player);
+  if (keep) {
+    emitStatic(ctx, keep);
+    return false;
+  }
   endGame(ctx, winner, 'lifeZero');
   return true;
+}
+
+/** จบ action: ผู้เล่นที่ไลฟ์ 0 อยู่แต่ไม่มี "ไลฟ์ 0 แล้วไม่แพ้" แล้ว (เอล-ราฟิลออกจากสนาม / เงื่อนไขหาย) = แพ้ */
+export function checkLifeZero(ctx: Ctx): void {
+  for (const p of PLAYERS) {
+    if (ctx.s.winner) return;
+    if (allZones(ctx.s, p).every((z) => z.life.length === 0) && !noLoseSource(ctx.s, ctx.db, p)) endGame(ctx, opponentOf(p), 'lifeZero');
+  }
 }
 
 /** สูญสลาย: Spirit/Ultimate/Brave ที่ Core ต่ำกว่าเลเวลต่ำสุด; คืน id ที่สูญสลาย */

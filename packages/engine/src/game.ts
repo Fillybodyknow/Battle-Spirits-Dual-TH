@@ -1,5 +1,5 @@
 import type { CardDatabase, CardDef, Step } from '@bs/cards';
-import { assertUsableCore, checkDepletion, destroy, drawCard, emit, emitStatic, endGame, lifeDamageLeft, loseLife, newCore, payCost, pendBurst, setPhase, type Ctx } from './ctx';
+import { assertUsableCore, checkDepletion, checkLifeZero, destroy, drawCard, emit, emitStatic, endGame, lifeDamageLeft, loseLife, newCore, payCost, pendBurst, setPhase, type Ctx } from './ctx';
 import { destroyCard, enqueue, fireTriggers, refreshByEffect, newBatch, queueExhaustTriggers, queueLifeLostTriggers, queueMagicUsedTriggers, queueSummonTriggers, queueTriggers, resolveChoice, runQueue } from './effects';
 import { nextRandom, shuffle } from './rng';
 import { normalizeSeats } from './seats';
@@ -7,6 +7,7 @@ import { burstSetDone } from './seats';
 import { activeSeat, allZones, asSeat, restoreSeats, seatOfCard, seatsOf, teamHand, teamTrash, useSeat } from './seats';
 import {
   attackTaxFor,
+  symbolOverrideOf,
   attackReserveTaxFor,
   nexusExhaustPayMax,
   effectSummonTax,
@@ -232,6 +233,25 @@ function afterStart(ctx: Ctx): void {
           emit(ctx, { type: 'coreGained', player, coreId });
         }
       });
+    }
+  }
+
+  // BS13 เจียส: "คอร์สเต็ปของเรา: คอร์ที่ได้รับ +N" (คอร์ไปที่รีเสิร์ฟของเจ้าของการ์ด)
+  if (!(s.turn === 1 && s.config.firstPlayerSkipsCoreStep)) {
+    for (const id of [...p.field]) {
+      if (effectsNegated(s, ctx.db, id)) continue;
+      const level = cardLevel(s, ctx.db, id);
+      for (const ab of ctx.db.get(s.cards[id]!.cardNo).abilities) {
+        if (ab.kind !== 'coreStepBonus' || !ab.levels.includes(level) || !conditionHolds(s, id, ab.if, false, false, ctx.db)) continue;
+        emitStatic(ctx, { cardId: id, source: ab.source });
+        asSeat(s, player, seatOfCard(s.cards[id]!), () => {
+          for (let i = 0; i < ab.amount; i++) {
+            const coreId = newCore(ctx, player);
+            p.reserve.push(coreId);
+            emit(ctx, { type: 'coreGained', player, coreId });
+          }
+        });
+      }
     }
   }
 
@@ -940,7 +960,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     queueTriggers(ctx, blockerId, 'allyBlock', batch, { subject: blockerId });
     queueBlockedTriggers(ctx, battle.attackerId, blockerId, batch);
     lifeOnBlocked(ctx);
-    queueExhaustTriggers(ctx, blockerId);
+    queueExhaustTriggers(ctx, blockerId, false);
     runQueue(ctx);
   },
 
@@ -1327,7 +1347,7 @@ function beginAttack(ctx: Ctx, player: PlayerId, attackerId: string, fa: { attac
     queueTriggers(ctx, attackerId, 'attack', batch);
     for (const id of [...s.players[player].field]) queueTriggers(ctx, id, 'allyAttack', batch, { subject: attackerId });
     for (const id of [...s.players[opponentOf(player)].field]) queueTriggers(ctx, id, 'oppAttack', batch, { subject: attackerId });
-    queueExhaustTriggers(ctx, attackerId);
+    queueExhaustTriggers(ctx, attackerId, false);
     // Burst "หลังจากสปิริต/อัลติเมทคู่แข่งโจมตี" (เซ็นโงคุฮิเมะ คุอง)
     pendBurst(ctx, opponentOf(player), 'afterOpponentAttack');
     runQueue(ctx);
@@ -1359,7 +1379,7 @@ function resolveBattle(ctx: Ctx): void {
     const siu = battle.symbolIfUnblocked;
     if (siu && siu.player === attacker.owner && attackerDef.family.includes(siu.family)) battle.symbolOverride = { cardId: attacker.id, color: siu.color as never, count: siu.count };
     const extra = Object.values(extraSymbols(s, db, attacker.id)).reduce<number>((n, v) => n + (v ?? 0), 0);
-    const override = battle.symbolOverride?.cardId === attacker.id ? battle.symbolOverride.count : null;
+    const override = symbolOverrideOf(s, db, attacker.id)?.count ?? null;
     let dmg = override ?? symbolCount(attackerDef) + braveSymbols(ctx, attacker.id) + extra;
     // ทิพบอล: ในเทิร์นนี้การ์ดที่มีเจ็มตั้งแต่ N เม็ดถือว่ามีเจ็ม 0
     if (s.symbolsZero?.turn === s.turn && dmg >= s.symbolsZero.minSymbols) dmg = 0;
@@ -1602,6 +1622,8 @@ export function applyAction(state: GameState, input: Action, db: CardDatabase): 
       }
       else if (ctx.s.battle) endBattle(ctx);
     }
+    // BS13 เอล-ราฟิล: ไลฟ์ 0 อยู่แล้วไม่มีผล "ไม่แพ้" แล้ว = แพ้
+    if (!ctx.s.winner && !ctx.s.choice) checkLifeZero(ctx);
   } catch (e) {
     if (e instanceof RuleError) return { ok: false, error: { code: e.code, message: e.message } };
     throw e;

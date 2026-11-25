@@ -446,6 +446,14 @@ export function conditionHolds(
     return (fieldSymbols(state, db, card.owner)[cond.rush.color] ?? 0) >= cond.rush.count;
   }
   if ('ownMainStep' in cond) return state.phase === 'main' && state.turnPlayer === card.owner;
+  // ---------------- BS13 หกเทพพิสุทธิ์
+  if ('trashMatchAtLeast' in cond) return !!db && teamTrash(state, card.owner).filter((id) => matchesFilter(state, db, id, cond.trashMatchAtLeast.filter)).length >= cond.trashMatchAtLeast.count;
+  if ('opponentTrashAtLeast' in cond) return teamTrash(state, card.owner === 'p1' ? 'p2' : 'p1').length >= cond.opponentTrashAtLeast;
+  if ('totalCoresAtLeast' in cond) {
+    const onField = owner.field.reduce((n, id) => n + state.cards[id]!.cores.length, 0);
+    return onField + owner.reserve.length + owner.trashCores.length >= cond.totalCoresAtLeast;
+  }
+  if ('ownGemsAtLeast' in cond) return !!db && (fieldSymbols(state, db, card.owner)[cond.ownGemsAtLeast.color] ?? 0) >= cond.ownGemsAtLeast.count;
   if ('assaultAlt' in cond) return !!db && state.phase === 'attack' && state.turnPlayer === card.owner && staticSources(state, db, [card.owner], 'assaultTrashNexus').length > 0;
   if ('onlyGemColor' in cond) {
     if (!db) return false;
@@ -537,6 +545,8 @@ function currentBpRaw(state: GameState, db: CardDatabase, cardId: string): numbe
       if (ab?.kind === 'oppBattleBp') bp += ab.amount;
     }
   }
+  // BS13 เอล-ราฟิล: สปิริต/อัลติเมทของคู่แข่งทั้งหมดกลายเป็น BP0
+  if (opponentBpZeroSource(state, db, cardId)) return 0;
   return Math.max(0, bp);
 }
 
@@ -825,13 +835,15 @@ function fieldSymbolsRaw(state: GameState, db: CardDatabase, player: PlayerId): 
   // ทิพบอล: ในเทิร์นนี้การ์ดที่มีเจ็มตั้งแต่ N เม็ด ถือว่ามีเจ็ม 0
   const zero = state.symbolsZero?.turn === state.turn ? state.symbolsZero.minSymbols : null;
   const zeroed = (id: string) => zero !== null && cardSymbolTotal(state, db, id) >= zero;
-  // ในการต่อสู้นี้ เจ็มของการ์ดนี้ถูกเปลี่ยน (โอคิดาคุ): ใช้ค่าที่เปลี่ยนแทนเจ็มของการ์ดและ Brave ทั้งหมด
-  const override = state.battle?.symbolOverride;
+  // เจ็มของการ์ดนี้ถูกเปลี่ยน (โอคิดาคุ: ในการต่อสู้นี้ / ดรากุ-แม็กนา): ใช้ค่าที่เปลี่ยนแทนเจ็มของการ์ดและ Brave ทั้งหมด
+  const overridden = new Set<string>();
   // Brave ที่ร่วมร่าง: ผู้ร่วมร่างได้รับ gem symbol ของ Brave ด้วย
   for (const f of state.players[player].field) {
     if (zeroed(f) || symbolsZeroCard(state, f, db)) continue;
-    if (override?.cardId === f) {
-      out[override.color as SymbolColor] = (out[override.color as SymbolColor] ?? 0) + override.count;
+    const override = symbolOverrideOf(state, db, f);
+    if (override) {
+      overridden.add(f);
+      out[override.color] = (out[override.color] ?? 0) + override.count;
       continue;
     }
     for (const id of [f, ...state.cards[f]!.braves]) {
@@ -842,7 +854,7 @@ function fieldSymbolsRaw(state: GameState, db: CardDatabase, player: PlayerId): 
     }
   }
   for (const id of state.players[player].field) {
-    if (override?.cardId === id || zeroed(id)) continue;
+    if (overridden.has(id) || zeroed(id)) continue;
     for (const [color, n] of Object.entries(extraSymbols(state, db, id)) as [SymbolColor, number][]) {
       out[color] = (out[color] ?? 0) + n;
     }
@@ -858,7 +870,7 @@ function fieldSymbolsRaw(state: GameState, db: CardDatabase, player: PlayerId): 
   // "เจ็มของสปิริตนี้ถือว่าเป็นเจ็มสี...ด้วย" (คานิคอง) · นับทุกเจ็มของการ์ดนี้ รวมเจ็มจากเบรฟที่ร่วมร่างและจากเอฟเฟกต์ (เจ้าของโปรเจกต์กำหนด)
   // BS13: ถือว่าเป็นหลายสีได้ (อิเทะคาชะ "สีแดง/ม่วงด้วย") = เจ็มนับเป็นทุกสีที่ระบุ
   for (const id of state.players[player].field) {
-    if (override?.cardId === id || zeroed(id) || !hasSymbolAlso(db, state.cards[id]!.cardNo)) continue;
+    if (overridden.has(id) || zeroed(id) || !hasSymbolAlso(db, state.cards[id]!.cardNo)) continue;
     for (const g of cardGems(state, db, id).gems) for (const c of g.also) out[c] = (out[c] ?? 0) + g.count;
   }
   return out;
@@ -903,8 +915,8 @@ export function cardGems(state: GameState, db: CardDatabase, cardId: string): { 
   if (!card) return { gems: [], zeroed: false };
   const zero = state.symbolsZero?.turn === state.turn ? state.symbolsZero.minSymbols : null;
   if (zero !== null && cardSymbolTotal(state, db, cardId) >= zero) return { gems: [], zeroed: true };
-  const override = state.battle?.symbolOverride;
-  if (override?.cardId === cardId) return { gems: override.count > 0 ? [{ color: override.color as SymbolColor, count: override.count, also: [] }] : [], zeroed: false };
+  const override = symbolOverrideOf(state, db, cardId);
+  if (override) return { gems: override.count > 0 ? [{ color: override.color, count: override.count, also: [] }] : [], zeroed: false };
   const def = db.get(card.cardNo);
   const own: Partial<Record<SymbolColor, number>> = {};
   const added: Partial<Record<SymbolColor, number>> = {};
@@ -984,7 +996,10 @@ function baseCostInner(state: GameState, db: CardDatabase, cardId: string, zone:
       const level = cardLevel(state, db, id);
       for (const ab of db.get(state.cards[id]!.cardNo).abilities) {
         if (ab.kind !== 'handCostSet' || !ab.levels.includes(level) || !matchesFilter(state, db, cardId, ab.filter)) continue;
-        cost = cost === null ? ab.cost : Math.min(cost, ab.cost);
+        if (!conditionHolds(state, id, ab.if, false, false, db)) continue;
+        // BS13 เทนคาฟุบุ: คอสต์เท่ากับจำนวนไลฟ์ของเรา
+        const v = ab.cost === 'life' ? owner.life.length : ab.cost;
+        cost = cost === null ? v : Math.min(cost, v);
       }
     }
   }
@@ -1898,7 +1913,7 @@ export function attackLifeDamage(state: GameState, db: CardDatabase, attackerId:
   if (!attacker) return 0;
   const defender = attacker.owner === 'p1' ? 'p2' : 'p1';
   const extra = Object.values(extraSymbols(state, db, attackerId)).reduce<number>((n, v) => n + (v ?? 0), 0);
-  const override = state.battle?.symbolOverride?.cardId === attackerId ? state.battle.symbolOverride.count : null;
+  const override = symbolOverrideOf(state, db, attackerId)?.count ?? null;
   const braves = attacker.braves.reduce((n, b) => n + symbolCount(db.get(state.cards[b]!.cardNo)), 0);
   let dmg = override ?? symbolCount(db.get(attacker.cardNo)) + braves + extra;
   if (state.symbolsZero?.turn === state.turn && dmg >= state.symbolsZero.minSymbols) dmg = 0;
@@ -2373,7 +2388,7 @@ export function freezeForCache(state: GameState): void {
   frozenStates.add(state);
 }
 function memo<T>(state: GameState, db: CardDatabase, key: string, compute: () => T): T {
-  if (!frozenStates.has(state) || checkingMaxLevel || boostingLevel.size > 0 || levelBoostDepth > 0 || checkingNegation || checkingAllColor || checkingCopy) return compute();
+  if (!frozenStates.has(state) || checkingMaxLevel || boostingLevel.size > 0 || levelBoostDepth > 0 || checkingNegation || checkingAllColor || checkingCopy || checkingBpZero || checkingSymbolOverride) return compute();
   let entry = memoStore.get(state);
   if (!entry || entry.db !== db) {
     entry = { db, map: new Map() };
@@ -2434,6 +2449,87 @@ export function noRefreshSource(state: GameState, db: CardDatabase, cardId: stri
       if (effectBlocked(state, db, src, cardId)) continue;
       return { cardId: src, source: a.source };
     }
+  }
+  return null;
+}
+
+// ---------------- BS13 หกเทพพิสุทธิ์
+/** กันวนซ้ำ: BP0 ↔ เงื่อนไขเจ็ม (เจ็ม ↔ BP ของดรากุ-แม็กนา) */
+let checkingBpZero = false;
+let checkingSymbolOverride = false;
+
+/** เอล-ราฟิล: การ์ดของคู่แข่งที่ทำให้สปิริต/อัลติเมทนี้กลายเป็น BP0 */
+export function opponentBpZeroSource(state: GameState, db: CardDatabase, cardId: string): StaticSource | null {
+  if (checkingBpZero) return null;
+  const card = state.cards[cardId];
+  if (!card || !state.players[card.owner].field.includes(cardId) || !isSpiritLike(db.get(card.cardNo))) return null;
+  const opp = card.owner === 'p1' ? 'p2' : 'p1';
+  for (const src of state.players[opp].field) {
+    const abs = db.get(state.cards[src]!.cardNo).abilities.filter((a) => a.kind === 'opponentBpZero');
+    if (abs.length === 0) continue;
+    checkingBpZero = true;
+    try {
+      if (effectsNegated(state, db, src)) continue;
+      const level = cardLevel(state, db, src);
+      for (const a of abs) {
+        if (a.kind !== 'opponentBpZero' || !a.levels.includes(level) || !conditionHolds(state, src, a.if, false, false, db)) continue;
+        if (effectBlocked(state, db, src, cardId)) continue;
+        return { cardId: src, source: a.source };
+      }
+    } finally {
+      checkingBpZero = false;
+    }
+  }
+  return null;
+}
+
+/** เจ็มของการ์ดนี้ถูกเปลี่ยนทั้งหมด: โอคิดาคุ (battle.symbolOverride ในการต่อสู้นี้) / ดรากุ-แม็กนา (symbolOverrideAllies) */
+export function symbolOverrideOf(state: GameState, db: CardDatabase, cardId: string): { color: SymbolColor; count: number; src?: StaticSource } | null {
+  const b = state.battle?.symbolOverride;
+  if (b?.cardId === cardId) return { color: b.color as SymbolColor, count: b.count };
+  if (checkingSymbolOverride) return null;
+  const card = state.cards[cardId];
+  if (!card || !state.players[card.owner].field.includes(cardId)) return null;
+  for (const src of state.players[card.owner].field) {
+    const abs = db.get(state.cards[src]!.cardNo).abilities.filter((a) => a.kind === 'symbolOverrideAllies');
+    if (abs.length === 0) continue;
+    checkingSymbolOverride = true;
+    try {
+      if (effectsNegated(state, db, src)) continue;
+      const level = cardLevel(state, db, src);
+      for (const a of abs) {
+        if (a.kind !== 'symbolOverrideAllies' || !a.levels.includes(level) || !conditionHolds(state, src, a.if, false, false, db)) continue;
+        if (!matchesFilter(state, db, cardId, a.filter)) continue;
+        return { color: a.color as SymbolColor, count: a.count, src: { cardId: src, source: a.source } };
+      }
+    } finally {
+      checkingSymbolOverride = false;
+    }
+  }
+  return null;
+}
+
+/** เอล-ราฟิล: การ์ดของผู้เล่นนี้ที่ทำให้ไลฟ์ 0 แล้วยังไม่แพ้ */
+export function noLoseSource(state: GameState, db: CardDatabase, player: PlayerId): StaticSource | null {
+  for (const id of state.players[player].field) {
+    if (effectsNegated(state, db, id)) continue;
+    const level = cardLevel(state, db, id);
+    for (const a of db.get(state.cards[id]!.cardNo).abilities) {
+      if (a.kind === 'noLoseAtZeroLife' && a.levels.includes(level) && conditionHolds(state, id, a.if, false, false, db)) return { cardId: id, source: a.source };
+    }
+  }
+  return null;
+}
+
+/** ชโตรม-ไฮด์: เอฟเฟกต์ของการ์ด sourceId เพิ่มการ์ดในมือจากเด็ค / คอร์จากวอยด์ไม่ได้ (ต้นเหตุ) */
+export function gainLockSource(state: GameState, db: CardDatabase, sourceId: string | undefined): StaticSource | null {
+  if (!sourceId || !state.cards[sourceId]) return null;
+  for (const src of staticSources(state, db, ['p1', 'p2'], 'gainLockExceptColor')) {
+    const a = db.get(state.cards[src.cardId]!.cardNo).abilities.find((x) => x.kind === 'gainLockExceptColor' && x.source === src.source);
+    if (a?.kind !== 'gainLockExceptColor') continue;
+    const c = state.cards[sourceId]!;
+    const colors = state.players[c.owner].field.includes(sourceId) ? cardColors(state, db, sourceId) : db.get(c.cardNo).colors;
+    if (!colors.includes(a.color)) return src;
   }
   return null;
 }

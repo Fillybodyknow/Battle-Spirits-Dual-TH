@@ -125,7 +125,7 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
   ตัวคูณ "ต่อจำนวน..." = `per` บน step (`CountPer`), `when` (if/else), `extraSteps` (`afterAttackStep` ใน game.ts), `blockLevelSum` (`battle.levelBlock`),
   `unblockableByCost`, `selfCostIf`, `burstOnDiscard`, trigger `allyBlock`/`oppMagicUse` (`negateSubjectMagic`), ตัวกรอง `team`/`sameTeamAs`/`notSelf`/`hasSoloPart`/`hasOnStage`
 - **BS08**: อัลติเมทอัญเชิญได้ (ไม่ร่วมร่าง) · `《เงื่อนไขอัญเชิญ: ไลฟ์เราไม่เกิน N》` ในไฟล์การ์ด → `summonCondition` (ตรวจด้วย `summonConditionOk`, หน้าเว็บซ่อนปุ่มอัญเชิญถ้าไม่ครบ) · เจ็ม `อัลติเมท`,
-  Showdown = trigger `oppStartStep` + step `showdown.then` (คู่แข่งระบุเป้า, `showdownBp`, event `showdown`), Soul Drive = step `soulToVoid` (event `soulDrive`),
+  Showdown = trigger `oppStartStep` + step `showdown.then` (คู่แข่งระบุเป้า, `showdownBp`, event `showdown`), Soul Drive = step `soulToVoid` (event `soulDrive` → ฉากบีบโซลคอร์จนแตก idol `soulDrive` ใน IdolFx · เวลา `SOUL_DRIVE_*` ใน store · keyframes `sd-*`),
   Spirit Soul = `summonSymbol.filter`, Infinite Blade = `chooseBlockers.direct` + `unexhaustSelf`, Evolution ที่ได้รับ = `grantEvolution` (ใช้ `hasEvolutionNow` ทั้ง engine และเว็บ),
   คีย์เวิร์ดในข้อความ = ตัวกรอง `textIncludes` (Rush / Showdown ฯลฯ), `noEffectText`, `sameFamilyAs`, `notInBattle` · ถาวร `coreFloor`, `cannotBlockLowerBp`, `colorAlso`, `noLifeFromVoid`, `effectImmune.exceptNamed`,
   ในเทิร์นนี้: `summonBans` / `turnSymbolBuffs` / `lifeCapOne` / `turnNoAttack` / `attackShiftTurn` · เทิร์นถัดไป `skipSteps` · ในการต่อสู้ `battle.lifeOnBlocked`, `blockTax.discard`,
@@ -173,6 +173,12 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
   `opponentNoRefresh.if` / `.anyRefresh` ("ฟื้นสภาพไม่ได้" ทุกทาง: `noRefreshSource` ตรวจในรีเฟรชสเต็ป, `refreshByEffect`, `unexhaustSelf`, `refreshOnBattlerGone`) ·
   magic `notMain` ("ทำงานในเมนสเต็ปไม่ได้": engine useMagic + `handMagicTimings` ในเว็บ) · step `refreshChosen` (ตัวที่ `voidCore to: 'ally'` เพิ่งเลือก) · `bounceOpponent.coresToTrashIf`
 - **BS13 เพิ่มเติม**: เลออนแลนเซอร์ = trigger `oppDestroyed` + subject `victimSoul` (การ์ดคู่แข่งที่ถูกทำลายมีโซลคอร์) · ก็อด-เซคส์ -รูปแบบทำลายล้าง- = `allyBattleEnd` ทำงานจากการ์ดในมือ/แทรชได้ (`zone`) + subject `attacker` ("เมื่อจบการโจมตีของ…") · ตัวแปลงรับบรรทัดที่ขึ้นต้น `เมื่อจบการโจมตีของ` · ลดคอสต์ = เจ็มเม็ดละ 1 ช่อง (จับคู่เฉพาะเมื่อมีการ์ด symbolAlsoColor บนสนาม: `hasSymbolAlso`)
+- **BS13 หกเทพพิสุทธิ์ / เทนคาฟุบุ (XX)**: เงื่อนไข `trashMatchAtLeast` / `opponentTrashAtLeast` / `totalCoresAtLeast` (ฟิลด์+รีเสิร์ฟ+แทรช) / `ownGemsAtLeast` ·
+  `coreStepBonus` (afterStart ใน game.ts) · `noLoseAtZeroLife` (ไลฟ์ 0 ทุกจุดผ่าน `lifeZeroLose` ใน ctx.ts + `checkLifeZero` ท้าย applyAction: ผลหาย = แพ้) ·
+  `opponentBpZero` (`opponentBpZeroSource` ใน currentBpRaw) · `symbolOverrideAllies` (ใช้ `symbolOverrideOf` แทน `battle.symbolOverride` ทุกจุดที่นับเจ็ม) — ตัวกันวนซ้ำ `checkingBpZero` / `checkingSymbolOverride` อยู่ในเงื่อนไข memo ·
+  `gainLockExceptColor` (ชโตรม-ไฮด์: `gainLocked` ใน effects.ts = step draw / opponentDiscardHandDraw / discardHandDrawOpponentCount / gainLifeFromVoid / takeVoid / reveal...ขึ้นมือ: เพิ่มทางใหม่ที่การ์ดจากเด็คขึ้นมือหรือคอร์จากวอยด์ต้องเช็กด้วย) ·
+  trigger `leftByOpponentEffect` (ถูกนำกลับมือ/เด็คโดยเอฟเฟกต์คู่แข่ง: ใน `returnCard` · ใช้คู่กับ destroyedByOpponentEffect / depletedByOpponent) · subject `byOwnEffect` (oppExhausted: `queueExhaustTriggers(..., byEffect)`) ·
+  step `opponentAllCoresToTrash` / `destroySubject` / `soulDriveOthers` (Soul Drive ของการ์ด = ตัวเลือก chooseOne ที่ขึ้นต้นด้วย soulToVoid: `soulDriveOf`) · `handCostSet.cost: 'life'` + `if`
 - **สูญสลายไม่ใช่การถูกทำลาย** (กติกา 10): สูญสลายโดยคู่แข่ง = trigger `depletedByOpponent` + เบิร์ส `afterAllyDepletedByOpponent` เท่านั้น
   ข้อความ "ถูกทำลาย/สูญสลาย" = trigger `on: ['destroyedByOpponent', 'depletedByOpponent']` / เบิร์ส `alsoDepleted: true` · "ถูกทำลายโดยเอฟเฟกต์ของคู่แข่ง" (ไม่นับแพ้เทียบ BP) = `destroyedByOpponentEffect`
   · เอฟเฟกต์ "เมื่อถูกทำลาย" ทำงานขณะยังอยู่บนสนาม (engine ส่งลงแทรชก่อน: "วางคอร์บนสปิริตนี้" = คอร์กลับรีเสิร์ฟ)

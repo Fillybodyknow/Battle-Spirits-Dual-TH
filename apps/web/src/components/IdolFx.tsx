@@ -7,7 +7,8 @@
  * ทุกอย่างวาดด้วย CSS/SVG เอง (ไม่ใช้อีโมจิ: Windows 7 แสดงเป็นกล่องว่าง)
  */
 import { useEffect, useRef, useState, type CSSProperties, type RefObject } from 'react';
-import { db, layoutRect, ON_STAGE_CURTAIN, ON_STAGE_REVEAL, useGame, type Fx, type Rect } from '../store';
+import { db, layoutRect, ON_STAGE_CURTAIN, ON_STAGE_REVEAL, SOUL_DRIVE_BREAK, useGame, type Fx, type Rect } from '../store';
+import { IMG } from '../assets';
 import { CardBack, CardFace } from './CardFace';
 import { effects, flashScale, shakeScale } from '../gfx';
 
@@ -166,6 +167,7 @@ export function IdolFxView({ fx, onDone }: { fx: IdolFx; onDone: () => void }) {
   if (fx.variant === 'onStage') return <OnStage fx={fx} />;
   if (fx.variant === 'myUnit') return <MyUnit fx={fx} />;
   if (fx.variant === 'soloPart') return <SoloPart fx={fx} />;
+  if (fx.variant === 'soulDrive') return <SoulDrive fx={fx} />;
   return <Notes fx={fx} />;
 }
 
@@ -410,6 +412,139 @@ function SoloPart({ fx }: { fx: IdolFx }) {
         <span className="rounded-full px-3 py-0.5 text-sm font-black tracking-widest text-slate-950 italic shadow-lg" style={{ background: 'linear-gradient(90deg, #fde047, #f9a8d4)' }}>
           SOLO PART
         </span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * SOUL DRIVE: บีบโซลคอร์จนแตก (keyframes sd-* ใน index.css · สัดส่วนเวลาตรงกับ SOUL_DRIVE_* ใน store)
+ *  โซลคอร์ลอยขึ้นเหนือการ์ด (ใหญ่ เรืองแสง) → ถูกบีบ: โซลคอร์สั่นและยุบ รอยร้าวลามขึ้น 3 ระดับ
+ *  → แตก: แสงวาบ + คลื่นกระแทก + เศษผลึกและประกายปลิวรอบทิศ + จอสั่น → ป้าย SOUL DRIVE กระแทกลง
+ */
+const SD_SHARDS = 14;
+const SD_SPARKS = 18;
+function SoulDrive({ fx }: { fx: IdolFx }) {
+  const rich = effects().matMotion;
+  const d = fx.duration;
+  useEffect(() => {
+    const k = shakeScale();
+    if (k === 0) return;
+    const t = setTimeout(() => {
+      document.querySelector('main')?.animate(
+        [[0, 0], [-14, 9], [12, -8], [-8, 6], [5, -3], [-2, 1], [0, 0]].map(([x, y]) => ({ transform: `translate(${x! * k}px,${y! * k}px)` })),
+        { duration: 620, easing: 'ease-out', composite: 'add' },
+      );
+    }, Math.round(d * SOUL_DRIVE_BREAK));
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // ซ่อนลูกศรโจมตีระหว่างฉาก (ลูกศรวาดคนละชั้น ทับโซลคอร์)
+  useEffect(() => {
+    document.body.classList.add('fx-soul-drive');
+    return () => document.body.classList.remove('fx-soul-drive');
+  }, []);
+  const r = cardRectOf(fx.cardId!);
+  if (!r) return null;
+  const cx = r.x + r.w / 2;
+  const cy = r.y + r.h / 2;
+  const S = Math.max(140, r.w * 1.3);
+  const box = (w: number, h = w): CSSProperties => ({ position: 'absolute', left: cx - w / 2, top: cy - h / 2, width: w, height: h });
+  const anim = (name: string, easing = 'linear') => `${name} ${d}ms ${easing} both`;
+  // รอยร้าว 3 ระดับ (เส้นจากจุดกลางออกไปขอบ) พิกัดใน viewBox 0..100
+  const cracks = [
+    'M50 50 L38 30 L41 18 M50 50 L66 40 L80 36 M50 50 L46 70',
+    'M38 30 L24 26 M66 40 L70 22 L78 12 M46 70 L58 84 M46 70 L30 78',
+    'M50 50 L20 52 L10 46 M24 26 L18 14 M80 36 L90 48 M58 84 L66 94 M30 78 L22 90 M70 22 L60 8',
+  ];
+  const shards = rich ? SD_SHARDS : 8;
+  const sparks = rich ? SD_SPARKS : 6;
+  return (
+    <div className="pointer-events-none fixed inset-0 z-[49] overflow-hidden">
+      {/* ฉากมืดลงรอบการ์ด */}
+      <div className="absolute inset-0" style={{ background: `radial-gradient(circle at ${cx}px ${cy}px, rgba(46,16,101,0.25), rgba(2,6,23,0.72) 60%)`, animation: anim('sd-dim') }} />
+      {/* แสงพลังรวมหลังโซลคอร์ (แรงขึ้นตอนถูกบีบ แล้วระเบิดออก) */}
+      <div style={{ ...box(S * 1.9), borderRadius: '50%', background: 'radial-gradient(circle, rgba(244,114,182,0.85), rgba(168,85,247,0.55) 38%, transparent 70%)', animation: anim('sd-glow', 'ease-out') }} />
+      {/* โซลคอร์: ใหญ่ขึ้น → ถูกบีบสั่นยุบ → พองแล้วแตก */}
+      <div style={{ ...box(S * 0.8), animation: anim('sd-orb', 'ease-in-out') }}>
+        <img src={IMG.soulCore} alt="" draggable={false} className="h-full w-full select-none" style={{ filter: 'drop-shadow(0 0 18px rgba(244,114,182,0.95)) brightness(1.15)' }} />
+        {/* แสงลอดจากข้างใน (สว่างขึ้นเรื่อย ๆ ตอนรอยร้าวลาม) */}
+        <div className="absolute inset-[18%] rounded-full" style={{ background: 'radial-gradient(circle, #ffffff, rgba(253,224,255,0.8) 40%, transparent 72%)', animation: anim('sd-core-light') }} />
+        <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full">
+          {cracks.map((p, i) => (
+            <g key={i} style={{ animation: anim(`sd-crack${i + 1}`) }}>
+              {/* รอยร้าว = แสงขาวลอดออกมา (ขอบม่วงเรือง) ทับเส้นเข้มบาง ๆ ให้เห็นชัดบนโซลคอร์สีอ่อน */}
+              <path d={p} stroke="#2e1065" strokeWidth={5.5 - i} fill="none" strokeLinejoin="round" strokeLinecap="round" />
+              <path d={p} stroke="#ffffff" strokeWidth={2.4 - i * 0.4} fill="none" strokeLinejoin="round" strokeLinecap="round" style={{ filter: 'drop-shadow(0 0 3px #f0abfc) drop-shadow(0 0 6px #e879f9)' }} />
+            </g>
+          ))}
+        </svg>
+      </div>
+      {/* แตก: แสงวาบ (ตามตั้งค่าลดแสงวาบ) + คลื่นกระแทก 2 ชั้น */}
+      <div className="absolute inset-0" style={{ opacity: flashScale() }}>
+        <div className="absolute inset-0" style={{ background: `radial-gradient(circle at ${cx}px ${cy}px, #ffffff, rgba(240,171,252,0.75) 18%, rgba(168,85,247,0.25) 40%, transparent 65%)`, animation: anim('sd-flash', 'ease-out') }} />
+      </div>
+      {[0, 1].map((i) => (
+        <div
+          key={i}
+          style={{ ...box(S * (i ? 1.1 : 0.8)), borderRadius: '50%', border: `${i ? 3 : 6}px solid ${i ? '#f0abfc' : '#ffffff'}`, boxShadow: '0 0 24px rgba(216,180,254,0.9), inset 0 0 18px rgba(216,180,254,0.7)', animation: anim(i ? 'sd-wave2' : 'sd-wave', 'ease-out') }}
+        />
+      ))}
+      {/* เศษผลึกโซลคอร์ปลิวออกรอบทิศ */}
+      {Array.from({ length: shards }, (_, i) => {
+        const deg = (360 / shards) * i + ((i * 37) % 17) - 8;
+        const size = S * (0.16 + ((i * 7) % 5) * 0.035);
+        return (
+          <div key={`s${i}`} style={{ ...box(size), rotate: `${deg}deg` }}>
+            <div
+              className="h-full w-full"
+              style={{
+                clipPath: i % 2 ? 'polygon(50% 0, 100% 70%, 30% 100%)' : 'polygon(20% 0, 100% 30%, 60% 100%, 0 80%)',
+                background: i % 3 ? 'linear-gradient(135deg, #ffffff, #fbcfe8 30%, #e11d48 70%, #881337)' : 'linear-gradient(135deg, #ffffff, #f0abfc 45%, #a855f7)',
+                ['--d' as string]: `${-(S * (1.1 + ((i * 13) % 7) * 0.14))}px`,
+                ['--r' as string]: `${(i % 2 ? 1 : -1) * (200 + ((i * 53) % 260))}deg`,
+                animation: anim('sd-shard', 'cubic-bezier(.15,.7,.3,1)'),
+              }}
+            />
+          </div>
+        );
+      })}
+      {/* ประกายไฟ */}
+      {Array.from({ length: sparks }, (_, i) => {
+        const deg = (360 / sparks) * i + 10;
+        return (
+          <div key={`p${i}`} style={{ ...box(8), rotate: `${deg}deg` }}>
+            <div
+              className="h-full w-full rounded-full bg-white"
+              style={{
+                boxShadow: '0 0 8px 2px rgba(244,114,182,0.95)',
+                ['--d' as string]: `${-(S * (0.8 + ((i * 11) % 6) * 0.2))}px`,
+                ['--r' as string]: '0deg',
+                animation: anim('sd-shard', 'cubic-bezier(.1,.8,.3,1)'),
+              }}
+            />
+          </div>
+        );
+      })}
+      {/* ป้าย SOUL DRIVE กระแทกลง */}
+      <div className="absolute flex flex-col items-center" style={{ left: cx, top: r.y - 10, translate: '-50% -100%', animation: anim('sd-title', 'ease-out') }}>
+        <span
+          className="whitespace-nowrap font-black italic tracking-wider"
+          style={{
+            fontSize: 46,
+            lineHeight: 1,
+            color: '#fdf4ff',
+            WebkitTextStroke: '2px #581c87',
+            textShadow: '0 0 14px rgba(244,114,182,0.95), 0 0 30px rgba(168,85,247,0.9), 0 4px 0 #3b0764',
+          }}
+        >
+          SOUL DRIVE
+        </span>
+        {fx.title && (
+          <span className="mt-1 whitespace-nowrap rounded-full border border-fuchsia-300/70 bg-purple-950/85 px-3 py-0.5 text-sm font-bold text-fuchsia-100 shadow-[0_0_14px_rgba(217,70,239,0.7)]">
+            {fx.title}
+          </span>
+        )}
       </div>
     </div>
   );
