@@ -527,6 +527,8 @@ export type Fx =
       id: number;
       kind: 'idol';
       variant: 'onStage' | 'myUnit' | 'soloPart' | 'notes' | 'notesBurst';
+      /** onStage: การ์ดที่ขึ้นเวทีเป็น X-Rare ขึ้นไป (ฉากฉบับ X-Rare แทน Cut-in) */
+      special?: boolean;
       cardId?: string;
       cardIds?: string[];
       title?: string;
@@ -845,7 +847,18 @@ export const LETHAL_SLOW_EXTRA = Math.round(LETHAL_SLOW.hold * (1 - LETHAL_SLOW.
 /** จังหวะ "ปล่อย" หลังสโลว์ (นับจากจังหวะที่ Life เป็น 0) */
 export const LETHAL_RELEASE = LETHAL_SLOW.hold + Math.round(LETHAL_SLOW.ramp * 0.4);
 
+/**
+ * ฉากขึ้นเวที On Stage (IdolFx): สัดส่วนเวลาของแต่ละจังหวะ (ใช้ทั้งแอนิเมชันและเสียง)
+ * ม่านเปิด → การ์ดพลิกขึ้นจากพื้นเวที (เผยหน้า) → ค้างโชว์ → ส่งต่อให้การ์ดบินลงสนาม
+ */
+export const ON_STAGE_CURTAIN = 0.24;
+export const ON_STAGE_REVEAL = 0.46;
+export const ON_STAGE_HANDOFF = 0.86;
+
 const T = {
+  /** ฉากขึ้นเวที On Stage ทั้งฉาก (ms) · ฉบับ X-Rare ยาวขึ้น (ค้างโชว์นานขึ้น) */
+  onStage: 2700,
+  onStageX: 3200,
   /** ป้ายสเต็ปเล็ก (Start/Core/Draw/Refresh/Main/End) */
   miniBanner: 900,
   /** ป้ายเทิร์นขึ้นจริง 1.4 วินาที (ป้ายสเต็ปที่ตามมาต้องรอจนจบ) */
@@ -1140,6 +1153,17 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         // ระดับความหายาก: C/U ปกติ · R แสงฟ้าแวบ · M ลงหนัก · X cut-in · XX/XV cut-in พิเศษ
         const rank = rarityOf(db.get(card.cardNo).rarity)?.rank ?? 0;
         const host0 = Object.values(s.cards).find((c) => c.braves.includes(e.cardId));
+        if (e.type === 'summoned' && e.onStage && !host0) {
+          // BS07 On Stage: ม่านเปิด → การ์ดใหม่ขึ้นเวทีกลางจอ (แทน cut-in) → บินจากเวทีลงสนาม
+          // X-Rare ขึ้นไป: ฉากฉบับ X-Rare (แสงวาบหนัก จอสั่น ฟอยรุ้ง ป้าย X-RARE) แทน Cut-in
+          const special = rank >= 5;
+          const dur = special ? T.onStageX : T.onStage;
+          out.push({ kind: 'idol', variant: 'onStage', cardId: e.cardId, title: db.get(card.cardNo).name, delay: t, duration: dur, ...(special ? { special } : {}) });
+          t += Math.round(dur * ON_STAGE_HANDOFF);
+          out.push({ kind: 'fly', cardId: e.cardId, from: 'center', to, mode: 'play', heavy: true, delay: t, hideTarget: true });
+          t += T.landHeavy;
+          break;
+        }
         if (rank >= 5 && wantCutIn(s, events, e, card.cardNo)) {
           // cut-in เล่นก่อน (การ์ดบนสนามซ่อนไว้) แล้วการ์ดใหญ่กลางจอค่อยทุบลงสนาม
           const onField = s.players[card.owner].field.includes(e.cardId);
@@ -1332,10 +1356,9 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         break;
       }
       case 'onStage':
-        // ม่านเวทีเปิด + สปอตไลต์ (ธีมไอดอล) แล้วการ์ดค่อยกลับใต้เด็ค
-        out.push({ kind: 'idol', variant: 'onStage', cardId: e.cardId, title: db.get(s.cards[e.cardId]!.cardNo).name, delay: t, duration: 1700 });
-        t += 1500;
-        if (e.exhaustedInstead) out.push({ kind: 'float', anchor: `[data-field-card="${e.cardId}"]`, text: 'เสื่อมสภาพแทนกลับใต้เด็ค', tone: 'bad', delay: t });
+        // ลงจากเวที (กลับใต้เด็ค / เสื่อมสภาพแทน): ป้ายเล็กบนการ์ด · ฉากขึ้นเวทีเต็มจอเล่นตอนการ์ดใหม่ถูกอัญเชิญ (summoned.onStage)
+        out.push({ kind: 'float', anchor: `[data-field-card="${e.cardId}"]`, text: e.exhaustedInstead ? 'On Stage · เสื่อมสภาพแทนกลับใต้เด็ค' : 'On Stage!', tone: e.exhaustedInstead ? 'bad' : 'good', delay: t });
+        t += 450;
         break;
       case 'myUnit':
         out.push({ kind: 'idol', variant: 'myUnit', cardId: e.attackerId, cardIds: e.cardIds, title: e.cardIds.map((id) => db.get(s.cards[id]!.cardNo).name).join(' · '), delay: t, duration: 1400 });
@@ -2164,6 +2187,18 @@ function playFxSounds(list: Fx[]) {
         sfx('shatter', f.delay + LETHAL_RELEASE - 80);
         sfx('bigdamage', f.delay + LETHAL_RELEASE);
         sfx('burst', f.delay + LETHAL_RELEASE + 40);
+        break;
+      case 'idol':
+        // ฉากขึ้นเวที: ม่านเปิด (ลม) → การ์ดเผยหน้า (เสียงระยิบ + ไฮไลต์)
+        if (f.variant === 'onStage') {
+          sfx('whoosh', f.delay + Math.round(f.duration * ON_STAGE_CURTAIN));
+          sfx('buff', f.delay + Math.round(f.duration * ON_STAGE_REVEAL));
+          sfx('xrare', f.delay + Math.round(f.duration * ON_STAGE_REVEAL) - 200);
+          if (f.special) {
+            sfx('impact', f.delay + Math.round(f.duration * ON_STAGE_REVEAL));
+            sfx('bigdamage', f.delay + Math.round(f.duration * ON_STAGE_REVEAL) + 20);
+          }
+        }
         break;
       case 'summon': {
         // ชาร์จ → ทุบ (เสียงกระแทกหนัก ตรงจังหวะแสงวาบ)

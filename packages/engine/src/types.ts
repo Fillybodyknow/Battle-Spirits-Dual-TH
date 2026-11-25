@@ -594,7 +594,7 @@ export type GameEvent =
   | { type: 'cardDrawn'; player: PlayerId; cardId: string }
   | { type: 'refreshed'; player: PlayerId }
   /** from = ที่มาเมื่ออัญเชิญด้วยเอฟเฟกต์ (ไม่จ่ายคอสต์) */
-  | { type: 'summoned'; player: PlayerId; cardId: string; paid: number; from?: 'deck' | 'burst' | 'hand' | 'trash' | 'other'; quick?: boolean; /** อัญเชิญจากแทรชแบบจ่ายคอสต์ */ fromTrash?: true }
+  | { type: 'summoned'; player: PlayerId; cardId: string; paid: number; from?: 'deck' | 'burst' | 'hand' | 'trash' | 'other'; quick?: boolean; /** อัญเชิญจากแทรชแบบจ่ายคอสต์ */ fromTrash?: true; /** BS07 อัญเชิญด้วย On Stage (หน้าเว็บเล่นฉากขึ้นเวที) */ onStage?: true }
   | { type: 'nexusDeployed'; player: PlayerId; cardId: string; paid: number }
   | { type: 'magicUsed'; player: PlayerId; cardId: string; paid: number; timing: 'main' | 'flash' }
   | { type: 'coresMoved'; player: PlayerId; count: number }

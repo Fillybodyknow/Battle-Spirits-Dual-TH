@@ -4276,7 +4276,7 @@ function putOnField(ctx: Ctx, item: QueuedEffect, step: Extract<Step, { do: 'pla
     }
     return;
   }
-  emit(ctx, { type: 'summoned', player: me, cardId: step.cardId, paid: 0, from: from === 'other' && item.sourceId === step.cardId ? 'burst' : from });
+  emit(ctx, { type: 'summoned', player: me, cardId: step.cardId, paid: 0, from: from === 'other' && item.sourceId === step.cardId ? 'burst' : from, ...(item.onStage ? { onStage: true as const } : {}) });
   // กติกา 03: ดึงคอร์จากสปิริตบนสนามมาวาง = สปิริตนั้นสูญสลายทันที (เป็นส่วนของการอัญเชิญ ก่อน "เมื่อสปิริตนี้ถูกอัญเชิญ" ทำงาน)
   // กติกา 04 ข้อ 2: ร่างต้นที่สูญสลาย → ถามเรื่องเบรฟที่ร่วมร่างก่อน (แบบเดียวกับการอัญเชิญจากมือใน game.ts)
   checkDepletion(ctx);

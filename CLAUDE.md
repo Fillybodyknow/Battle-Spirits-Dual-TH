@@ -119,7 +119,7 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
   `noMill`, `multiDrawPunish`, `opponentNoReduction`, `lifeDamageCap`, step `lifeShieldThisTurn` / `forceAttackChosen` (`state.forcedAttack`) / `moveSourceBrave` /
   `setBurstFromField` / `battleImmune` / `catalyze.then` (หลังจากเบิร์สนั้นถูกสั่งใช้), เบิร์ส `afterOpponentSummonEffect` (item.onSummon, เลือก "ไม่ใช้" = item.declined)
 - **BS07**: ข้อมูลการ์ด `teams` ("ทีม:") / `magicTypes` ("ไทป์: เพลง") / เบรฟ `braveCondition.family` (ตรวจด้วย `braveFits`),
-  On Stage (`onStage` ability + action `onStage`, step ภายใน `onStageLeave`/`onStageDone`, trigger `onStage`/`allyOnStage`, `onStageReplace`, เงื่อนไข `summonedByOnStage`/`summonedBy`),
+  On Stage (ฉากขึ้นเวทีในหน้าเว็บ = event `summoned.onStage` → idol `onStage` ใน IdolFx + บินจาก `center` · เวลา `ON_STAGE_*` ใน store · `onStage` event ตอนกลับใต้เด็คเหลือป้ายเล็ก) (`onStage` ability + action `onStage`, step ภายใน `onStageLeave`/`onStageDone`, trigger `onStage`/`allyOnStage`, `onStageReplace`, เงื่อนไข `summonedByOnStage`/`summonedBy`),
   เพลงบนฟิลด์ = `players[p].songs` (step `placeThisSong`/`songFromHand`/`songToTrash`/`songToHand`, เงื่อนไข `songsAtLeast`, `staticBp.perSongs`),
   Solo Part = `destroyImmune` (`soloPart`, ตรวจใน `destroyCard`), My Unit = step `myUnit` (`battle.unit`, เงื่อนไข `inUnit`),
   ตัวคูณ "ต่อจำนวน..." = `per` บน step (`CountPer`), `when` (if/else), `extraSteps` (`afterAttackStep` ใน game.ts), `blockLevelSum` (`battle.levelBlock`),

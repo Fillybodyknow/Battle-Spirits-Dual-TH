@@ -7,8 +7,9 @@
  * ทุกอย่างวาดด้วย CSS/SVG เอง (ไม่ใช้อีโมจิ: Windows 7 แสดงเป็นกล่องว่าง)
  */
 import { useEffect, useRef, useState, type CSSProperties, type RefObject } from 'react';
-import { db, layoutRect, type Fx, type Rect } from '../store';
-import { effects } from '../gfx';
+import { db, layoutRect, ON_STAGE_CURTAIN, ON_STAGE_REVEAL, useGame, type Fx, type Rect } from '../store';
+import { CardBack, CardFace } from './CardFace';
+import { effects, flashScale, shakeScale } from '../gfx';
 
 export const DIVA = 'ดีว่า';
 export const isDivaCard = (cardNo: string) => db.get(cardNo).family.includes(DIVA);
@@ -168,10 +169,37 @@ export function IdolFxView({ fx, onDone }: { fx: IdolFx; onDone: () => void }) {
   return <Notes fx={fx} />;
 }
 
-/** ON STAGE!: ม่านเวทีแดงเปิดออก → สปอตไลต์ส่าย → ชื่อการ์ด + กระดาษสี */
+/**
+ * ON STAGE!: เล่นตอนการ์ดถูกอัญเชิญด้วย On Stage (เวลาตาม ON_STAGE_* ใน store)
+ *  ม่านแดงปิดอยู่ (แสงลอดรอยต่อ) → ม่านเปิด สปอตไลต์ส่องกลางเวที → การ์ดใหม่ลอยขึ้นจากพื้นเวทีพร้อมพลิกจากหลังการ์ดเป็นหน้าการ์ด
+ *  → แสงวาบ + รัศมีหมุน + ดาวระยิบรอบการ์ด + โลโก้ ON STAGE! + ริบบิ้นชื่อการ์ด + กระดาษสี → การ์ดบินจากเวทีลงสนาม (fly 'center')
+ *  การ์ดกลางเวทีวางตำแหน่ง/ขนาดเดียวกับจุดเริ่มของการ์ดที่บินต่อ (กึ่งกลางกระดาน 300×420) ส่งต่อได้เนียน
+ */
+const STAGE_W = 300;
+const STAGE_H = 420;
 function OnStage({ fx }: { fx: IdolFx }) {
   const rich = effects().matMotion;
   const d = fx.duration;
+  const at = (p: number) => Math.round(d * p);
+  /** การ์ด X-Rare ขึ้นเวที: แสงวาบหนัก + จอสั่น + ฟอยรุ้งวิ่งผ่านการ์ด + รัศมีรุ้ง + ป้าย X-RARE */
+  const special = !!fx.special;
+  useEffect(() => {
+    if (!special) return;
+    const k = shakeScale();
+    if (k === 0) return;
+    const t = setTimeout(() => {
+      document.querySelector('main')?.animate(
+        [[0, 0], [0, 12], [-10, -7], [8, 5], [-4, -3], [0, 0]].map(([x, y]) => ({ transform: `translate(${x! * k}px,${y! * k}px)` })),
+        { duration: 560, easing: 'ease-out', composite: 'add' },
+      );
+    }, at(ON_STAGE_REVEAL));
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const sidebar = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sidebar')) || 0;
+  const cx = (innerWidth - sidebar) / 2;
+  const cy = innerHeight / 2;
+  const def = fx.cardId ? db.get(useGame.getState().state.cards[fx.cardId]?.cardNo ?? '') : null;
   const curtain = (side: 'l' | 'r') => (
     <div
       className={`absolute inset-y-0 w-1/2 ${side === 'l' ? 'left-0' : 'right-0'}`}
@@ -180,20 +208,115 @@ function OnStage({ fx }: { fx: IdolFx }) {
           'repeating-linear-gradient(90deg, #7f1d1d 0px, #b91c1c 22px, #991b1b 38px, #7f1d1d 56px), linear-gradient(180deg, rgba(0,0,0,0.1), rgba(0,0,0,0.45))',
         backgroundBlendMode: 'multiply',
         boxShadow: side === 'l' ? 'inset -18px 0 30px rgba(0,0,0,0.5)' : 'inset 18px 0 30px rgba(0,0,0,0.5)',
-        animation: `idol-curtain-${side} ${d}ms cubic-bezier(.6,0,.3,1) both`,
+        animation: `ostage-curtain-${side} ${d}ms cubic-bezier(.6,0,.3,1) both`,
       }}
     />
   );
+  /** ดาวระยิบรอบการ์ด (เริ่มหลังการ์ดเผยหน้า) */
+  const stars = Array.from({ length: rich ? 10 : 5 }, (_, i) => {
+    const ang = (i / (rich ? 10 : 5)) * Math.PI * 2 + 0.4;
+    const rx = STAGE_W * 0.62 + rnd(i + 3) * 30;
+    const ry = STAGE_H * 0.56 + rnd(i + 7) * 30;
+    return { x: Math.cos(ang) * rx, y: Math.sin(ang) * ry, size: 18 + rnd(i + 5) * 16, delay: at(ON_STAGE_REVEAL) + i * 60, color: i % 2 ? PINK : GOLD };
+  });
   return (
     <div className="pointer-events-none fixed inset-0 z-[46] overflow-hidden" style={{ animation: `idol-fade ${d}ms ease-out both` }}>
-      <div className="absolute inset-0" style={{ background: 'radial-gradient(ellipse at 50% 100%, rgba(244,114,182,0.35), rgba(15,10,40,0.82) 60%)' }} />
-      <Spotlights n={rich ? 4 : 2} delay={Math.round(d * 0.3)} />
-      {rich && <Confetti count={42} delay={Math.round(d * 0.35)} duration={d * 0.7} />}
-      <div className="absolute inset-0 flex items-center justify-center" style={{ animation: `idol-pop-in ${d}ms ease-out both` }}>
-        <IdolTitle text="ON STAGE!" sub={fx.title} size={72} />
+      {/* เวทีมืด + แสงชมพูจากพื้นเวที */}
+      <div className="absolute inset-0" style={{ background: 'radial-gradient(ellipse at 50% 100%, rgba(244,114,182,0.4), rgba(15,10,40,0.88) 62%)' }} />
+      <Spotlights n={rich ? 4 : 2} delay={at(ON_STAGE_CURTAIN)} />
+      {/* แสงวงรีบนพื้นเวทีใต้การ์ด */}
+      <div
+        className="absolute rounded-[50%]"
+        style={{
+          left: cx - STAGE_W * 0.9,
+          top: cy + STAGE_H * 0.38,
+          width: STAGE_W * 1.8,
+          height: STAGE_H * 0.32,
+          background: 'radial-gradient(ellipse, rgba(253,224,71,0.75), rgba(244,114,182,0.35) 45%, transparent 70%)',
+          animation: `ostage-floor ${d}ms ease-out both`,
+        }}
+      />
+      {/* รัศมีหมุนหลังการ์ด */}
+      <div className="absolute" style={{ left: cx - 380, top: cy - 380, width: 760, height: 760, animation: `ostage-rays ${d}ms ease-out both` }}>
+        <div
+          className="h-full w-full rounded-full"
+          style={{
+            background: special
+              ? 'repeating-conic-gradient(from 0deg, rgba(253,224,71,0.7) 0deg 7deg, transparent 7deg 15deg, rgba(244,114,182,0.6) 15deg 22deg, transparent 22deg 30deg, rgba(56,189,248,0.55) 30deg 37deg, transparent 37deg 45deg)'
+              : 'repeating-conic-gradient(from 0deg, rgba(253,224,71,0.55) 0deg 8deg, transparent 8deg 22deg, rgba(249,168,212,0.45) 22deg 30deg, transparent 30deg 45deg)',
+            maskImage: 'radial-gradient(circle, #000 18%, transparent 68%)',
+            WebkitMaskImage: 'radial-gradient(circle, #000 18%, transparent 68%)',
+            animation: rich ? 'idol-spin 9s linear infinite' : undefined,
+          }}
+        />
       </div>
+      {/* การ์ดขึ้นเวที: ลอยขึ้นจากพื้น + พลิกจากหลังการ์ดเป็นหน้าการ์ด
+          พลิกแบบ 2 มิติ (หลังการ์ดหดกว้างเป็น 0 แล้วหน้าการ์ดขยายออก): แบบ 3 มิติ (backface-visibility) หลังการ์ดไม่ซ่อนจริง
+          เมื่อหน้าการ์ดมีชั้นที่เคลื่อนไหวแยก (ฟอยรุ้งของ X-Rare) เห็นหน้าการ์ดตะแคงไปมาแทน */}
+      <div className="absolute" style={{ left: cx - STAGE_W / 2, top: cy - STAGE_H / 2, width: STAGE_W, height: STAGE_H }}>
+        <div className="relative h-full w-full" style={{ animation: `ostage-card ${d}ms cubic-bezier(.2,.8,.3,1) both` }}>
+          <div className="absolute inset-0" style={{ animation: `ostage-back ${d}ms ease-in both` }}>
+            <CardBack />
+          </div>
+          <div className={`absolute inset-0 overflow-hidden rounded-xl ${special ? 'shadow-[0_0_60px_18px_rgba(250,204,21,0.75)]' : 'shadow-[0_0_40px_10px_rgba(250,204,21,0.55)]'}`} style={{ animation: `ostage-front ${d}ms ease-out both` }}>
+            {def && <CardFace def={def} />}
+            {/* X-Rare: แถบฟอยรุ้งวิ่งผ่านการ์ด 2 รอบหลังเผยหน้า */}
+            {special && (
+              <div
+                className="absolute inset-y-[-20%] left-0 w-1/2"
+                style={{
+                  background: 'linear-gradient(100deg, transparent 10%, rgba(255,255,255,0.0) 20%, rgba(253,224,71,0.55) 35%, rgba(244,114,182,0.55) 48%, rgba(56,189,248,0.55) 60%, rgba(255,255,255,0.7) 66%, transparent 80%)',
+                  mixBlendMode: 'screen',
+                  animation: `ostage-holo 900ms ${at(ON_STAGE_REVEAL)}ms ease-in-out 2 both`,
+                }}
+              />
+            )}
+          </div>
+        </div>
+      </div>
+      {/* แสงวาบตอนเผยหน้า */}
+      <div className="absolute inset-0" style={{ background: `radial-gradient(circle at ${cx}px ${cy}px, rgba(255,255,255,0.95), rgba(253,224,71,0.5) 22%, transparent 55%)`, animation: `ostage-flash ${d}ms ease-out both` }} />
+      {/* X-Rare: แสงวาบขาวเต็มจอตอนเผยหน้า (ตามตั้งค่าลดแสงวาบ) */}
+      {special && (
+        <div className="absolute inset-0" style={{ opacity: flashScale() }}>
+          <div className="absolute inset-0 bg-white" style={{ animation: `ostage-flash-x ${d}ms ease-out both` }} />
+        </div>
+      )}
+      {stars.map((st, i) => (
+        <div key={i} className="absolute" style={{ left: cx + st.x - st.size / 2, top: cy + st.y - st.size / 2, animation: `ostage-star 900ms ${st.delay}ms ease-out both` }}>
+          <Star size={st.size} color={st.color} style={{ animation: 'idol-spin 2.6s linear infinite' }} />
+        </div>
+      ))}
+      {rich && <Confetti count={46} delay={at(ON_STAGE_REVEAL)} duration={d * 0.6} />}
+      {/* โลโก้เหนือการ์ด + ริบบิ้นชื่อการ์ดใต้การ์ด */}
+      <div className="absolute inset-x-0 flex flex-col items-center" style={{ top: cy - STAGE_H / 2 - (special ? 128 : 96), animation: `ostage-pop ${d}ms ease-out both` }}>
+        {special && (
+          <span
+            className="mb-1 rounded-full px-4 py-0.5 text-sm font-black tracking-[0.3em] text-white shadow-[0_0_18px_rgba(250,204,21,0.9)]"
+            style={{ background: 'linear-gradient(90deg, #f59e0b, #ec4899, #8b5cf6, #38bdf8, #22c55e, #f59e0b)', border: '2px solid #fff' }}
+          >
+            X-RARE
+          </span>
+        )}
+        <IdolTitle text="ON STAGE!" size={64} />
+      </div>
+      {fx.title && (
+        <div className="absolute inset-x-0 flex justify-center" style={{ top: cy + STAGE_H / 2 + 14, animation: `ostage-pop ${d}ms ease-out both` }}>
+          <span
+            className="rounded-full px-6 py-1 text-lg font-black whitespace-nowrap text-slate-950 shadow-[0_6px_20px_rgba(0,0,0,0.5)]"
+            style={{ background: 'linear-gradient(90deg, #fde047, #f9a8d4, #fde047)', border: '2px solid #fff' }}
+          >
+            {fx.title}
+          </span>
+        </div>
+      )}
       {curtain('l')}
       {curtain('r')}
+      {/* แสงลอดรอยต่อม่านก่อนเปิด */}
+      <div
+        className="absolute inset-y-0 w-10"
+        style={{ left: cx - 20, background: 'linear-gradient(90deg, transparent, rgba(253,224,71,0.85), transparent)', animation: `ostage-seam ${d}ms ease-in both` }}
+      />
       {/* ระบายม่านด้านบนสีทอง */}
       <div
         className="absolute inset-x-0 top-0 h-[9%]"
