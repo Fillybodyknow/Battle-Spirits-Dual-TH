@@ -5,6 +5,7 @@ import { cardName, formatEvent, playerLabel } from '../format';
 import {
   actingPlayer,
   isChoiceCandidate,
+  kagemushaChoice,
   isMultiCardCandidate,
   allocOf,
   pickedOf,
@@ -117,7 +118,33 @@ function BarDivider() {
 }
 
 /** hint = ยังกดไม่ได้เพราะรอให้ทำอะไรก่อน: แสดงเป็นคำแนะนำแทนปุ่มทึบ (ปุ่มทึบดูเหมือนเสีย/กดไม่ได้ตลอด) */
-type PromptAction = { key: string; label: string; onClick: () => void; kind: keyof typeof BTN; disabled: boolean; hint?: string };
+type PromptAction = {
+  key: string;
+  label: string;
+  onClick: () => void;
+  kind: keyof typeof BTN;
+  disabled: boolean;
+  hint?: string;
+  /** ตัวเลือกที่พูดถึงการ์ดในมือ (เช่น Kagemusha): แสดงเป็นแผ่นมีภาพการ์ด */
+  cardNo?: string;
+  /** ตัวเลือกข้อความเดียวกันซ้ำ (การ์ดชื่อเดียวกันหลายใบ) รวมเป็นปุ่มเดียว */
+  count?: number;
+};
+
+/** ตัวเลือกที่ "ไม่ทำ" (ไม่ใช้ / ไม่อัญเชิญ / ข้าม / ยกเลิก): ปุ่มสีเทาแยกไว้ท้าย ไม่ให้เด่นเท่าตัวเลือกที่ทำอะไรจริง */
+const DECLINE = /^(ไม่|ข้าม|ยกเลิก)/;
+
+/** การ์ดในมือของผู้เลือกที่ชื่ออยู่ในข้อความตัวเลือก (ชื่อยาวสุดก่อน: กันชื่อสั้นที่เป็นส่วนหนึ่งของชื่ออื่น) */
+function cardInLabel(state: GameState, player: PlayerId, label: string): string | undefined {
+  let best: { no: string; len: number } | undefined;
+  for (const id of state.players[player].hand) {
+    const no = state.cards[id]?.cardNo;
+    if (!no) continue;
+    const name = db.get(no).name;
+    if (name.length >= 2 && label.includes(name) && (!best || name.length > best.len)) best = { no, len: name.length };
+  }
+  return best?.no;
+}
 
 /**
  * แถบกลางกระดาน: ที่เดียวของทุกการตัดสินใจ
@@ -231,10 +258,34 @@ export function PromptBar() {
     if (choice.kind === 'order') {
       tag = 'option';
       detail = `${playerLabel(choice.player)} · เอฟเฟกต์ ${choice.effects.length} อันเกิดพร้อมกัน คลิกอันที่จะทำงานก่อน (ผลเกิดทันที แล้วค่อยเลือกอันถัดไป)`;
+    } else if (choice.kind === 'option' && kagemushaChoice(state)) {
+      // Kagemusha: เลือกจากการ์ดที่เรืองแสงในมือโดยตรง (ไม่เปิดแผงบังมือ) · แถบมีแค่ปุ่ม "ไม่ใช้"
+      const k = kagemushaChoice(state)!;
+      tag = 'target';
+      title = 'Kagemusha: สปิริตของเรากำลังถูกเล็ง';
+      detail = mine
+        ? `คลิกการ์ด Kagemusha ที่เรืองแสงในมือเพื่ออัญเชิญ แล้วเอฟเฟกต์ต้องเล็งการ์ดใบนั้นแทน${k.target ? ` (ถูกเล็ง: ${cardName(state, k.target)})` : ''}`
+        : `${playerLabel(k.player)} กำลังเลือกว่าจะใช้ Kagemusha ไหม`;
+      if (k.decline >= 0) add(`opt${k.decline}`, choice.options[k.decline]!, () => choose(k.decline), 'secondary');
     } else if (choice.kind === 'option') {
       tag = 'option';
       detail = src;
-      choice.options.forEach((label, i) => add(`opt${i}`, label, () => choose(i)));
+      // ข้อความเดียวกันซ้ำ (เช่น Kagemusha ชื่อเดียวกัน 3 ใบ) = ปุ่มเดียว + ×N · "ไม่ใช้/ข้าม" = ปุ่มเทาไว้ท้าย
+      const byLabel = new Map<string, PromptAction>();
+      const declines: PromptAction[] = [];
+      choice.options.forEach((label, i) => {
+        const same = byLabel.get(label);
+        if (same) {
+          same.count = (same.count ?? 1) + 1;
+          return;
+        }
+        const decline = DECLINE.test(label.trim());
+        const cardNo = decline ? undefined : cardInLabel(state, choice.player, label);
+        const a: PromptAction = { key: `opt${i}`, label, onClick: () => choose(i), kind: decline ? 'secondary' : 'primary', disabled: false, ...(cardNo ? { cardNo } : {}) };
+        byLabel.set(label, a);
+        (decline ? declines : actions).push(a);
+      });
+      actions.push(...declines);
     } else if (choice.kind === 'payCost') {
       tag = 'core';
       // อัญเชิญด้วยเอฟเฟกต์ (จ่ายคอสต์): ขั้นที่ 1 จ่าย → ขั้นที่ 2 วาง Core กำหนด Lv
@@ -579,9 +630,58 @@ export function PromptBar() {
               {detail && <div className="text-xs leading-relaxed text-slate-300">{detail}</div>}
             </div>
           </div>
-          {actionsInPanel && <div className="btn-row mt-3 flex flex-col gap-1.5">{actions.map((a) => renderBtn(a, true))}</div>}
+          {actionsInPanel && <OptionList actions={actions} renderBtn={renderBtn} />}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * ตัวเลือกในแผงกาง: ตัวเลือกที่ทำอะไรจริง (ทอง) อยู่บน · ตัวเลือกที่พูดถึงการ์ดในมือ = แผ่นมีภาพการ์ดเรียงเป็นตาราง
+ * "ไม่ใช้ / ข้าม" (เทา) แยกไว้มุมขวาล่าง · ไม่มีปุ่มเต้น (เดิมปุ่มสุดท้ายเต้น = "ไม่ใช้" ดูเหมือนตัวเลือกที่แนะนำ)
+ */
+function OptionList({ actions, renderBtn }: { actions: PromptAction[]; renderBtn: (a: PromptAction, wide?: boolean) => React.ReactNode }) {
+  const main = actions.filter((a) => a.kind === 'primary');
+  const rest = actions.filter((a) => a.kind !== 'primary');
+  const tiles = main.filter((a) => a.cardNo);
+  const plain = main.filter((a) => !a.cardNo);
+  return (
+    <div className="mt-3 flex flex-col gap-2">
+      {tiles.length > 0 && (
+        <div className={`grid gap-2 ${tiles.length === 1 ? 'grid-cols-1' : tiles.length === 2 || tiles.length === 4 ? 'grid-cols-2' : 'grid-cols-3'}`}>
+          {tiles.map((a) => (
+            <button
+              key={a.key}
+              type="button"
+              data-tutorial={`prompt-${a.key}`}
+              title={a.label}
+              onClick={a.onClick}
+              disabled={a.disabled}
+              className="group relative flex items-center gap-2 rounded-lg border-2 border-yellow-300/70 bg-gradient-to-b from-yellow-300/15 to-amber-600/10 p-1.5 text-left transition hover:border-yellow-200 hover:from-yellow-300/30 disabled:opacity-40"
+            >
+              <div className="relative h-[4.2rem] w-12 shrink-0">
+                <CardFace def={db.get(a.cardNo!)} size="xs" />
+              </div>
+              <span className="min-w-0 text-xs leading-snug font-bold text-yellow-50">{a.label.replace(/^Kagemusha:s*/, '')}</span>
+              {(a.count ?? 1) > 1 && (
+                <span className="absolute -top-2 -right-2 rounded-full bg-yellow-300 px-1.5 text-[11px] leading-5 font-black text-slate-900 shadow">×{a.count}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+      {plain.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          {plain.map((a) => (
+            <div key={a.key} className="relative">
+              {renderBtn(a, true)}
+              {(a.count ?? 1) > 1 && <span className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 rounded-full bg-slate-900/80 px-1.5 text-[11px] font-black text-yellow-200">×{a.count}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+      {rest.length > 0 && <div className="flex flex-wrap justify-end gap-1.5">{rest.map((a) => renderBtn(a))}</div>}
     </div>
   );
 }

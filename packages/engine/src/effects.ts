@@ -3315,10 +3315,12 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       const id = item.subjectId;
       if (!id || !myTrash(s, me).includes(id) || !inTrashOk(id)) return;
       takeFromTrash(s, id);
-      s.players[me].hand.push(id);
+      // 2VS2: เมจิคของเพื่อนร่วมทีม = วางแสดงนอกมือของเพื่อน (เจ้าของการ์ด) · เดิมใส่มือเราก่อน แล้ว event cardToHand
+      // เห็นว่าการ์ดไม่อยู่ในมือเจ้าของ จึงลบออกจาก shownCards → การ์ดกลายเป็นการ์ดในมือเพื่อนธรรมดา
+      ownerZones(s, id).hand.push(id);
       s.shownCards = [...(s.shownCards ?? []), id];
-      emit(ctx, { type: 'cardToHand', player: me, cardId: id, from: 'trash' });
-      emit(ctx, { type: 'cardShown', player: me, cardId: id });
+      emit(ctx, { type: 'cardToHand', player: s.cards[id]!.owner, cardId: id, from: 'trash' });
+      emit(ctx, { type: 'cardShown', player: s.cards[id]!.owner, cardId: id });
       return;
     }
 

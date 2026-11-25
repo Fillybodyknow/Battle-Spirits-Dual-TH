@@ -310,6 +310,26 @@ export function isDistributeCandidate(s: GameState, cardId: string): boolean {
 }
 
 /** การ์ดนี้เป็นตัวเลือกของการเลือกบนกระดานตอนนี้หรือไม่ */
+/** ตัวเลือก Kagemusha ของการ์ดใบหนึ่งในมือ: index ใน choice · free = เสื่อมสภาพเน็กซัสแล้วอัญเชิญไม่จ่ายคอสต์ */
+export type KageOption = { index: number; label: string; free: boolean };
+/**
+ * choice Kagemusha (chooseOne ที่ตัวเลือกมี step kageSet): ให้เลือกจากการ์ดในมือโดยตรง
+ * byCard = การ์ดในมือ → ตัวเลือกของใบนั้น · decline = "ไม่ใช้ Kagemusha" · target = สปิริตของเราที่ถูกเล็ง
+ */
+export function kagemushaChoice(s: GameState): { player: PlayerId; byCard: Record<string, KageOption[]>; decline: number; target: string | null } | null {
+  const c = s.choice;
+  if (!c || c.kind !== 'option' || c.step.do !== 'chooseOne') return null;
+  const byCard: Record<string, KageOption[]> = {};
+  let decline = -1;
+  c.step.options.forEach((o, index) => {
+    const set = o.steps.find((st) => st.do === 'kageSet');
+    if (set && set.do === 'kageSet') (byCard[set.cardId] ??= []).push({ index, label: o.label, free: o.steps[0]?.do === 'exhaustCard' });
+    else decline = index;
+  });
+  if (Object.keys(byCard).length === 0) return null;
+  return { player: c.player, byCard, decline, target: s.queue.find((q) => q.kageForce)?.kageForce?.orig ?? null };
+}
+
 export function isChoiceCandidate(s: GameState, cardId: string): boolean {
   return isInlineChoice(s) && s.choice?.kind === 'card' && mine(s.choice.player) && s.choice.candidates.includes(cardId);
 }

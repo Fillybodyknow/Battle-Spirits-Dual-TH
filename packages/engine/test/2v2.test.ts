@@ -540,3 +540,18 @@ describe('2VS2: อัญเชิญการ์ดของเพื่อน�
     expect(z(s, 'p1', 0).reserve.sort()).toEqual(myReserve.sort());
   });
 });
+
+describe('2VS2: วางแสดงนอกมือ', () => {
+  it('ชาร์ล "นำการ์ดเมจิคนั้นไปวางแสดงนอกมือ" กับเมจิคของเพื่อน = อยู่นอกมือของเพื่อน (ไม่ใช่มือธรรมดา)', () => {
+    let s = setup();
+    const magic = z(s, 'p1', 1).deck.shift()!;
+    z(s, 'p1', 1).trashCards.push(magic);
+    const src = z(s, 'p1', 0).hand[0]!;
+    s.queue = [{ controller: 'p1', sourceId: src, subjectId: magic, steps: [{ do: 'showSubjectFromTrash' }], paidWithSoul: false, trashWhenDone: false }];
+    s = act(s, { type: 'endMain', player: 'p1' });
+    expect(z(s, 'p1', 1).trashCards).not.toContain(magic);
+    expect(z(s, 'p1', 1).hand).toContain(magic);
+    expect(z(s, 'p1', 0).hand).not.toContain(magic);
+    expect(s.shownCards ?? []).toContain(magic);
+  });
+});

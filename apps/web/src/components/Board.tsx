@@ -9,7 +9,7 @@ import { usePrefs, type HandLayout } from '../prefs';
 import { castHandSlots, sortHand } from '../store';
 import { CastRestCard, pickingCores } from './Fx';
 import { allocOf, isDistributeCandidate, isMultiCardCandidate, pickedOf } from '../store';
-import { actingPlayer, canEvolve, db, isMultiHostCandidate, flashPlayer, inMain, isChoiceCandidate, isFxBlocking, handMagicTimings, responseOptions, simulateEvolve, simulateMove, useGame } from '../store';
+import { actingPlayer, canEvolve, db, isMultiHostCandidate, flashPlayer, inMain, isChoiceCandidate, isFxBlocking, handMagicTimings, kagemushaChoice, responseOptions, simulateEvolve, simulateMove, useGame } from '../store';
 import { useFlashUsable } from './Controls';
 import { useHeld, useShownLife } from './useHeld';
 import { CardBack, CardFace } from './CardFace';
@@ -372,6 +372,8 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
   const pinned = useGame((s) => s.pinned === cardId);
   /** เป็นตัวเลือกของเอฟเฟกต์ที่รออยู่ (คลิกเพื่อเลือก) · อัญเชิญหลายใบ: ผู้ร่วมร่างของ Brave ที่กำลังจัด */
   const candidate = useGame((s) => (isChoiceCandidate(s.state, cardId) || isMultiHostCandidate(s, cardId) || isDistributeCandidate(s.state, cardId) || isMultiCardCandidate(s.state, cardId)) && !isFxBlocking(s.fx));
+  /** กำลังถาม Kagemusha: สปิริตตัวนี้คือตัวที่ถูกเล็ง */
+  const kageTarget = useGame((s) => kagemushaChoice(s.state)?.target === cardId && !isFxBlocking(s.fx));
   /** เลือกหลายใบทีเดียว: ตัวนี้ถูกเลือกไว้ */
   const picked = useGame((s) => pickedOf(s).includes(cardId));
   /** แบ่งคอร์ที่จะส่งออก: จำนวนที่เลือกจากการ์ดนี้ */
@@ -592,6 +594,11 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
           }
         >
           <CardFace def={def} level={level} />
+          {kageTarget && (
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg ring-4 ring-rose-500" style={{ animation: 'fx-choice-glow 1.4s ease-in-out infinite' }}>
+              <span className="rounded bg-rose-600 px-1.5 py-0.5 text-xs font-black text-white shadow">ถูกเล็ง</span>
+            </div>
+          )}
         </div>
         {spirit && (
           <div
@@ -1744,6 +1751,8 @@ function HandCard({ cardId, hidden, small, fan, shown: order }: { cardId: string
   const candidate = useGame((s) => (isChoiceCandidate(s.state, cardId) || isMultiCardCandidate(s.state, cardId)) && !isFxBlocking(s.fx));
   /** เลือกหลายใบทีเดียว: ใบนี้ถูกเลือกไว้ */
   const picked = useGame((s) => pickedOf(s).includes(cardId));
+  /** ถาม Kagemusha: ใช้ได้ 2 แบบ (จ่ายคอสต์ / ฟรี) = เมนูเล็กบนการ์ด */
+  const [kageMenu, setKageMenu] = useState(false);
   const flashUsable = useFlashUsable(cardId);
   const flying = useFlying(cardId);
   const dragged = useGame((s) => s.handDrag === cardId);
@@ -1785,6 +1794,13 @@ function HandCard({ cardId, hidden, small, fan, shown: order }: { cardId: string
   const playable = ((main || (flash && timings.includes('flash'))) && affordable) || quick;
 
   const options = playOptions(state, cardId);
+  // ถาม Kagemusha: การ์ดในมือที่ใช้ได้ = เรืองแสง คลิกใช้ได้เลย
+  const kageChoice = kagemushaChoice(state);
+  const kage = !readOnly && !fxBlocking && kageChoice && mine(kageChoice.player) ? (kageChoice.byCard[cardId] ?? null) : null;
+  const glow = candidate || !!kage;
+  // ป้ายบนการ์ดในมือ (เลือก / KAGEMUSHA / FLASH): หลบวงคอสต์มุมซ้ายบน · มือที่หมุนกลับหัว (คู่แข่งด้านบน) วงคอสต์อยู่ขวาล่าง = ป้ายไปซ้ายล่าง
+  const rotated = !!fan?.top && !(hovering || selected);
+  const tagPos = rotated ? 'bottom-1 left-1 right-[32%]' : 'top-1 left-[32%] right-1';
 
   return (
     <div
@@ -1809,6 +1825,13 @@ function HandCard({ cardId, hidden, small, fan, shown: order }: { cardId: string
           // มือของเพื่อน: คลิก = ปักแผงรายละเอียดเท่านั้น
           if (readOnly) {
             useGame.setState({ pinned: cardId });
+            return;
+          }
+          // Kagemusha: คลิกการ์ด = ใช้ใบนี้ (ใช้ได้ 2 แบบ = เปิดเมนูเลือก จ่ายคอสต์ / ฟรี)
+          if (kage) {
+            useGame.setState({ pinned: cardId });
+            if (kage.length === 1) useGame.getState().choose(kage[0]!.index);
+            else setKageMenu((v) => !v);
             return;
           }
           // คลิกเดียวเล่นเลย (ตั้งค่า): มีทางเล่นทางเดียว = เปิดแผงเล่นการ์ดทันที
@@ -1863,14 +1886,17 @@ function HandCard({ cardId, hidden, small, fan, shown: order }: { cardId: string
                 : main
                   ? 'brightness-75'
                   : ''
-        } ${selected || picked ? `ring-4 ring-yellow-300 ${fan ? '' : '-translate-y-3'}` : ''} ${candidate && !picked ? 'cursor-pointer ring-4 ring-fuchsia-400' : ''}`}
-        style={candidate ? { animation: 'fx-choice-glow 1.4s ease-in-out infinite' } : flashUsable ? { animation: 'fx-flash-glow 1.2s ease-in-out infinite' } : undefined}
+        } ${selected || picked ? `ring-4 ring-yellow-300 ${fan ? '' : '-translate-y-3'}` : ''} ${glow && !picked ? 'cursor-pointer ring-4 ring-fuchsia-400' : ''}`}
+        style={glow ? { animation: 'fx-choice-glow 1.4s ease-in-out infinite' } : flashUsable ? { animation: 'fx-flash-glow 1.2s ease-in-out infinite' } : undefined}
       >
         <div className={`h-full w-full ${fan?.top && !(hovering || selected) ? 'rotate-180' : ''}`}>
           <CardFace def={def} size={small || fan?.top ? 'xs' : 'md'} payCost={pay} />
         </div>
         {candidate && (
-          <div className={`absolute inset-x-1 top-1 rounded py-0.5 text-center text-xs font-bold shadow ${picked ? 'bg-yellow-300 text-slate-900' : 'bg-fuchsia-500 text-white'}`}>{picked ? 'เลือกแล้ว ✓' : 'คลิกเพื่อเลือก'}</div>
+          <div className={`absolute ${tagPos} truncate rounded py-0.5 text-center text-[11px] font-bold whitespace-nowrap shadow ${picked ? 'bg-yellow-300 text-slate-900' : 'bg-fuchsia-500 text-white'}`}>{picked ? 'เลือกแล้ว ✓' : 'คลิกเลือก'}</div>
+        )}
+        {kage && !candidate && (
+          <div className={`pointer-events-none absolute ${tagPos} truncate rounded bg-fuchsia-500 py-0.5 text-center text-[9px] font-black tracking-tight whitespace-nowrap text-white shadow`}>KAGEMUSHA</div>
         )}
         {shown && !candidate && (
           <div
@@ -1884,12 +1910,33 @@ function HandCard({ cardId, hidden, small, fan, shown: order }: { cardId: string
         {flashUsable && !candidate && (
           <div
             title="ใช้ได้ใน Flash Timing นี้ · คลิกเพื่อใช้"
-            className={`pointer-events-none absolute inset-x-1 rounded bg-cyan-300 py-0.5 text-center text-xs font-black tracking-[0.2em] text-slate-950 shadow ${fan?.top && !(hovering || selected) ? 'bottom-1' : 'top-1'}`}
+            className={`pointer-events-none absolute ${tagPos} rounded bg-cyan-300 py-0.5 text-center text-xs font-black tracking-[0.15em] text-slate-950 shadow`}
           >
             FLASH
           </div>
         )}
       </div>
+      {kage && kageMenu && (
+        <HandMenuPortal anchor={cardRef} below={!!fan?.top}>
+          {kage.map((o) => (
+            <button
+              key={o.index}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setKageMenu(false);
+                useGame.getState().choose(o.index);
+              }}
+              className="rounded bg-yellow-300 px-2 py-1 text-left text-sm font-semibold text-slate-900 hover:bg-yellow-200"
+            >
+              {o.free ? o.label.replace(/^Kagemusha:\s*/, '') : `อัญเชิญ (${o.label.match(/จ่ายคอสต์ \d+/)?.[0] ?? 'จ่ายคอสต์'})`}
+            </button>
+          ))}
+          <button type="button" onClick={() => setKageMenu(false)} className="rounded px-2 py-0.5 text-xs text-slate-400 hover:bg-white/10">
+            ยกเลิก
+          </button>
+        </HandMenuPortal>
+      )}
       {selected && (
         <HandMenuPortal anchor={cardRef} below={!!fan?.top}>
           {options.length === 0 && <span className="px-1 text-xs text-slate-400">ใช้ตอนนี้ไม่ได้</span>}
@@ -2113,7 +2160,11 @@ export function HandFan({ player, top, partner = false }: { player: PlayerId; to
   // Flash Timing ของผู้เล่นนี้: เลื่อนให้เห็นการ์ดใบแรกที่ใช้ได้ (ถ้าไม่มีใบไหนอยู่ในจอ)
   const flashCards = useGame((s) => {
     // มือที่คว่ำไว้ (ออนไลน์ = มือคู่แข่ง) ห้ามเลื่อนตาม ไม่งั้นตำแหน่งที่เลื่อนไปจะบอกว่าการ์ด Flash อยู่ใบไหน
-    if (flashPlayer(s.state) !== player || isFxBlocking(s.fx) || hiddenFrom(s, player)) return '';
+    if (isFxBlocking(s.fx) || hiddenFrom(s, player)) return '';
+    // ถาม Kagemusha: เลื่อนให้เห็นการ์ด Kagemusha ที่ใช้ได้
+    const k = kagemushaChoice(s.state);
+    if (k && k.player === player) return sortHand(s.state, s.state.players[player].hand, usePrefs.getState().handSort, s.handOrder[player]).filter((id) => id in k.byCard).join(',');
+    if (flashPlayer(s.state) !== player) return '';
     const o = responseOptions(s.state, player);
     return sortHand(s.state, s.state.players[player].hand, usePrefs.getState().handSort, s.handOrder[player]).filter((id) => o.magic.includes(id) || o.quick.includes(id)).join(',');
   });
