@@ -52,7 +52,7 @@ export const BS08_SCRIPTS: Record<string, CardScript> = {
     {
       kind: 'magic',
       timing: 'flash',
-      steps: [{ do: 'destroyChosenOpponent', filter: { types: SPIRIT, maxBp: 6000 } }, { do: 'battleLifeIfBlocked', amount: 1 }],
+      steps: [{ do: 'destroyChosenOpponent', filter: { types: SPIRIT, maxBp: 6000 } }, { do: 'battleLifeIfBlocked', amount: 1, soulAttacker: true }],
     },
   ],
   กำแพงผลึกขาว: [

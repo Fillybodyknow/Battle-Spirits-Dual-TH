@@ -190,6 +190,14 @@ export function destroy(ctx: Ctx, cardId: string, by?: PlayerId, bySource?: stri
   // BS14 คิงรู: สปิริต BP ไม่เกิน N ถูกทำลาย = ห้ามเบิร์สนั้น · เฟลมบรีซ: ในเอฟเฟกต์นี้ห้ามเบิร์สนั้น (เอฟเฟกต์ที่กำลังทำงาน = หัวคิว)
   const bpBan = spirit && by && by !== owner ? destroyBurstBanSource(ctx.s, ctx.db, currentBp(ctx.s, ctx.db, cardId)) : null;
   const effectBan = !!ctx.s.queue[0]?.started && !!ctx.s.queue[0]?.noDestroyBurst && ctx.s.queue[0]?.controller === by;
+  // BS16 ไก-อสุรา: ในการต่อสู้นี้ คอร์บนสปิริตคู่แข่งที่ถูกทำลายไปวอยด์ (โซลคอร์ไม่ไปวอยด์: กติกา 07 ข้อ 4)
+  if (by && by !== owner && ctx.s.battle?.destroyedCoresVoid === by) {
+    const card = ctx.s.cards[cardId]!;
+    const gone = card.cores.filter((c) => !ctx.s.cores[c]!.isSoul);
+    card.cores = card.cores.filter((c) => ctx.s.cores[c]!.isSoul);
+    for (const c of gone) delete ctx.s.cores[c];
+    if (gone.length > 0) emit(ctx, { type: 'coresRemoved', cardId, count: gone.length, to: 'void' });
+  }
   sendToTrash(ctx, cardId);
   // BS12 มิสึรุกิ: ถูกทำลายโดยเอฟเฟกต์ของเบิร์สที่นับอยู่
   const bk = ctx.s.burstKills;

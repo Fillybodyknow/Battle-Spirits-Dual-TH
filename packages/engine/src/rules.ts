@@ -65,6 +65,8 @@ export function braveFits(braveDef: CardDef, hostDef: CardDef): boolean {
 
 /** สปิริตนี้รับเบรฟใบนี้มารวมร่างเพิ่มได้ไหม (ไม่ตรวจคอสต์) */
 export function braveRoom(state: GameState, db: CardDatabase, hostId: string, braveId: string): boolean {
+  // BS16 โนวา-เรมแนนต์: สปิริตทั้งหมดจะร่วมร่างไม่ได้
+  if (staticSources(state, db, ['p1', 'p2'], 'noBraving').length > 0) return false;
   const braves = state.cards[hostId]!.braves.filter((b) => b !== braveId);
   if (!braveCounts(state, db, hostId, braveId)) return true;
   return braves.filter((b) => braveCounts(state, db, hostId, b)).length < braveLimit(state, db, hostId);
@@ -114,8 +116,16 @@ function cardLevelRaw(state: GameState, db: CardDatabase, cardId: string): numbe
   // จักรพรรดิมังกร ซีคฟรีด: มี Soul Core = ถือว่าเป็น Lv สูงสุด
   if (level > 0) {
     for (const ab of def.abilities) {
-      if (ab.kind === 'maxLevelIf' && !ab.granted && ab.levels.includes(level) && conditionHolds(state, cardId, ab.if, false, false, db)) {
-        return def.levels.at(-1)?.level ?? level;
+      // BS16 เอ็นเตอร์ไพรซ์: เงื่อนไข (Rush นับเจ็ม) อ่านเลเวลต่อ → กันวนซ้ำ (ระหว่างตรวจ = ใช้เลเวลจากคอร์)
+      if (ab.kind === 'maxLevelIf' && !ab.granted && ab.levels.includes(level) && !checkingMaxLevelIf) {
+        checkingMaxLevelIf = true;
+        let ok = false;
+        try {
+          ok = conditionHolds(state, cardId, ab.if, false, false, db);
+        } finally {
+          checkingMaxLevelIf = false;
+        }
+        if (ok) return def.levels.at(-1)?.level ?? level;
       }
     }
     // BS12 จูซุมารุ: [ร่วมร่าง] "แอทแท็คสเต็ปของเรา: สปิริตนี้ถือว่าเป็น Lv สูงสุด"
@@ -629,16 +639,29 @@ export function fieldCost(state: GameState, db: CardDatabase, cardId: string, ig
   if (!ignoreBraveCost) for (const b of card.braves) cost += braveFieldCost(db, state.cards[b]!.cardNo);
   // ระหว่างคำนวณ Lv คอสต์ +N: ไม่นับ "คอสต์ +N" ที่ต้องใช้เลเวล (กันวนไม่จบ)
   if (levelBoostDepth > 0) return cost;
+  // BS16 อาพาโท: "ถือว่ามีคอสต์ N" (แทนคอสต์บนการ์ด)
+  for (const id of owner.field) {
+    if (effectsNegated(state, db, id)) continue;
+    const level = cardLevel(state, db, id);
+    for (const ab of db.get(state.cards[id]!.cardNo).abilities) {
+      if (ab.kind !== 'allyCostSet' || !ab.levels.includes(level)) continue;
+      if (!conditionHolds(state, id, ab.if, false, false, db) || !matchesFilter(state, db, cardId, ab.filter)) continue;
+      cost = ab.cost + (cost - def.cost);
+    }
+  }
   for (const id of owner.field) {
     if (effectsNegated(state, db, id)) continue;
     const level = cardLevel(state, db, id);
     for (const ab of db.get(state.cards[id]!.cardNo).abilities) {
       if (ab.kind !== 'costBoost' || !ab.levels.includes(level)) continue;
+      // (costBoost ของการ์ดบนสนาม)
       if (!conditionHolds(state, id, ab.if, false, false, db) || !matchesFilter(state, db, cardId, ab.filter)) continue;
       cost += ab.amount;
       out?.push({ cardId: id, source: ab.source, amount: ab.amount });
     }
   }
+  // BS16 โบนเซเบอร์ไทเกอร์: ในเทิร์นนี้ คอสต์ +N
+  for (const t of state.turnCostBoosts ?? []) if (t.player === card.owner && t.turn === state.turn && matchesFilter(state, db, cardId, t.filter)) cost += t.amount;
   return cost;
 }
 
@@ -792,7 +815,7 @@ export function destroyImmuneSource(state: GameState, db: CardDatabase, cardId: 
     const lv = cardLevel(state, db, id);
     for (const ab of db.get(state.cards[id]!.cardNo).abilities) {
       if (ab.kind !== 'destroyImmune' || !ab.levels.includes(lv) || !conditionHolds(state, id, ab.if, false, false, db)) continue;
-      const ok = 'ownNamed' in ab.scope ? nameHas(def, ab.scope.ownNamed) : matchesFilter(state, db, cardId, ab.scope.own);
+      const ok = 'ownNamed' in ab.scope ? nameHas(def, ab.scope.ownNamed) : 'self' in ab.scope ? id === cardId : matchesFilter(state, db, cardId, ab.scope.own);
       if (ok && isSpiritLike(def)) return { cardId: id, source: ab.source };
     }
   }
@@ -1327,7 +1350,8 @@ export function activeForcedAttack(state: GameState, db: CardDatabase, player: P
   const fa = state.forcedAttack;
   if (!fa || fa.turn !== state.turn || state.turnPlayer !== player || state.phase !== 'attack') return null;
   const opp = player === 'p1' ? 'p2' : 'p1';
-  if (!state.players[opp].field.includes(fa.holderId) || !state.players[player].field.includes(fa.attackerId)) return null;
+  // BS16 ซันสโตน ดรากูน: noHolder = ต้องโจมตีอย่างเดียว
+  if ((fa.holderId && !state.players[opp].field.includes(fa.holderId)) || !state.players[player].field.includes(fa.attackerId)) return null;
   if (!canAttackWith(state, db, fa.attackerId)) return null;
   return fa;
 }
@@ -1678,13 +1702,46 @@ function payableCostRaw(state: GameState, db: CardDatabase, player: PlayerId, de
   return min?.kind === 'minSummonPay' ? Math.max(min.min, n) : n;
 }
 
+let reductionAltDepth = 0;
 function payableCostInner(state: GameState, db: CardDatabase, player: PlayerId, def: CardDef, base: number): number {
+  // BS16 แนวกางเขนแห่งดวงดาว: สัญลักษณ์ลดคอสต์สีหนึ่งถือว่าเป็นอีกสีด้วย = ลองทั้งสองแบบ เอาที่ถูกกว่า
+  if (reductionAltDepth === 0) {
+    for (const id of state.players[player].field) {
+      if (effectsNegated(state, db, id)) continue;
+      const lv = cardLevel(state, db, id);
+      for (const ab of db.get(state.cards[id]!.cardNo).abilities) {
+        if (ab.kind !== 'reductionAlso' || !ab.levels.includes(lv)) continue;
+        if (ab.filter.types && !ab.filter.types.includes(def.type)) continue;
+        if (ab.filter.color && !def.colors.includes(ab.filter.color)) continue;
+        const have = def.reduction[ab.from] ?? 0;
+        if (have <= 0) continue;
+        const k = Math.min(ab.count, have);
+        const alt = { ...def.reduction, [ab.from]: have - k, [ab.to]: (def.reduction[ab.to] ?? 0) + k };
+        if (!alt[ab.from]) delete alt[ab.from];
+        reductionAltDepth++;
+        try {
+          return Math.min(payableCostInner(state, db, player, def, base), payableCostInner(state, db, player, { ...def, reduction: alt }, base));
+        } finally {
+          reductionAltDepth--;
+        }
+      }
+    }
+  }
   const full = def.abilities.some(
     (a) => a.kind === 'fullReductionIfAlly' && state.players[player].field.some((id) => db.get(state.cards[id]!.cardNo).name === a.name),
   );
   if (full) return Math.max(0, base - Object.values(def.reduction).reduce<number>((n, v) => n + (v ?? 0), 0));
   // ฮาคุโดวโทคาเงะ: คู่แข่งอัญเชิญการ์ดสปิริตคอสต์ดั้งเดิมไม่เกิน N ใช้สัญลักษณ์ลดคอสต์ไม่ได้
   if (def.type === 'spirit' && noReductionFor(state, db, player, def)) return base;
+  // BS16 ไวท์แคร็ก: ระหว่างที่คู่แข่งไม่ได้เซ็ทเบิร์ส ได้รับสัญลักษณ์ลดคอสต์เพิ่ม
+  for (const ab of def.abilities) {
+    if (ab.kind !== 'handReductionBonus') continue;
+    const opp = state.players[player === 'p1' ? 'p2' : 'p1'];
+    if (ab.ifOpponentNoBurst && (opp.burst || opp.partner?.burst)) continue;
+    const red = { ...def.reduction };
+    for (const [c, k] of Object.entries(ab.reduction) as [SymbolColor, number][]) red[c] = (red[c] ?? 0) + k;
+    def = { ...def, reduction: red, abilities: def.abilities.filter((x) => x !== ab) };
+  }
   const reductionTotal = Object.values(def.reduction).reduce<number>((n, v) => n + (v ?? 0), 0);
   if (reductionTotal === 0) return base;
   // "เมื่ออัญเชิญการ์ดที่ชื่อมีคำ ... สปิริตนี้เจ็มเพิ่ม" (ปะกุกุ)
@@ -2440,7 +2497,8 @@ export function cannotBlockLowerBp(state: GameState, db: CardDatabase, cardId: s
 }
 
 /** เจ้าแห่งน้ำ โอตโตะ: จำนวนคอร์ขั้นต่ำที่คู่แข่งถอดการ์ดนี้ให้ต่ำกว่าไม่ได้ (0 = ไม่มีผล) */
-export function coreFloorOf(state: GameState, db: CardDatabase, cardId: string): { min: number; src: StaticSource } | null {
+/** ownEffect = คอร์ถูกส่งออกโดยเอฟเฟกต์ของเจ้าของเอง (ใช้ได้เฉพาะ coreFloor.anyPlayer) */
+export function coreFloorOf(state: GameState, db: CardDatabase, cardId: string, ownEffect = false): { min: number; src: StaticSource } | null {
   const owner = state.cards[cardId]!.owner;
   let best: { min: number; src: StaticSource } | null = null;
   for (const id of state.players[owner].field) {
@@ -2449,6 +2507,7 @@ export function coreFloorOf(state: GameState, db: CardDatabase, cardId: string):
     for (const ab of db.get(state.cards[id]!.cardNo).abilities) {
       if (ab.kind !== 'coreFloor' || !ab.levels.includes(lv) || !conditionHolds(state, id, ab.if, false, false, db)) continue;
       if (ab.self && id !== cardId) continue;
+      if (ownEffect && !ab.anyPlayer) continue;
       if (!matchesFilter(state, db, cardId, ab.filter)) continue;
       // BS11 ทามะกิ: "ต่ำกว่าที่เลเวลคอสต์ที่ Lv1 ต้องการ" = จำนวนคอร์ของ Lv1 ของการ์ดนั้น
       const min = ab.min === 'lv1' ? (db.get(state.cards[cardId]!.cardNo).levels[0]?.cores ?? 0) : ab.min;
@@ -2532,8 +2591,9 @@ const memoStore = new WeakMap<object, { db: CardDatabase; map: Map<string, unkno
 export function freezeForCache(state: GameState): void {
   frozenStates.add(state);
 }
+let checkingMaxLevelIf = false;
 function memo<T>(state: GameState, db: CardDatabase, key: string, compute: () => T): T {
-  if (!frozenStates.has(state) || checkingMaxLevel || checkingLevelPlus || boostingLevel.size > 0 || levelBoostDepth > 0 || checkingNegation || checkingAllColor || checkingCopy || checkingBpZero || checkingSymbolOverride) return compute();
+  if (!frozenStates.has(state) || checkingMaxLevel || checkingMaxLevelIf || checkingLevelPlus || boostingLevel.size > 0 || levelBoostDepth > 0 || checkingNegation || checkingAllColor || checkingCopy || checkingBpZero || checkingSymbolOverride) return compute();
   let entry = memoStore.get(state);
   if (!entry || entry.db !== db) {
     entry = { db, map: new Map() };

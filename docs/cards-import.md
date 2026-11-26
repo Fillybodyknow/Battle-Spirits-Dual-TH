@@ -1,6 +1,6 @@
 # นำการ์ดใหม่เข้าเกม (งานต่อเนื่อง · อ่านก่อนทำต่อ)
 
-งานนำการ์ดจากภาพญี่ปุ่น (BS24, BSC15, BSC16) เข้าเกม ทำทีละสี (~20 ใบ/แบตช์) ตามที่เจ้าของโปรเจกต์ตกลง
+งานนำการ์ดจากภาพญี่ปุ่น (BS24, BSC15, BSC16, BS25) เข้าเกม ทำทีละสี (~20 ใบ/แบตช์) ตามที่เจ้าของโปรเจกต์ตกลง
 จบแต่ละแบตช์ = typecheck + เทสต์ + build ผ่าน แล้วให้เจ้าของโปรเจกต์ดู changelog ก่อน commit/push
 
 ## วัตถุดิบ: `cards-list/`
@@ -17,7 +17,9 @@
 | BS14 | BS24 แดง (21) + ขาว (20) + ม่วง (19) | แดง ✅ ขาว ✅ (50.0.0) · ม่วง ✅ (51.0.0) |
 | BS15 | BS24 เขียว (20) + เหลือง (20) + ฟ้า (20) | เขียว ✅ (52.0.0 · สร้างชุด bs15 แล้ว) · เหลือง ✅ ฟ้า ✅ (53.0.0) |
 | BSC01 | BSC15 (16) | ✅ (54.0.0 · ชุด bsc01: data/bsc01-scripts.ts + loadBSC01Cards) |
-| BSC02 | BSC16 (42) | ✅ (54.0.0 · ชุด bsc02: data/bsc02-scripts.ts + loadBSC02Cards) · **ครบทุกชุดใน cards-list แล้ว** |
+| BSC02 | BSC16 (42) | ✅ (54.0.0 · ชุด bsc02: data/bsc02-scripts.ts + loadBSC02Cards) |
+| BS16 | BS25 แดง (14) + ขาว (17) + ม่วง (15) | แดง ✅ ขาว ✅ ม่วง ✅ (55.0.0 · ครบ 46 ใบ) |
+| BS17 | BS25 เขียว (14) + เหลือง (14) + ฟ้า (17) | **แบตช์ถัดไป** (ชุดใหม่ bs17) |
 
 **การ์ด BSC = ชุดในเกมแยกชื่อ "BSC01, BSC02, …"** (เจ้าของโปรเจกต์กำหนด ไม่ใช้ BS16) · BSC15 = BSC01, BSC16 = BSC02 (แยกสองชุด) ·
 `BOOSTER_SETS` (bot-helpers.ts) และแบนเนอร์ชุดล่าสุด (`useLatestBoosters` ใน Home.tsx) รับ `/^BSC?\d+$/` แล้ว (แบนเนอร์เรียงตามลำดับใน `loadAllCards()` = ชุดที่เพิ่มทีหลังอยู่บน)
@@ -72,4 +74,23 @@
 
 覚醒 = Evolution · 激突 = Rage · 重装甲 = Heavy Shield · 呪滅撃 = Destructive Curse · 新生 (BS24) = ร่างคืนจุติ (BS33/34 ใช้ "รุ่นใหม่" ตามเดิม) ·
 滅龍 = มังกรล้างสังหาร · 武装 = อาวุธ · 動器 = จักรกลมีชีวิต · 空魚 = ปลาบิน · 怪虫 = ปรสิต · 無魔 = ผีอมตะ · 冥主 = เจ้านรก · 遊精 = หมู่ภมร ·
-歌鳥 = วิหคสังคีต · 漂精 = ภูตพเนจร · ペンタン = เพนต้น · ฟงนีน่า · โอเซโร เผ่า เจ้านรก/เงามาร
+星竜 = มังกรดวงดาว (เดิม มังกรดารา) · 護将 = ผู้พิทักษ์ · 神星 = เทพดวงดาว · 戦騎 = นักรบ · 調査員 = นักวิจัย · 戦獣 = สมิงสงคราม · 闘神 = วิญญาณนักรบ · 天霊 = คนธรรพ์ · 皇獣 = เจ้าสมิง · 古竜 = มังกรโบราณ · 地竜 = มังกรดิน · 歌鳥 = วิหคสังคีต · 漂精 = ภูตพเนจร · ペンタン = เพนต้น · ฟงนีน่า · โอเซโร เผ่า เจ้านรก/เงามาร
+
+## กลไกที่เพิ่มแล้วระหว่างงานนี้ (BS16 แดง)
+
+- Critical Hit = เงื่อนไข `uTriggerCard` (การ์ดที่ U Trigger ของเอฟเฟกต์นี้วาง: `item.uTriggerCardId`) ใช้ใน when ต่อจาก then ของ uTrigger · `coreFloor.anyPlayer` (ไม่เป็น 0 แม้เอฟเฟกต์ของเรา: `coreFloorOf(..., ownEffect)`) · `destroyImmune.scope.self` (เซอร์ไวเวอร์)
+- trigger `destroyedBySpiritEffect` (ถูกทำลาย/สูญสลายโดยเอฟเฟกต์ของสปิริต/อัลติเมทของใครก็ได้) · step `activateHandBurst` (เบิร์สในมือ ไม่สนเงื่อนไข) · `noOpponentDestroyTriggers` (`battle.noDestroyTriggers` / `.thisTurn`) · `rageChosenThisTurn` (`state.turnRage`) · `allCoresToSelf` · `battleDestroyedCoresToVoid` (destroy ใน ctx.ts)
+- ability `allyCostSet` (ใน fieldCost) · `reductionAlso` (payableCostInner ลองทั้งสองแบบ) · `battleLifeIfBlocked.blocker` / `.soulAttacker` (เดิมบังคับโซลคอร์ทุกใบ) · `buffSubject.untilBattleEnd`
+
+## กลไกที่เพิ่มแล้วระหว่างงานนี้ (BS16 ขาว)
+
+- `uTriggerCostBoost` (การ์ดของเราที่ U Trigger คู่แข่งเปิด ถือว่าคอสต์ +N · ใช้ต่อกับราเควล/ออร์แกนปีกทองคำของ BS17) · `refreshWithOpponent` (refreshStep ใน game.ts) · `blockTriggersOnAttack` · `opponentNoSummonTriggers` · `handReductionBonus`
+- step `exhaustSelf` (จด exhaustedBp) · `onBattleWin` (`battle.winSteps`) · `keepBounceRest` (ฟิลด์ `keep`: ห้ามตั้งชื่อ `per` เพราะ engine ใช้ `per` เป็นตัวคูณของทุก step) · `forceAttackChosen.noHolder` · SubjectFilter `byBattle`
+- ตัวกันวนซ้ำ `checkingMaxLevelIf` (maxLevelIf ที่เงื่อนไขนับเจ็ม เช่น Rush) อยู่ในเงื่อนไขของ memo
+
+## กลไกที่เพิ่มแล้วระหว่างงานนี้ (BS16 ม่วง)
+
+- step `costBoostThisTurn` (`state.turnCostBoosts` ใน fieldCost) · `fireAllyDestroyedTriggers` (ไอนี่) · `drawIfBravesStay` → step ภายใน `drawIfAnyOnField` ท้ายคิว (หลัง braveFate · `item.destroyedBraves` จด ใน destroyChosenOpponent) · `destroyAllOpponentBraves.bothSides` · `uTrigger.fromTrash` (เบลิท: เทียบคอสต์บนการ์ด)
+- ability `noBraving` (ใน braveRoom) · `handDrawBoost` (การ์ดในมือ: ตอนเริ่มดรอว์สเต็ปเข้าคิวถาม → discard + addDrawStepDraw) · `textOnly` (บรรทัดที่ผลอยู่ในการ์ดอื่น: โฟคาลอร์ → เบลเซบีท) · trigger `allyDeckMilled` (ตัวกรอง `milled`)
+
+

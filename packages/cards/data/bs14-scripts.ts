@@ -48,7 +48,7 @@ const destroy = (filter: CardFilter, extra: { count?: number; if?: Condition } =
 /** U Trigger เมื่ออัลติเมทนี้โจมตี */
 const uTrigger = (levels: number[], then: Step[]) => ({ kind: 'trigger' as const, on: 'attack' as const, levels, steps: [{ do: 'uTrigger' as const, then }] });
 /** U Trigger ของอัลติเมทแดง: ฮิต = คู่แข่งต้องป้องกันด้วยสปิริตถ้าทำได้ · ถูกสปิริตป้องกัน = ไลฟ์คู่แข่ง 1 เม็ดไปรีเสิร์ฟ */
-const redRageTrigger = (levels: number[]) => uTrigger(levels, [{ do: 'mustBlock', spiritsOnly: true }, { do: 'battleLifeIfBlocked', amount: 1 }]);
+const redRageTrigger = (levels: number[]) => uTrigger(levels, [{ do: 'mustBlock', spiritsOnly: true }, { do: 'battleLifeIfBlocked', amount: 1, blocker: { types: SPIRIT } }]);
 
 export const BS14_SCRIPTS: Record<string, CardScript> = {
   // ---------------- สปิริต
@@ -280,7 +280,7 @@ export const BS14_SCRIPTS: Record<string, CardScript> = {
       ownTurnOnly: true,
       mainStepOnly: true,
       levels: ALL2,
-      steps: [{ do: 'symbolAlliesThisTurn', filter: { types: SPIRIT, families: [DRAGON_MAN, 'มังกรดารา'] }, color: 'red', count: 1 }],
+      steps: [{ do: 'symbolAlliesThisTurn', filter: { types: SPIRIT, families: [DRAGON_MAN, 'มังกรดวงดาว'] }, color: 'red', count: 1 }],
     },
     { kind: 'drawStep', levels: [2], extraDraw: [{ amount: 1, if: { alliesMatchAtLeast: { filter: { types: SPIRIT, family: DRAGON_MAN }, count: 1 } } }] },
   ],

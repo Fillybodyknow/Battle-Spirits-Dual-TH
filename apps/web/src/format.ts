@@ -156,7 +156,7 @@ export function formatEvent(e: GameEvent, s: GameState): string | null {
         ? `ในเทิร์นนี้ ไลฟ์ของ${playerLabel(e.player)}ไม่ลดลงจากการโจมตีของสปิริตคอสต์ไม่เกิน ${e.maxCost}`
         : `ในเทิร์นนี้ ไลฟ์ของ${playerLabel(e.player)}ไม่ได้รับความเสียหายจากการโจมตีของสปิริตคอสต์ ${e.minCost} ขึ้นไป`;
     case 'forcedAttack':
-      return `${name(e.cardId)} ต้องโจมตีมาที่ ${name(e.holderId)} เป็นใบแรก`;
+      return e.holderId ? `${name(e.cardId)} ต้องโจมตีมาที่ ${name(e.holderId)} เป็นใบแรก` : `${name(e.cardId)} ต้องโจมตีในเทิร์นนี้`;
     case 'kagemushaChance':
       return `${name(e.targetId)} ตกเป็นเป้า: ${playerLabel(e.player)} ใช้ Kagemusha ได้`;
     case 'lifeGained':

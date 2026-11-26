@@ -158,9 +158,15 @@ export interface Battle {
   blockTax?: { reserveToTrash: number; discard?: number; /** BSC02: คอร์บนฟิลด์ (สนาม/รีเสิร์ฟ) ไปแทรช */ fieldToTrash?: number; paid?: boolean };
   /** BSC02 โซโลวิง: ผู้โจมตีไม่ถูกป้องกันโดยสปิริตเลเวลเหล่านี้ */
   unblockLevels?: number[];
+  /** BS16 ริวแมน ไลท์นิ่ง: ในการต่อสู้นี้ "เมื่อสปิริตนี้ถูกทำลาย" ของสปิริตผู้เล่นนี้ไม่ทำงาน */
+  noDestroyTriggers?: PlayerId;
+  /** BS16 ไก-อสุรา: ในการต่อสู้นี้ สปิริตของคู่แข่งของผู้เล่นนี้ที่ถูกทำลาย คอร์ไปวอยด์ */
+  destroyedCoresVoid?: PlayerId;
+  /** BS16 เอ็นเตอร์ไพรซ์: การ์ดนี้ชนะการต่อสู้ (ทำลายด้วยการเทียบ BP) → ทำ steps */
+  winSteps?: { cardId: string; controller: PlayerId; steps: Step[] }[];
 
   /** เฟลมมังกรคลั่ง: ถ้าผู้โจมตี (ของ player ที่มีโซลคอร์) ถูกป้องกัน ส่งคอร์ไลฟ์ของฝ่ายป้องกันลงรีเสิร์ฟ amount เม็ด */
-  lifeOnBlocked?: { player: PlayerId; amount: number; done?: boolean };
+  lifeOnBlocked?: { player: PlayerId; amount: number; done?: boolean; /** ผู้โจมตีต้องมีโซลคอร์ */ soul?: boolean; /** ผู้ป้องกันต้องตรงตัวกรอง */ blocker?: CardFilter };
   /** ผู้โจมตีถือว่าไร้สีในการต่อสู้นี้ (ไลท์นิ่ง-ชิออน) */
   colorless?: boolean;
   /** การ์ดที่ออกจากสนามไปแล้วระหว่างการต่อสู้นี้ (กลับมาบนสนามอีก = การ์ดใหม่ ไม่ใช่ผู้โจมตี/ผู้ป้องกันเดิม) */
@@ -298,6 +304,10 @@ export interface QueuedEffect {
   exhaustedBp?: number;
   /** BSC02 ทริคสเตอร์: จำนวนการ์ดที่ showFromHandAny วางแสดง */
   shownCount?: number;
+  /** BS16 Critical Hit: การ์ดที่ U Trigger ของเอฟเฟกต์นี้วางที่แทรช */
+  uTriggerCardId?: string;
+  /** BS16 เบรฟครีเมชัน: เบรฟของสปิริตที่เอฟเฟกต์นี้ทำลายล่าสุด */
+  destroyedBraves?: string[];
   /** (BS07) trigger summon: การ์ดถูกอัญเชิญโดย On Stage / โดยเอฟเฟกต์ของการ์ดนี้ */
   summonByOnStage?: boolean;
   summonBySource?: string;
@@ -467,6 +477,14 @@ export interface GameState {
   turnLocks?: { cardId: string; turn: number; /** BS15: ป้องกันไม่ได้อย่างเดียว */ blockOnly?: boolean }[];
   /** BSC02 คัทลียา: ในเทิร์นนี้ เอฟเฟกต์ "แอทแท็คสเต็ปของคู่แข่ง" / "เมื่อสปิริตนี้ป้องกัน" ของการ์ดนี้ไม่ทำงาน */
   timingLocks?: { cardId: string; turn: number }[];
+  /** BS16 วินด์เซอร์เคิล: ในเทิร์นนี้ "เมื่อสปิริตนี้ถูกทำลาย" ของสปิริตผู้เล่นนี้ไม่ทำงาน */
+  noDestroyTriggersTurn?: { player: PlayerId; turn: number }[];
+  /** BS16 นีโอ แอกเกรสซีฟเรจ: ในเทิร์นนี้ การ์ดนี้ได้รับ True-Rage */
+  turnRage?: { cardId: string; turn: number }[];
+  /** BS16 โบนเซเบอร์ไทเกอร์: ในเทิร์นนี้ การ์ดของ player ที่ตรงตัวกรอง คอสต์ +amount */
+  turnCostBoosts?: { player: PlayerId; turn: number; filter: CardFilter; amount: number }[];
+  /** (สำรอง) การ์ดที่ U Trigger กำลังเปิด ถือว่าคอสต์ +N */
+  uTriggerExtraCost?: { cardId: string; amount: number };
   /** "ในเทิร์นนี้ สปิริต/เน็กซัสของคู่แข่งทั้งหมดสูญเสียเอฟเฟกต์ทั้งหมด": การ์ดของ player เสียเอฟเฟกต์ในเทิร์น turn */
   effectsLost?: { player: PlayerId; turn: number }[];
   /** "ในเทิร์นนี้ สปิริต/อัลติเมทที่มีเจ็มตั้งแต่ N เม็ดถือว่ามีเจ็ม 0" */

@@ -49,6 +49,8 @@ import bs14 from '../data/bs14.json';
 import { BS14_SCRIPTS } from '../data/bs14-scripts';
 import bs15 from '../data/bs15.json';
 import { BS15_SCRIPTS } from '../data/bs15-scripts';
+import bs16 from '../data/bs16.json';
+import { BS16_SCRIPTS } from '../data/bs16-scripts';
 import bsc01 from '../data/bsc01.json';
 import { BSC01_SCRIPTS } from '../data/bsc01-scripts';
 import bsc02 from '../data/bsc02.json';
@@ -132,6 +134,7 @@ export function loadAllCards(): CardDatabase {
     ...loadBS15Cards().all(),
     ...loadBSC01Cards().all(),
     ...loadBSC02Cards().all(),
+    ...loadBS16Cards().all(),
   ]);
 }
 
@@ -185,6 +188,11 @@ export function loadBS14Cards(): CardDatabase {
 /** การ์ดชุด Booster Set 15 (การ์ด "ชุด: BS15" ใน assets/files/cards/ + data/bs15-scripts.ts) */
 export function loadBS15Cards(): CardDatabase {
   return createCardDatabase(attachScripts(bs15, BS15_SCRIPTS));
+}
+
+/** การ์ดชุด Booster Set 16 (การ์ด "ชุด: BS16" = BS25 แดง/ขาว/ม่วง ใน assets/files/cards/ + data/bs16-scripts.ts) */
+export function loadBS16Cards(): CardDatabase {
+  return createCardDatabase(attachScripts(bs16, BS16_SCRIPTS));
 }
 
 /** การ์ดชุด BSC01 (การ์ด "ชุด: BSC01" = ต้นรหัส BSC15 ใน assets/files/cards/ + data/bsc01-scripts.ts) */

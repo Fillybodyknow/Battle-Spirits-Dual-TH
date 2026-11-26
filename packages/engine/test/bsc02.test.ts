@@ -214,3 +214,35 @@ describe('BSC02 (BSC16)', () => {
     expect(blockersFor(s, db, 'p2')).not.toContain(blocker);
   });
 });
+
+describe('BS07 [เจ้าหญิงทองคำ] โรส-เบอร์รี่: ไม่แสดงผลซ้ำซ้อน', () => {
+  /** อัญเชิญการ์ดในมือไม่จ่ายคอสต์ด้วยเอฟเฟกต์ (เลือกการ์ด + วางคอร์ 1 เม็ด) แล้วเดินคิวจนจบ */
+  const summonFree = (s: GameState, src: string, id: string) => {
+    queue(s, 'p1', src, [{ do: 'summonFromHandFree', filter: { names: [db.get(s.cards[id]!.cardNo).name] } }]);
+    let x = act(s, { type: 'moveCores', player: 'p1', moves: [] });
+    for (let i = 0; i < 10 && x.choice; i++) {
+      const c = x.choice;
+      if (c.kind === 'card') x = choose(x, id);
+      else if (c.kind === 'placeCores') x = choose(x, { pay: x.players.p1.reserve.slice(0, 1) } as never);
+      else if (c.kind === 'option') x = choose(x, 0);
+      else break;
+    }
+    return x;
+  };
+
+  it('อัญเชิญสเตจสไตล์คอสต์ 8+ สองครั้งในเทิร์นเดียว = ได้คอร์วอยด์ 3 เม็ดทั้งสองครั้ง · มี 2 ใบ = ใบเดียวต่อครั้ง', () => {
+    let s = setup();
+    const src = put(s, 'p1', DARIU, 1);
+    const rose1 = put(s, 'p1', no('[เจ้าหญิงทองคำ] โรส-เบอร์รี่'), 1);
+    const rose2 = put(s, 'p1', no('[เจ้าหญิงทองคำ] โรส-เบอร์รี่'), 1);
+    const a = card(s, 'p1', no('[ปีกสีขาว] ออลทีน่า-แคลน'), 'hand');
+    const b = card(s, 'p1', no('[มิโกะแห่งเสียงเพลง] ริวเนะ-มาโตะ'), 'hand');
+    const total = () => s.cards[rose1]!.cores.length + s.cards[rose2]!.cores.length;
+    s = summonFree(s, src, a);
+    expect(s.players.p1.field).toContain(a);
+    expect(total()).toBe(2 + 3);
+    s = summonFree(s, src, b);
+    expect(s.players.p1.field).toContain(b);
+    expect(total()).toBe(2 + 6);
+  });
+});

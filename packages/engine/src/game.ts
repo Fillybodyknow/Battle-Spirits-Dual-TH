@@ -260,6 +260,21 @@ function afterStart(ctx: Ctx): void {
   }
 
   setPhase(ctx, 'draw');
+  // BS16 ไอนี่: การ์ดในมือที่ทิ้งเพื่อจำนวนจั่ว +N
+  for (const id of [...p.hand]) {
+    if ((s.shownCards ?? []).includes(id)) continue;
+    const d = ctx.db.get(s.cards[id]!.cardNo);
+    const ab = d.abilities.find((a) => a.kind === 'handDrawBoost');
+    if (ab?.kind !== 'handDrawBoost') continue;
+    enqueue(ctx, {
+      controller: player,
+      sourceId: id,
+      source: ab.source,
+      steps: [{ do: 'chooseOne', options: [{ label: `ทิ้ง ${d.name}: จำนวนจั่ว +${ab.amount}`, steps: [{ do: 'discard', count: 1, filter: { names: [d.name] } }, { do: 'addDrawStepDraw', amount: ab.amount }] }, { label: 'ไม่ใช้', steps: [] }] }],
+      paidWithSoul: false,
+      trashWhenDone: false,
+    });
+  }
   // เอฟเฟกต์ "ดรอว์สเต็ปของเรา" ที่ทำก่อนจั่ว (ร็อคแฮนด์: ทิ้งการ์ดเพื่อจั่วเพิ่ม)
   for (const id of p.field) {
     const level = cardLevel(s, ctx.db, id);
@@ -415,6 +430,21 @@ function refreshStep(ctx: Ctx): void {
     z.trashCores = [];
   }
   emit(ctx, { type: 'refreshed', player });
+  // BS16 เวลซันดี: รีเฟรชสเต็ปของคู่แข่ง เราก็ทำรีเฟรชสเต็ปด้วย
+  const other = opponentOf(player);
+  const withOpp = staticSources(s, ctx.db, [other], 'refreshWithOpponent')[0];
+  if (withOpp) {
+    emitStatic(ctx, withOpp);
+    for (const id of s.players[other].field) {
+      if ((s.refreshLocks ?? []).includes(id) || noRefreshSource(s, ctx.db, id, false)) continue;
+      s.cards[id]!.state = 'refresh';
+    }
+    for (const z of allZones(s, other)) {
+      z.reserve.push(...z.trashCores);
+      z.trashCores = [];
+    }
+    emit(ctx, { type: 'refreshed', player: other });
+  }
 }
 
 /** เข้าแอทแท็คสเต็ป: "เมื่อเริ่มแอทแท็คสเต็ปของเรา/คู่แข่ง" */
@@ -1039,8 +1069,10 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     // 2VS2: ตรวจเฉพาะสปิริตของที่นั่งที่กดจบ (โจมตีด้วยของเพื่อนไม่ได้)
     const forced = forcedAttackers(s, ctx.db, player).filter((id) => s.mode !== '2v2' || seatOfCard(s.cards[id]) === activeSeat(s, player));
     if (forced.length > 0) {
-      const holder = activeForcedAttack(s, ctx.db, player)?.holderId ?? forceAttackHolders(s, ctx.db, player)[0]!.id;
-      fail('MUST_ATTACK', `ต้องโจมตีก่อนจบ Attack Step (เอฟเฟกต์ของ ${ctx.db.get(s.cards[holder]!.cardNo).name}): ${forced.map((id) => ctx.db.get(s.cards[id]!.cardNo).name).join(', ')}`);
+      // BS16 ซันสโตน ดรากูน: บังคับโจมตีแบบไม่มีการ์ดผู้ถือ (holderId ว่าง)
+      const holder = activeForcedAttack(s, ctx.db, player)?.holderId || forceAttackHolders(s, ctx.db, player)[0]?.id;
+      const by = holder && s.cards[holder] ? ` (เอฟเฟกต์ของ ${ctx.db.get(s.cards[holder]!.cardNo).name})` : '';
+      fail('MUST_ATTACK', `ต้องโจมตีก่อนจบ Attack Step${by}: ${forced.map((id) => ctx.db.get(s.cards[id]!.cardNo).name).join(', ')}`);
     }
     if (!teamReady(ctx, player, 'attack')) return;
     afterAttackStep(ctx);
@@ -1292,7 +1324,8 @@ function lifeOnBlocked(ctx: Ctx): void {
   const lb = b?.lifeOnBlocked;
   if (!b || !lb || lb.done || b.blockers.length === 0) return;
   const attacker = s.cards[b.attackerId]!;
-  if (attacker.owner !== lb.player || !attacker.cores.some((c) => s.cores[c]!.isSoul)) return;
+  if (attacker.owner !== lb.player || (lb.soul && !attacker.cores.some((c) => s.cores[c]!.isSoul))) return;
+  if (lb.blocker && !b.blockers.some((x) => matchesFilter(s, ctx.db, x, lb.blocker!))) return;
   lb.done = true;
   const defender = opponentOf(lb.player);
   if (!loseLife(ctx, defender, lb.amount, lb.player)) queueLifeLostTriggers(ctx, defender, lb.amount);
@@ -1353,10 +1386,13 @@ function beginAttack(ctx: Ctx, player: PlayerId, attackerId: string, fa: { attac
     s.battleMagic = [];
     // BS10 เฮียคุเตะ: ในเทิร์นนี้สปิริตที่ได้รับ "[เมื่อสปิริตนี้โจมตี] คู่แข่งสั่งใช้เบิร์สไม่ได้"
     if ((s.attackNoBurstGrants ?? []).some((g) => g.player === player && g.turn === s.turn && matchesFilter(s, ctx.db, attackerId, g.filter))) s.battle.noBurst = opponentOf(player);
+    // BS16 นีโอ แอกเกรสซีฟเรจ: True-Rage ที่ได้รับในเทิร์นนี้
+    if ((s.turnRage ?? []).some((t) => t.cardId === attackerId && t.turn === s.turn)) s.battle.mustBlock = true;
     emit(ctx, { type: 'attackDeclared', attackerId });
     // อิจิโกะฮิโทฟุริ: ผู้ร่วมร่างที่ระบุไว้เข้าป้องกันเองถ้าป้องกันได้
     if (fa) {
-      const hc = s.cards[fa.holderId]!;
+      const hc = fa.holderId ? s.cards[fa.holderId]! : null;
+      if (hc)
       if ((hc.state === 'refresh' || canBlockExhausted(s, ctx.db, fa.holderId)) && !attackerUnblockable(s, attackerId, ctx.db.get(hc.cardNo).type)) {
         s.battle.chosenBlockers.push(fa.holderId);
         s.battle.skipFlash1 = true;
@@ -1469,6 +1505,8 @@ function resolveBattle(ctx: Ctx): void {
       for (const r of results) if (r.bp > bpA) winners.push(r.id);
       for (const w of winners) {
         if (!s.cards[w] || !s.players[s.cards[w]!.owner].field.includes(w)) continue;
+        // BS16 เอ็นเตอร์ไพรซ์: "เมื่อทำลายได้ด้วยการเทียบ BP เท่านั้น"
+        for (const ws of battle.winSteps ?? []) if (ws.cardId === w) enqueue(ctx, { controller: ws.controller, sourceId: w, steps: [...ws.steps], paidWithSoul: false, trashWhenDone: false });
         for (const id of [...s.players[s.cards[w]!.owner].field]) queueTriggers(ctx, id, 'allyWonBattle', batch, { subject: w });
       }
     }

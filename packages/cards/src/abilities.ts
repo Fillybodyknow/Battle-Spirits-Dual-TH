@@ -5,7 +5,7 @@
  * แต่ละ ability อ้างกลับไปที่ข้อความด้วย `source` (index ใน effects)
  * ข้อความที่ยังไม่มีสคริปต์ = ยังไม่ทำงานใน engine
  */
-import type { CardType, Color } from './schema';
+import type { CardType, Color, SymbolColor } from './schema';
 
 /** เงื่อนไข "ถ้า..." */
 export type Condition =
@@ -141,6 +141,8 @@ export type Condition =
   | { firstBattleOfTurn: true }
   /** การ์ดที่เอฟเฟกต์นี้เพิ่งเลือก (revealPickRestTrash ฯลฯ) ตรงตัวกรอง (ตรวจใน holds ของ effects.ts ใช้ซ้อนใน all/not ไม่ได้) */
   | { chosenIs: CardFilter }
+  /** BS16 Critical Hit: การ์ดที่ U Trigger ของเอฟเฟกต์นี้เพิ่งวางที่แทรชตรงตัวกรอง (ตรวจใน holds ของ effects.ts ใช้ซ้อนใน all/not ไม่ได้) */
+  | { uTriggerCard: CardFilter }
   /** ยังไม่เคยใช้ "เกมละ 1 ครั้ง" ชื่อนี้ (ของผู้เล่นเจ้าของการ์ด) */
   | { oncePerGameFree: string }
   // ---------------- BS13
@@ -368,7 +370,7 @@ export type Step =
       untilBattleEnd?: true;
     }
   /** สปิริตต้นเหตุ (subject) BP+ ในเทิร์นนี้ */
-  | { do: 'buffSubject'; amount: number }
+  | { do: 'buffSubject'; amount: number; /** ไม่บอกระยะเวลา = จนจบการต่อสู้ */ untilBattleEnd?: true }
   /** [True-Rage]: คู่แข่งต้องป้องกันถ้าทำได้ (ใช้ระหว่างการต่อสู้) */
   | {
       do: 'mustBlock';
@@ -818,7 +820,7 @@ export type Step =
   /** (เบรฟที่ให้เอฟเฟกต์) สามารถนำเบรฟนี้ไปรวมร่างกับสปิริตของเราใบอื่นที่รวมร่างได้ */
   | { do: 'moveSourceBrave' }
   /** สามารถเลือกสปิริตของคู่แข่ง 1 ตัว: ตัวนั้นต้องโจมตีมาที่สปิริตนี้เป็นใบแรกสุดของสเต็ป ถ้าทำได้ */
-  | { do: 'forceAttackChosen' }
+  | { do: 'forceAttackChosen'; /** BS16 ซันสโตน ดรากูน: "สปิริตนั้นต้องโจมตีถ้าทำได้" (ไม่ต้องโจมตีมาที่สปิริตนี้) */ noHolder?: true }
   /** ในเทิร์นนี้ ไลฟ์เราไม่ได้รับความเสียหายจากการโจมตีของสปิริต/อัลติเมทคอสต์ตั้งแต่ minCost */
   | { do: 'lifeShieldThisTurn'; minCost?: number; /** BSC01 เบิร์สต์แบริเออร์: การโจมตีของสปิริตคอสต์ไม่เกิน N (อัลติเมทไม่นับ) */ maxCost?: number; spiritsOnly?: true }
   /** (engine ใช้ภายใน) Kagemusha: จดว่าการ์ดนี้ถูกอัญเชิญแล้ว เอฟเฟกต์ที่เล็งอยู่ต้องเล็งการ์ดนี้แทน */
@@ -891,7 +893,14 @@ export type Step =
   /** คู่แข่งข้ามสเต็ปเหล่านี้ในเทิร์นถัดไปของคู่แข่ง */
   | { do: 'opponentSkipStepsNextTurn'; steps: ('refresh' | 'main')[] }
   /** ในการต่อสู้นี้ ถ้าสปิริตของเราที่มีโซลคอร์ (ผู้โจมตี) ถูกป้องกัน: ส่งคอร์ไลฟ์คู่แข่ง amount เม็ดลงรีเสิร์ฟ */
-  | { do: 'battleLifeIfBlocked'; amount: number }
+  | {
+      do: 'battleLifeIfBlocked';
+      amount: number;
+      /** BS08 เฟลมมังกรคลั่ง: ผู้โจมตีต้องมีโซลคอร์ */
+      soulAttacker?: true;
+      /** ผู้ป้องกันต้องตรงตัวกรอง (BS14 "ถูกสปิริตป้องกัน" / BS16 เอ็กซ์-คาลิบัส: สปิริต BP ไม่เกิน 6000) */
+      blocker?: CardFilter;
+    }
   /** ในเทิร์นนี้ ไลฟ์ของเราเสียหายได้ไม่เกิน 1 ต่อครั้ง */
   | { do: 'lifeCapOneThisTurn' }
   /** ฟื้นสภาพสปิริต/อัลติเมทของเราทั้งหมด (noAttack = ตัวที่ฟื้นสภาพโดยเอฟเฟกต์นี้โจมตีไม่ได้ในเทิร์นนี้) */
@@ -957,6 +966,31 @@ export type Step =
   | { do: 'battleUnblockableLevel'; level: number }
   /** ดีว่าเมดเลย์: ส่งคอร์ในแทรชเรา N เม็ดไปวอยด์ */
   | { do: 'trashCoreToVoid'; count: number }
+  // ---------------- BS16
+  /** ริวแมน ไลท์นิ่ง: สั่งใช้เอฟเฟกต์เบิร์สของการ์ดในมือ 1 ใบที่ตรงตัวกรอง โดยไม่สนเงื่อนไขเบิร์ส (สามารถ: เลือกไม่ใช้ได้) */
+  | { do: 'activateHandBurst'; filter: CardFilter }
+  /** ริวแมน ไลท์นิ่ง / วินด์เซอร์เคิล: เอฟเฟกต์ [เมื่อสปิริตนี้ถูกทำลาย] / [...ถูกทำลายโดยคู่แข่ง] ของสปิริตคู่แข่งไม่ทำงาน (จนจบการต่อสู้ / thisTurn = ในเทิร์นนี้) */
+  | { do: 'noOpponentDestroyTriggers'; thisTurn?: true }
+  /** นีโอ แอกเกรสซีฟเรจ: ในเทิร์นนี้ สปิริตที่ buffChosen ก่อนหน้าเลือก ได้รับ True-Rage (โจมตีเมื่อไหร่ คู่แข่งต้องป้องกันถ้าทำได้) */
+  | { do: 'rageChosenThisTurn' }
+  /** อัลติเมท ไก-อสุรา: นำคอร์ทั้งหมดบนสปิริตทั้งหมดของเรามาวางบนการ์ดนี้ แล้วถ้ามีคอร์ถูกวางตั้งแต่ 1 เม็ด ทำ then */
+  | { do: 'allCoresToSelf'; then: Step[] }
+  /** อัลติเมท ไก-อสุรา: ในการต่อสู้นี้ คอร์ทั้งหมดบนสปิริตคู่แข่งที่ถูกทำลายไปที่วอยด์ */
+  | { do: 'battleDestroyedCoresToVoid' }
+  /** ฟรุงนีร์: เสื่อมสภาพสปิริตนี้ (จด BP ไว้ให้ buffChosen.amountFrom exhaustedBp) */
+  | { do: 'exhaustSelf' }
+  /** เอ็นเตอร์ไพรซ์: ในการต่อสู้นี้ เมื่อสปิริตนี้ทำลายการ์ดของคู่แข่งด้วยการเทียบ BP (ชนะ) ทำ steps */
+  | { do: 'onBattleWin'; steps: Step[] }
+  /** แกรน-โวเดน: เลือกคงสปิริตของคู่แข่งไว้ไม่เกิน N ตัว (N = per) ที่เหลือทั้งหมดกลับไปใต้สุดเด็ค */
+  | { do: 'keepBounceRest'; keep: CountPer }
+  /** โบนเซเบอร์ไทเกอร์: ในเทิร์นนี้ การ์ดของเราที่ตรงตัวกรองทั้งหมด คอสต์ +amount */
+  | { do: 'costBoostThisTurn'; filter: CardFilter; amount: number }
+  /** แมวงูยมโลก ไอนี่: สามารถให้เอฟเฟกต์ [เมื่อสปิริตนี้ถูกทำลาย] ของสปิริตอื่นของเราที่ตรงตัวกรองทั้งหมดทำงาน โดยไม่ต้องทำลาย */
+  | { do: 'fireAllyDestroyedTriggers'; filter: CardFilter }
+  /** เบรฟครีเมชัน: หลังจากนั้น ถ้าคู่แข่งคงเบรฟของสปิริตที่เอฟเฟกต์นี้ทำลายไว้บนฟิลด์ เราจั่ว count ใบ */
+  | { do: 'drawIfBravesStay'; count: number }
+  /** (engine ใช้ภายใน) จั่วถ้าการ์ดใดใบหนึ่งยังอยู่บนฟิลด์ของเจ้าของ */
+  | { do: 'drawIfAnyOnField'; cardIds: string[]; count: number }
   /** (engine ใช้ภายใน) มิเรีย: ผู้ควบคุมเลือกส่งคอร์บนฟิลด์ของตัวเอง 1 เม็ด (รีเสิร์ฟ หรือบนการ์ดใบไหน) ไปแทรช */
   | { do: 'fieldCoreToTrash' }
   /** ฮาร์ดบีท: สามารถนำสปิริตของเราที่ตรง filter กี่ตัวก็ได้กลับใต้สุดเด็ค แล้วเปิดใบบนสุดเท่าจำนวนนั้น อัญเชิญไม่จ่ายคอสต์การ์ดที่ตรง summon กี่ใบก็ได้ ("เมื่อถูกอัญเชิญ" ไม่ทำงาน) ที่เหลือทิ้ง */
@@ -964,7 +998,7 @@ export type Step =
   /** BS12 โอนิมารุ: นำโซลคอร์ในแทรชเรามาวางที่สปิริตของเรา 1 ตัวที่ตรงตัวกรอง (เลือก) */
   | { do: 'trashSoulToAlly'; filter: CardFilter }
   /** ทำลายเบรฟที่ร่วมร่างอยู่ของคู่แข่งทั้งหมด */
-  | { do: 'destroyAllOpponentBraves' }
+  | { do: 'destroyAllOpponentBraves'; /** BS16 โนวา-เรมแนนต์: ของผู้เล่นทุกคน */ bothSides?: true }
   /** เราดูการ์ดในมือคู่แข่งทั้งหมด แล้วเลือกทิ้ง count ใบ (ที่ตรงตัวกรอง) */
   | { do: 'peekHandDiscard'; count: number; filter?: CardFilter }
   /** (engine ใช้ภายใน) จินเบร์: จ่ายคอสต์เพิ่ม cost เพื่อสั่งใช้เบิร์ส แล้วทำ then (ไม่จ่าย = ไม่เปิด) */
@@ -1070,7 +1104,7 @@ export type Step =
    * U Trigger (กติกา 05 ข้อ 4): นำการ์ดใบบนสุดเด็คคู่แข่ง 1 ใบไปวางที่แทรช (ไม่ใช่ [เอฟเฟกต์ทิ้งเด็ค])
    * คอสต์ของการ์ดนั้นต่ำกว่าคอสต์ของอัลติเมทนี้ (บนสนาม) = ฮิต → ทำ then (CountPer uTriggerCost = คอสต์ของการ์ดที่วาง)
    */
-  | { do: 'uTrigger'; then: Step[]; /** (engine ใช้ภายใน) 2VS2: เลือกเด็คของคู่แข่งแล้ว (then ทำหลังคืนที่นั่งคู่แข่ง) */ seatPicked?: true }
+  | { do: 'uTrigger'; then: Step[]; /** BS16 เบลิท: U Trigger ตอนอัลติเมทนี้ถูกทำลาย (ไม่อยู่บนสนามแล้ว: เทียบกับคอสต์บนการ์ด) */ fromTrash?: true; /** (engine ใช้ภายใน) 2VS2: เลือกเด็คของคู่แข่งแล้ว (then ทำหลังคืนที่นั่งคู่แข่ง) */ seatPicked?: true }
   /** "หลังจบเทิร์นนี้ เราได้เล่นเทิร์นของเราอีก 1 เทิร์น" · key = เกมละ 1 ครั้ง (เงื่อนไข oncePerGameFree) */
   | { do: 'extraTurn'; key?: string }
   /** "ในเอฟเฟกต์นี้ คู่แข่งไม่สามารถสั่งใช้เบิร์ส 'หลังจากสปิริตของเราถูกทำลายโดยคู่แข่ง'" (เฟลมบรีซ) */
@@ -1153,6 +1187,8 @@ export type TriggerEvent =
   | 'allySummoned'
   /** การ์ดนี้ถูกทิ้งจากเด็คโดยเอฟเฟกต์ของคู่แข่ง (การ์ดอยู่ในแทรชแล้ว) */
   | 'milledByOpponent'
+  /** BS16 บาคูลัส: เด็คของเราถูกทิ้งโดยเอฟเฟกต์ทิ้งเด็คของคู่แข่ง (ตัวกรอง milled) */
+  | 'allyDeckMilled'
   /** เราเสียไลฟ์ */
   | 'lifeLost'
   /** เราใช้การ์ดเมจิค (ทำงานหลังเอฟเฟกต์ของเมจิคนั้น) */
@@ -1161,6 +1197,8 @@ export type TriggerEvent =
   | 'blocked'
   /** สปิริตเรา (subject) ที่โจมตีถูกป้องกัน */
   | 'allyBlocked'
+  /** BS16 มูนโบว์ ดรากูน: การ์ดนี้ถูกทำลาย/สูญสลายโดยเอฟเฟกต์ของสปิริต/อัลติเมท (ของผู้เล่นใดก็ได้) */
+  | 'destroyedBySpiritEffect'
   /** การ์ดของคู่แข่งถูกทำลายโดยการ์ดของเรา (subject = การ์ดของเราที่ทำลาย) */
   | 'oppDestroyed'
   /** การ์ดของเรา (subject) เสื่อมสภาพ (เอฟเฟกต์ / โจมตี / ป้องกัน) */
@@ -1240,6 +1278,8 @@ export type TriggerEvent =
 
 /** เงื่อนไขของสปิริตที่ทำให้ trigger แบบ ally* ทำงาน */
 export interface SubjectFilter {
+  /** BS16 เกรย์การ์ม: ถูกทำลายจากการเทียบ BP (ไม่ใช่เอฟเฟกต์) */
+  byBattle?: true;
   family?: string;
   /** oppDestroyed: การ์ดของคู่แข่งที่ถูกทำลายมี Soul Core วางอยู่ (เลออนแลนเซอร์) */
   victimSoul?: true;
@@ -1616,7 +1656,7 @@ export type Ability =
   /** "เมื่อสปิริตของเราจะทำการ On Stage, สามารถเสื่อมสภาพสปิริตนั้น เพื่อถือว่ากลับใต้สุดเด็คแล้ว" (รีเซ่-โดรมเวล) */
   | { kind: 'onStageReplace'; source: number; levels: number[]; if?: Condition }
   /** การ์ดของเราที่ตรง scope ไม่ถูกทำลายโดยเอฟเฟกต์ของคู่แข่ง (soloPart = เป็นความสามารถ Solo Part) */
-  | { kind: 'destroyImmune'; source: number; levels: number[]; if?: Condition; scope: { ownNamed: string[] } | { own: CardFilter }; soloPart?: true }
+  | { kind: 'destroyImmune'; source: number; levels: number[]; if?: Condition; scope: { ownNamed: string[] } | { own: CardFilter } | /** BS16 เซอร์ไวเวอร์: การ์ดนี้เอง */ { self: true }; soloPart?: true }
   /** "หลังจากจบแอทแท็คสเต็ปของเรา: เข้า [รีเฟรชสเต็ป] / [แอทแท็คสเต็ป] อีก 1 ครั้ง" once = ไม่เกินเทิร์นละ/เกมละ 1 ครั้ง */
   | { kind: 'extraSteps'; source: number; levels: number[]; if?: Condition; steps: ('refresh' | 'attack')[]; once: 'turn' | 'game' }
   /** "เมื่อ <attacker> ของเราโจมตี คู่แข่งป้องกันได้ด้วยสปิริต/อัลติเมทตั้งแต่ 1 ตัวที่ Lv รวมตั้งแต่ minLevel แล้วเราเลือกสู้ 1 ตัว" */
@@ -1629,7 +1669,27 @@ export type Ability =
   | { kind: 'burstOnDiscard'; source: number }
   // ---------------- BS08
   /** คอร์บนการ์ดของเราที่ตรงตัวกรองจะเหลือน้อยกว่า min เม็ดโดยคู่แข่งไม่ได้ */
-  | { kind: 'coreFloor'; source: number; levels: number[]; if?: Condition; filter: CardFilter; /** lv1 = เท่าเลเวลคอสต์ Lv1 ของแต่ละการ์ด */ min: number | 'lv1'; /** BS15 โยโรอิฟุคุโร: เฉพาะการ์ดนี้ */ self?: true }
+  | { kind: 'coreFloor'; source: number; levels: number[]; if?: Condition; filter: CardFilter; /** lv1 = เท่าเลเวลคอสต์ Lv1 ของแต่ละการ์ด */ min: number | 'lv1'; /** BS15 โยโรอิฟุคุโร: เฉพาะการ์ดนี้ */ self?: true; /** BS16 "โดยเอฟเฟกต์ของผู้เล่นทุกคน" (ไม่ระบุ = เฉพาะคู่แข่ง) */ anyPlayer?: true }
+  /** BS16 อาพาโท: การ์ดของเราที่ตรงตัวกรองบนสนาม ถือว่ามีคอสต์ cost */
+  | { kind: 'allyCostSet'; source: number; levels: number[]; if?: Condition; filter: CardFilter; cost: number }
+  /** BS16 เวลซันดี: การ์ดของเราที่ตรงตัวกรองที่ถูกวางที่แทรชโดย U Trigger ของคู่แข่ง ถือว่าคอสต์ +amount (เทียบฮิต) */
+  | { kind: 'uTriggerCostBoost'; source: number; levels: number[]; if?: Condition; filter: CardFilter; amount: number }
+  /** BS16 เวลซันดี: รีเฟรชสเต็ปของคู่แข่ง เราก็ทำรีเฟรชสเต็ปด้วย */
+  | { kind: 'refreshWithOpponent'; source: number; levels: number[] }
+  /** BS16 โนวา-เรมแนนต์: สปิริตทั้งหมดจะร่วมร่างไม่ได้ */
+  | { kind: 'noBraving'; source: number; levels: number[] }
+  /** BS16 ไอนี่: การ์ดนี้ในมือ ใน [ดรอว์สเต็ปของเรา] สามารถทิ้งการ์ดนี้ เพื่อจำนวนจั่ว +amount */
+  | { kind: 'handDrawBoost'; source: number; levels: number[]; amount: number }
+  /** บรรทัดที่ไม่มีผลเอง (ผลอยู่ในสคริปต์ของการ์ดอื่น เช่น โฟคาลอร์ → เบลเซบีท) */
+  | { kind: 'textOnly'; source: number; levels: number[] }
+  /** BS16 เอ็นเตอร์ไพรซ์: เอฟเฟกต์ [เมื่อสปิริตนี้ป้องกัน] ของสปิริตเราทั้งหมด ทำงานเมื่อโจมตีด้วย */
+  | { kind: 'blockTriggersOnAttack'; source: number; levels: number[]; if?: Condition }
+  /** BS16 ลานล่าของมังกรติดเกราะ: เมนสเต็ปของคู่แข่ง "เมื่อสปิริต/เบรฟนี้ถูกอัญเชิญ" ของการ์ดคู่แข่งไม่ทำงาน */
+  | { kind: 'opponentNoSummonTriggers'; source: number; levels: number[] }
+  /** BS16 ไวท์แคร็ก: การ์ดนี้ในมือ ระหว่างที่คู่แข่งไม่ได้เซ็ทเบิร์ส ได้รับสัญลักษณ์ลดคอสต์เพิ่ม */
+  | { kind: 'handReductionBonus'; source: number; levels: number[]; reduction: Partial<Record<SymbolColor, number>>; ifOpponentNoBurst?: true }
+  /** BS16 แนวกางเขนแห่งดวงดาว: การ์ดในมือที่ตรงตัวกรอง สัญลักษณ์ลดคอสต์สี from count เม็ด ถือว่าเป็นสี to ด้วย */
+  | { kind: 'reductionAlso'; source: number; levels: number[]; filter: CardFilter; from: SymbolColor; to: SymbolColor; count: number }
   /** แอทแท็คสเต็ปของคู่แข่ง: สปิริตนี้ป้องกันสปิริตที่ BP น้อยกว่าสปิริตนี้ไม่ได้ */
   | { kind: 'cannotBlockLowerBp'; source: number; levels: number[] }
   /** ขณะทำการ Showdown สปิริตนี้ BP+amount */

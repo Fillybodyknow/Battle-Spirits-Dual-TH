@@ -284,7 +284,8 @@ export const BS07_SCRIPTS: Record<string, CardScript> = {
       subject: { minCost: 8, family: STAGE },
       levels: [1, 2],
       ownTurnOnly: true,
-      oncePerTurnByName: true,
+      // ไม่แสดงผลซ้ำซ้อน = โรส-เบอร์รี่หลายใบทำงานใบเดียวต่อการอัญเชิญหนึ่งครั้ง (อัญเชิญครั้งถัดไปก็ทำงานอีก)
+      noStack: true,
       steps: [{ do: 'voidCore', to: 'self', count: 3 }],
     },
     soloPart([2], 'โรส-เบอร์รี่'),
