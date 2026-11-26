@@ -409,10 +409,23 @@ function parseSummonCondition(text: string, err: (msg: string) => void): unknown
   const life = text.match(/^ไลฟ์เราไม่เกิน\s*(\d+)$/);
   if (life) return { lifeAtMost: Number(life[1]), text };
   // BS24: "สปิริตสีแดงของเราตั้งแต่ 1 ตัวขึ้นไป" / "สปิริตสีแดงของเราตั้งแต่ 1 ตัว และสปิริตสีขาวของเราตั้งแต่ 1 ตัวขึ้นไป"
-  const parts = text.split(/\s+และ\s*/).map((p) => p.trim().match(/^สปิริตสี(\S+?)ของเราตั้งแต่\s*(\d+)\s*ตัว(ขึ้นไป)?$/));
-  if (parts.length > 0 && parts.every((m) => m && COLOR_TH[m[1]!])) {
-    const conds = parts.map((m) => ({ alliesMatchAtLeast: { filter: { types: ['spirit', 'brave'], color: COLOR_TH[m![1]!] }, count: Number(m![2]) } }));
-    return conds.length === 1 ? { ...conds[0], text } : { all: conds, text };
+  // BSC17: "สปิริตสีแดง/ม่วงของเรา…" (สีใดสีหนึ่ง) · "อัลติเมทของเราตั้งแต่ 1 ตัวขึ้นไป" · "สปิริตเผ่า [ผีอมตะ] ของเราตั้งแต่ 3 ตัวขึ้นไป"
+  const one = (p: string): unknown => {
+    const m = p.trim().match(/^(สปิริต|อัลติเมท)(?:สี(\S+?)|เผ่า\s*\[(.+?)\]\s*)?ของเราตั้งแต่\s*(\d+)\s*ตัว(ขึ้นไป)?$/);
+    if (!m) return null;
+    const filter: Record<string, unknown> = { types: m[1] === 'อัลติเมท' ? ['ultimate'] : ['spirit', 'brave'] };
+    if (m[2]) {
+      const colors = m[2].split('/').map((c) => COLOR_TH[c]);
+      if (colors.some((c) => !c)) return null;
+      if (colors.length === 1) filter.color = colors[0];
+      else filter.anyOf = colors.map((color) => ({ color }));
+    }
+    if (m[3]) filter.family = m[3];
+    return { alliesMatchAtLeast: { filter, count: Number(m[4]) } };
+  };
+  const conds = text.split(/\s+และ\s*/).map(one);
+  if (conds.length > 0 && conds.every((c) => c)) {
+    return conds.length === 1 ? { ...(conds[0] as object), text } : { all: conds, text };
   }
   err(`ยังไม่รองรับเงื่อนไขอัญเชิญ "${text}"`);
   return undefined;

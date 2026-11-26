@@ -107,7 +107,9 @@ function cardLevelRaw(state: GameState, db: CardDatabase, cardId: string): numbe
   const card = state.cards[cardId]!;
   const def = db.get(card.cardNo);
   if (def.type === 'brave' && braveHostOf(state, cardId)) return def.levels[0]?.level ?? 0;
-  const level = levelOf(def, card.cores.length - levelCostBoost(state, db, cardId));
+  let level = levelOf(def, card.cores.length - levelCostBoost(state, db, cardId));
+  // BSC03 กิ-กาชา: คอสต์ Lv1 เป็น 0 (คอร์ไม่ถึง Lv1 ก็ยังเป็น Lv1)
+  if (level === 0 && lv1CostZeroSource(state, db, cardId)) level = def.levels[0]?.level ?? 1;
   // BS11 ฮะจิริว: สปิริต "เก็นจิ" ของเรามี Lv เหมือนฮะจิริว
   if (level > 0) {
     const copy = statCopySource(state, db, cardId);
@@ -247,6 +249,7 @@ function levelCostBoost(state: GameState, db: CardDatabase, cardId: string): num
  */
 /** Core ขั้นต่ำที่ต้องวางตอนการ์ดนี้ลงสนาม = Lv1 ที่พิมพ์ + "Lv คอสต์ +N" (วางไม่ถึง = ไม่ยอมให้อัญเชิญ เจ้าของโปรเจกต์กำหนด) */
 export function summonMinCores(state: GameState, db: CardDatabase, cardId: string): number {
+  if (lv1CostZeroSource(state, db, cardId)) return 0;
   return minCores(db.get(state.cards[cardId]!.cardNo)) + summonLevelCostBoost(state, db, cardId);
 }
 
@@ -260,6 +263,26 @@ export function summonLevelCostBoost(state: GameState, db: CardDatabase, cardId:
     return levelCostBoostOf(state, db, cardId, opp.field, out);
   } finally {
     boostingLevel.delete(cardId);
+  }
+}
+
+/** BSC03 กิ-กาชา: การ์ดของเจ้าของที่ทำให้คอสต์ Lv1 ของการ์ดนี้เป็น 0 */
+let checkingLv1Zero = false;
+export function lv1CostZeroSource(state: GameState, db: CardDatabase, cardId: string): StaticSource | null {
+  if (checkingLv1Zero) return null;
+  const card = state.cards[cardId];
+  if (!card || !isSpiritLike(db.get(card.cardNo))) return null;
+  const field = state.players[card.owner].field;
+  if (!field.some((id) => db.get(state.cards[id]!.cardNo).abilities.some((a) => a.kind === 'lv1CostZero'))) return null;
+  checkingLv1Zero = true;
+  try {
+    for (const src of staticSources(state, db, [card.owner], 'lv1CostZero')) {
+      const a = db.get(state.cards[src.cardId]!.cardNo).abilities.find((x) => x.kind === 'lv1CostZero' && x.source === src.source);
+      if (a?.kind === 'lv1CostZero' && matchesFilter(state, db, cardId, a.filter)) return src;
+    }
+    return null;
+  } finally {
+    checkingLv1Zero = false;
   }
 }
 
@@ -539,7 +562,7 @@ export function conditionHolds(
   if ('usedFewerThan' in cond) return (state.usedOncePerTurn ?? []).filter((k) => k === `${sourceId}:${cond.usedFewerThan.key}`).length < cond.usedFewerThan.max;
   if ('onceFree' in cond) return !(state.usedOncePerTurn ?? []).includes(`${sourceId}:${cond.onceFree}`);
   // ตรวจได้เฉพาะตอนประมวลผลเอฟเฟกต์ในคิว (ดู holds ใน effects.ts)
-  if ('summonedByOnStage' in cond || 'summonedBy' in cond || 'summonedBySummonBolt' in cond || 'summonBoltAfterBattleLoss' in cond) return false;
+  if ('summonedByOnStage' in cond || 'summonedBy' in cond || 'summonedBySummonBolt' in cond || 'summonBoltAfterBattleLoss' in cond || 'uTriggerHitsAtLeast' in cond) return false;
   if ('catalyzable' in cond) {
     if (!card.cores.some((id) => state.cores[id]!.isSoul) || !db) return false;
     // 2VS2: Catalyze สั่งใช้เบิร์สของเพื่อนร่วมทีมได้ (เจ้าของโปรเจกต์กำหนด)
@@ -975,8 +998,9 @@ function fieldSymbolsRaw(state: GameState, db: CardDatabase, player: PlayerId): 
   }
   // "เจ็มของสปิริตนี้ถือว่าเป็นเจ็มสี...ด้วย" (คานิคอง) · นับทุกเจ็มของการ์ดนี้ รวมเจ็มจากเบรฟที่ร่วมร่างและจากเอฟเฟกต์ (เจ้าของโปรเจกต์กำหนด)
   // BS13: ถือว่าเป็นหลายสีได้ (อิเทะคาชะ "สีแดง/ม่วงด้วย") = เจ็มนับเป็นทุกสีที่ระบุ
+  const ultAlso = ultimateAlsoColors(state, db, player).length > 0;
   for (const id of state.players[player].field) {
-    if (overridden.has(id) || zeroed(id) || !hasSymbolAlso(db, state.cards[id]!.cardNo)) continue;
+    if (overridden.has(id) || zeroed(id) || (!hasSymbolAlso(db, state.cards[id]!.cardNo) && !ultAlso)) continue;
     for (const g of cardGems(state, db, id).gems) for (const c of g.also) out[c] = (out[c] ?? 0) + g.count;
   }
   return out;
@@ -989,6 +1013,24 @@ export function cardSymbolTotal(state: GameState, db: CardDatabase, cardId: stri
   for (const id of [cardId, ...card.braves]) n += symbolCount(db.get(state.cards[id]!.cardNo));
   for (const v of Object.values(extraSymbols(state, db, cardId))) n += v ?? 0;
   return n;
+}
+
+/** BSC03 เบรดร้า: สีที่เจ็มอัลติเมทของผู้เล่นนี้ถือว่าเป็นด้วย */
+let checkingUltAlso = false;
+export function ultimateAlsoColors(state: GameState, db: CardDatabase, player: PlayerId): SymbolColor[] {
+  if (checkingUltAlso) return [];
+  if (!state.players[player].field.some((id) => db.get(state.cards[id]!.cardNo).abilities.some((a) => a.kind === 'ultimateSymbolsAlso'))) return [];
+  checkingUltAlso = true;
+  try {
+    const out = new Set<SymbolColor>();
+    for (const src of staticSources(state, db, [player], 'ultimateSymbolsAlso')) {
+      const a = db.get(state.cards[src.cardId]!.cardNo).abilities.find((x) => x.kind === 'ultimateSymbolsAlso' && x.source === src.source);
+      if (a?.kind === 'ultimateSymbolsAlso' && conditionHolds(state, src.cardId, a.if, false, false, db)) for (const c of a.colors) out.add(c as SymbolColor);
+    }
+    return [...out];
+  } finally {
+    checkingUltAlso = false;
+  }
 }
 
 /** การ์ดนี้มี "เจ็มถือว่าเป็นสี...ด้วย" (เช็กเร็ว: ไม่มี = เจ็มทุกเม็ดมีสีเดียว) */
@@ -1047,7 +1089,8 @@ export function cardGems(state: GameState, db: CardDatabase, cardId: string): { 
   const lv = cardLevel(state, db, cardId);
   const also = effectsNegated(state, db, cardId) ? [] : def.abilities.flatMap((a) => (a.kind === 'symbolAlsoColor' && a.levels.includes(lv) ? [a.color as SymbolColor] : []));
   // "เจ็มของสปิริตนี้ถือว่าเป็นสี...ด้วย" มีผลกับทุกเจ็มของการ์ดนี้ (รวมเจ็มจากเบรฟ/เอฟเฟกต์) · เจ็มอัลติเมทไม่เปลี่ยน
-  const alsoFor = (c: SymbolColor) => (c === 'ultimate' ? [] : [...new Set(also.filter((x) => x !== c))]);
+  const ultAlso = ultimateAlsoColors(state, db, card.owner);
+  const alsoFor = (c: SymbolColor) => (c === 'ultimate' ? ultAlso : [...new Set(also.filter((x) => x !== c))]);
   const gems: CardGem[] = list(own).map(([c, n]) => ({ color: c, count: n, also: alsoFor(c) }));
   for (const [c, n] of list(added)) gems.push({ color: c, count: n, also: alsoFor(c), added: true });
   return { gems, zeroed: false };
@@ -1449,6 +1492,7 @@ export function ownGemColors(state: GameState, db: CardDatabase, player: PlayerI
     for (const [color, k] of Object.entries(extraSymbols(state, db, id))) if ((k ?? 0) > 0) (out.add(color), (n += k ?? 0));
     if (n > 0 && !effectsNegated(state, db, id)) for (const a of db.get(card.cardNo).abilities) if (a.kind === 'symbolAlsoColor' && a.levels.includes(cardLevel(state, db, id))) out.add(a.color);
   }
+  if (out.has('ultimate')) for (const c of ultimateAlsoColors(state, db, player)) out.add(c);
   out.delete('ultimate');
   {
     const all = allColorOverride(state, db);
@@ -1588,8 +1632,9 @@ export function gemColorCount(state: GameState, db: CardDatabase, player: Player
   for (const id of state.players[player].field) {
     const card = state.cards[id]!;
     const also = effectsNegated(state, db, id) ? [] : db.get(card.cardNo).abilities.flatMap((a) => (a.kind === 'symbolAlsoColor' && a.levels.includes(cardLevel(state, db, id)) ? [a.color as string] : []));
+    const ultAlso = ultimateAlsoColors(state, db, player);
     const add = (color: string, n: number) => {
-      for (let i = 0; i < n; i++) gems.push([color, ...also].filter((c) => c !== 'ultimate'));
+      for (let i = 0; i < n; i++) gems.push([color, ...(color === 'ultimate' ? ultAlso : also)].filter((c) => c !== 'ultimate'));
     };
     for (const x of [id, ...card.braves]) for (const [color, n] of Object.entries(db.get(state.cards[x]!.cardNo).symbols)) add(color, n ?? 0);
     for (const [color, n] of Object.entries(extraSymbols(state, db, id))) add(color, n ?? 0);
@@ -1762,7 +1807,7 @@ function payableCostInner(state: GameState, db: CardDatabase, player: PlayerId, 
     }
   }
   // ไม่มีการ์ด "เจ็มถือว่าเป็นสี...ด้วย" บนสนาม: เจ็มแต่ละเม็ดมีสีเดียว นับตามสีได้เลย (เร็ว)
-  if (!state.players[player].field.some((id) => hasSymbolAlso(db, state.cards[id]!.cardNo))) {
+  if (!state.players[player].field.some((id) => hasSymbolAlso(db, state.cards[id]!.cardNo)) && ultimateAlsoColors(state, db, player).length === 0) {
     const symbols = { ...fieldSymbols(state, db, player) };
     for (const c of summonGems) symbols[c] = (symbols[c] ?? 0) + 1;
     let reduced = 0;
@@ -2353,6 +2398,9 @@ export function blockersFor(state: GameState, db: CardDatabase, defender: Player
   if (b?.blockTax?.fieldToTrash && !b.blockTax.paid && fieldCoreCount(state, defender) < b.blockTax.fieldToTrash) return [];
   // BSC02 โซโลวิง: ในการต่อสู้นี้ ไม่ถูกป้องกันโดยสปิริตเลเวลที่ระบุ
   // BS17 คู-ซี: ไม่ถูกป้องกันโดยสปิริต/อัลติเมทที่ Lv ต่ำกว่าผู้โจมตี
+  // BSC03 ทามาโมโนะอิน: ในเทิร์นนี้ ผู้โจมตีที่ตรงตัวกรองไม่ถูกป้องกันโดยอัลติเมท
+  if (attacker && (state.ultUnblockTurns ?? []).some((t) => t.turn === state.turn && t.player === attacker.owner && matchesFilter(state, db, attacker.id, t.filter)))
+    list = list.filter((id) => db.get(state.cards[id]!.cardNo).type !== 'ultimate');
   if (b?.unblockLowerLevel && attacker) list = list.filter((id) => cardLevel(state, db, id) >= cardLevel(state, db, attacker.id));
   if (b?.unblockLevels?.length) list = list.filter((id) => !(['spirit', 'brave'].includes(db.get(state.cards[id]!.cardNo).type) && b.unblockLevels!.includes(cardLevel(state, db, id))));
   // [Consecutive Blade]: ตัวที่ไม่มีชีลด์ (ไม่รับผลของผู้โจมตี) ต้องป้องกันให้ครบก่อน
@@ -2625,7 +2673,7 @@ export function freezeForCache(state: GameState): void {
 }
 let checkingMaxLevelIf = false;
 function memo<T>(state: GameState, db: CardDatabase, key: string, compute: () => T): T {
-  if (!frozenStates.has(state) || checkingMaxLevel || checkingMaxLevelIf || checkingLevelPlus || boostingLevel.size > 0 || levelBoostDepth > 0 || checkingNegation || checkingAllColor || checkingCopy || checkingBpZero || checkingSymbolOverride) return compute();
+  if (!frozenStates.has(state) || checkingMaxLevel || checkingMaxLevelIf || checkingLevelPlus || boostingLevel.size > 0 || levelBoostDepth > 0 || checkingNegation || checkingAllColor || checkingCopy || checkingBpZero || checkingSymbolOverride || checkingLv1Zero || checkingUltAlso) return compute();
   let entry = memoStore.get(state);
   if (!entry || entry.db !== db) {
     entry = { db, map: new Map() };

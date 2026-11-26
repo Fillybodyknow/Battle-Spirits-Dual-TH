@@ -1,5 +1,5 @@
 import type { CardDatabase, CardDef } from '@bs/cards';
-import { cardLevel, currentBp, destroyBurstBanSource, fail, noLoseSource, noRefreshSource, fieldCost, isSpiritLike, levelOf, locateCore, minCores, levelBoostSources, payableCost, removeCore, removeFrom, summonLevelCostBoost, type StaticSource } from './rules';
+import { cardLevel, currentBp, destroyBurstBanSource, fail, noLoseSource, noRefreshSource, fieldCost, isSpiritLike, levelOf, locateCore, minCores, levelBoostSources, lv1CostZeroSource, payableCost, removeCore, removeFrom, summonLevelCostBoost, type StaticSource } from './rules';
 import { PLAYERS, opponentOf, type EndReason, type GameEvent, type GameState, type Phase, type PlayerId } from './types';
 import { newBatch, queueLifeLostTriggers, queueTriggers } from './effects';
 import { activeSeat, allZones, ownerZones, seatOfCard, zonesOf } from './seats';
@@ -286,7 +286,8 @@ export function checkDepletion(ctx: Ctx): string[] {
       const def = ctx.db.get(card.cardNo);
       // คอร์ไม่ถึงเลเวลต่ำสุด (รวม "Lv คอสต์ +N" จากเอฟเฟกต์ เช่นราโชว) = สูญสลาย ทั้งสปิริตและเน็กซัส
       const counts = isSpiritLike(def) || (def.type === 'nexus' && def.levels.length > 0);
-      if (counts && (levelOf(def, card.cores.length) === 0 || cardLevel(ctx.s, ctx.db, cardId) === 0)) {
+      // BSC03 กิ-กาชา: คอสต์ Lv1 เป็น 0 = ไม่สูญสลาย
+      if (counts && (levelOf(def, card.cores.length) === 0 || cardLevel(ctx.s, ctx.db, cardId) === 0) && !lv1CostZeroSource(ctx.s, ctx.db, cardId)) {
         // สูญสลายเพราะ "Lv คอสต์ +N" (คอร์ถึง Lv1 ตามที่พิมพ์ แต่ไม่ถึงเมื่อรวม +N) → เรืองแสงการ์ดต้นเหตุก่อน
         if (levelOf(def, card.cores.length) > 0) emitStatic(ctx, levelBoostSources(ctx.s, ctx.db, cardId));
         sendToTrash(ctx, cardId);

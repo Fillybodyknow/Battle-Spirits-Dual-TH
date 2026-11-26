@@ -59,6 +59,7 @@ import {
   hasEvolutionNow,
   freezeForCache,
   conditionHolds,
+  fieldCost,
 } from '@bs/engine';
 
 /** การ์ดทุกชุดที่ UI ใช้: Starter Deck 01–04 (SD01-…SD04-) */
@@ -586,6 +587,21 @@ export type Fx =
   | { id: number; kind: 'chainAdd'; cardId: string; index: number; delay: number; /** กอง Chain ณ จังหวะนั้น (Chain 1 ถึงใบนี้) */ stack: { cardId: string; player: PlayerId }[] }
   /** การ์ดที่เปิดจากเด็คเรียงเป็นพัด (หลังเลือก: ใบที่เลือกยกขึ้นก่อนบินขึ้นมือ / ที่เหลือบินลง Trash) */
   | { id: number; kind: 'reveal'; owner: PlayerId; cardIds: string[]; chosen: string | null; delay: number; duration: number; title?: string }
+  /**
+   * ฉาก U Trigger: อัลติเมทต้นเหตุทางซ้าย → การ์ดใบบนสุดเด็คคู่แข่งบินมาพลิกหงาย → เทียบคอสต์ → ตรา HIT!/GUARD
+   * (Double U Trigger = 2 ใบ) → ป้าย CRITICAL HIT / DOUBLE HIT → การ์ดบินลงแทรช (owner = เจ้าของเด็ค)
+   */
+  | {
+      id: number;
+      kind: 'uTrigger';
+      cardId: string;
+      cardNo: string;
+      ultCost: number;
+      owner: PlayerId;
+      cards: { cardId: string; cardNo: string; cost: number; hit: boolean }[];
+      bonus?: 'critical' | 'double';
+      delay: number;
+    }
   /** การ์ดถูกทิ้งจากเด็ค: บินออกมาเรียงหงายทีละใบ ค้างไว้ครู่หนึ่ง แล้วแตกทีละใบลง Trash (owner = เจ้าของเด็ค) */
   | { id: number; kind: 'mill'; owner: PlayerId; cardIds: string[]; delay: number; /** ทิ้งจากมือ: บินออกจากตำแหน่งในมือ (ไม่ใช่เด็ค) */ fromHand?: Record<string, Rect>; title?: string }
   /** เส้นเล็งจากการ์ดต้นเอฟเฟกต์ไปยังเป้าหมายที่เลือก */
@@ -1081,6 +1097,8 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
   const refreshedAt = new Map<string, number>();
   /** event ทิ้งจากมือที่รวมเข้าชุดก่อนหน้าแล้ว */
   const grouped = new Set<GameEvent>();
+  // U Trigger: การ์ดที่เปิดแสดงในฉาก U Trigger (ไม่เล่นภาพทิ้งเด็คซ้ำ)
+  const uRevealed = new Set(events.flatMap((x) => (x.type === 'uTrigger' ? [x.revealedId] : [])));
   for (const e of events) {
     // การ์ดที่ออกจากสนามพร้อมกันแตกพร้อมกันได้ ส่วน event อื่นรอให้ภาพแตกเล่นจบก่อน
     if (e.type !== 'destroyed' && e.type !== 'depleted') t = Math.max(t, ghostsEnd);
@@ -1390,13 +1408,50 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         t += T.soulDrive;
         break;
       case 'uTrigger': {
-        // BS14 U Trigger: ป้ายผลการเช็ค (การ์ดที่เปิดบินลงแทรชด้วย event milled ก่อนหน้า)
-        const nm = (id: string) => db.get(s.cards[id]!.cardNo).name;
-        out.push({ kind: 'banner', tone: e.hit ? 'burst' : 'step', title: e.hit ? 'U TRIGGER · HIT!' : 'U TRIGGER · GUARD', sub: `${nm(e.revealedId)} คอสต์ ${e.cost} · ${nm(e.cardId)}`, delay: t });
-        out.push({ kind: 'float', anchor: `[data-field-card="${e.cardId}"]`, text: e.hit ? 'HIT!' : 'Guard', tone: e.hit ? 'good' : 'bad', delay: t + 200 });
-        t += 1100;
+        // ฉาก U Trigger (Double U Trigger = event ติดกัน 2 ครั้งของอัลติเมทเดียวกัน รวมเป็นฉากเดียว)
+        if (grouped.has(e)) break;
+        const idx = events.indexOf(e);
+        const group: Extract<GameEvent, { type: 'uTrigger' }>[] = [e];
+        for (let j = idx + 1; j < events.length; j++) {
+          const x = events[j]!;
+          if (x.type === 'staticApplied') continue;
+          if (x.type !== 'uTrigger' || x.cardId !== e.cardId || group.length >= 2) break;
+          group.push(x);
+          grouped.add(x);
+        }
+        // Critical Hit / Double Hit ของ U Trigger นี้ (event ตามมาหลังผลฮิต ก่อน U Trigger ครั้งถัดไป)
+        let bonus: 'critical' | 'double' | undefined;
+        for (let j = idx + group.length; j < events.length; j++) {
+          const x = events[j]!;
+          if (x.type === 'uTrigger') break;
+          if (x.type === 'uTriggerBonus' && x.cardId === e.cardId) {
+            bonus = x.bonus;
+            grouped.add(x);
+            break;
+          }
+        }
+        const ult = s.cards[e.cardId] ?? prev.cards[e.cardId];
+        const ultDef = db.get(ult!.cardNo);
+        const onFieldNow = PLAYERS.some((p) => s.players[p].field.includes(e.cardId));
+        out.push({
+          kind: 'uTrigger',
+          cardId: e.cardId,
+          cardNo: ult!.cardNo,
+          ultCost: onFieldNow ? fieldCost(s, db, e.cardId) : ultDef.cost,
+          owner: s.cards[e.revealedId]!.owner,
+          cards: group.map((g) => ({ cardId: g.revealedId, cardNo: s.cards[g.revealedId]!.cardNo, cost: g.cost, hit: g.hit })),
+          ...(bonus ? { bonus } : {}),
+          delay: t,
+        });
+        t += uTriggerDuration(group.length, !!bonus);
         break;
       }
+      case 'uTriggerBonus':
+        // เกิดใน action ถัดไป (หลังผู้เล่นเลือกเป้าของผลฮิต): ป้ายแยก
+        if (grouped.has(e)) break;
+        out.push({ kind: 'banner', tone: 'burst', title: e.bonus === 'double' ? 'DOUBLE HIT!' : 'CRITICAL HIT!', sub: db.get((s.cards[e.cardId] ?? prev.cards[e.cardId])!.cardNo).name, delay: t });
+        t += 900;
+        break;
       case 'extraTurn':
         out.push({ kind: 'banner', tone: 'turn', title: 'EXTRA TURN!', sub: `${db.get(s.cards[e.cardId]!.cardNo).name} · ได้เล่นอีก 1 เทิร์นหลังจบเทิร์นนี้`, delay: t });
         t += 1100;
@@ -1683,7 +1738,8 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         }
         break;
       case 'milled': {
-        const fresh = e.cardIds.filter((id) => !revealed.has(id));
+        if (e.cardIds.every((id) => uRevealed.has(id))) break;
+        const fresh = e.cardIds.filter((id) => !revealed.has(id) && !uRevealed.has(id));
         if (fresh.length > 0) {
           out.push({ kind: 'mill', owner: e.player, cardIds: fresh, delay: t });
           t += millDuration(fresh.length) - 600;
@@ -1828,6 +1884,15 @@ export const GHOST_MS = { destroyBreak: 380, destroy: 1300, depleteGather: 700, 
 
 export const PLAY_HIT = { normal: 560, heavy: 900 } as const;
 
+/** เวลาของฉาก U Trigger (ms): เปิดฉาก → การ์ดแต่ละใบ (บินมาพลิก → เทียบคอสต์ → ตรา) → ค้าง → ป้ายโบนัส → ออก */
+export const UT_MS = { intro: 380, per: 760, flip: 460, compare: 520, stamp: 780, hold: 700, bonus: 760, exit: 420 } as const;
+/** เวลาที่ตราผลของการ์ดใบที่ i ปรากฏ (นับจากเริ่มฉาก) */
+export const uTriggerStampAt = (i: number) => UT_MS.intro + i * UT_MS.per + UT_MS.stamp;
+/** เวลาที่ป้ายโบนัสปรากฏ / ฉากเริ่มออก */
+export const uTriggerBonusAt = (n: number) => uTriggerStampAt(n - 1) + UT_MS.hold;
+export const uTriggerExitAt = (n: number, bonus: boolean) => uTriggerBonusAt(n) + (bonus ? UT_MS.bonus : 0);
+export const uTriggerDuration = (n: number, bonus: boolean) => uTriggerExitAt(n, bonus) + UT_MS.exit;
+
 /** เวลาของภาพการ์ดถูกทิ้งจากเด็ค (ms): ออกทีละใบ → ค้าง → แตกทีละใบ */
 export const MILL_MS = { show: 170, fly: 420, hold: 700, brk: 230 } as const;
 export const millBreakAt = (n: number, i: number) => (n - 1) * MILL_MS.show + MILL_MS.fly + MILL_MS.hold + i * MILL_MS.brk;
@@ -1857,6 +1922,8 @@ function fxEnd(f: FxInput): number {
       return d + (f.mode === 'destroy' ? GHOST_MS.destroy : GHOST_MS.deplete);
     case 'mill':
       return d + millDuration(f.cardIds.length);
+    case 'uTrigger':
+      return d + uTriggerDuration(f.cards.length, !!f.bonus);
     case 'damage':
       return d + 1100;
     case 'float':
@@ -2041,6 +2108,7 @@ export function isFxBlocking(fx: Fx[]): boolean {
       f.kind === 'chain' ||
       f.kind === 'reveal' ||
       f.kind === 'mill' ||
+      f.kind === 'uTrigger' ||
       f.kind === 'chainAdd' ||
       f.kind === 'target' ||
       f.kind === 'finalBlow' ||
@@ -2326,6 +2394,15 @@ function playFxSounds(list: Fx[]) {
       case 'charge':
         sfx('whoosh', f.delay + CHARGE_MS * CHARGE_WIND - 40);
         sfx('attackHit', f.delay + T.hit);
+        break;
+      case 'uTrigger':
+        sfx('flash', f.delay);
+        f.cards.forEach((c, i) => {
+          sfx('draw', f.delay + UT_MS.intro + i * UT_MS.per);
+          sfx(c.hit ? 'bigdamage' : 'impact', f.delay + uTriggerStampAt(i));
+        });
+        if (f.bonus) sfx('burst', f.delay + uTriggerBonusAt(f.cards.length));
+        sfx('whoosh', f.delay + uTriggerExitAt(f.cards.length, !!f.bonus));
         break;
       case 'mill':
         f.cardIds.forEach((_, i) => {

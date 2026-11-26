@@ -8,6 +8,7 @@ import { setSfxTimeScale, sfx } from '../sfx';
 import { effects, flashScale, shakeScale } from '../gfx';
 import { playerLabel } from '../format';
 import { MatchIntro } from './MatchIntro';
+import { UTriggerFx } from './UTriggerFx';
 import { MatchResult } from './MatchResult';
 import { DAMAGE_SHOWN } from './useHeld';
 import { CutInIdol, DivaImpact, DivaTrail, IdolFxView, IdolSparkles, isDivaCard, isSongCard, SongWaves, Star } from './IdolFx';
@@ -1163,6 +1164,8 @@ export function FxLayer() {
           <RevealFx key={f.id} fx={f} onDone={() => dismiss(f.id)} />
         ) : f.kind === 'mill' ? (
           <MillFx key={f.id} fx={f} onDone={() => dismiss(f.id)} />
+        ) : f.kind === 'uTrigger' ? (
+          <UTriggerFx key={f.id} fx={f} onDone={() => dismiss(f.id)} />
         ) : f.kind === 'target' ? (
           <TargetFx key={f.id} fx={f} onDone={() => dismiss(f.id)} />
         ) : f.kind === 'chain' ? (
@@ -4384,6 +4387,8 @@ export function AttackArrow() {
   const battle = useGame((s) => s.state.battle);
   const turnPlayer = useGame((s) => s.state.turnPlayer);
   const [lines, setLines] = useState<Line[]>([]);
+  /** ฉาก U Trigger กลางจอ: ซ่อนลูกศรไม่ให้พาดทับ */
+  const uTriggerShowing = useGame((s) => s.fx.some((f) => f.kind === 'uTrigger'));
   const attacker = battle?.attackerId;
   const blockers = battle?.blockers.join(',') ?? '';
 
@@ -4413,7 +4418,7 @@ export function AttackArrow() {
     return () => clearTimeout(raf);
   }, [attacker, blockers, turnPlayer]);
 
-  if (lines.length === 0) return null;
+  if (lines.length === 0 || uTriggerShowing) return null;
   const color = blockers ? '#38bdf8' : '#f43f5e';
   return (
     // ไม่ใส่ filter: SVG เต็มจอ + เส้นประวิ่งตลอดการต่อสู้ = วาด drop-shadow ทั้งจอใหม่ทุกเฟรม (FPS ตกบนมือถือ/iPad) · แสงเรือง = เส้นกว้างจาง ๆ ซ้อนใต้

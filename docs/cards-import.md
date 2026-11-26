@@ -6,7 +6,7 @@
 ## วัตถุดิบ: `cards-list/`
 
 - `cards-list/<ต้นรหัส>/<สี>/*.webp` ภาพการ์ดต้นฉบับ (ชื่อไฟล์ = `<ต้นรหัส>-<เลข>.webp`, X = `-X01`)
-- `cards-list/BS24/<สี>.text`, `cards-list/BSC15.text`, `cards-list/BSC16.text` = ถอดจากภาพตามแม่แบบแล้ว (ภาษาไทย) **"ชุด: ?" ยังไม่กำหนด**
+- `cards-list/BS24/<สี>.text`, `cards-list/BSC15.text`, `cards-list/BSC16.text`, `cards-list/BSC17.text` = ถอดจากภาพตามแม่แบบแล้ว (ภาษาไทย) **"ชุด: ?" ยังไม่กำหนด**
   เจ้าของโปรเจกต์ตรวจชื่อ/เผ่า/คำแล้ว (แก้ตามที่เขาบอกไว้ในไฟล์แล้ว) — ถ้าจะแก้คำ ให้แก้ทั้งใน cards-list และ assets ที่นำเข้าไปแล้ว
 - ภาพซ้ำข้ามโฟลเดอร์ (การ์ดหลายสี): BS24-X03 อยู่ทั้งแดง/ขาว (นำเข้าครั้งเดียวกับแดงแล้ว) · BS24-088 อยู่ทั้งขาว/ม่วง (นำเข้ากับขาวแล้ว: **ไม่มีในไฟล์ ม่วง.text** อยู่แล้ว)
 
@@ -20,6 +20,7 @@
 | BSC02 | BSC16 (42) | ✅ (54.0.0 · ชุด bsc02: data/bsc02-scripts.ts + loadBSC02Cards) |
 | BS16 | BS25 แดง (14) + ขาว (17) + ม่วง (15) | แดง ✅ ขาว ✅ ม่วง ✅ (55.0.0 · ครบ 46 ใบ) |
 | BS17 | BS25 เขียว (14) + เหลือง (14) + ฟ้า (17) | เขียว ✅ เหลือง ✅ ฟ้า ✅ (56.0.0 · ครบ 45 ใบ) |
+| BSC03 | BSC17 (18 อัลติเมททุกสี) | ✅ (57.0.0 · ชุด bsc03: data/bsc03-scripts.ts + loadBSC03Cards · ถอดจากภาพเอง: `cards-list/BSC17.text`) |
 
 **การ์ด BSC = ชุดในเกมแยกชื่อ "BSC01, BSC02, …"** (เจ้าของโปรเจกต์กำหนด ไม่ใช้ BS16) · BSC15 = BSC01, BSC16 = BSC02 (แยกสองชุด) ·
 `BOOSTER_SETS` (bot-helpers.ts) และแบนเนอร์ชุดล่าสุด (`useLatestBoosters` ใน Home.tsx) รับ `/^BSC?\d+$/` แล้ว (แบนเนอร์เรียงตามลำดับใน `loadAllCards()` = ชุดที่เพิ่มทีหลังอยู่บน)
@@ -74,7 +75,7 @@
 
 覚醒 = Evolution · 激突 = Rage · 重装甲 = Heavy Shield · 呪滅撃 = Destructive Curse · 新生 (BS24) = ร่างคืนจุติ (BS33/34 ใช้ "รุ่นใหม่" ตามเดิม) ·
 滅龍 = มังกรล้างสังหาร · 武装 = อาวุธ · 動器 = จักรกลมีชีวิต · 空魚 = ปลาบิน · 怪虫 = ปรสิต · 無魔 = ผีอมตะ · 冥主 = เจ้านรก · 遊精 = หมู่ภมร ·
-「バトルした時」 = "เมื่อ…โจมตี/ป้องกัน" (ไม่ใช้ "เมื่อ…ต่อสู้" เจ้าของโปรเจกต์กำหนด) · 星竜 = มังกรดวงดาว (เดิม มังกรดารา) · 護将 = ผู้พิทักษ์ · 神星 = เทพดวงดาว · 戦騎 = นักรบ · 調査員 = นักวิจัย · 戦獣 = สมิงสงคราม · 闘神 = วิญญาณนักรบ · 天霊 = คนธรรพ์ · 皇獣 = เจ้าสมิง · 古竜 = มังกรโบราณ · 地竜 = มังกรดิน · 歌鳥 = วิหคสังคีต · 漂精 = ภูตพเนจร · ペンタン = เพนต้น · ฟงนีน่า · โอเซโร เผ่า เจ้านรก/เงามาร
+翼竜 = มังกรบิน · 戦竜 = มังกรศึก (คนละเผ่ากับ มังกรยุทธ์ ของยุคเซ็นโงคุ BS31–34) · 「バトルした時」 = "เมื่อ…โจมตี/ป้องกัน" (ไม่ใช้ "เมื่อ…ต่อสู้" เจ้าของโปรเจกต์กำหนด) · 星竜 = มังกรดวงดาว (เดิม มังกรดารา) · 護将 = ผู้พิทักษ์ · 神星 = เทพดวงดาว · 戦騎 = นักรบ · 調査員 = นักวิจัย · 戦獣 = สมิงสงคราม · 闘神 = วิญญาณนักรบ · 天霊 = คนธรรพ์ · 皇獣 = เจ้าสมิง · 古竜 = มังกรโบราณ · 地竜 = มังกรดิน · 歌鳥 = วิหคสังคีต · 漂精 = ภูตพเนจร · ペンタン = เพนต้น · ฟงนีน่า · โอเซโร เผ่า เจ้านรก/เงามาร
 
 ## กลไกที่เพิ่มแล้วระหว่างงานนี้ (BS16 แดง)
 
@@ -112,3 +113,10 @@
 - `replaceDestroy.destroySource` / `.ownToo` (อาร์ชิบอลด์: แทนการถูกทำลายที่เราทำเอง · ถูกทำลายแต่อยู่ต่อ = trigger ถูกทำลายยังทำงาน) · ability `grantText` (คีย์เวิร์ดที่ได้รับ: ตัวกรอง textIncludes เห็นด้วย) · mill `count: subjectLevel`
 - step `bigMillLifeThisTurn` (`state.bigMillLife` ตรวจใน step mill) · `peekOneHandDestroy` (เลือกการ์ดในมือคู่แข่งแบบคว่ำ → destroyChosenOpponent maxCost) · trigger `oppLifeLost` (ใน queueLifeLostTriggers)
 - **ระวัง: `staticSources` ไม่ตรวจ `if` ของ ability** ความสามารถถาวรใหม่ที่มี `if` ต้องเรียก `conditionHolds` เอง
+
+## กลไกที่เพิ่มแล้วระหว่างงานนี้ (BSC03)
+
+- Double U Trigger = `uTrigger.double` (2 ใบ แต่ละใบฮิตได้: `item.uTriggerHits`) · "ต่อ U Trigger ที่ฮิต 1 ครั้ง" = CountPer `uTriggerHits` · Double Hit = เงื่อนไข `uTriggerHitsAtLeast` (ออร์แกนปีกทองคำไม่ถามกับ Double)
+- `ultimateSymbolsAlso` (เจ็มอัลติเมทถือเป็นสีอื่น: `ultimateAlsoColors` ใน cardGems / fieldSymbolsRaw / payableCost / ownGemColors / gemColorCount · ตัวกันวนซ้ำ `checkingUltAlso`) · `lv1CostZero` (`lv1CostZeroSource` ใน cardLevelRaw / summonMinCores / checkDepletion · `checkingLv1Zero`)
+- `noVoidGainBySpirits` (takeVoid: ต้นเหตุเป็นสปิริต/เบรฟ) · step `unblockableByUltimatesThisTurn` (`state.ultUnblockTurns` ใน blockersFor) · `catalyze.anyBurst` (เบิร์สที่ไม่ใช่โซลเบิร์ส) · `battleLifeIfBlocked.per` · `symbolThisTurn.color: ultimate`
+- ตัวแปลง: เงื่อนไขอัญเชิญ "สปิริตสีA/Bของเรา…" (สีใดสีหนึ่ง = anyOf) / "อัลติเมทของเรา…" / "สปิริตเผ่า [X] ของเรา…"

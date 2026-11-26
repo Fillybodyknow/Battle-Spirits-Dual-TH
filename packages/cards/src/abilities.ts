@@ -147,6 +147,8 @@ export type Condition =
   | { chosenIs: CardFilter }
   /** BS16 Critical Hit: การ์ดที่ U Trigger ของเอฟเฟกต์นี้เพิ่งวางที่แทรชตรงตัวกรอง (ตรวจใน holds ของ effects.ts ใช้ซ้อนใน all/not ไม่ได้) */
   | { uTriggerCard: CardFilter }
+  /** BSC03 Double Hit: Double U Trigger ของเอฟเฟกต์นี้ฮิตตั้งแต่ N ครั้ง */
+  | { uTriggerHitsAtLeast: number }
   /** ยังไม่เคยใช้ "เกมละ 1 ครั้ง" ชื่อนี้ (ของผู้เล่นเจ้าของการ์ด) */
   | { oncePerGameFree: string }
   // ---------------- BS13
@@ -201,6 +203,8 @@ export interface CountPer {
   burstKills?: true;
   /** BS12 โดจิ ห้ามงคล: การ์ดที่ mill ล่าสุดของเอฟเฟกต์นี้ทิ้งไป ที่ตรงตัวกรอง */
   milledByThis?: CardFilter;
+  /** BSC03 Double U Trigger: จำนวนครั้งที่ฮิต */
+  uTriggerHits?: true;
   /** BS14 U Trigger: คอสต์ของการ์ดที่ถูกวางที่แทรช (ต่อคอสต์ 1) */
   uTriggerCost?: true;
   /** BS14: จำนวนเจ็มของสปิริตนี้ (รวมเจ็มที่ได้รับเพิ่ม) */
@@ -706,6 +710,8 @@ export type Step =
   | { do: 'noMillThisTurn' }
   /** BS17 ออริฮาลคอน โกเล็ม Critical Hit: ในเทิร์นนี้ เมื่อเด็คคู่แข่งถูกทิ้งตั้งแต่ min ใบในครั้งเดียว ส่งคอร์จากไลฟ์คู่แข่ง 1 เม็ดไปรีเสิร์ฟ */
   | { do: 'bigMillLifeThisTurn'; min: number }
+  /** BSC03 ทามาโมโนะอิน: ในเทิร์นนี้ การ์ดของเราที่ตรงตัวกรองทั้งหมด จะไม่ถูกป้องกันโดยอัลติเมทของคู่แข่ง */
+  | { do: 'unblockableByUltimatesThisTurn'; filter: CardFilter }
   /** BS17 แรนดอมบอมบ์: ดูการ์ดในมือคู่แข่ง 1 ใบ (เลือกคว่ำหน้า) แล้วทำลายการ์ดคู่แข่งที่ตรงตัวกรองที่มีคอสต์ไม่เกินคอสต์ของการ์ดนั้น 1 ตัว */
   | { do: 'peekOneHandDestroy'; filter: CardFilter }
   /** BS17 ออร์แกนปีกทองคำ: นำใบบนสุดเด็คเรา ไม่เกิน max ใบ ไปวางคว่ำใต้การ์ดนี้ (n: engine ใช้ภายใน = จำนวนที่เลือก) */
@@ -721,7 +727,7 @@ export type Step =
    */
   | { do: 'setBurstFromHand'; then?: Step[]; /** "ในมือ/นอกมือ" */ withShown?: true }
   /** [Catalyze]: สั่งใช้ Soul Burst สีนี้ของเราที่เซ็ทอยู่ (ไม่ต้องรอเงื่อนไข) */
-  | { do: 'catalyze'; /** ไม่ระบุ = ทุกสี */ color?: Color; /** BS10: สีใดสีหนึ่งในนี้ */ colors?: Color[]; /** BS10 มิโคโตะ: เอฟเฟกต์เลือกเป้า 1 ตัวของเบิร์สนั้น = ทั้งหมดแทน */ allTargets?: true; /** "หลังจากเบิร์สนั้นถูกสั่งใช้": ทำต่อหลังเบิร์สทำงานจบ (subject = เบิร์สนั้น) */ then?: Step[]; /** BS11 สุโอว: เบิร์สที่ชื่อมีคำเหล่านี้ ไลฟ์เราถือว่าเป็น life */ lifeAs?: { names: string[]; life: number }; /** BS12 มิสึรุกิ: นับสปิริตของคู่แข่งที่เบิร์สนั้นทำลาย/ทำให้สูญสลาย ให้ then ใช้ (CountPer burstKills) */ countKills?: true; /** (ภายใน) 2VS2: ใช้เบิร์สของที่นั่งนี้ในทีม (เราเลือกใช้เบิร์สของเพื่อนได้) */ burstSeat?: 0 | 1 }
+  | { do: 'catalyze'; /** BSC03 บาเซล: เบิร์สใดก็ได้ (ไม่ต้องเป็นโซลเบิร์ส) */ anyBurst?: true; /** ไม่ระบุ = ทุกสี */ color?: Color; /** BS10: สีใดสีหนึ่งในนี้ */ colors?: Color[]; /** BS10 มิโคโตะ: เอฟเฟกต์เลือกเป้า 1 ตัวของเบิร์สนั้น = ทั้งหมดแทน */ allTargets?: true; /** "หลังจากเบิร์สนั้นถูกสั่งใช้": ทำต่อหลังเบิร์สทำงานจบ (subject = เบิร์สนั้น) */ then?: Step[]; /** BS11 สุโอว: เบิร์สที่ชื่อมีคำเหล่านี้ ไลฟ์เราถือว่าเป็น life */ lifeAs?: { names: string[]; life: number }; /** BS12 มิสึรุกิ: นับสปิริตของคู่แข่งที่เบิร์สนั้นทำลาย/ทำให้สูญสลาย ให้ then ใช้ (CountPer burstKills) */ countKills?: true; /** (ภายใน) 2VS2: ใช้เบิร์สของที่นั่งนี้ในทีม (เราเลือกใช้เบิร์สของเพื่อนได้) */ burstSeat?: 0 | 1 }
   /** (engine ใช้ภายใน) ไล่วางการ์ดที่เหลือไว้ใต้สุดเด็คตามลำดับที่เลือก */
   | { do: 'toDeckBottom'; cardIds: string[] }
   /** (engine ใช้ภายใน) การ์ดที่แสดง (ยังอยู่บนสุดเด็ค) เรียงลำดับใหม่บนสุดเด็ค: ใบที่เลือกทีหลังอยู่บนกว่า */
@@ -871,7 +877,7 @@ export type Step =
   /** นำสปิริตคู่แข่งกี่ตัวก็ได้ BP รวมไม่เกิน maxTotal กลับขึ้นมือ / ทำลาย */
   | { do: 'opponentTotalBp'; maxTotal: number; action: 'bounce' | 'destroy'; used?: number; /** (engine ใช้ภายใน) เลือกครบแล้ว ไม่ถามต่อ */ final?: true; /** BS12: รวมคอสต์ (บนสนาม) แทน BP */ metric?: 'cost'; /** BS12: ตัวกรองเป้า (ไม่ระบุ = สปิริต/อัลติเมท) */ filter?: CardFilter; /** (engine ใช้ภายใน) บวกขอบเขตจาก [เอฟเฟกต์ทำลาย BP] แล้ว */ boosted?: true }
   /** ในเทิร์นนี้ สปิริตนี้เจ็มสี color เพิ่ม count เม็ด */
-  | { do: 'symbolThisTurn'; color: Color; count: number; per?: CountPer; /** มีผลจนจบการต่อสู้นั้น */ untilBattleEnd?: true }
+  | { do: 'symbolThisTurn'; color: Color | /** BSC03 เรย์-ซอเลอร์ */ 'ultimate'; count: number; per?: CountPer; /** มีผลจนจบการต่อสู้นั้น */ untilBattleEnd?: true }
   /** ทำให้เอฟเฟกต์ของการ์ดเมจิคต้นเหตุ (subject) ไร้ผล */
   | { do: 'negateSubjectMagic' }
   /** (มาคินะ) เลือกสปิริต/เบรฟบนสนาม 1 ตัว (ทั้งสองฝ่าย): เอฟเฟกต์ไร้ผล แล้วนำกลับไปไว้ใต้สุดเด็คเจ้าของ */
@@ -916,6 +922,8 @@ export type Step =
   | {
       do: 'battleLifeIfBlocked';
       amount: number;
+      /** BSC03 ซอร์ดมาสเตอร์: amount × จำนวนนี้ */
+      per?: CountPer;
       /** BS08 เฟลมมังกรคลั่ง: ผู้โจมตีต้องมีโซลคอร์ */
       soulAttacker?: true;
       /** ผู้ป้องกันต้องตรงตัวกรอง (BS14 "ถูกสปิริตป้องกัน" / BS16 เอ็กซ์-คาลิบัส: สปิริต BP ไม่เกิน 6000) */
@@ -1124,7 +1132,7 @@ export type Step =
    * U Trigger (กติกา 05 ข้อ 4): นำการ์ดใบบนสุดเด็คคู่แข่ง 1 ใบไปวางที่แทรช (ไม่ใช่ [เอฟเฟกต์ทิ้งเด็ค])
    * คอสต์ของการ์ดนั้นต่ำกว่าคอสต์ของอัลติเมทนี้ (บนสนาม) = ฮิต → ทำ then (CountPer uTriggerCost = คอสต์ของการ์ดที่วาง)
    */
-  | { do: 'uTrigger'; then: Step[]; /** BS16 เบลิท: U Trigger ตอนอัลติเมทนี้ถูกทำลาย (ไม่อยู่บนสนามแล้ว: เทียบกับคอสต์บนการ์ด) */ fromTrash?: true; /** (engine ใช้ภายใน) 2VS2: เลือกเด็คของคู่แข่งแล้ว (then ทำหลังคืนที่นั่งคู่แข่ง) */ seatPicked?: true; /** (engine ใช้ภายใน) BS17 ออร์แกนปีกทองคำ: วางที่แทรชแล้ว รอตัดสินฮิต */ milledId?: string }
+  | { do: 'uTrigger'; then: Step[]; /** BS16 เบลิท: U Trigger ตอนอัลติเมทนี้ถูกทำลาย (ไม่อยู่บนสนามแล้ว: เทียบกับคอสต์บนการ์ด) */ fromTrash?: true; /** (engine ใช้ภายใน) 2VS2: เลือกเด็คของคู่แข่งแล้ว (then ทำหลังคืนที่นั่งคู่แข่ง) */ seatPicked?: true; /** (engine ใช้ภายใน) BS17 ออร์แกนปีกทองคำ: วางที่แทรชแล้ว รอตัดสินฮิต */ milledId?: string; /** BSC03 Double U Trigger: วางใบบนสุด 2 ใบ แต่ละใบที่คอสต์ต่ำกว่า = ฮิต (item.uTriggerHits) */ double?: true }
   /** "หลังจบเทิร์นนี้ เราได้เล่นเทิร์นของเราอีก 1 เทิร์น" · key = เกมละ 1 ครั้ง (เงื่อนไข oncePerGameFree) */
   | { do: 'extraTurn'; key?: string }
   /** "ในเอฟเฟกต์นี้ คู่แข่งไม่สามารถสั่งใช้เบิร์ส 'หลังจากสปิริตของเราถูกทำลายโดยคู่แข่ง'" (เฟลมบรีซ) */
@@ -1751,6 +1759,12 @@ export type Ability =
   | { kind: 'maxLevelAllies'; source: number; levels: number[]; filter: CardFilter; ownAttackStepOnly?: true }
   /** การ์ดในแทรชของผู้เล่นทุกคนไม่รับผลเอฟเฟกต์อื่นและใช้เอฟเฟกต์ของการ์ดนั้นไม่ได้ (เมียวโอสยบมาร) */
   | { kind: 'trashLock'; source: number; levels: number[] }
+  /** BSC03 เบรดร้า: เจ็มอัลติเมททั้งหมดของเรา ถือว่าเป็นเจ็มสีเหล่านี้ด้วย */
+  | { kind: 'ultimateSymbolsAlso'; source: number; levels: number[]; if?: Condition; colors: Color[] }
+  /** BSC03 ดอน ดิเอกอด: ผู้เล่นทุกคนเพิ่มคอร์จากวอยด์ด้วยเอฟเฟกต์ของสปิริตไม่ได้ */
+  | { kind: 'noVoidGainBySpirits'; source: number; levels: number[] }
+  /** BSC03 กิ-กาชา: คอสต์ Lv1 ของการ์ดของเราที่ตรงตัวกรองเป็น 0 (ไม่ถูกเปลี่ยนด้วยเอฟเฟกต์อื่น) */
+  | { kind: 'lv1CostZero'; source: number; levels: number[]; filter: CardFilter }
   /** คู่แข่งนำการ์ดในแทรชกลับขึ้นมือไม่ได้ */
   | { kind: 'opponentNoTrashReturn'; source: number; levels: number[] }
   /** แอทแท็คสเต็ปของผู้เล่นทุกคน: สปิริต/อัลติเมทที่มีคอร์ 1 เม็ดโจมตี/ป้องกันไม่ได้ */

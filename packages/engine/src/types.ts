@@ -318,6 +318,8 @@ export interface QueuedEffect {
   shownCount?: number;
   /** BS16 Critical Hit: การ์ดที่ U Trigger ของเอฟเฟกต์นี้วางที่แทรช */
   uTriggerCardId?: string;
+  /** BSC03 Double U Trigger: จำนวนครั้งที่ฮิต */
+  uTriggerHits?: number;
   /** BS16 เบรฟครีเมชัน: เบรฟของสปิริตที่เอฟเฟกต์นี้ทำลายล่าสุด */
   destroyedBraves?: string[];
   /** (BS07) trigger summon: การ์ดถูกอัญเชิญโดย On Stage / โดยเอฟเฟกต์ของการ์ดนี้ */
@@ -503,6 +505,8 @@ export interface GameState {
   noMillTurns?: { player: PlayerId; turn: number; cardId: string; source: number }[];
   /** BS17 ออริฮาลคอน โกเล็ม: ในเทิร์นนี้ เมื่อ player ทิ้งเด็คคู่แข่งตั้งแต่ min ใบในครั้งเดียว = ไลฟ์คู่แข่ง 1 เม็ดไปรีเสิร์ฟ */
   bigMillLife?: { player: PlayerId; turn: number; min: number; sourceId: string }[];
+  /** BSC03 ทามาโมโนะอิน: ในเทิร์นนี้ การ์ดของ player ที่ตรงตัวกรองไม่ถูกป้องกันโดยอัลติเมท */
+  ultUnblockTurns?: { player: PlayerId; turn: number; filter: CardFilter }[];
   /** (สำรอง) การ์ดที่ U Trigger กำลังเปิด ถือว่าคอสต์ +N */
   uTriggerExtraCost?: { cardId: string; amount: number };
   /** "ในเทิร์นนี้ สปิริต/เน็กซัสของคู่แข่งทั้งหมดสูญเสียเอฟเฟกต์ทั้งหมด": การ์ดของ player เสียเอฟเฟกต์ในเทิร์น turn */
@@ -778,6 +782,8 @@ export type GameEvent =
   | { type: 'soulDrive'; cardId: string }
   /** BS14 U Trigger: เปิดการ์ด revealedId (คอสต์ cost) จากเด็คคู่แข่งไปแทรช · hit = คอสต์ต่ำกว่าอัลติเมท */
   | { type: 'uTrigger'; cardId: string; revealedId: string; cost: number; hit: boolean }
+  /** Critical Hit / Double Hit ของ U Trigger ทำงาน (หน้าเว็บแสดงป้ายในฉาก U Trigger) */
+  | { type: 'uTriggerBonus'; cardId: string; bonus: 'critical' | 'double' }
   /** BS14: ได้เล่นเทิร์นของตัวเองอีก 1 เทิร์น */
   | { type: 'extraTurn'; player: PlayerId; cardId: string };
 

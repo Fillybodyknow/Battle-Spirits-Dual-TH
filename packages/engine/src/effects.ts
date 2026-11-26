@@ -1413,6 +1413,7 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
     }
     // BS14 จัดจ์เมนต์คอล: การ์ดที่เอฟเฟกต์นี้เพิ่งเลือก (นำขึ้นมือ) ตรงตัวกรอง
     if (cond && 'chosenIs' in cond) return !!item.chosenId && !!s.cards[item.chosenId] && matchesFilter(s, db, item.chosenId, cond.chosenIs);
+    if (cond && 'uTriggerHitsAtLeast' in cond) return (item.uTriggerHits ?? 0) >= cond.uTriggerHitsAtLeast;
     if (cond && 'uTriggerCard' in cond) return !!item.uTriggerCardId && matchesFilter(s, db, item.uTriggerCardId, cond.uTriggerCard);
     if (cond && 'subjectIs' in cond) return !!item.subjectId && !!s.cards[item.subjectId] && matchesFilter(s, db, item.subjectId, cond.subjectIs);
     if (cond && 'lifeLostByOpponentEffect' in cond) return !!item.lifeLostByEffect;
@@ -1480,7 +1481,7 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
     if (k <= 0) return;
     const { per: _p, ...rest } = step;
     const scaled = (
-      rest.do === 'buffSelf' ? { ...rest, amount: rest.amount * k } : rest.do === 'summonFromHandFree' ? { ...rest, max: (rest.max ?? 1) * k } : { ...rest, count: ((rest as { count?: number }).count ?? 1) * k }
+      rest.do === 'buffSelf' || rest.do === 'battleLifeIfBlocked' ? { ...rest, amount: rest.amount * k } : rest.do === 'summonFromHandFree' ? { ...rest, max: (rest.max ?? 1) * k } : { ...rest, count: ((rest as { count?: number }).count ?? 1) * k }
     ) as Step;
     item.steps.unshift(scaled);
     return;
@@ -2448,6 +2449,10 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       return;
     }
 
+    case 'unblockableByUltimatesThisTurn':
+      s.ultUnblockTurns = [...(s.ultUnblockTurns ?? []).filter((t) => t.turn === s.turn), { player: me, turn: s.turn, filter: step.filter }];
+      return;
+
     case 'bigMillLifeThisTurn':
       s.bigMillLife = [...(s.bigMillLife ?? []).filter((b) => b.turn === s.turn), { player: me, turn: s.turn, min: step.min, sourceId: self }];
       return;
@@ -2513,7 +2518,7 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
         if (!id) return false;
         const d = db.get(s.cards[id]!.cardNo);
         const b = d.abilities.find((x) => x.kind === 'burst');
-        return !!b && b.kind === 'burst' && !!b.soul && !(step.color && !d.colors.includes(step.color)) && !(step.colors && !step.colors.some((c) => d.colors.includes(c)));
+        return !!b && b.kind === 'burst' && (!!b.soul || !!step.anyBurst) && !(step.color && !d.colors.includes(step.color)) && !(step.colors && !step.colors.some((c) => d.colors.includes(c)));
       };
       // 2VS2: สั่งใช้เบิร์สของเพื่อนร่วมทีมได้ (เจ้าของโปรเจกต์กำหนด) · ใช้ได้ทั้งสองใบ = เลือก
       if (step.burstSeat === undefined && s.players[me].partner) {
@@ -4560,9 +4565,14 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       if (s.battle && s.cards[s.battle.attackerId]?.owner === me) s.battle.levelUnblock = me;
       return;
 
-    case 'when':
-      item.steps.unshift(...(holds(step.if) ? step.steps : (step.else ?? [])));
+    case 'when': {
+      const ok = holds(step.if);
+      // Critical Hit / Double Hit: แจ้งหน้าเว็บ (ไม่กระทบ state)
+      if (ok && step.if && 'uTriggerCard' in step.if) emit(ctx, { type: 'uTriggerBonus', cardId: self, bonus: 'critical' });
+      if (ok && step.if && 'uTriggerHitsAtLeast' in step.if) emit(ctx, { type: 'uTriggerBonus', cardId: self, bonus: 'double' });
+      item.steps.unshift(...(ok ? step.steps : (step.else ?? [])));
       return;
+    }
 
     case 'chooseBattleBlocker': {
       const b = s.battle;
@@ -4813,6 +4823,44 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
     case 'uTrigger': {
       // กติกา 05 ข้อ 4: เปิดใบบนสุดเด็คคู่แข่งไปแทรช (ไม่ใช่การทิ้งเด็ค: noMill / millCap กันไม่ได้)
       const oppP = s.players[opp];
+      // BSC03 Double U Trigger: ใบบนสุด 2 ใบ แต่ละใบที่คอสต์ต่ำกว่าอัลติเมทนี้ = ฮิต 1 ครั้ง (then ทำครั้งเดียว ใช้ CountPer uTriggerHits / เงื่อนไข uTriggerHitsAtLeast)
+      if (step.double) {
+        if (!step.fromTrash && !onField(ctx, self)) return;
+        const tops = oppP.deck.splice(0, 2);
+        if (tops.length === 0) return;
+        for (const t of tops) ownerZones(s, t).trashCards.push(t);
+        const selfCost2 = onField(ctx, self) ? fieldCost(s, db, self) : db.get(s.cards[self]!.cardNo).cost;
+        emit(ctx, { type: 'milled', player: opp, cardIds: tops });
+        let hits = 0;
+        for (const t of tops) {
+          let c = db.get(s.cards[t]!.cardNo).cost;
+          for (const src of staticSources(s, db, [s.cards[t]!.owner], 'uTriggerCostBoost')) {
+            const a = db.get(s.cards[src.cardId]!.cardNo).abilities.find((x) => x.kind === 'uTriggerCostBoost' && x.source === src.source);
+            if (a?.kind !== 'uTriggerCostBoost' || !conditionHolds(s, src.cardId, a.if, false, false, db) || !matchesFilter(s, db, t, a.filter)) continue;
+            c += a.amount;
+            emitStatic(ctx, src);
+          }
+          const g = db.get(s.cards[t]!.cardNo).abilities.find((a) => a.kind === 'uTriggerGuard');
+          const guarded = g?.kind === 'uTriggerGuard' && selfCost2 <= g.maxCost;
+          if (guarded) emitStatic(ctx, { cardId: t, source: g.source });
+          const h = !guarded && c < selfCost2;
+          if (h) {
+            hits++;
+            item.uTriggerCardId ??= t;
+          }
+          emit(ctx, { type: 'uTrigger', cardId: self, revealedId: t, cost: c, hit: h });
+          queueRightAfterCurrent(ctx, () => queueTriggers(ctx, t, 'uTriggeredByOpponent', newBatch(ctx)));
+        }
+        item.uTriggerHits = hits;
+        if (hits > 0) {
+          const back = step.seatPicked ? item.steps.findIndex((x) => x.do === 'oppSeat' && x.seat === null) : -1;
+          if (back >= 0) item.steps.splice(back + 1, 0, ...step.then);
+          else item.steps.unshift(...step.then);
+          const batch = newBatch(ctx);
+          for (const id of [...s.players[me].field]) queueTriggers(ctx, id, 'allyUTriggerHit', batch, { subject: self });
+        }
+        return;
+      }
       const top = step.milledId ?? oppP.deck[0];
       if (!top || (!step.fromTrash && !onField(ctx, self))) return;
       if (!step.milledId) {
@@ -5062,6 +5110,15 @@ function addVoidCores(ctx: Ctx, player: PlayerId, cardId: string, count: number)
 function takeVoid(ctx: Ctx, player: PlayerId, count: number): string[] {
   const { s, db } = ctx;
   if (count > 0 && gainLocked(ctx, s.queue[0]?.sourceId)) return [];
+  // BSC03 ดอน ดิเอกอด: เพิ่มคอร์จากวอยด์ด้วยเอฟเฟกต์ของสปิริตไม่ได้ (ผู้เล่นทุกคน)
+  if (count > 0) {
+    const src = s.queue[0]?.sourceId ? s.cards[s.queue[0]!.sourceId] : undefined;
+    const lock = src && ['spirit', 'brave'].includes(db.get(src.cardNo).type) ? staticSources(s, db, PLAYERS, 'noVoidGainBySpirits')[0] : undefined;
+    if (lock) {
+      emitStatic(ctx, lock);
+      return [];
+    }
+  }
   if (count > 0 && stealVoid(ctx, player, count)) return [];
   if (!voidFromLife(s, db)) {
     if (count > 0) s.voidGained = { ...(s.voidGained ?? {}), [player]: (s.voidGained?.[player] ?? 0) + count };
@@ -5265,6 +5322,7 @@ function countPer(ctx: Ctx, item: QueuedEffect, per: CountPer): number {
   else if (per.milledByThis) n = (item.milled ?? []).filter((id) => matchesFilter(s, db, id, per.milledByThis!)).length;
   // ---------------- BS14
   else if (per.uTriggerCost) n = item.uTriggerCost ?? 0;
+  else if (per.uTriggerHits) n = item.uTriggerHits ?? 0;
   else if (per.refreshedByThis) n = (item.refreshedByThis ?? []).length;
   else if (per.shownByThis) n = item.shownCount ?? 0;
   else if (per.selfCores) n = s.players[s.cards[self]!.owner].field.includes(self) ? s.cards[self]!.cores.length : 0;
