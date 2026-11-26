@@ -67,7 +67,7 @@ const topOfP2 = (s: GameState, cardNo: string) => {
 describe('Booster Set 14', () => {
   it('การ์ดทุกใบผูกสคริปต์ได้ และทุกบรรทัดมีสคริปต์', () => {
     const cards = loadBS14Cards().all();
-    expect(cards).toHaveLength(41);
+    expect(cards).toHaveLength(60);
     for (const c of cards) {
       const covered = new Set(c.abilities.map((a) => a.source));
       c.effects.forEach((_, i) => expect(covered.has(i), `${c.name} บรรทัด ${i + 1}`).toBe(true));
@@ -236,6 +236,162 @@ describe('Booster Set 14 (ไม่แสดงผลซ้ำซ้อน)', ()
       s = choose(s, (s.choice as { candidates: string[] }).candidates[0]!);
     }
     expect(discards).toBe(1);
+    expect(s.players.p1.hand.length).toBe(hand);
+  });
+});
+
+describe('Booster Set 14 (ม่วง)', () => {
+  const GARGOYLE = no('เคิร์สการ์กอยล์');
+  const MEDOOK = no('สามผู้ยิ่งใหญ่แห่งยมโลก ควีน เมดูค');
+  const SNAKE = no('เธิร์ดอายส์ สเนก');
+  const USAGI = no('แก๊สอุซางิ');
+  const DESPERADO = no('อัลติเมท เดสเปราโด');
+  const QUETZ = no('อัลติเมท เควตซัลโคอาตล์');
+  const TSUJIGU = no('สึจิกุดีมอน');
+  const BATNIGHT = no('แบทไนท์');
+  const ZIAS = no('หกเทพพิสุทธิ์ เจียส แห่งความอุดม'); // Lv3 BP 18000
+  /** ตอบตัวเลือกที่เหลือ: การ์ด = ตัวที่ต้องการ (ถ้ามี) ไม่งั้นใบแรก · ตัวเลือก = index ที่ให้ */
+  const settle = (s: GameState, want?: string, option = 0) => {
+    let x = passAll(s);
+    for (let i = 0; i < 12 && x.choice; i++) {
+      const c = x.choice;
+      if (c.kind === 'card') x = choose(x, want && c.candidates.includes(want) ? want : c.candidates[0]!);
+      else if (c.kind === 'option') x = choose(x, option);
+      else break;
+      x = passAll(x);
+    }
+    return x;
+  };
+  const inHand = (s: GameState, player: PlayerId, cardNo: string) => {
+    const id = card(s, player, cardNo);
+    s.players[player].hand.push(id);
+    return id;
+  };
+
+  it('Curse: เมื่อจบการต่อสู้ ทำลายสปิริตของคู่แข่งที่ป้องกันอยู่ตอนตัดสินผล (แม้ผู้โจมตีแพ้)', () => {
+    let s = setup();
+    const g = put(s, 'p1', GARGOYLE, 1); // BP 3000
+    const blocker = put(s, 'p2', ZIAS, 7); // BP 18000
+    s = passAll(attack(s, g));
+    s = act(s, { type: 'declareBlock', player: 'p2', blockerId: blocker });
+    s = settle(s, blocker);
+    expect(s.players.p1.field).not.toContain(g);
+    expect(s.players.p2.field).not.toContain(blocker);
+  });
+
+  it('ควีน เมดูค: ถูกทำลายโดยคู่แข่ง → ส่งไลฟ์คู่แข่ง 1 เม็ดไปแทรช อยู่ต่อแบบฟื้นสภาพ', () => {
+    let s = setup();
+    const m = put(s, 'p1', MEDOOK, 1); // BP 6000
+    const blocker = put(s, 'p2', ZIAS, 7);
+    const life = s.players.p2.life.length;
+    const trash = s.players.p2.trashCores.length;
+    s = passAll(attack(s, m));
+    s = act(s, { type: 'declareBlock', player: 'p2', blockerId: blocker });
+    s = settle(s, blocker, 0);
+    expect(s.players.p1.field).toContain(m);
+    expect(s.cards[m]!.state).toBe('refresh');
+    expect(s.players.p2.life.length).toBe(life - 1);
+    expect(s.players.p2.trashCores.length).toBe(trash + 1);
+  });
+
+  it('ควีน เมดูค Lv2: สปิริตที่มี Destructive Curse ทำให้ไลฟ์คู่แข่งลด = คอร์ไลฟ์ไปวอยด์', () => {
+    let s = setup();
+    const m = put(s, 'p1', MEDOOK, 3);
+    const life = s.players.p2.life.length;
+    const reserve = s.players.p2.reserve.length;
+    s = passAll(attack(s, m));
+    s = act(s, { type: 'noBlock', player: 'p2' });
+    s = settle(s);
+    expect(s.players.p2.life.length).toBe(life - 1);
+    expect(s.players.p2.reserve.length).toBe(reserve);
+  });
+
+  it('เธิร์ดอายส์ สเนก: คอร์ที่คู่แข่งได้จากวอยด์โดยเอฟเฟกต์ มาวางบนสปิริตนี้แทน', () => {
+    let s = setup();
+    const snake = put(s, 'p2', SNAKE, 1);
+    const reserve = s.players.p1.reserve.length;
+    const src = card(s, 'p1', DARIU);
+    s.queue = [{ controller: 'p1', sourceId: src, steps: [{ do: 'voidCore', to: 'reserve', count: 2 }], paidWithSoul: false, trashWhenDone: false }];
+    s = act(s, { type: 'endMain', player: 'p1' });
+    expect(s.players.p1.reserve.length).toBe(reserve);
+    expect(s.cards[snake]!.cores).toHaveLength(3);
+  });
+
+  it('แก๊สอุซางิ: ทิ้งการ์ดนอกมือของคู่แข่ง 1 ใบต่อสปิริต/อัลติเมทของเรา', () => {
+    let s = setup();
+    put(s, 'p1', DARIU, 1);
+    const shown = [inHand(s, 'p2', DARIU), inHand(s, 'p2', DARIU), inHand(s, 'p2', DARIU)];
+    s.shownCards = [...shown];
+    const u = inHand(s, 'p1', USAGI);
+    const res = s.players.p1.reserve.filter((id) => !s.cores[id]!.isSoul);
+    s = settle(act(s, { type: 'summon', player: 'p1', cardId: u, payment: res.slice(0, 1), placement: res.slice(1, 2) }));
+    expect(shown.filter((id) => s.players.p2.trashCards.includes(id))).toHaveLength(2);
+    expect(s.shownCards).toHaveLength(1);
+  });
+
+  it('สึจิกุดีมอน: เมนสเต็ปของเรา การ์ดสปิริตที่มี Destructive Curse ในมือคอสต์ -1', async () => {
+    const { baseCost } = await import('../src');
+    const s = setup();
+    const m = inHand(s, 'p1', MEDOOK);
+    expect(baseCost(s, db, m)).toBe(8);
+    put(s, 'p1', TSUJIGU, 1);
+    expect(baseCost(s, db, m)).toBe(7);
+  });
+
+  it('เดสเปราโด Lv4: แอทแท็คสเต็ปของเรา BP+1000 ต่อคอร์ในรีเสิร์ฟ/แทรชของคู่แข่ง', async () => {
+    const { currentBp } = await import('../src');
+    const s = setup();
+    const d = put(s, 'p1', DESPERADO, 3);
+    expect(currentBp(s, db, d)).toBe(16000);
+    s.phase = 'attack';
+    const pile = s.players.p2.reserve.length + s.players.p2.trashCores.length;
+    expect(currentBp(s, db, d)).toBe(16000 + 1000 * pile);
+  });
+
+  it('เควตซัลโคอาตล์: สปิริตคู่แข่งสูญสลายโดยเอฟเฟกต์ถอดคอร์ของเรา → นำคอร์บนอัลติเมทไปไลฟ์', () => {
+    let s = setup();
+    const q = put(s, 'p1', QUETZ, 2);
+    put(s, 'p2', DARIU, 1);
+    const life = s.players.p1.life.length;
+    const src = card(s, 'p1', DARIU);
+    s.queue = [{ controller: 'p1', sourceId: src, steps: [{ do: 'removeOpponentCores', count: 1, filter: { types: ['spirit'] } }], paidWithSoul: false, trashWhenDone: false }];
+    s = settle(act(s, { type: 'endMain', player: 'p1' }));
+    expect(s.players.p1.life.length).toBe(life + 1);
+    expect(s.cards[q]!.cores).toHaveLength(1);
+  });
+
+  it('เควตซัลโคอาตล์: โซลคอร์ไปไลฟ์ไม่ได้ (อัลติเมทมีแต่โซลคอร์ = ไม่ถาม ไม่ย้าย)', () => {
+    let s = setup();
+    const q = put(s, 'p1', QUETZ, 1);
+    s.cores[s.cards[q]!.cores[0]!]!.isSoul = true;
+    put(s, 'p2', DARIU, 1);
+    const life = s.players.p1.life.length;
+    const src = card(s, 'p1', DARIU);
+    s.queue = [{ controller: 'p1', sourceId: src, steps: [{ do: 'removeOpponentCores', count: 1, filter: { types: ['spirit'] } }], paidWithSoul: false, trashWhenDone: false }];
+    s = act(s, { type: 'endMain', player: 'p1' });
+    if (s.choice?.kind === 'card') s = choose(s, s.choice.candidates[0]!);
+    // ไม่มีตัวเลือก "นำคอร์บนอัลติเมทไปไลฟ์"
+    expect(s.choice).toBeNull();
+    expect(s.players.p1.life.length).toBe(life);
+    expect(s.cards[q]!.cores).toHaveLength(1);
+  });
+
+  it('ดีมอนส์พัพเพ็ต: อัญเชิญเผ่ามารต้องสาปจากแทรช โดย "เมื่อถูกอัญเชิญ" ไม่ทำงาน', () => {
+    let s = setup();
+    // ชิคิงามิ โฮวริคิ: เผ่ามารต้องสาป คอสต์ 3 · เมื่อถูกอัญเชิญ = จั่วการ์ด
+    const b = card(s, 'p1', no('ชิคิงามิ โฮวริคิ'));
+    s.players.p1.trashCards.push(b);
+    const m = inHand(s, 'p1', no('ดีมอนส์พัพเพ็ต'));
+    const hand = s.players.p1.hand.length - 1;
+    const res = s.players.p1.reserve.filter((id) => !s.cores[id]!.isSoul);
+    s = act(s, { type: 'useMagic', player: 'p1', cardId: m, payment: res.slice(0, 4), timing: 'flash' });
+    for (let i = 0; i < 6 && s.choice; i++) {
+      const c = s.choice;
+      if (c.kind === 'card') s = choose(s, b);
+      else if (c.kind === 'placeCores') s = choose(s, { pay: s.players.p1.reserve.filter((id) => !s.cores[id]!.isSoul).slice(0, 1) } as never);
+      else s = choose(s, 0);
+    }
+    expect(s.players.p1.field).toContain(b);
     expect(s.players.p1.hand.length).toBe(hand);
   });
 });

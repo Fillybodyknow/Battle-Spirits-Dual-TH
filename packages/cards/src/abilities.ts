@@ -294,6 +294,8 @@ export interface CardFilter {
   minColors?: number;
   /** มีคอร์วางอยู่อย่างน้อย N เม็ด (เฉพาะบนสนาม) */
   minCores?: number;
+  /** BS14: มีคอร์ที่ไม่ใช่โซลคอร์วางอยู่อย่างน้อย N เม็ด (เฉพาะบนสนาม) */
+  minNormalCores?: number;
   // ---------------- BS11
   /** มีสปิริตอื่นของเจ้าของที่ตรงตัวกรองนี้และมีสีเดียวกันอย่างน้อย 1 สี (ตราแห่งเพลิงรบ) */
   sameColorAlly?: CardFilter;
@@ -305,6 +307,8 @@ export interface CardFilter {
   hasBraves?: true;
   /** BS14: เลเวลปัจจุบันไม่เกิน N (เฉพาะบนสนาม) */
   maxLevel?: number;
+  /** (engine ใช้ภายใน) เป็นการ์ดใบใดใบหนึ่งเหล่านี้ (Curse: ผู้ป้องกันตอนตัดสินผลการต่อสู้) */
+  onlyIds?: string[];
 }
 
 /** ปลายทางของ Core จากวอยด์ */
@@ -445,7 +449,7 @@ export type Step =
   /** "ในเทิร์นนี้ สปิริตเราทั้งหมด (ที่ตรงตัวกรอง) BP+": มีผลทั้งเทิร์น รวมตัวที่ลงสนามทีหลัง */
   | { do: 'buffAllies'; amount: number; filter?: CardFilter }
   /** อัญเชิญการ์ดในแทรชเราไม่จ่ายคอสต์ (เลือก ไม่อัญเชิญก็ได้) */
-  | { do: 'summonFromTrashFree'; filter: CardFilter }
+  | { do: 'summonFromTrashFree'; filter: CardFilter; /** BS14 ดีมอนส์พัพเพ็ต: เอฟเฟกต์ [เมื่อสปิริตนี้ถูกอัญเชิญ] ไม่ทำงาน */ noTriggers?: true }
   /** ทำลายสปิริต/อัลติเมทของคู่แข่งที่คอสต์สูงสุด 1 ตัว (คอสต์สูงสุดเท่ากันหลายตัว = เลือก) */
   | { do: 'destroyHighestCostOpponent'; filter: CardFilter }
   /** ทิ้งใบบนสุดเด็คคู่แข่ง N ใบ ('level' = เท่าเลเวลของสปิริตนี้: [Crush]) */
@@ -687,6 +691,8 @@ export type Step =
       taxPaid?: true;
       /** (engine ใช้ภายใน) ถามทิ้งเด็คลดคอสต์ (สิงโตควันม่วง) แล้ว */
       millAsked?: true;
+      /** เอฟเฟกต์ [เมื่อสปิริตนี้ถูกอัญเชิญ] ของการ์ดนี้ไม่ทำงาน */
+      noTriggers?: true;
     }
   /** (engine ใช้ภายใน) Brave ที่อัญเชิญด้วยเอฟเฟกต์: เลือกสปิริตที่จะร่วมร่าง หรือไม่เลือก = ลงเป็นสปิริต */
   | { do: 'braveOrSpirit'; cardId: string }
@@ -1020,7 +1026,14 @@ export type Step =
   /** "ในเอฟเฟกต์นี้ คู่แข่งไม่สามารถสั่งใช้เบิร์ส 'หลังจากสปิริตของเราถูกทำลายโดยคู่แข่ง'" (เฟลมบรีซ) */
   | { do: 'noDestroyBurstThisEffect' }
   /** นำเบรฟของสปิริตร่วมร่างของคู่แข่ง 1 ใบกลับขึ้นมือ / กลับไปไว้บนสุดเด็ค (optional = "สามารถ") */
-  | { do: 'bounceOpponentBrave'; to?: 'hand' | 'deckTop'; optional?: true };
+  | { do: 'bounceOpponentBrave'; to?: 'hand' | 'deckTop'; optional?: true }
+  // ---------------- BS14 ม่วง
+  /** Curse (เมื่อจบการต่อสู้): ทำลายสปิริตของคู่แข่งที่ป้องกันอยู่ตอนตัดสินผลการต่อสู้ 1 ตัว (ใช้ใน atBattleEnd) */
+  | { do: 'curseResolve' }
+  /** แก๊สอุซางิ: ทิ้งการ์ดที่วางแสดงนอกมือของคู่แข่ง count ใบ (เราเลือก) */
+  | { do: 'discardOpponentShown'; count: number; per?: CountPer }
+  /** เควตซัลโคอาตล์: นำคอร์ (ไม่ใช่โซลคอร์: โซลคอร์ไปไลฟ์ไม่ได้ถ้าเอฟเฟกต์ไม่ระบุ) บนการ์ดของเราที่ตรงตัวกรอง 1 เม็ด มาวางที่ไลฟ์ของเรา */
+  | { do: 'allyCoreToLife'; filter: CardFilter };
 
 /** ขอบเขตของ BP+ ถาวร */
 export type StaticScope =
@@ -1298,6 +1311,8 @@ export type Ability =
       life?: number;
       /** BS10 นาเดชิโกะ: กลับขึ้นมือแทนการถูกทำลาย */
       toHand?: true;
+      /** BS14 Destructive Curse (ควีน เมดูค): จ่ายด้วยการส่งคอร์ไลฟ์คู่แข่ง N เม็ดไปแทรชคู่แข่ง */
+      oppLife?: number;
       if?: Condition;
     }
   /** "ถ้าเรามี <name> อยู่, การลดคอสต์ทั้งหมดของการ์ดนี้ถือว่าลดจนครบแล้ว" */
@@ -1344,6 +1359,8 @@ export type Ability =
       perAllies?: CardFilter;
       /** BS11: BP+ × จำนวนสีเจ็มบนฟิลด์เรา */
       perGemColors?: true;
+      /** BS14 เดสเปราโด: BP+ × จำนวนคอร์ในรีเสิร์ฟ/แทรชของคู่แข่ง */
+      perOpponentPileCores?: true;
       /** เบรฟ: ผลที่ผู้ร่วมร่างได้รับ ("สปิริตนี้" = ผู้ร่วมร่าง) */
       granted?: true;
     }
@@ -1395,7 +1412,7 @@ export type Ability =
   /** "เน็กซัสทั้งหมดของคู่แข่งที่ไม่มีคำว่า ... ในชื่อจะสูญเสียเอฟเฟกต์ทั้งหมด" */
   | { kind: 'negateOpponentNexus'; source: number; levels: number[]; if?: Condition; unlessNamed: string[] }
   /** "แอทแท็คสเต็ปของเรา: การ์ดในมือเราที่ตรงตัวกรองทั้งหมดคอสต์ +delta" */
-  | { kind: 'handCostDelta'; source: number; levels: number[]; filter: CardFilter; delta: number; ownAttackStepOnly?: true }
+  | { kind: 'handCostDelta'; source: number; levels: number[]; filter: CardFilter; delta: number; ownAttackStepOnly?: true; /** BS14 สึจิกุดีมอน: เมนสเต็ปของเรา */ ownMainStepOnly?: true }
   /**
    * "แอทแท็คสเต็ปของคู่แข่ง: สปิริตของคู่แข่งที่ตรงตัวกรองทั้งหมด จะต้องโจมตีมาที่สปิริตนี้ ถ้าทำได้"
    * = คู่แข่งจบแอทแท็คสเต็ปไม่ได้ถ้าตัวที่ตรงยังโจมตีได้ · ตัวที่ตรงโจมตี → สปิริตนี้เข้าป้องกันเอง (ถ้าป้องกันได้)
@@ -1646,7 +1663,12 @@ export type Ability =
   /** ดรากุ-แม็กนา: เจ็มของการ์ดของเราที่ตรงตัวกรองทั้งหมดกลายเป็นเจ็มสี color จำนวน count เม็ด (แทนเจ็มทั้งหมดรวมเบรฟ) */
   | { kind: 'symbolOverrideAllies'; source: number; levels: number[]; if?: Condition; filter: CardFilter; color: Color; count: number }
   /** ชโตรม-ไฮด์: ผู้เล่นทุกคน เพิ่มการ์ดในมือจากเด็ค / เพิ่มคอร์จากวอยด์ ด้วยเอฟเฟกต์ที่ไม่ใช่สี color ไม่ได้ */
-  | { kind: 'gainLockExceptColor'; source: number; levels: number[]; color: Color };
+  | { kind: 'gainLockExceptColor'; source: number; levels: number[]; color: Color }
+  // ---------------- BS14 ม่วง
+  /** เธิร์ดอายส์ สเนก: คอร์ที่คู่แข่งจะนำจากวอยด์มาเพิ่มโดยเอฟเฟกต์ ถูกนำมาวางบนสปิริตนี้แทน */
+  | { kind: 'stealOpponentVoid'; source: number; levels: number[] }
+  /** ควีน เมดูค: สปิริตของเราที่ตรงตัวกรองทำให้ไลฟ์คู่แข่งลดลง (โจมตี) = คอร์ไลฟ์ไปวอยด์แทนรีเสิร์ฟ/แทรช */
+  | { kind: 'lifeToVoidOnHit'; source: number; levels: number[]; filter: CardFilter };
 
 /** สคริปต์ของการ์ดหนึ่งใบ เรียงตาม effects (null = ยังไม่รองรับ, array = บรรทัดเดียวมีหลายความสามารถ) */
 export type CardScript = (DistributiveOmit<Ability, 'source'> | DistributiveOmit<Ability, 'source'>[] | null)[];

@@ -8,6 +8,7 @@ import { activeSeat, allZones, asSeat, restoreSeats, seatOfCard, seatsOf, teamHa
 import {
   attackTaxFor,
   symbolOverrideOf,
+  lifeVoidSource,
   attackReserveTaxFor,
   nexusExhaustPayMax,
   effectSummonTax,
@@ -1385,6 +1386,8 @@ function resolveBattle(ctx: Ctx): void {
 
   let lostLife = false;
   let blockers = battle.blockers.filter((id) => inBattle(s, id));
+  // BS14 Curse: จดผู้ป้องกันตอนตัดสินผล (ทำลายตอนจบการต่อสู้)
+  battle.blockersAtResolve = [...blockers];
   // BS11 อิตทัน โมเมน: ผู้โจมตีมี Lv เท่ากับหรือมากกว่าผู้ป้องกัน = ไม่เทียบ BP และถือว่าไม่ถูกป้องกัน
   if (battle.levelUnblock === attacker.owner && blockers.length > 0 && blockers.every((id) => cardLevel(s, db, attacker.id) >= cardLevel(s, db, id))) blockers = [];
   if (blockers.length === 0) {
@@ -1420,7 +1423,10 @@ function resolveBattle(ctx: Ctx): void {
       s.lifeDamageBy = { ...rec, ids: [...rec.ids, attacker.id] };
     }
     if (dmg > 0) {
-      if (loseLife(ctx, defender, dmg, attacker.owner, 'reserve', true)) return;
+      // BS14 ควีน เมดูค: สปิริตที่มี Destructive Curse ทำให้ไลฟ์ลด = คอร์ไลฟ์ไปวอยด์
+      const toVoid = lifeVoidSource(s, db, attacker.id);
+      if (toVoid && dmg > 0) emitStatic(ctx, toVoid);
+      if (loseLife(ctx, defender, dmg, attacker.owner, toVoid ? 'void' : 'reserve', true)) return;
       lostLife = true;
       queueLifeLostTriggers(ctx, defender, dmg);
     }

@@ -6,7 +6,7 @@
  */
 import type { CardFilter, Condition, CountPer, Step, SubjectFilter, TriggerEvent } from '@bs/cards';
 import { assertUsableCore, checkDepletion, destroy, drawCard, emit, emitStatic, endGame, handIncreasedByEffect, leaveField, lifeZeroLose, loseLife, newCore, payCost, pendBurst, sendToTrash, type Ctx } from './ctx';
-import { gainLockSource, cardColors,
+import { gainLockSource, voidStealerOf, cardColors,
   bpDestroyBoostFor,
   bounceImmuneSource,
   cardBanSource,
@@ -414,6 +414,9 @@ function findReplacement(ctx: Ctx, cardId: string, byEffect: boolean): { id: str
       if (ab.subject.nameIncludes && !ab.subject.nameIncludes.some((w) => name.includes(w))) continue;
       if (ab.subject.names && !ab.subject.names.includes(name)) continue;
       if (ab.subject.family && !db.get(s.cards[cardId]!.cardNo).family.includes(ab.subject.family)) continue;
+      if (ab.subject.card && !matchesFilter(s, db, cardId, ab.subject.card)) continue;
+      // BS14 Destructive Curse: ต้องมีคอร์ไลฟ์คู่แข่งพอ
+      if (ab.oppLife && s.players[s.cards[cardId]!.owner === 'p1' ? 'p2' : 'p1'].life.length < ab.oppLife) continue;
       if (ab.if && !conditionHolds(s, id, ab.if, false, false, db)) continue;
       if (ab.discard && !owner.hand.some((h) => matchesFilter(s, db, h, ab.discard!))) continue;
       // มิคาเนะ: ต้องมีคอร์ไลฟ์พอให้ย้าย (ย้ายจนไลฟ์ 0 ได้ แต่แพ้ทันที)
@@ -567,7 +570,9 @@ export function destroyCard(ctx: Ctx, cardId: string, by: PlayerId, opts: { bySo
             ? [{ do: 'discard', count: 1, filter: ab.discard }]
             : ab.life
               ? [{ do: 'lifeCoreOnto', cardId, count: ab.life }]
-              : [];
+              : ab.oppLife
+                ? [{ do: 'opponentLifeToReserve', count: ab.oppLife, to: 'trash' }]
+                : [];
       const price = ab.mill
         ? `ทิ้งเด็คคู่แข่ง ${ab.mill} ใบ`
         : ab.millSelf
@@ -576,7 +581,9 @@ export function destroyCard(ctx: Ctx, cardId: string, by: PlayerId, opts: { bySo
             ? 'ทิ้งการ์ดเมจิคบนมือ 1 ใบ'
             : ab.life
               ? `นำคอร์ไลฟ์ ${ab.life} เม็ดมาวาง`
-              : 'ใช้เอฟเฟกต์';
+              : ab.oppLife
+                ? `ส่งไลฟ์คู่แข่ง ${ab.oppLife} เม็ดไปแทรช`
+                : 'ใช้เอฟเฟกต์';
       s.queue.unshift({
         controller: owner,
         sourceId: repl.id,
@@ -1147,6 +1154,7 @@ const OPP_ZONE_STEPS = new Set<string>([
   'opponentDiscards',
   'opponentDiscardTo',
   'opponentReserveToTrash',
+  'discardOpponentShown',
 ]);
 
 /**
@@ -2420,6 +2428,7 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
 
     case 'gainLifeFromVoid': {
       if (step.count > 0 && gainLocked(ctx, item.sourceId)) return;
+      if (step.count > 0 && stealVoid(ctx, me, step.count)) return;
       // องเมียววาราชิ: คอร์มาจากไลฟ์ของเจ้าของเอฟเฟกต์เอง = ไลฟ์ไม่เปลี่ยน
       // ฟุทสึโนะมิทามะ: ผู้เล่นทุกคนนำคอร์จากวอยด์มาวางที่ไลฟ์ไม่ได้
       {
@@ -4205,6 +4214,34 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       return;
     }
 
+    // ---------------- BS14 ม่วง
+    case 'curseResolve': {
+      // Curse: ผู้ป้องกัน (สปิริต) ตอนตัดสินผลที่ยังอยู่บนสนาม เลือกทำลาย 1 ตัว
+      const ids = (s.battle?.blockersAtResolve ?? []).filter((id) => s.cards[id]?.owner === opp && s.players[opp].field.includes(id));
+      if (ids.length === 0) return;
+      item.steps.unshift({ do: 'destroyChosenOpponent', filter: { types: ['spirit', 'brave'], onlyIds: ids } });
+      return;
+    }
+
+    case 'discardOpponentShown': {
+      const shown = (s.shownCards ?? []).filter((id) => s.players[opp].hand.includes(id));
+      if (step.count < 1 || shown.length === 0) return;
+      ask(ctx, item, { kind: 'card', prompt: 'เลือกการ์ดที่วางแสดงนอกมือของคู่แข่ง 1 ใบที่จะทิ้ง', candidates: shown, step });
+      return;
+    }
+
+    case 'allyCoreToLife': {
+      // โซลคอร์ไปไลฟ์ไม่ได้ (เจ้าของโปรเจกต์กำหนด: ต้องมีเอฟเฟกต์ระบุ) = เฉพาะการ์ดที่มีคอร์ธรรมดา
+      const cands = s.players[me].field.filter((id) => s.cards[id]!.cores.some((c) => !s.cores[c]!.isSoul) && matchesFilter(s, db, id, step.filter));
+      if (cands.length === 0) return;
+      if (cands.length === 1) {
+        coreToLife(ctx, me, cands[0]!);
+        return;
+      }
+      ask(ctx, item, { kind: 'card', prompt: 'เลือกการ์ดที่จะนำคอร์ 1 เม็ดมาวางที่ไลฟ์', candidates: cands, step });
+      return;
+    }
+
     // ---------------- BS13 หกเทพพิสุทธิ์
     case 'opponentAllCoresToTrash': {
       // เดธ-กัล-วาดอส: คอร์ทั้งหมด (รวมโซลคอร์) บนสปิริต/อัลติเมทของคู่แข่งลงแทรชคู่แข่ง
@@ -4322,6 +4359,32 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
   }
 }
 
+/** BS14 เธิร์ดอายส์ สเนก: คอร์ที่ player จะนำจากวอยด์มาเพิ่มด้วยเอฟเฟกต์ของตัวเอง ถูกนำไปวางบนสปิริตของคู่แข่งแทน (คืน true = ขโมยแล้ว) */
+function stealVoid(ctx: Ctx, player: PlayerId, count: number): boolean {
+  const { s, db } = ctx;
+  if (s.queue[0]?.controller !== player) return false;
+  const src = voidStealerOf(s, db, player);
+  if (!src) return false;
+  const owner = s.cards[src.cardId]!.owner;
+  emitStatic(ctx, src);
+  const ids = Array.from({ length: count }, () => newCore(ctx, owner, false, seatOfCard(s.cards[src.cardId]!)));
+  s.cards[src.cardId]!.cores.push(...ids);
+  emit(ctx, { type: 'voidCore', player: owner, cardId: src.cardId, count });
+  return true;
+}
+
+/** BS14 เควตซัลโคอาตล์: คอร์ธรรมดา 1 เม็ดบนการ์ดนี้ไปที่ไลฟ์ของเรา (โซลคอร์ไม่ไป) */
+function coreToLife(ctx: Ctx, player: PlayerId, cardId: string): void {
+  const { s } = ctx;
+  const card = s.cards[cardId]!;
+  const core = card.cores.find((c) => !s.cores[c]!.isSoul);
+  if (!core) return;
+  card.cores = card.cores.filter((c) => c !== core);
+  ownerZones(s, cardId).life.push(core);
+  emit(ctx, { type: 'lifeGained', player, amount: 1 });
+  checkDepletion(ctx);
+}
+
 /** BS13 ชโตรม-ไฮด์: เอฟเฟกต์ของการ์ดนี้เพิ่มการ์ดในมือจากเด็ค / คอร์จากวอยด์ไม่ได้ (เรืองแสงต้นเหตุ) */
 function gainLocked(ctx: Ctx, sourceId: string | undefined): boolean {
   const lock = gainLockSource(ctx.s, ctx.db, sourceId);
@@ -4392,6 +4455,7 @@ function addVoidCores(ctx: Ctx, player: PlayerId, cardId: string, count: number)
 function takeVoid(ctx: Ctx, player: PlayerId, count: number): string[] {
   const { s, db } = ctx;
   if (count > 0 && gainLocked(ctx, s.queue[0]?.sourceId)) return [];
+  if (count > 0 && stealVoid(ctx, player, count)) return [];
   if (!voidFromLife(s, db)) {
     if (count > 0) s.voidGained = { ...(s.voidGained ?? {}), [player]: (s.voidGained?.[player] ?? 0) + count };
     return Array.from({ length: count }, () => newCore(ctx, player));
@@ -4477,7 +4541,7 @@ function putOnField(ctx: Ctx, item: QueuedEffect, step: Extract<Step, { do: 'pla
   checkDepletion(ctx);
   if (!s.players[me].field.includes(step.cardId)) return;
   // trigger ของการ์ดที่ลงสนามทำงานหลังเอฟเฟกต์นี้จบ
-  queueSummonTriggers(ctx, step.cardId, newBatch(ctx), { fromTrash: from === 'trash', from, byOnStage: !!item.onStage, bySource: item.sourceId });
+  queueSummonTriggers(ctx, step.cardId, newBatch(ctx), { fromTrash: from === 'trash', from, byOnStage: !!item.onStage, bySource: item.sourceId, ...(step.noTriggers ? { noSummonTrigger: true } : {}) });
 }
 
 /**
@@ -5009,7 +5073,7 @@ function applyCardPick(ctx: Ctx, cur: QueuedEffect, choice: Extract<PendingChoic
       cur.steps.unshift({ do: 'placeCores', cardId: pick });
       break;
     case 'summonFromTrashFree':
-      cur.steps.unshift({ do: 'placeCores', cardId: pick });
+      cur.steps.unshift({ do: 'placeCores', cardId: pick, ...(step.noTriggers ? { noTriggers: true as const } : {}) });
       break;
     case 'bounceOpponentBrave': {
       // BS14: เบรฟออกจากผู้ร่วมร่าง (ผู้ร่วมร่างอยู่ต่อ) → มือ / บนสุดเด็คของเจ้าของ
@@ -5241,6 +5305,18 @@ function applyCardPick(ctx: Ctx, cur: QueuedEffect, choice: Extract<PendingChoic
       p.trashCards.push(pick);
       emit(ctx, { type: 'discarded', player, cardId: pick });
       if (step.count > 1) cur.steps.unshift({ ...step, count: step.count - 1, if: undefined });
+      break;
+    case 'discardOpponentShown': {
+      const owner = s.cards[pick]!.owner;
+      removeFrom(ownerZones(s, pick).hand, pick);
+      s.shownCards = (s.shownCards ?? []).filter((x) => x !== pick);
+      ownerZones(s, pick).trashCards.push(pick);
+      emit(ctx, { type: 'discarded', player: owner, cardId: pick });
+      if (step.count > 1) cur.steps.unshift({ do: 'discardOpponentShown', count: step.count - 1 });
+      break;
+    }
+    case 'allyCoreToLife':
+      coreToLife(ctx, player, pick);
       break;
     case 'discard':
       removeFrom(p.hand, pick);

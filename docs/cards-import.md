@@ -14,7 +14,7 @@
 
 | ชุด | การ์ด | สถานะ |
 |---|---|---|
-| BS14 | BS24 แดง (21) + ขาว (20) + ม่วง (19) | แดง ✅ ขาว ✅ (50.0.0) · **ม่วง = แบตช์ถัดไป** |
+| BS14 | BS24 แดง (21) + ขาว (20) + ม่วง (19) | แดง ✅ ขาว ✅ (50.0.0) · ม่วง ✅ (51.0.0) |
 | BS15 | BS24 เขียว (20) + เหลือง (20) + ฟ้า (20) | ยังไม่ทำ (ต้องสร้างชุดใหม่: data/bs15-scripts.ts + loader ใน packages/cards/src/index.ts) |
 | BS16 | BSC15 (16) + BSC16 (42) | ยังไม่ทำ (สร้างชุดใหม่ bs16 เหมือนกัน · BSC16 = ธีมดีว่า ทีมไชนี่ฮาร์ท/แอปโซลูท/ลีเจนด์ดอล) |
 
@@ -33,10 +33,12 @@
 - `lifeImmuneLowCost`, `depletionSave`, `blockWhileExhausted.allies`, step `bounceOpponentBrave`, `turnTrigger.on: 'turnEnd'`, trigger `selfDrew`, `noStack` (ไม่แสดงผลซ้ำซ้อนต่อเหตุการณ์)
 - ตัวกรอง `hasBraves` / `maxLevel` · เงื่อนไข `firstBattleOfTurn` / `chosenIs` · CountPer `selfSymbols` / `selfCores` / `refreshedByThis`
 - ตัวแปลง: เงื่อนไขอัญเชิญ "สปิริตสีX ของเราตั้งแต่ N ตัว[ขึ้นไป]" (หลายสีคั่นด้วย "และ")
+- ม่วง: Curse = trigger attack → `atBattleEnd` + step `curseResolve` (ผู้ป้องกันตอนตัดสินผล `battle.blockersAtResolve`, ตัวกรองภายใน `onlyIds`) · ตัวช่วย `curse()` ใน bs14-scripts ·
+  Destructive Curse = `replaceDestroy.oppLife` (+ `subject.card` สำหรับ "ได้รับ Destructive Curse") · `lifeToVoidOnHit` (loseLife `to: 'void'`) · `stealOpponentVoid` (`stealVoid` ใน takeVoid / gainLifeFromVoid) ·
+  step `discardOpponentShown` / `allyCoreToLife` (คอร์ธรรมดาเท่านั้น: **โซลคอร์ไม่ไปไลฟ์ เว้นแต่เอฟเฟกต์ระบุ** เจ้าของโปรเจกต์กำหนด · ตัวกรอง `minNormalCores`) · `summonFromTrashFree.noTriggers` (→ `placeCores.noTriggers`) · `staticBp.perOpponentPileCores` · `handCostDelta.ownMainStepOnly`
 
 ## กลไกที่ต้องทำในแบตช์ถัด ๆ ไป (จากที่ถอดไว้)
 
-- ม่วง: Curse / Destructive Curse (呪撃 / 呪滅撃), เธิร์ดอายส์ สเนก (คอร์จากวอยด์ของคู่แข่งมาวางบนสปิริตนี้แทน), ควีน เมดูค (คอร์ไลฟ์คู่แข่งไปวอยด์), เควตซัลโคอาตล์ (คอร์บนอัลติเมทไปไลฟ์)
 - เขียว: บังคับป้องกันด้วยสปิริต 2-3 ตัวแต่ต่อสู้ตัวเดียว (บีฮีมอธ / จีโอ / เทรนตัน), ร่างแยก BP 11000 (ไนท์อีเกิล), ดังกาโร (วอยด์แทนรีเสิร์ฟตอนสร้างร่างแยก)
 - เหลือง: มาริกะ (นักร้องครบ 4 คน), โคริสทัล, แบทเทิลแคนเซิล (จบการต่อสู้ไม่เทียบ BP), อัลติเมทพลาสมา, มิคาฟาร์
 - ฟ้า: นับเมจิคที่ถูกทิ้งเด็คโดยอัลติเมท, คาสเซิลโกเล็ม (ทำให้ "เด็คจะไม่ถูกทิ้ง" ไม่มีผล), ร็อคโกเล็ม, ม่อนโกคู (BP ×2)

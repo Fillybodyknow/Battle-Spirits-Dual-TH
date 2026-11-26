@@ -200,7 +200,7 @@ export function destroy(ctx: Ctx, cardId: string, by?: PlayerId, bySource?: stri
 }
 
 /** ไลฟ์ไปรีเสิร์ฟของเจ้าของ; คืน true ถ้าไลฟ์หมดแล้วจบเกม */
-export function loseLife(ctx: Ctx, player: PlayerId, amount: number, winner: PlayerId, to: 'reserve' | 'trash' = 'reserve', attack = false, opts: { selfOnly?: boolean } = {}): boolean {
+export function loseLife(ctx: Ctx, player: PlayerId, amount: number, winner: PlayerId, to: 'reserve' | 'trash' | 'void' = 'reserve', attack = false, opts: { selfOnly?: boolean } = {}): boolean {
   // กำแพงผลึกขาว: ทั้งเทิร์นไลฟ์เสียรวมไม่เกิน 1 (ทุกความเสียหาย ทั้งโจมตีและเอฟเฟกต์ · ไม่นับการจ่ายไลฟ์ของเราเอง)
   const cap = opts.selfOnly ? undefined : (ctx.s.lifeCapOne ?? []).find((l) => l.player === player && l.turn === ctx.s.turn);
   if (cap) amount = Math.min(amount, Math.max(0, 1 - (cap.used ?? 0)));
@@ -218,7 +218,9 @@ export function loseLife(ctx: Ctx, player: PlayerId, amount: number, winner: Pla
     let lost = 0;
     for (const z of zones) {
       const k = Math.min(amount, z.life.length);
-      (to === 'trash' ? z.trashCores : z.reserve).push(...z.life.splice(z.life.length - k, k));
+      const gone = z.life.splice(z.life.length - k, k);
+      if (to === 'void') for (const c of gone) delete ctx.s.cores[c];
+      else (to === 'trash' ? z.trashCores : z.reserve).push(...gone);
       lost = Math.max(lost, k);
     }
     lostNow(lost);
@@ -230,7 +232,10 @@ export function loseLife(ctx: Ctx, player: PlayerId, amount: number, winner: Pla
   }
   const p = ctx.s.players[player];
   const n = Math.min(amount, p.life.length);
-  (to === 'trash' ? p.trashCores : p.reserve).push(...p.life.splice(p.life.length - n, n));
+  const gone = p.life.splice(p.life.length - n, n);
+  // BS14 ควีน เมดูค: คอร์ไลฟ์ไปวอยด์
+  if (to === 'void') for (const c of gone) delete ctx.s.cores[c];
+  else (to === 'trash' ? p.trashCores : p.reserve).push(...gone);
   lostNow(n);
   emit(ctx, { type: 'lifeLost', player, amount: n, ...(attack ? { attack: true } : {}) });
   if (n > 0 && !(ctx.s.lifeDamagedThisTurn ?? []).includes(player)) ctx.s.lifeDamagedThisTurn = [...(ctx.s.lifeDamagedThisTurn ?? []), player];

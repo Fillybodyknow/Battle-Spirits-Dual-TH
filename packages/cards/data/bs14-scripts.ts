@@ -32,6 +32,15 @@ const whiteUnblockable = (levels: number[], before: Step[] = []) => uTrigger(lev
 const ownUltimate: Condition = { alliesMatchAtLeast: { filter: { types: ['ultimate'] }, count: 1 } };
 const ownAttackStep: Condition = { ownAttackStep: true };
 
+/** Curse (呪撃): เมื่อสปิริตนี้โจมตี → เมื่อจบการต่อสู้ ทำลายสปิริตของคู่แข่งที่ป้องกันอยู่ตอนตัดสินผลการต่อสู้ 1 ตัว */
+const curse = (levels: number[]) => ({ kind: 'trigger' as const, on: 'attack' as const, levels, steps: [{ do: 'atBattleEnd' as const, steps: [{ do: 'curseResolve' as const }] }] });
+const CURSED = 'มารต้องสาป';
+/** U Trigger ของอัลติเมทม่วง: ฮิต = ส่งคอร์บนสปิริตคู่แข่ง 1 เม็ดไปรีเสิร์ฟ ต่อคอสต์ 1 ของการ์ดที่ถูกวางที่แทรช */
+const purpleCoreTrigger = (levels: number[]) =>
+  uTrigger(levels, [{ do: 'removeOpponentCores', count: 1, filter: { types: SPIRIT }, to: 'reserve', per: { uTriggerCost: true } } as Step]);
+/** U Trigger: ฮิต = ส่งคอร์บนสปิริตคู่แข่ง 1 เม็ดไปวอยด์ */
+const purpleVoidTrigger = (levels: number[]) => uTrigger(levels, [{ do: 'removeOpponentCores', count: 1, filter: { types: SPIRIT }, to: 'void' }]);
+
 const may = (label: string, steps: Step[], cond?: Condition): Step => ({ do: 'chooseOne', ...(cond ? { if: cond } : {}), options: [{ label, steps }, NO] });
 const when = (cond: Condition, steps: Step[], elseSteps?: Step[]): Step => ({ do: 'when', if: cond, steps, ...(elseSteps ? { else: elseSteps } : {}) });
 const rush = (color: 'green' | 'white' | 'red' | 'purple' | 'yellow' | 'blue', n = 1): Condition => ({ rush: { color, count: n } });
@@ -342,5 +351,108 @@ export const BS14_SCRIPTS: Record<string, CardScript> = {
         when(rush('green', 2), [{ do: 'exhaustOpponent', count: 1, filter: { types: SPIRIT } }]),
       ],
     },
+  ],
+
+  // ---------------------------------------------------------------- ม่วง (BS24)
+  วันอายด์ดีมอน: [{ kind: 'summonSymbol', levels: ALL2, filter: { types: ['ultimate'] }, color: 'purple', count: 1 }],
+  แก๊สอุซางิ: [{ kind: 'trigger', on: 'summon', levels: ALL3, steps: [{ do: 'discardOpponentShown', count: 1, per: { allies: { types: SPIRITISH } } }] }],
+  'เธิร์ดอายส์ สเนก': [{ kind: 'stealOpponentVoid', levels: ALL2 }],
+  สึจิกุดีมอน: [
+    curse(ALL2),
+    { kind: 'handCostDelta', levels: ALL2, filter: { types: SPIRIT, textIncludes: ['Destructive Curse'] }, delta: -1, ownMainStepOnly: true },
+  ],
+  แบทไนท์: [{ kind: 'trigger', on: 'summon', levels: ALL2, steps: [{ do: 'draw', count: 1 }, when(ownUltimate, [{ do: 'draw', count: 1 }])] }, curse([2])],
+  เมซุดีมอน: [
+    {
+      kind: 'trigger',
+      on: 'attack',
+      levels: L23,
+      steps: [
+        may(
+          'ทิ้งการ์ดสีม่วงในมือ 1 ใบ เพื่อส่งคอร์บนสปิริตคู่แข่ง 1 เม็ดไปรีเสิร์ฟ',
+          [{ do: 'discard', count: 1, filter: { color: 'purple' } }, { do: 'removeOpponentCores', count: 1, filter: { types: SPIRIT }, to: 'reserve' }],
+          { all: [{ handHas: { color: 'purple' } }, { opponentHas: { types: SPIRIT }, withCores: true }] },
+        ),
+        when(rush('red'), [destroy(NEXUS)]),
+        when(rush('red', 2), [{ do: 'draw', count: 1 }]),
+      ],
+    },
+  ],
+  เคิร์สการ์กอยล์: [
+    curse(ALL3),
+    {
+      kind: 'trigger',
+      on: 'destroyedByOpponent',
+      levels: L23,
+      steps: [{ do: 'removeOpponentCores', count: 2, filter: { types: SPIRIT }, to: 'reserve' }, when(ownUltimate, [{ do: 'draw', count: 2 }])],
+    },
+  ],
+  'ราชาสมิงนรก โอเซโร': [
+    {
+      kind: 'trigger',
+      on: 'summon',
+      levels: ALL3,
+      steps: [{ do: 'removeOpponentCores', count: 1, untilOne: true, filter: { types: SPIRIT } }, when(ownUltimate, [{ do: 'destroyOpponentBrave' }])],
+    },
+    [
+      { kind: 'colorAlso', levels: L23, color: 'red' },
+      { kind: 'symbolAlsoColor', levels: L23, color: 'red' },
+    ],
+  ],
+  'มังกรอสรพิษพุทธ คานอน': [
+    { kind: 'selfCostIf', cost: 5, if: ownUltimate },
+    { kind: 'coreRemovalBoost', levels: ALL3, amount: 1 },
+    { kind: 'trigger', on: ['attack', 'block'], levels: L23, steps: [{ do: 'removeOpponentCores', count: 1, filter: { types: SPIRIT }, to: 'reserve' }] },
+  ],
+  'สามผู้ยิ่งใหญ่แห่งยมโลก ควีน เมดูค': [
+    // Destructive Curse: ถูกทำลายโดยคู่แข่ง → สามารถส่งไลฟ์คู่แข่ง 1 เม็ดไปแทรช เพื่ออยู่ต่อแบบฟื้นสภาพ
+    { kind: 'replaceDestroy', levels: ALL3, subject: { self: true }, oppLife: 1, battle: true, state: 'refresh' },
+    // เทิร์นของคู่แข่ง: สปิริตของเราที่มี Curse ได้รับ Destructive Curse
+    { kind: 'replaceDestroy', levels: ALL3, subject: { card: { types: SPIRIT, textIncludes: ['Curse'] } }, oppLife: 1, battle: true, state: 'refresh', if: { oppTurn: true } },
+    { kind: 'lifeToVoidOnHit', levels: L23, filter: { types: SPIRIT, textIncludes: ['Destructive Curse'] } },
+  ],
+  'อัลติเมท ชาซู': [
+    { kind: 'trigger', on: 'destroyed', levels: U34, steps: [{ do: 'exhaustOpponent', count: 2, filter: { types: SPIRIT } }] },
+    purpleCoreTrigger([4]),
+  ],
+  'อัลติเมท ดาร์กวิตช์': [purpleCoreTrigger(U345)],
+  'อัลติเมท ซุ ไกน์': [
+    { kind: 'trigger', on: 'summon', levels: U345, steps: [{ do: 'opponentDiscards', count: 1, if: { opponentHandAtLeast: 3 } }] },
+    purpleVoidTrigger(U45),
+  ],
+  'อัลติเมท เควตซัลโคอาตล์': [
+    {
+      kind: 'trigger',
+      on: 'oppDepleted',
+      levels: U345,
+      ownTurnOnly: true,
+      steps: [may('นำคอร์บนอัลติเมทของเรา 1 เม็ดมาวางที่ไลฟ์', [{ do: 'allyCoreToLife', filter: { types: ['ultimate'] } }], { allyHas: { types: ['ultimate'], minNormalCores: 1 } })],
+    },
+    purpleVoidTrigger(U45),
+  ],
+  'อัลติเมท เดสเปราโด': [
+    purpleCoreTrigger(U345),
+    { kind: 'staticBp', levels: U45, if: ownAttackStep, scope: { self: true }, amount: 1000, perOpponentPileCores: true },
+  ],
+  // ---------------- เบรฟ / เน็กซัส / เมจิค ม่วง
+  อาร์เมอร์ดฮาร์เลย์: [
+    {
+      kind: 'trigger',
+      on: 'allySummoned',
+      zone: 'trash',
+      levels: [],
+      subject: { family: CURSED },
+      steps: [may('อัญเชิญอาร์เมอร์ดฮาร์เลย์จากแทรชไม่จ่ายคอสต์', [{ do: 'summonCardFree', which: 'self' }])],
+    },
+    { ...curse([1]), granted: true },
+  ],
+  'นครนรก ไคน่า': [
+    { kind: 'trigger', on: 'allyExhausted', levels: ALL2, attackStepOnly: true, subject: { card: { types: SPIRIT, textIncludes: ['Curse'] } }, steps: [{ do: 'draw', count: 1 }] },
+    { kind: 'trigger', on: 'endStep', levels: [2], steps: [{ do: 'summonFromTrash', filter: { types: ['spirit'], family: CURSED } }] },
+  ],
+  ดีมอนส์พัพเพ็ต: [{ kind: 'magic', timing: 'flash', steps: [{ do: 'summonFromTrashFree', filter: { types: ['spirit'], maxCost: 6, family: CURSED }, noTriggers: true }] }],
+  โซลเบิร์สต์: [
+    { kind: 'burst', on: 'afterLifeLost', steps: [{ do: 'removeOpponentCores', count: 1, untilOne: true, filter: { types: SPIRIT } }, { do: 'payToUseFlash' }] },
+    { kind: 'magic', timing: 'flash', steps: [{ do: 'removeOpponentCores', count: 1, filter: { types: SPIRIT }, to: 'reserve' }] },
   ],
 };

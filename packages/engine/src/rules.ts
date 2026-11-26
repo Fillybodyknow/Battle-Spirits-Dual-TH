@@ -593,7 +593,9 @@ function currentBpRaw(state: GameState, db: CardDatabase, cardId: string): numbe
                     (!scope.ownSpirits.soul || card.cores.some((x) => state.cores[x]!.isSoul));
       const perAllies = ab.perAllies ? ownerP.field.filter((x) => matchesFilter(state, db, x, ab.perAllies!)).length : 1;
       const perGem = ab.perGemColors ? gemColorCount(state, db, card.owner) : 1;
-      if (applies) bp += ab.amount * (ab.perSongs ? (ownerP.songs ?? []).length : 1) * perAllies * perGem;
+      // BS14 เดสเปราโด: ต่อคอร์ 1 เม็ดในรีเสิร์ฟ/แทรชของคู่แข่ง
+      const perPile = ab.perOpponentPileCores ? allZones(state, card.owner === 'p1' ? 'p2' : 'p1').reduce((n, z) => n + z.reserve.length + z.trashCores.length, 0) : 1;
+      if (applies) bp += ab.amount * (ab.perSongs ? (ownerP.songs ?? []).length : 1) * perAllies * perGem * perPile;
     }
   }
   // BS10 สวนลอยฟ้า Lv2: แอทแท็คสเต็ป สปิริตของคู่แข่งที่ต่อสู้อยู่ BP-N
@@ -652,6 +654,7 @@ export function matchesFilter(state: GameState, db: CardDatabase, cardId: string
   // การ์ดในแทรช: ใช้คอสต์ในแทรช ("การ์ดนี้ในแทรชถือว่ามีคอสต์ N": นาราคุ ↔ คุรามะ "คอสต์ไม่เกิน 4 ในแทรช")
   const inTrash = ownerZones(state, cardId).trashCards.includes(cardId);
   const costOf = () => (inTrash ? baseCost(state, db, cardId) : fieldCost(state, db, cardId, !!filter.ignoreBraveCost));
+  if (filter.onlyIds && !filter.onlyIds.includes(cardId)) return false;
   // "การ์ดสปิริตนี้ ถือว่าเป็นการ์ดเมจิคด้วย" (ยูคิเกิร์ล / โบคุโบคุ)
   if (filter.types && !filter.types.includes(def.type) && !(filter.types.includes('magic') && def.abilities.some((a) => a.kind === 'alsoMagic'))) return false;
   // เผ่า (รวมเผ่าที่ได้รับ: โอโทโนะซามะ)
@@ -696,6 +699,7 @@ export function matchesFilter(state: GameState, db: CardDatabase, cardId: string
   if (filter.notInBattle && state.battle && (state.battle.attackerId === cardId || state.battle.blockers.includes(cardId))) return false;
   // ---------------- BS09
   if (filter.minCores !== undefined && card.cores.length < filter.minCores) return false;
+  if (filter.minNormalCores !== undefined && card.cores.filter((c) => !state.cores[c]!.isSoul).length < filter.minNormalCores) return false;
   if (filter.notColors && cardColors(state, db, cardId).some((c) => filter.notColors!.includes(c))) return false;
   if (filter.minColors && cardColors(state, db, cardId).length < filter.minColors) return false;
   // ---------------- BS11
@@ -1073,6 +1077,7 @@ function baseCostInner(state: GameState, db: CardDatabase, cardId: string, zone:
       for (const ab of db.get(state.cards[id]!.cardNo).abilities) {
         if (ab.kind !== 'handCostDelta' || !ab.levels.includes(level) || !matchesFilter(state, db, cardId, ab.filter)) continue;
         if (ab.ownAttackStepOnly && (state.phase !== 'attack' || state.turnPlayer !== card.owner)) continue;
+        if (ab.ownMainStepOnly && (state.phase !== 'main' || state.turnPlayer !== card.owner)) continue;
         delta += ab.delta;
       }
     }
@@ -1754,6 +1759,7 @@ export function handCostDeltaSources(state: GameState, db: CardDatabase, cardId:
     for (const ab of db.get(state.cards[id]!.cardNo).abilities) {
       if (ab.kind !== 'handCostDelta' || !ab.levels.includes(level) || !matchesFilter(state, db, cardId, ab.filter)) continue;
       if (ab.ownAttackStepOnly && (state.phase !== 'attack' || state.turnPlayer !== card.owner)) continue;
+      if (ab.ownMainStepOnly && (state.phase !== 'main' || state.turnPlayer !== card.owner)) continue;
       if (ab.delta !== 0) out.push({ cardId: id, source: ab.source });
     }
   }
@@ -2575,6 +2581,23 @@ export function symbolOverrideOf(state: GameState, db: CardDatabase, cardId: str
     } finally {
       checkingSymbolOverride = false;
     }
+  }
+  return null;
+}
+
+// ---------------- BS14 ม่วง
+/** เธิร์ดอายส์ สเนก: สปิริตของคู่แข่งของ player ที่ขโมยคอร์ที่ player จะนำจากวอยด์มาเพิ่ม */
+export function voidStealerOf(state: GameState, db: CardDatabase, player: PlayerId): StaticSource | null {
+  return staticSources(state, db, [player === 'p1' ? 'p2' : 'p1'], 'stealOpponentVoid')[0] ?? null;
+}
+
+/** ควีน เมดูค: การ์ดที่ทำให้คอร์ไลฟ์ที่ attackerId ทำให้ลดลงไปวอยด์ */
+export function lifeVoidSource(state: GameState, db: CardDatabase, attackerId: string): StaticSource | null {
+  const card = state.cards[attackerId];
+  if (!card) return null;
+  for (const src of staticSources(state, db, [card.owner], 'lifeToVoidOnHit')) {
+    const a = db.get(state.cards[src.cardId]!.cardNo).abilities.find((x) => x.kind === 'lifeToVoidOnHit' && x.source === src.source);
+    if (a?.kind === 'lifeToVoidOnHit' && matchesFilter(state, db, attackerId, a.filter)) return src;
   }
   return null;
 }

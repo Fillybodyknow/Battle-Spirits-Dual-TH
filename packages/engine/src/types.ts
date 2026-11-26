@@ -126,6 +126,8 @@ export interface Battle {
   endAttackStepAfter: boolean;
   /** เอฟเฟกต์ที่ทำงาน "เมื่อจบการต่อสู้นี้" */
   endEffects: QueuedEffect[];
+  /** BS14 Curse: ผู้ป้องกันตอนตัดสินผลการต่อสู้ */
+  blockersAtResolve?: string[];
   /** ไลฟ์ที่คู่แข่งเสีย ต่อผู้ป้องกัน 1 ตัวที่ถูกทำลายในการต่อสู้นี้ */
   lifeOnBlockerDestroyed: number;
   /** เหมือน lifeOnBlockerDestroyed แต่นับเฉพาะเมื่อใช้ [Consecutive Blade] */
