@@ -1703,6 +1703,17 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         if (fresh.length < e.cardIds.length) t += 250 + (e.cardIds.length - fresh.length) * 120;
         break;
       }
+      // BS17 ออร์แกนปีกทองคำ: ใบบนสุดเด็คบินคว่ำไปใต้เน็กซัส / การ์ดใต้เน็กซัสบินลงแทรช
+      case 'deckToUnder':
+        e.cardIds.forEach((id, i) =>
+          out.push({ kind: 'fly', cardId: id, from: `[data-deck="${e.player}"]`, to: `[data-under="${e.cardId}"]`, mode: 'move', faceDown: true, shrink: true, delay: t + i * 160, hideTarget: false }),
+        );
+        t += 450 + e.cardIds.length * 160;
+        break;
+      case 'underDiscarded':
+        out.push({ kind: 'fly', cardId: e.cardId, from: `[data-under="${e.nexusId}"]`, to: `[data-trash="${e.player}"]`, mode: 'move', shrink: true, delay: t, hideTarget: false });
+        t += 550;
+        break;
       case 'cardToHand':
         out.push({
           kind: 'fly',

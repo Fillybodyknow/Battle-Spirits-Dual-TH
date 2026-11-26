@@ -241,12 +241,19 @@ function afterStart(ctx: Ctx): void {
   }
 
   // BS13 เจียส: "คอร์สเต็ปของเรา: คอร์ที่ได้รับ +N" (คอร์ไปที่รีเสิร์ฟของเจ้าของการ์ด)
+  const coreStackSeen = new Set<string>();
   if (!(s.turn === 1 && s.config.firstPlayerSkipsCoreStep)) {
     for (const id of [...p.field]) {
       if (effectsNegated(s, ctx.db, id)) continue;
       const level = cardLevel(s, ctx.db, id);
       for (const ab of ctx.db.get(s.cards[id]!.cardNo).abilities) {
         if (ab.kind !== 'coreStepBonus' || !ab.levels.includes(level) || !conditionHolds(s, id, ab.if, false, false, ctx.db)) continue;
+        // BS17 อาร์เชีย: ไม่แสดงผลซ้ำซ้อน
+        if (ab.noStack) {
+          const key = ctx.db.get(s.cards[id]!.cardNo).name + '|' + ab.source;
+          if (coreStackSeen.has(key)) continue;
+          coreStackSeen.add(key);
+        }
         emitStatic(ctx, { cardId: id, source: ab.source });
         asSeat(s, player, seatOfCard(s.cards[id]!), () => {
           for (let i = 0; i < ab.amount; i++) {
@@ -1432,6 +1439,22 @@ function queueBlockedTriggers(ctx: Ctx, attackerId: string, blockerId: string, b
 function resolveBattle(ctx: Ctx): void {
   const { s, db } = ctx;
   const battle = s.battle!;
+  // BS17 เบียคุ-กาโร: เอฟเฟกต์ "เมื่อตัดสินผลการต่อสู้" ทำก่อนเทียบ BP
+  if (battle.resolveEffects?.length) {
+    s.queue.push(...battle.resolveEffects);
+    battle.resolveEffects = [];
+    runQueue(ctx);
+    if (s.winner || !s.battle) return;
+    if (s.choice) {
+      s.resume = 'resolveBattle';
+      return;
+    }
+    // ผู้โจมตีออกจากสนาม / ผู้ป้องกันหายหมด = จบการต่อสู้ (ไม่เทียบ BP ไม่ลดไลฟ์)
+    if (!inBattle(s, battle.attackerId) || (battle.blockers.length > 0 && !battle.blockers.some((id) => inBattle(s, id)))) {
+      endBattle(ctx);
+      return;
+    }
+  }
   battle.resolved = true;
   const attacker = s.cards[battle.attackerId]!;
   const attackerDef = db.get(attacker.cardNo);
@@ -1494,6 +1517,8 @@ function resolveBattle(ctx: Ctx): void {
     const results = blockers.map((id) => ({ id, bp: power(id) }));
     const destroyedBlockers = results.filter((r) => r.bp <= bpA).map((r) => r.id);
     const attackerLoses = results.some((r) => bpA <= r.bp);
+    // BS17 ธงโจรสลัดมังกรสามหัว: จดการ์ดที่ถูกทำลายจากการเทียบ BP
+    battle.bpDestroyed = [...destroyedBlockers, ...(attackerLoses ? [attacker.id] : [])];
     for (const id of destroyedBlockers) destroyCard(ctx, id, attacker.owner, { bySource: attacker.id });
     if (s.winner) return;
     if (attackerLoses) destroyCard(ctx, attacker.id, defender, { bySource: results.find((r) => bpA <= r.bp)!.id });
@@ -1538,6 +1563,8 @@ function resolveBattle(ctx: Ctx): void {
     if ((s.hitLifeTurn ?? []).some((t) => t.cardId === attacker.id && t.turn === s.turn)) {
       enqueue(ctx, { controller: attacker.owner, sourceId: attacker.id, steps: [{ do: 'opponentLifeToReserve', count: 1 }], paidWithSoul: false, trashWhenDone: false, announce: false });
     }
+    // BS17 ซาราตี: "ในการต่อสู้นี้ เมื่อการโจมตีของอัลติเมทนี้ทำให้ไลฟ์คู่แข่งลดลง"
+    for (const hs of battle.hitLifeSteps ?? []) if (hs.cardId === attacker.id) enqueue(ctx, { controller: hs.controller, sourceId: attacker.id, steps: [...hs.steps], paidWithSoul: false, trashWhenDone: false });
     const batch = newBatch(ctx);
     queueTriggers(ctx, attacker.id, 'attackHitLife', batch);
     for (const id of [...s.players[attacker.owner].field]) queueTriggers(ctx, id, 'allyAttackHitLife', batch, { subject: attacker.id });
@@ -1589,6 +1616,7 @@ function endBattle(ctx: Ctx): void {
   for (const c of Object.values(ctx.s.cards)) {
     delete c.battleBp;
     delete c.battleSymbols;
+    delete c.battleStack;
   }
   emit(ctx, { type: 'battleEnded' });
   const cond = battle.endAttackStepIf;

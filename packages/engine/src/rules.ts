@@ -539,7 +539,7 @@ export function conditionHolds(
   if ('usedFewerThan' in cond) return (state.usedOncePerTurn ?? []).filter((k) => k === `${sourceId}:${cond.usedFewerThan.key}`).length < cond.usedFewerThan.max;
   if ('onceFree' in cond) return !(state.usedOncePerTurn ?? []).includes(`${sourceId}:${cond.onceFree}`);
   // ตรวจได้เฉพาะตอนประมวลผลเอฟเฟกต์ในคิว (ดู holds ใน effects.ts)
-  if ('summonedByOnStage' in cond || 'summonedBy' in cond) return false;
+  if ('summonedByOnStage' in cond || 'summonedBy' in cond || 'summonedBySummonBolt' in cond || 'summonBoltAfterBattleLoss' in cond) return false;
   if ('catalyzable' in cond) {
     if (!card.cores.some((id) => state.cores[id]!.isSoul) || !db) return false;
     // 2VS2: Catalyze สั่งใช้เบิร์สของเพื่อนร่วมทีมได้ (เจ้าของโปรเจกต์กำหนด)
@@ -565,7 +565,8 @@ function currentBpRaw(state: GameState, db: CardDatabase, cardId: string): numbe
   const baseDef = copy ? db.get(state.cards[copy]!.cardNo) : def;
   // BS15 ไนท์อีเกิล: สปิริตร่างแยก BP ของ Lv1 ถือว่าเป็น N
   const cloneBase = card.cardNo === 'SMP-BUNSHIN' && ownLevel === 1 ? cloneBpFor(state, db, card.owner) : null;
-  let bp = (cloneBase ?? baseDef.levels.find((l) => l.level === ownLevel)?.bp ?? 0) + card.turnBp + (card.battleBp ?? 0);
+  // BS17 ไนท์ไอบิส: ร่างแยกซ้อน = BP ถือว่าเป็น N ในการต่อสู้นี้
+  let bp = (card.battleStack?.bp ?? cloneBase ?? baseDef.levels.find((l) => l.level === ownLevel)?.bp ?? 0) + card.turnBp + (card.battleBp ?? 0);
   // "ในเทิร์นนี้ สปิริตเราทั้งหมด BP+": รวมตัวที่ลงสนามหลังเอฟเฟกต์ทำงาน
   for (const b of state.turnBuffs ?? []) {
     if (b.player === card.owner && b.turn === state.turn && (def.type === 'spirit' || def.type === 'brave') && (!b.filter || matchesFilter(state, db, cardId, b.filter)) && !namedOnlyBlocker(state, db, b.sourceId, cardId))
@@ -634,7 +635,8 @@ export function fieldCost(state: GameState, db: CardDatabase, cardId: string, ig
   const def = db.get(card.cardNo);
   const owner = state.players[card.owner];
   if (!owner.field.includes(cardId)) return def.cost;
-  let cost = def.cost;
+  // BS17 ไนท์ไอบิส: ร่างแยกซ้อน = คอสต์ถือว่าเป็น N ในการต่อสู้นี้
+  let cost = card.battleStack?.cost ?? def.cost;
   // สปิริตที่ร่วมร่างกับ Brave: คอสต์ = คอสต์สปิริต + คอสต์ Brave
   if (!ignoreBraveCost) for (const b of card.braves) cost += braveFieldCost(db, state.cards[b]!.cardNo);
   // ระหว่างคำนวณ Lv คอสต์ +N: ไม่นับ "คอสต์ +N" ที่ต้องใช้เลเวล (กันวนไม่จบ)
@@ -728,7 +730,7 @@ export function matchesFilter(state: GameState, db: CardDatabase, cardId: string
   if (filter.notShown && (state.shownCards ?? []).includes(cardId)) return false;
   if (filter.excludeIds?.includes(cardId)) return false;
   // ---------------- BS08
-  if (filter.textIncludes && !filter.textIncludes.some((w) => textHas(def, w))) return false;
+  if (filter.textIncludes && !filter.textIncludes.some((w) => textHas(def, w) || grantedText(state, db, cardId, w))) return false;
   if (filter.noEffectText && effectText(def).trim() !== '') return false;
   if (filter.notInBattle && state.battle && (state.battle.attackerId === cardId || state.battle.blockers.includes(cardId))) return false;
   // ---------------- BS09
@@ -807,7 +809,7 @@ export function withTeamOf(state: GameState, db: CardDatabase, f: CardFilter, se
 /**
  * การ์ดของเราที่ทำให้การ์ดนี้ไม่ถูกทำลายโดยเอฟเฟกต์ของคู่แข่ง (Solo Part / ราเควล)
  */
-export function destroyImmuneSource(state: GameState, db: CardDatabase, cardId: string): StaticSource | null {
+export function destroyImmuneSource(state: GameState, db: CardDatabase, cardId: string, fromType?: CardDef['type']): StaticSource | null {
   const card = state.cards[cardId]!;
   const def = db.get(card.cardNo);
   for (const id of state.players[card.owner].field) {
@@ -815,6 +817,7 @@ export function destroyImmuneSource(state: GameState, db: CardDatabase, cardId: 
     const lv = cardLevel(state, db, id);
     for (const ab of db.get(state.cards[id]!.cardNo).abilities) {
       if (ab.kind !== 'destroyImmune' || !ab.levels.includes(lv) || !conditionHolds(state, id, ab.if, false, false, db)) continue;
+      if (ab.fromTypes && (!fromType || !ab.fromTypes.includes(fromType))) continue;
       const ok = 'ownNamed' in ab.scope ? nameHas(def, ab.scope.ownNamed) : 'self' in ab.scope ? id === cardId : matchesFilter(state, db, cardId, ab.scope.own);
       if (ok && isSpiritLike(def)) return { cardId: id, source: ab.source };
     }
@@ -2051,7 +2054,13 @@ export function millBlocked(state: GameState, db: CardDatabase, by?: PlayerId): 
 
 /** การ์ดที่ทำให้เด็คไม่ถูกทิ้ง (ผู้ทิ้งเด็ค = by) · BS15 คาสเซิลโกเล็ม: ของคู่แข่งที่เป็นสปิริตคอสต์ไม่เกิน N / เน็กซัส ไม่มีผลในแอทแท็คสเต็ปของ by */
 export function millBlockSources(state: GameState, db: CardDatabase, by: PlayerId): StaticSource[] {
-  const all = staticSources(state, db, ['p1', 'p2'], 'noMill');
+  const all = staticSources(state, db, ['p1', 'p2'], 'noMill').filter((src) => {
+    // BS17 เพนต้น: เฉพาะเด็คของเจ้าของการ์ด (ผู้ทิ้ง = คู่แข่ง)
+    const a = db.get(state.cards[src.cardId]!.cardNo).abilities.find((x) => x.kind === 'noMill' && x.source === src.source);
+    return !(a?.kind === 'noMill' && a.ownOnly && state.cards[src.cardId]!.owner === by);
+  });
+  // BS17 เพนต้น / พาวเวอร์ดาวน์: ในเทิร์นนี้ เด็คของผู้เล่นนั้นจะไม่ถูกทิ้ง
+  for (const t of state.noMillTurns ?? []) if (t.turn === state.turn && t.player !== by) all.push({ cardId: t.cardId, source: t.source });
   if (all.length === 0 || state.phase !== 'attack' || state.turnPlayer !== by) return all;
   let maxCost = -1;
   for (const src of staticSources(state, db, [by], 'ignoreOppNoMill')) {
@@ -2075,6 +2084,7 @@ export function multiDrawPunished(state: GameState, db: CardDatabase): boolean {
 /** ลองเคพ: ไลฟ์ของผู้เล่นนี้เสียหายจากสปิริตคู่แข่งได้ 1 เม็ดต่อตัวต่อเทิร์น */
 /** ในเทิร์นนี้ ไลฟ์ของ defender ไม่ลดลงจากการโจมตีของการ์ดนี้ (ลิมิเต็ดบาเรีย: คอสต์ตั้งแต่ / BSC01 เบิร์สต์แบริเออร์: สปิริตคอสต์ไม่เกิน) */
 export function lifeShielded(state: GameState, db: CardDatabase, defender: PlayerId, attackerId: string): boolean {
+  if (lowBpLifeShieldSource(state, db, defender, attackerId)) return true;
   return (state.lifeShields ?? []).some((l) => {
     if (l.player !== defender || l.turn !== state.turn) return false;
     const cost = fieldCost(state, db, attackerId);
@@ -2083,6 +2093,15 @@ export function lifeShielded(state: GameState, db: CardDatabase, defender: Playe
     if (l.spiritsOnly && db.get(state.cards[attackerId]!.cardNo).type === 'ultimate') return false;
     return true;
   });
+}
+
+/** BS17 อาซาเอล: การ์ดของ defender ที่ทำให้การโจมตีของผู้โจมตี BP ไม่เกิน N ไม่ลดไลฟ์ */
+export function lowBpLifeShieldSource(state: GameState, db: CardDatabase, defender: PlayerId, attackerId: string): StaticSource | null {
+  for (const src of staticSources(state, db, [defender], 'lowBpLifeShield')) {
+    const a = db.get(state.cards[src.cardId]!.cardNo).abilities.find((x) => x.kind === 'lowBpLifeShield' && x.source === src.source);
+    if (a?.kind === 'lowBpLifeShield' && conditionHolds(state, src.cardId, a.if, false, false, db) && currentBp(state, db, attackerId) <= a.maxBp) return src;
+  }
+  return null;
 }
 
 /**
@@ -2333,6 +2352,8 @@ export function blockersFor(state: GameState, db: CardDatabase, defender: Player
   // BSC02 มิเรีย: ต้องส่งคอร์บนฟิลด์ (สนาม/รีเสิร์ฟ) ลงแทรชก่อนป้องกัน
   if (b?.blockTax?.fieldToTrash && !b.blockTax.paid && fieldCoreCount(state, defender) < b.blockTax.fieldToTrash) return [];
   // BSC02 โซโลวิง: ในการต่อสู้นี้ ไม่ถูกป้องกันโดยสปิริตเลเวลที่ระบุ
+  // BS17 คู-ซี: ไม่ถูกป้องกันโดยสปิริต/อัลติเมทที่ Lv ต่ำกว่าผู้โจมตี
+  if (b?.unblockLowerLevel && attacker) list = list.filter((id) => cardLevel(state, db, id) >= cardLevel(state, db, attacker.id));
   if (b?.unblockLevels?.length) list = list.filter((id) => !(['spirit', 'brave'].includes(db.get(state.cards[id]!.cardNo).type) && b.unblockLevels!.includes(cardLevel(state, db, id))));
   // [Consecutive Blade]: ตัวที่ไม่มีชีลด์ (ไม่รับผลของผู้โจมตี) ต้องป้องกันให้ครบก่อน
   // ตัวที่มีชีลด์จะมาแย่งช่องไม่ได้ ยกเว้นตัวไม่มีชีลด์ไม่พอ (กติกา 14 Consecutive Blade Q&A 4-5)
@@ -2474,6 +2495,17 @@ export function effectText(def: CardDef): string {
  * ความสามารถ = คีย์เวิร์ดอยู่ต้นบรรทัดเอฟเฟกต์ / ต่อจาก "]" "." "[" / "Flash" / "Soul" / "True -" / "Heaven('s)" (Six Heaven's Rush)
  * ที่อ้างถึงเฉย ๆ ("สปิริตที่มี Showdown", "โดย Evolution", ได้รับ "True-Rage …") ไม่นับ (กุนซือ โดรเดอร์ดราก้อน เขียนรายชื่อคีย์เวิร์ดไว้ในข้อความตัวเอง)
  */
+/** BS17 ออริฮาลคอน โกเล็ม: การ์ดนี้ได้รับคีย์เวิร์ด/ข้อความ word จากการ์ดของเจ้าของ (grantText) */
+function grantedText(state: GameState, db: CardDatabase, cardId: string, word: string): boolean {
+  const owner = state.cards[cardId]?.owner;
+  if (!owner || !state.players[owner].field.includes(cardId)) return false;
+  for (const src of staticSources(state, db, [owner], 'grantText')) {
+    const a = db.get(state.cards[src.cardId]!.cardNo).abilities.find((x) => x.kind === 'grantText' && x.source === src.source);
+    if (a?.kind === 'grantText' && a.text === word && conditionHolds(state, src.cardId, a.if, false, false, db) && matchesFilter(state, db, cardId, a.filter)) return true;
+  }
+  return false;
+}
+
 export function textHas(def: CardDef, word: string): boolean {
   const effects = def.effects as { text?: string; keyword?: string }[];
   const lines = effects.map((e) => e.text ?? '');

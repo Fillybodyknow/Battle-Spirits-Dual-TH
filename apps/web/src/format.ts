@@ -91,6 +91,10 @@ export function formatEvent(e: GameEvent, s: GameState): string | null {
       return `${playerLabel(e.player)} ย้าย Core ${e.count} ดวง`;
     case 'bunshin':
       return `${playerLabel(e.player)} Bunshin: นำใบบนสุดเด็ค ${e.cardIds.length} ใบมาเป็นสปิริตร่างแยก`;
+    case 'deckToUnder':
+      return `${playerLabel(e.player)} นำใบบนสุดเด็ค ${e.cardIds.length} ใบไปวางคว่ำใต้ ${name(e.cardId)}`;
+    case 'underDiscarded':
+      return `${playerLabel(e.player)} ทิ้ง ${name(e.cardId)} จากใต้ ${name(e.nexusId)}`;
     case 'cloneDiscarded':
       return `สปิริตร่างแยกของ${playerLabel(e.player)}ถูกทิ้ง (${name(e.cardId)})`;
     case 'burstSet':

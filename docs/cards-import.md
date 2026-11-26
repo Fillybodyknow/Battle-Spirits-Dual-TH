@@ -19,7 +19,7 @@
 | BSC01 | BSC15 (16) | ✅ (54.0.0 · ชุด bsc01: data/bsc01-scripts.ts + loadBSC01Cards) |
 | BSC02 | BSC16 (42) | ✅ (54.0.0 · ชุด bsc02: data/bsc02-scripts.ts + loadBSC02Cards) |
 | BS16 | BS25 แดง (14) + ขาว (17) + ม่วง (15) | แดง ✅ ขาว ✅ ม่วง ✅ (55.0.0 · ครบ 46 ใบ) |
-| BS17 | BS25 เขียว (14) + เหลือง (14) + ฟ้า (17) | **แบตช์ถัดไป** (ชุดใหม่ bs17) |
+| BS17 | BS25 เขียว (14) + เหลือง (14) + ฟ้า (17) | เขียว ✅ เหลือง ✅ ฟ้า ✅ (56.0.0 · ครบ 45 ใบ) |
 
 **การ์ด BSC = ชุดในเกมแยกชื่อ "BSC01, BSC02, …"** (เจ้าของโปรเจกต์กำหนด ไม่ใช้ BS16) · BSC15 = BSC01, BSC16 = BSC02 (แยกสองชุด) ·
 `BOOSTER_SETS` (bot-helpers.ts) และแบนเนอร์ชุดล่าสุด (`useLatestBoosters` ใน Home.tsx) รับ `/^BSC?\d+$/` แล้ว (แบนเนอร์เรียงตามลำดับใน `loadAllCards()` = ชุดที่เพิ่มทีหลังอยู่บน)
@@ -74,7 +74,7 @@
 
 覚醒 = Evolution · 激突 = Rage · 重装甲 = Heavy Shield · 呪滅撃 = Destructive Curse · 新生 (BS24) = ร่างคืนจุติ (BS33/34 ใช้ "รุ่นใหม่" ตามเดิม) ·
 滅龍 = มังกรล้างสังหาร · 武装 = อาวุธ · 動器 = จักรกลมีชีวิต · 空魚 = ปลาบิน · 怪虫 = ปรสิต · 無魔 = ผีอมตะ · 冥主 = เจ้านรก · 遊精 = หมู่ภมร ·
-星竜 = มังกรดวงดาว (เดิม มังกรดารา) · 護将 = ผู้พิทักษ์ · 神星 = เทพดวงดาว · 戦騎 = นักรบ · 調査員 = นักวิจัย · 戦獣 = สมิงสงคราม · 闘神 = วิญญาณนักรบ · 天霊 = คนธรรพ์ · 皇獣 = เจ้าสมิง · 古竜 = มังกรโบราณ · 地竜 = มังกรดิน · 歌鳥 = วิหคสังคีต · 漂精 = ภูตพเนจร · ペンタン = เพนต้น · ฟงนีน่า · โอเซโร เผ่า เจ้านรก/เงามาร
+「バトルした時」 = "เมื่อ…โจมตี/ป้องกัน" (ไม่ใช้ "เมื่อ…ต่อสู้" เจ้าของโปรเจกต์กำหนด) · 星竜 = มังกรดวงดาว (เดิม มังกรดารา) · 護将 = ผู้พิทักษ์ · 神星 = เทพดวงดาว · 戦騎 = นักรบ · 調査員 = นักวิจัย · 戦獣 = สมิงสงคราม · 闘神 = วิญญาณนักรบ · 天霊 = คนธรรพ์ · 皇獣 = เจ้าสมิง · 古竜 = มังกรโบราณ · 地竜 = มังกรดิน · 歌鳥 = วิหคสังคีต · 漂精 = ภูตพเนจร · ペンタン = เพนต้น · ฟงนีน่า · โอเซโร เผ่า เจ้านรก/เงามาร
 
 ## กลไกที่เพิ่มแล้วระหว่างงานนี้ (BS16 แดง)
 
@@ -93,4 +93,22 @@
 - step `costBoostThisTurn` (`state.turnCostBoosts` ใน fieldCost) · `fireAllyDestroyedTriggers` (ไอนี่) · `drawIfBravesStay` → step ภายใน `drawIfAnyOnField` ท้ายคิว (หลัง braveFate · `item.destroyedBraves` จด ใน destroyChosenOpponent) · `destroyAllOpponentBraves.bothSides` · `uTrigger.fromTrash` (เบลิท: เทียบคอสต์บนการ์ด)
 - ability `noBraving` (ใน braveRoom) · `handDrawBoost` (การ์ดในมือ: ตอนเริ่มดรอว์สเต็ปเข้าคิวถาม → discard + addDrawStepDraw) · `textOnly` (บรรทัดที่ผลอยู่ในการ์ดอื่น: โฟคาลอร์ → เบลเซบีท) · trigger `allyDeckMilled` (ตัวกรอง `milled`)
 
+## กลไกที่เพิ่มแล้วระหว่างงานนี้ (BS17 เขียว)
 
+- ability `uTriggerGuard` (เซเบอร์เซเซริ: การ์ดที่ U Trigger ของอัลติเมทคอสต์ไม่เกิน N วางที่แทรช = ไม่ฮิต · ตรวจใน step uTrigger) · trigger `allyUTriggerHit` (subject = อัลติเมทที่ U Trigger ฮิต)
+- step `cloneStack` (ไนท์ไอบิส: ร่างแยกซ้อน = เสื่อมสภาพตัวที่ซ้อน + `card.battleStack` คอสต์/BP ใน fieldCost / currentBpRaw ล้างใน endBattle/leaveField) · `activateBunshinAll` · step `atBattleResolve` ("เมื่อตัดสินผลการต่อสู้" バトル解決時 ≠ "เมื่อจบการต่อสู้" バトル終了時: `battle.resolveEffects` ทำตอนเริ่ม resolveBattle ก่อนเทียบ BP · ผู้ป้องกันหายหมด = จบการต่อสู้ไม่ลดไลฟ์) · ตัวกรอง "มี Quick" = `textIncludes: ['Quick']`
+
+## กลไกที่เพิ่มแล้วระหว่างงานนี้ (BS17 เหลือง)
+
+- การ์ดใต้เน็กซัส (ออร์แกนปีกทองคำ) = `card.under` (ไม่อยู่ในโซนใด · leaveField ส่งลงแทรช) · step `deckToUnder` · ability `uTriggerUnderBoost` (ใน step uTrigger: วางที่แทรชแล้วถามเจ้าของเด็คก่อนตัดสินฮิต = `uTrigger.milledId` + step ภายใน `underBoost` → `s.uTriggerExtraCost`)
+- trigger `uTriggeredByOpponent` (การ์ดที่ U Trigger ของคู่แข่งวางที่แทรช · ใช้คู่กับ `milledByOpponent` zone trash) · step `noMillThisTurn` (`state.noMillTurns` ใน millBlockSources) · `noMill.ownOnly`
+- ability `lowBpLifeShield` (อาซาเอล: ใน lifeShielded) · `destroyImmune.fromTypes` (destroyImmuneSource รับประเภทการ์ดต้นเหตุ) · `coreStepBonus.noStack`
+- step `onBattleHitLife` (`battle.hitLifeSteps`) · `battleUnblockableLowerLevel` (`battle.unblockLowerLevel` ใน blockersFor) · `symbolsZeroChosen.chosen` (debuffChosenOpponent ตั้ง chosenId · "BP0 ครั้งแรกในเทิร์นนี้" = `zeroThen`)
+
+## กลไกที่เพิ่มแล้วระหว่างงานนี้ (BS17 ฟ้า)
+
+- Summon Bolt = ตัวช่วย `summonBolt()` ใน bs17-scripts (atBattleEnd → chooseOne: ทำลายตัวเอง + `summonFromHandFree.summonBolt`) · "ถูกอัญเชิญโดย Summon Bolt" = `item.summonBolt` → queueSummonTriggers `bySummonBolt` → เงื่อนไข `summonedBySummonBolt` / SubjectFilter `bySummonBolt`
+- ธงโจรสลัด: `battle.bpDestroyed` (จดใน resolveBattle) + ability `summonBoltOnBattleLoss` + เงื่อนไข `summonBoltAfterBattleLoss` (เงื่อนไขที่ดูจากเอฟเฟกต์ในคิวซ้อนใน `all` ได้เฉพาะที่ระบุใน holds)
+- `replaceDestroy.destroySource` / `.ownToo` (อาร์ชิบอลด์: แทนการถูกทำลายที่เราทำเอง · ถูกทำลายแต่อยู่ต่อ = trigger ถูกทำลายยังทำงาน) · ability `grantText` (คีย์เวิร์ดที่ได้รับ: ตัวกรอง textIncludes เห็นด้วย) · mill `count: subjectLevel`
+- step `bigMillLifeThisTurn` (`state.bigMillLife` ตรวจใน step mill) · `peekOneHandDestroy` (เลือกการ์ดในมือคู่แข่งแบบคว่ำ → destroyChosenOpponent maxCost) · trigger `oppLifeLost` (ใน queueLifeLostTriggers)
+- **ระวัง: `staticSources` ไม่ตรวจ `if` ของ ability** ความสามารถถาวรใหม่ที่มี `if` ต้องเรียก `conditionHolds` เอง

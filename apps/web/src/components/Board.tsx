@@ -365,6 +365,27 @@ function OwnerTag({ cardId, top }: { cardId: string; top: boolean }) {
   );
 }
 
+/** การ์ดที่วางคว่ำใต้เน็กซัส (ออร์แกนปีกทองคำ): กองการ์ดคว่ำเหลื่อมลงมุมซ้ายล่าง + ป้ายจำนวน · data-under = ปลายทางแอนิเมชันบินเข้า/ออก */
+function UnderStack({ nexusId, count }: { nexusId: string; count: number }) {
+  const shown = Math.min(count, 3);
+  return (
+    <div data-under={nexusId} className="pointer-events-none absolute top-1/2 left-1/2 h-24 w-[4.2rem] -translate-x-1/2 -translate-y-1/2" title={`การ์ดใต้เน็กซัสนี้ ${count} ใบ`}>
+      {Array.from({ length: shown }, (_, i) => (
+        <div
+          key={i}
+          className="absolute h-24 w-[4.2rem] overflow-hidden rounded shadow-[0_2px_6px_rgba(0,0,0,0.6)] ring-1 ring-black/40"
+          style={{ transform: `translate(${-5 - i * 4}px, ${5 + i * 4}px) rotate(${-4 - i * 3}deg)`, zIndex: 0 }}
+        >
+          <CardBack />
+        </div>
+      ))}
+      <span className="absolute -bottom-2 -left-3 z-[2] rounded-full bg-slate-900/95 px-1.5 text-[10px] font-black text-amber-200 shadow ring-1 ring-amber-300/70">
+        ใต้ ×{count}
+      </span>
+    </div>
+  );
+}
+
 function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }) {
   const state = useGame((s) => s.state);
   const dragging = useGame((s) => s.dragging);
@@ -500,7 +521,9 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
         <div
           className={`relative flex shrink-0 cursor-pointer items-center justify-center transition-[height,width] duration-300 ${exhausted ? 'h-[4.2rem] w-24' : 'h-24 w-[4.2rem]'}`}
         >
-          <div className={`h-24 w-[4.2rem] shrink-0 transition-transform duration-300 ${exhausted ? 'rotate-90 brightness-75' : ''}`}>
+          {/* BS17 ออร์แกนปีกทองคำ: การ์ดที่วางคว่ำใต้เน็กซัสนี้ (โผล่มุมซ้ายล่าง + จำนวนใบ) */}
+          {card.under && card.under.length > 0 && <UnderStack nexusId={cardId} count={card.under.length} />}
+          <div className={`relative z-[1] h-24 w-[4.2rem] shrink-0 transition-transform duration-300 ${exhausted ? 'rotate-90 brightness-75' : ''}`}>
             <CardFace def={def} size="xs" level={level} />
           </div>
           {/* เจ็มของเน็กซัสนี้ */}

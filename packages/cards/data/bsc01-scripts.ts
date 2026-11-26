@@ -61,7 +61,7 @@ export const BSC01_SCRIPTS: Record<string, CardScript> = {
   ],
   ซอว์กริซลี่: [
     { kind: 'burst', on: 'afterAllyDestroyedByOpponent', alsoDepleted: true, steps: [exhaust(2), when(ownUltimate(), [summonThis])] },
-    // "เมื่อสปิริตนี้ต่อสู้" = ตอนโจมตี/ป้องกัน มีผลจนจบการต่อสู้นั้น
+    // "เมื่อสปิริตนี้โจมตี/ป้องกัน": มีผลจนจบการต่อสู้นั้น
     { kind: 'trigger', on: ['attack', 'block'], levels: [2], steps: [{ do: 'battleNoBurst' }] },
   ],
   'เฮฟวี่ แทงก์โมบิล T-35': [

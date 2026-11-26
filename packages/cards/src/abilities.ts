@@ -99,6 +99,10 @@ export type Condition =
   | { summonedByOnStage: true }
   /** (trigger summon) การ์ดนี้ถูกอัญเชิญโดยเอฟเฟกต์ของการ์ดที่ตรงตัวกรอง */
   | { summonedBy: CardFilter }
+  /** BS17 จูเนียส: trigger อัญเชิญนี้เกิดจากการอัญเชิญโดย Summon Bolt */
+  | { summonedBySummonBolt: true }
+  /** BS17 ธงโจรสลัดมังกรสามหัว: การ์ดนี้ถูกทำลายจากการเทียบ BP ในการต่อสู้นี้ และมีการ์ด summonBoltOnBattleLoss ของเราที่มีผล */
+  | { summonBoltAfterBattleLoss: true }
   /** สปิริตนี้ถูกนำไปวางชิดด้านข้างโดย My Unit ในการต่อสู้นี้ */
   | { inUnit: true }
   /** สปิริต/อัลติเมทของเราที่ตรงตัวกรองอย่างน้อย count ตัว */
@@ -479,7 +483,7 @@ export type Step =
   /** ทำลายสปิริต/อัลติเมทของคู่แข่งที่คอสต์สูงสุด 1 ตัว (คอสต์สูงสุดเท่ากันหลายตัว = เลือก) */
   | { do: 'destroyHighestCostOpponent'; filter: CardFilter }
   /** ทิ้งใบบนสุดเด็คคู่แข่ง N ใบ ('level' = เท่าเลเวลของสปิริตนี้: [Crush]) */
-  | { do: 'mill'; count: number | 'level' }
+  | { do: 'mill'; count: number | 'level' | /** BS17 ออริฮาลคอน โกเล็ม (Crush ที่ให้): Lv ของ subject */ 'subjectLevel' }
   /** ถ้าการ์ดที่ถูกทิ้งด้วย mill ล่าสุดของเอฟเฟกต์นี้ ตรงตัวกรองอย่างน้อย 1 ใบ: ทำ steps */
   | { do: 'ifMilled'; filter: CardFilter; steps: Step[] }
   /** ทิ้งใบบนสุดเด็คคู่แข่ง 1 ใบ ต่อคอสต์รวมของการ์ดคู่แข่งที่ถูกทำลายโดยเอฟเฟกต์นี้ */
@@ -506,7 +510,7 @@ export type Step =
   /** นำการ์ดทั้งหมดในแทรชเราไปไว้ใต้สุดเด็ค (เรียงลำดับได้) */
   | { do: 'trashToDeckBottom' }
   /** สามารถอัญเชิญไม่จ่ายคอสต์การ์ดบนมือเรา 1 ใบที่ตรงตัวกรอง */
-  | { do: 'summonFromHandFree'; filter: CardFilter; if?: Condition; /** อัญเชิญได้ไม่เกิน max ใบ (ไม่ระบุ = 1) */ max?: number; /** BS11 ริวเซ็น: สีละ 1 ใบ */ distinctColors?: true; /** BS12 ทรูธ-อีเด็น: เอฟเฟกต์ [เมื่อสปิริต/เบรฟนี้ถูกอัญเชิญ] ของการ์ดที่อัญเชิญจะไม่ทำงาน */ noTriggers?: true; /** BS15 อองเปอเรอร์: max × จำนวนนี้ */ per?: CountPer }
+  | { do: 'summonFromHandFree'; filter: CardFilter; if?: Condition; /** BS17: อัญเชิญโดย Summon Bolt */ summonBolt?: true; /** อัญเชิญได้ไม่เกิน max ใบ (ไม่ระบุ = 1) */ max?: number; /** BS11 ริวเซ็น: สีละ 1 ใบ */ distinctColors?: true; /** BS12 ทรูธ-อีเด็น: เอฟเฟกต์ [เมื่อสปิริต/เบรฟนี้ถูกอัญเชิญ] ของการ์ดที่อัญเชิญจะไม่ทำงาน */ noTriggers?: true; /** BS15 อองเปอเรอร์: max × จำนวนนี้ */ per?: CountPer }
   /**
    * ในเทิร์นนี้ เลือกการ์ดของคู่แข่งที่ตรงตัวกรอง BP-amount แล้วทำลายตัวที่ BP กลายเป็น 0
    * count = จำนวนตัว (ไม่ระบุ = 1), countPerAllyFamily = จำนวนตัวเท่าสปิริตเราเผ่านี้
@@ -692,6 +696,22 @@ export type Step =
   | { do: 'selfCoresToTrash'; count: number; /** ส่งไปรีเสิร์ฟเราแทนแทรช */ to?: 'reserve' }
   /** เมื่อจบการต่อสู้นี้ ทำ steps */
   | { do: 'atBattleEnd'; steps: Step[] }
+  /** BS17 เบียคุ-กาโร: "เมื่อตัดสินผลการต่อสู้" (バトル解決時) = ทำ steps ก่อนเทียบ BP / ไลฟ์ลดของการต่อสู้นี้ */
+  | { do: 'atBattleResolve'; steps: Step[] }
+  /** BS17 ซาราตี: ในการต่อสู้นี้ เมื่อการโจมตีของการ์ดนี้ทำให้ไลฟ์คู่แข่งลดลง ทำ steps */
+  | { do: 'onBattleHitLife'; steps: Step[] }
+  /** BS17 คู-ซี: ในการต่อสู้นี้ ผู้โจมตี (การ์ดนี้) ไม่ถูกป้องกันโดยสปิริต/อัลติเมทที่มี Lv ต่ำกว่าการ์ดนี้ */
+  | { do: 'battleUnblockableLowerLevel' }
+  /** BS17 เพนต้น / พาวเวอร์ดาวน์: ในเทิร์นนี้ เด็คของเราจะไม่ถูกทิ้ง */
+  | { do: 'noMillThisTurn' }
+  /** BS17 ออริฮาลคอน โกเล็ม Critical Hit: ในเทิร์นนี้ เมื่อเด็คคู่แข่งถูกทิ้งตั้งแต่ min ใบในครั้งเดียว ส่งคอร์จากไลฟ์คู่แข่ง 1 เม็ดไปรีเสิร์ฟ */
+  | { do: 'bigMillLifeThisTurn'; min: number }
+  /** BS17 แรนดอมบอมบ์: ดูการ์ดในมือคู่แข่ง 1 ใบ (เลือกคว่ำหน้า) แล้วทำลายการ์ดคู่แข่งที่ตรงตัวกรองที่มีคอสต์ไม่เกินคอสต์ของการ์ดนั้น 1 ตัว */
+  | { do: 'peekOneHandDestroy'; filter: CardFilter }
+  /** BS17 ออร์แกนปีกทองคำ: นำใบบนสุดเด็คเรา ไม่เกิน max ใบ ไปวางคว่ำใต้การ์ดนี้ (n: engine ใช้ภายใน = จำนวนที่เลือก) */
+  | { do: 'deckToUnder'; max: number; n?: number }
+  /** (engine ใช้ภายใน) ออร์แกนปีกทองคำ: ทิ้งการ์ดใต้เน็กซัส 1 ใบ เพื่อให้การ์ดที่ U Trigger วางที่แทรชถือว่าคอสต์ +amount */
+  | { do: 'underBoost'; nexusId: string; amount: number; source: number }
   /** นำสปิริตนี้กลับขึ้นมือ ถ้าสำเร็จทำ then */
   | { do: 'returnSelfToHand'; then?: Step[] }
   /** สามารถนำการ์ดที่มีเอฟเฟกต์ Burst บนมือเรา 1 ใบไปเซ็ทได้ */
@@ -1026,7 +1046,7 @@ export type Step =
   /** ในการต่อสู้นี้ เทียบ Lv แทน BP */
   | { do: 'battleCompareLevel' }
   /** ในเทิร์นนี้ สปิริตของคู่แข่ง 1 ตัว (เลือก) เจ็มกลายเป็น 0 */
-  | { do: 'symbolsZeroChosen'; filter: CardFilter }
+  | { do: 'symbolsZeroChosen'; filter: CardFilter; /** BS17 โกลเด้นเคาน์เตอร์: ใช้ตัวที่เอฟเฟกต์นี้เพิ่งเลือก (chosenId) ไม่ถาม */ chosen?: true }
   /** นำคอร์ที่ไม่ใช่โซลคอร์ในแทรชเรา count เม็ดไปวางไลฟ์ */
   | { do: 'trashCoreToLife'; count: number }
   /** เทนเซย์: ต่อจำนวนคอร์ในรีเสิร์ฟ+บนสปิริต/อัลติเมทของเรา 1 เม็ด วางคอร์วอยด์ 1 เม็ดบนสปิริต/อัลติเมทของเราตามใจชอบ (left: engine ใช้ภายใน) */
@@ -1104,7 +1124,7 @@ export type Step =
    * U Trigger (กติกา 05 ข้อ 4): นำการ์ดใบบนสุดเด็คคู่แข่ง 1 ใบไปวางที่แทรช (ไม่ใช่ [เอฟเฟกต์ทิ้งเด็ค])
    * คอสต์ของการ์ดนั้นต่ำกว่าคอสต์ของอัลติเมทนี้ (บนสนาม) = ฮิต → ทำ then (CountPer uTriggerCost = คอสต์ของการ์ดที่วาง)
    */
-  | { do: 'uTrigger'; then: Step[]; /** BS16 เบลิท: U Trigger ตอนอัลติเมทนี้ถูกทำลาย (ไม่อยู่บนสนามแล้ว: เทียบกับคอสต์บนการ์ด) */ fromTrash?: true; /** (engine ใช้ภายใน) 2VS2: เลือกเด็คของคู่แข่งแล้ว (then ทำหลังคืนที่นั่งคู่แข่ง) */ seatPicked?: true }
+  | { do: 'uTrigger'; then: Step[]; /** BS16 เบลิท: U Trigger ตอนอัลติเมทนี้ถูกทำลาย (ไม่อยู่บนสนามแล้ว: เทียบกับคอสต์บนการ์ด) */ fromTrash?: true; /** (engine ใช้ภายใน) 2VS2: เลือกเด็คของคู่แข่งแล้ว (then ทำหลังคืนที่นั่งคู่แข่ง) */ seatPicked?: true; /** (engine ใช้ภายใน) BS17 ออร์แกนปีกทองคำ: วางที่แทรชแล้ว รอตัดสินฮิต */ milledId?: string }
   /** "หลังจบเทิร์นนี้ เราได้เล่นเทิร์นของเราอีก 1 เทิร์น" · key = เกมละ 1 ครั้ง (เงื่อนไข oncePerGameFree) */
   | { do: 'extraTurn'; key?: string }
   /** "ในเอฟเฟกต์นี้ คู่แข่งไม่สามารถสั่งใช้เบิร์ส 'หลังจากสปิริตของเราถูกทำลายโดยคู่แข่ง'" (เฟลมบรีซ) */
@@ -1121,6 +1141,10 @@ export type Step =
   // ---------------- BS15 เขียว
   /** แชโดว์ลีฟ: ให้ Bunshin ของสปิริตของเรา 1 ตัวทำงาน (ใช้จำนวนสูงสุดของ Bunshin ที่มี) */
   | { do: 'activateBunshin' }
+  /** BS17 ไนท์ไอบิส: Bunshin ของสปิริตทั้งหมดของเราทำงาน (ทีละตัว) */
+  | { do: 'activateBunshinAll' }
+  /** BS17 ไนท์ไอบิส: เลือกสปิริตร่างแยกของเราที่ฟื้นสภาพ 1 ตัว (ไม่ใช่ subject) มาซ้อน = เสื่อมสภาพตัวนั้น แล้วในการต่อสู้นี้ subject ถือว่ามีคอสต์/BP/เจ็มตามนี้ */
+  | { do: 'cloneStack'; cost: number; bp: number; symbols: number }
   // ---------------- BS15 เหลือง
   /** มิเรฟา: เปิดการ์ดใบบนสุดเด็คเรา ตรงตัวกรอง = ทำ then · หลังจากนั้นนำการ์ดที่เปิดขึ้นมือ */
   | { do: 'revealTopIf'; filter: CardFilter; then: Step[] }
@@ -1173,6 +1197,12 @@ export type TriggerEvent =
   | 'allyAttack'
   | 'attackHitLife'
   | 'allyAttackHitLife'
+  /** BS17 ผลของหญ้าเขี้ยวมรกต: U Trigger ของอัลติเมทของเราฮิต (subject = อัลติเมทนั้น) */
+  | 'allyUTriggerHit'
+  /** BS17 เพนต้น / พาวเวอร์ดาวน์: การ์ดนี้ถูกวางจากเด็คเราที่แทรชโดย U Trigger ของคู่แข่ง (คู่กับ milledByOpponent) */
+  | 'uTriggeredByOpponent'
+  /** BS17 เหมืองแร่หายาก: ไลฟ์ของคู่แข่งลดลง */
+  | 'oppLifeLost'
   /** เราทิ้งเด็คคู่แข่งด้วยเอฟเฟกต์ (subject = สปิริตที่เป็นเจ้าของเอฟเฟกต์นั้น) */
   | 'oppDeckMilled'
   /** การ์ดนี้ถูกทำลายโดยคู่แข่ง (ต่อสู้หรือเอฟเฟกต์) */
@@ -1332,6 +1362,8 @@ export interface SubjectFilter {
   bySpirit?: true;
   /** allySummoned: ถูกอัญเชิญโดย On Stage */
   byOnStage?: true;
+  /** BS17: ถูกอัญเชิญโดย Summon Bolt */
+  bySummonBolt?: true;
   /** การ์ดต้นเหตุตรงตัวกรอง (เช่น มี Solo Part) */
   card?: CardFilter;
   // ---------------- BS09
@@ -1438,6 +1470,10 @@ export type Ability =
       exhaustOpp?: CardFilter;
       /** BS15 ไรออต โกเล็ม: จ่ายด้วยการเสื่อมสภาพการ์ดของเราที่ตรงตัวกรอง 1 ใบ (เน็กซัส) */
       exhaustOwn?: CardFilter;
+      /** BS17 อาร์ชิบอลด์: จ่ายด้วยการทำลายการ์ดนี้ (ต้นเหตุ) */
+      destroySource?: true;
+      /** BS17 อาร์ชิบอลด์: ใช้กับการถูกทำลายโดยเราเองด้วย (Summon Bolt) */
+      ownToo?: true;
       if?: Condition;
     }
   /** "ถ้าเรามี <name> อยู่, การลดคอสต์ทั้งหมดของการ์ดนี้ถือว่าลดจนครบแล้ว" */
@@ -1637,7 +1673,7 @@ export type Ability =
   /** ถ้าเงื่อนไขจริง การ์ดสปิริตในมือเราที่ตรงตัวกรองได้รับ [Quick] (เกรย์ไนท์) */
   | { kind: 'grantQuick'; source: number; levels: number[]; filter: CardFilter; if?: Condition }
   /** เด็คของผู้เล่นทุกคนจะไม่ถูกทิ้ง */
-  | { kind: 'noMill'; source: number; levels: number[] }
+  | { kind: 'noMill'; source: number; levels: number[]; /** BS17 เพนต้น: เฉพาะเด็คของเรา (ทิ้งโดยเอฟเฟกต์ของคู่แข่ง) */ ownOnly?: true }
   /** ผู้เล่นทุกคน: จั่วการ์ดตั้งแต่ 2 ใบใน 1 ครั้งโดยเอฟเฟกต์ = การ์ดบนสนาม/ในมือทั้งหมดของฝ่ายนั้นไปใต้สุดเด็ค (คิชูด็อก) */
   | { kind: 'multiDrawPunish'; source: number; levels: number[] }
   /** คู่แข่งอัญเชิญการ์ดสปิริตคอสต์ดั้งเดิมไม่เกิน maxCost: ใช้สัญลักษณ์ลดคอสต์ไม่ได้ */
@@ -1656,7 +1692,7 @@ export type Ability =
   /** "เมื่อสปิริตของเราจะทำการ On Stage, สามารถเสื่อมสภาพสปิริตนั้น เพื่อถือว่ากลับใต้สุดเด็คแล้ว" (รีเซ่-โดรมเวล) */
   | { kind: 'onStageReplace'; source: number; levels: number[]; if?: Condition }
   /** การ์ดของเราที่ตรง scope ไม่ถูกทำลายโดยเอฟเฟกต์ของคู่แข่ง (soloPart = เป็นความสามารถ Solo Part) */
-  | { kind: 'destroyImmune'; source: number; levels: number[]; if?: Condition; scope: { ownNamed: string[] } | { own: CardFilter } | /** BS16 เซอร์ไวเวอร์: การ์ดนี้เอง */ { self: true }; soloPart?: true }
+  | { kind: 'destroyImmune'; source: number; levels: number[]; if?: Condition; /** BS17 อาร์เชีย: เฉพาะเอฟเฟกต์ของการ์ดประเภทนี้ */ fromTypes?: CardType[]; scope: { ownNamed: string[] } | { own: CardFilter } | /** BS16 เซอร์ไวเวอร์: การ์ดนี้เอง */ { self: true }; soloPart?: true }
   /** "หลังจากจบแอทแท็คสเต็ปของเรา: เข้า [รีเฟรชสเต็ป] / [แอทแท็คสเต็ป] อีก 1 ครั้ง" once = ไม่เกินเทิร์นละ/เกมละ 1 ครั้ง */
   | { kind: 'extraSteps'; source: number; levels: number[]; if?: Condition; steps: ('refresh' | 'attack')[]; once: 'turn' | 'game' }
   /** "เมื่อ <attacker> ของเราโจมตี คู่แข่งป้องกันได้ด้วยสปิริต/อัลติเมทตั้งแต่ 1 ตัวที่ Lv รวมตั้งแต่ minLevel แล้วเราเลือกสู้ 1 ตัว" */
@@ -1674,6 +1710,8 @@ export type Ability =
   | { kind: 'allyCostSet'; source: number; levels: number[]; if?: Condition; filter: CardFilter; cost: number }
   /** BS16 เวลซันดี: การ์ดของเราที่ตรงตัวกรองที่ถูกวางที่แทรชโดย U Trigger ของคู่แข่ง ถือว่าคอสต์ +amount (เทียบฮิต) */
   | { kind: 'uTriggerCostBoost'; source: number; levels: number[]; if?: Condition; filter: CardFilter; amount: number }
+  /** BS17 เซเบอร์เซเซริ: การ์ดนี้ถูกวางจากเด็คเราที่แทรชโดย U Trigger ของอัลติเมทคอสต์ไม่เกิน maxCost ของคู่แข่ง = Guard (ไม่ฮิต) */
+  | { kind: 'uTriggerGuard'; source: number; levels: number[]; maxCost: number }
   /** BS16 เวลซันดี: รีเฟรชสเต็ปของคู่แข่ง เราก็ทำรีเฟรชสเต็ปด้วย */
   | { kind: 'refreshWithOpponent'; source: number; levels: number[] }
   /** BS16 โนวา-เรมแนนต์: สปิริตทั้งหมดจะร่วมร่างไม่ได้ */
@@ -1811,7 +1849,15 @@ export type Ability =
     }
   // ---------------- BS13 หกเทพพิสุทธิ์
   /** เจียส: คอร์ที่ได้รับในคอร์สเต็ปของเรา +amount */
-  | { kind: 'coreStepBonus'; source: number; levels: number[]; amount: number; if?: Condition }
+  | { kind: 'coreStepBonus'; source: number; levels: number[]; amount: number; if?: Condition; /** "ไม่แสดงผลซ้ำซ้อน": การ์ดชื่อเดียวกันนับครั้งเดียว */ noStack?: true }
+  /** BS17 อาซาเอล: ตอนตัดสินผลการต่อสู้ ถ้าผู้โจมตีของคู่แข่งมี BP ไม่เกิน maxBp ไลฟ์ของเราไม่ลด */
+  /** BS17 ออริฮาลคอน โกเล็ม: การ์ดของเราที่ตรงตัวกรองถือว่ามีคีย์เวิร์ด/ข้อความนี้ (ตัวกรอง textIncludes เห็นด้วย) */
+  | { kind: 'grantText'; source: number; levels: number[]; if?: Condition; filter: CardFilter; text: string }
+  /** BS17 ธงโจรสลัดมังกรสามหัว: สปิริตที่มี Summon Bolt ของเราที่ถูกทำลายจากการเทียบ BP ยังใช้ Summon Bolt ได้ */
+  | { kind: 'summonBoltOnBattleLoss'; source: number; levels: number[]; if?: Condition }
+  | { kind: 'lowBpLifeShield'; source: number; levels: number[]; if?: Condition; maxBp: number }
+  /** BS17 ออร์แกนปีกทองคำ: การ์ดในเด็คเราถูกวางที่แทรชโดย U Trigger ของคู่แข่ง สามารถทิ้งการ์ดใต้การ์ดนี้ 1 ใบ เพื่อให้การ์ดนั้นคอสต์ +amount */
+  | { kind: 'uTriggerUnderBoost'; source: number; levels: number[]; if?: Condition; amount: number }
   /** เอล-ราฟิล: ไลฟ์ของเราเป็น 0 แล้วยังไม่แพ้ (เงื่อนไขหายไปตอนไลฟ์ 0 = แพ้ทันทีที่จบ action) */
   | { kind: 'noLoseAtZeroLife'; source: number; levels: number[]; if?: Condition }
   /** เอล-ราฟิล: สปิริต/อัลติเมทของคู่แข่งทั้งหมดกลายเป็น BP0 */

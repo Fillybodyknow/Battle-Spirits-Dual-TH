@@ -137,6 +137,12 @@ export function leaveField(ctx: Ctx, cardId: string, to: 'trash' | 'hand', opts:
   card.turnBp = 0;
   delete card.battleBp;
   delete card.battleSymbols;
+  delete card.battleStack;
+  // BS17 ออร์แกนปีกทองคำ: การ์ดใต้เน็กซัสถูกทิ้งเมื่อเน็กซัสออกจากฟิลด์
+  if (card.under?.length) {
+    p.trashCards.push(...card.under);
+    delete card.under;
+  }
   card.usedThisTurn = [];
   (to === 'trash' ? p.trashCards : p.hand).push(cardId);
   // กติกา 04 ข้อ 2: ร่างต้นออกจากสนาม (ถูกทำลาย / สูญสลาย / กลับขึ้นมือ / กลับใต้กอง) → เลือกเรื่องเบรฟทันที

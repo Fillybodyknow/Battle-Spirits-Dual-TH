@@ -62,6 +62,10 @@ export interface CardInstance {
   battleBp?: number;
   /** เจ็มที่เพิ่มจากเอฟเฟกต์ที่ไม่บอกระยะเวลา: มีผลจนจบการต่อสู้นั้น */
   battleSymbols?: { color: string; count: number }[];
+  /** BS17 ไนท์ไอบิส: ในการต่อสู้นี้ ถือว่ามีคอสต์/BP นี้ (ร่างแยกซ้อน) */
+  battleStack?: { cost: number; bp: number };
+  /** BS17 ออร์แกนปีกทองคำ: การ์ดที่วางคว่ำอยู่ใต้การ์ดนี้ (ไม่อยู่ในโซนใด · ออกจากฟิลด์ = ลงแทรช) */
+  under?: string[];
   /** source ของเอฟเฟกต์ "เทิร์นละ 1 ครั้ง" ที่ใช้ไปแล้วในเทิร์นนี้ */
   usedThisTurn: number[];
   /** Brave ที่ร่วมร่างอยู่บนการ์ดนี้ (Brave ที่ร่วมร่างไม่อยู่ใน field ของผู้เล่น) */
@@ -126,6 +130,8 @@ export interface Battle {
   endAttackStepAfter: boolean;
   /** เอฟเฟกต์ที่ทำงาน "เมื่อจบการต่อสู้นี้" */
   endEffects: QueuedEffect[];
+  /** BS17 เอฟเฟกต์ "เมื่อตัดสินผลการต่อสู้" (ทำตอนเริ่ม resolveBattle ก่อนเทียบ BP) */
+  resolveEffects?: QueuedEffect[];
   /** BS14 Curse: ผู้ป้องกันตอนตัดสินผลการต่อสู้ */
   blockersAtResolve?: string[];
   /** BS15 โคริสทัล: ไม่ถูกทำลายในการต่อสู้นี้ */
@@ -158,6 +164,12 @@ export interface Battle {
   blockTax?: { reserveToTrash: number; discard?: number; /** BSC02: คอร์บนฟิลด์ (สนาม/รีเสิร์ฟ) ไปแทรช */ fieldToTrash?: number; paid?: boolean };
   /** BSC02 โซโลวิง: ผู้โจมตีไม่ถูกป้องกันโดยสปิริตเลเวลเหล่านี้ */
   unblockLevels?: number[];
+  /** BS17 คู-ซี: ผู้โจมตีไม่ถูกป้องกันโดยสปิริต/อัลติเมทที่ Lv ต่ำกว่า */
+  unblockLowerLevel?: true;
+  /** BS17: การ์ดที่ถูกทำลายจากการเทียบ BP ในการต่อสู้นี้ */
+  bpDestroyed?: string[];
+  /** BS17 ซาราตี: เมื่อการโจมตีของ cardId ทำให้ไลฟ์คู่แข่งลด */
+  hitLifeSteps?: { cardId: string; controller: PlayerId; steps: Step[] }[];
   /** BS16 ริวแมน ไลท์นิ่ง: ในการต่อสู้นี้ "เมื่อสปิริตนี้ถูกทำลาย" ของสปิริตผู้เล่นนี้ไม่ทำงาน */
   noDestroyTriggers?: PlayerId;
   /** BS16 ไก-อสุรา: ในการต่อสู้นี้ สปิริตของคู่แข่งของผู้เล่นนี้ที่ถูกทำลาย คอร์ไปวอยด์ */
@@ -310,6 +322,10 @@ export interface QueuedEffect {
   destroyedBraves?: string[];
   /** (BS07) trigger summon: การ์ดถูกอัญเชิญโดย On Stage / โดยเอฟเฟกต์ของการ์ดนี้ */
   summonByOnStage?: boolean;
+  /** BS17: trigger อัญเชิญนี้เกิดจาก Summon Bolt */
+  summonBySummonBolt?: boolean;
+  /** BS17: เอฟเฟกต์นี้คือ Summon Bolt (อัญเชิญที่เกิดจากมัน = โดย Summon Bolt) */
+  summonBolt?: boolean;
   summonBySource?: string;
   /** (BS08) การ์ดที่เพิ่งเลือกในเอฟเฟกต์นี้ (allySoulToTrash / buffChosen) */
   chosenId?: string;
@@ -483,6 +499,10 @@ export interface GameState {
   turnRage?: { cardId: string; turn: number }[];
   /** BS16 โบนเซเบอร์ไทเกอร์: ในเทิร์นนี้ การ์ดของ player ที่ตรงตัวกรอง คอสต์ +amount */
   turnCostBoosts?: { player: PlayerId; turn: number; filter: CardFilter; amount: number }[];
+  /** BS17 เพนต้น / พาวเวอร์ดาวน์: ในเทิร์นนี้ เด็คของ player จะไม่ถูกทิ้ง (cardId/source = ต้นเหตุ) */
+  noMillTurns?: { player: PlayerId; turn: number; cardId: string; source: number }[];
+  /** BS17 ออริฮาลคอน โกเล็ม: ในเทิร์นนี้ เมื่อ player ทิ้งเด็คคู่แข่งตั้งแต่ min ใบในครั้งเดียว = ไลฟ์คู่แข่ง 1 เม็ดไปรีเสิร์ฟ */
+  bigMillLife?: { player: PlayerId; turn: number; min: number; sourceId: string }[];
   /** (สำรอง) การ์ดที่ U Trigger กำลังเปิด ถือว่าคอสต์ +N */
   uTriggerExtraCost?: { cardId: string; amount: number };
   /** "ในเทิร์นนี้ สปิริต/เน็กซัสของคู่แข่งทั้งหมดสูญเสียเอฟเฟกต์ทั้งหมด": การ์ดของ player เสียเอฟเฟกต์ในเทิร์น turn */
@@ -651,6 +671,10 @@ export type GameEvent =
   | { type: 'coresMoved'; player: PlayerId; count: number }
   /** BS10 Bunshin: การ์ดบนสุดเด็คกลายเป็นสปิริตร่างแยก */
   | { type: 'bunshin'; player: PlayerId; cardIds: string[] }
+  /** BS17 ออร์แกนปีกทองคำ: นำใบบนสุดเด็คไปวางคว่ำใต้การ์ดนี้ */
+  | { type: 'deckToUnder'; player: PlayerId; cardId: string; cardIds: string[] }
+  /** BS17 ออร์แกนปีกทองคำ: ทิ้งการ์ดใต้การ์ดนี้ลงแทรช */
+  | { type: 'underDiscarded'; player: PlayerId; nexusId: string; cardId: string }
   /** สปิริตร่างแยกถูกทิ้ง (จะกลับขึ้นมือ/เข้าเด็ค / หงายแล้วไม่ใช่การ์ดสปิริต) */
   | { type: 'cloneDiscarded'; player: PlayerId; cardId: string }
   | { type: 'burstSet'; player: PlayerId; replacedCardId: string | null }
