@@ -45,6 +45,124 @@ export function installDragCleanup() {
   );
 }
 
+/**
+ * ลากด้วยนิ้ว: มือถือ/แท็บเล็ตส่วนใหญ่ไม่รองรับการลากของเบราว์เซอร์ (HTML5 drag & drop)
+ * → แปลงการลากนิ้วบนการ์ดที่ draggable เป็นเหตุการณ์ dragstart / dragenter / dragover / dragleave / drop / dragend
+ * ตัวรับเดิมทั้งหมด (สนาม, ช่อง Burst, การ์ดในมือ, Core, ผู้ร่วมร่าง) ใช้ได้ทันทีโดยไม่ต้องแก้
+ *  - เริ่มลากเมื่อนิ้วขยับเกิน TOUCH_DRAG_PX · การ์ดในมือที่ปัดแนวนอน = เลื่อนพัดการ์ดตามเดิม (ไม่เริ่มลาก)
+ *  - กดค้างโดยไม่ขยับ = เปิดดูการ์ด (touch.ts) ตามเดิม · ลากแล้ว = ไม่นับเป็นการแตะ (ไม่เปิดเมนู)
+ */
+const TOUCH_DRAG_PX = 10;
+export function installTouchDrag() {
+  if (typeof document === 'undefined') return;
+  let src: HTMLElement | null = null;
+  let start = { x: 0, y: 0 };
+  let dragging = false;
+  let over: Element | null = null;
+  let dt: DataTransfer | null = null;
+  let suppressClick = false;
+  const makeTransfer = (): DataTransfer => {
+    try {
+      return new DataTransfer();
+    } catch {
+      const data: Record<string, string> = {};
+      return {
+        dropEffect: 'move',
+        effectAllowed: 'all',
+        types: [],
+        files: [],
+        items: [],
+        setData: (k: string, v: string) => void (data[k] = v),
+        getData: (k: string) => data[k] ?? '',
+        clearData: () => {},
+        setDragImage: () => {},
+      } as unknown as DataTransfer;
+    }
+  };
+  const fire = (target: EventTarget, type: string, x: number, y: number): boolean => {
+    const ev = new Event(type, { bubbles: true, cancelable: true }) as Event & { dataTransfer?: DataTransfer };
+    Object.defineProperty(ev, 'dataTransfer', { value: dt });
+    Object.defineProperty(ev, 'clientX', { value: x });
+    Object.defineProperty(ev, 'clientY', { value: y });
+    Object.defineProperty(ev, 'pageX', { value: x });
+    Object.defineProperty(ev, 'pageY', { value: y });
+    return target.dispatchEvent(ev);
+  };
+  const reset = () => {
+    src = null;
+    dragging = false;
+    over = null;
+    dt = null;
+  };
+  document.addEventListener(
+    'touchstart',
+    (e) => {
+      if (e.touches.length !== 1) return reset();
+      const el = (e.target as Element | null)?.closest<HTMLElement>('[draggable="true"]');
+      if (!el) return reset();
+      src = el;
+      dragging = false;
+      start = { x: e.touches[0]!.clientX, y: e.touches[0]!.clientY };
+    },
+    { capture: true, passive: true },
+  );
+  document.addEventListener(
+    'touchmove',
+    (e) => {
+      if (!src) return;
+      const t = e.touches[0]!;
+      if (!dragging) {
+        const dx = t.clientX - start.x;
+        const dy = t.clientY - start.y;
+        if (Math.hypot(dx, dy) < TOUCH_DRAG_PX) return;
+        // ปัดพัดการ์ดในมือแนวนอน = เลื่อน ไม่ใช่ลาก
+        if (src.closest('[data-hand-card]') && Math.abs(dx) > Math.abs(dy)) return reset();
+        dt = makeTransfer();
+        dragging = true;
+        fire(src, 'dragstart', start.x, start.y);
+      }
+      e.preventDefault(); // ไม่ให้หน้าจอเลื่อนระหว่างลาก
+      const target = document.elementFromPoint(t.clientX, t.clientY);
+      if (target !== over) {
+        if (over) fire(over, 'dragleave', t.clientX, t.clientY);
+        if (target) fire(target, 'dragenter', t.clientX, t.clientY);
+        over = target;
+      }
+      if (target) fire(target, 'dragover', t.clientX, t.clientY);
+      lastDragOver = performance.now();
+    },
+    { capture: true, passive: false },
+  );
+  const end = (e: TouchEvent, drop: boolean) => {
+    if (!src) return;
+    if (dragging) {
+      const t = e.changedTouches[0];
+      const x = t?.clientX ?? start.x;
+      const y = t?.clientY ?? start.y;
+      const target = drop ? document.elementFromPoint(x, y) : null;
+      if (target) fire(target, 'drop', x, y);
+      fire(src, 'dragend', x, y);
+      suppressClick = true;
+      setTimeout(() => (suppressClick = false), 400);
+      setTimeout(clearDrags, 0);
+    }
+    reset();
+  };
+  document.addEventListener('touchend', (e) => end(e, true), { capture: true });
+  document.addEventListener('touchcancel', (e) => end(e, false), { capture: true });
+  // ลากเสร็จแล้ว: ไม่นับเป็นการแตะการ์ด
+  document.addEventListener(
+    'click',
+    (e) => {
+      if (!suppressClick) return;
+      suppressClick = false;
+      e.preventDefault();
+      e.stopPropagation();
+    },
+    { capture: true },
+  );
+}
+
 /** ตำแหน่งเมาส์ระหว่างลาก (เบราว์เซอร์ไม่ส่ง mousemove ระหว่างลาก: ใช้ dragover ที่ยิงต่อเนื่องแทน) */
 function useDragPos(active: boolean) {
   const [pos, setPos] = useState(startAt);

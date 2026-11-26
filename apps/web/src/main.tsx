@@ -10,7 +10,7 @@ import { registerPwa } from './pwa';
 import { installTouch } from './touch';
 import { startUpdateCheck } from './version';
 import { installGfx } from './gfx';
-import { installDragCleanup } from './components/DragGhost';
+import { installDragCleanup, installTouchDrag } from './components/DragGhost';
 import { installAccount } from './account/account';
 import { checkGameData } from './gameData';
 
@@ -19,6 +19,7 @@ installTouch();
 startUpdateCheck();
 installGfx();
 installDragCleanup();
+installTouchDrag();
 installAccount();
 // ข้อมูลเกมที่ดาวน์โหลดไว้: เช็กหลังหน้าแรกโหลดเสร็จ (ไม่แย่งเน็ตกับหน้า Preload) · เลือกดาวน์โหลดไว้ = แพตช์ส่วนที่ขาดให้เอง
 window.addEventListener('load', () => setTimeout(() => void checkGameData(), 4000));
