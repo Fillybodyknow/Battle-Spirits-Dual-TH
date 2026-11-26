@@ -493,7 +493,7 @@ export type Fx =
       sub?: string;
       tone: 'turn' | 'step' | 'burst' | 'win' | 'mini';
       delay?: number;
-      /** เจ้าของสเต็ป (ป้ายเล็ก: ฝั่งเราสีฟ้า / คู่แข่งสีแดง) */
+      /** เจ้าของสเต็ป (ป้ายเล็ก / ป้ายสเต็ป: ฝั่งเราสีฟ้า / คู่แข่งสีแดง) */
       player?: PlayerId;
       /** ห้ามพลิกกระดานจนกว่าป้ายนี้จะแสดงจบ (END STEP) */
       holdView?: boolean;
@@ -1095,7 +1095,7 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         break;
       case 'phaseChanged': {
         if (e.phase !== 'draw') inDrawStep = false;
-        if (e.phase === 'attack' && !newTurn) out.push({ kind: 'banner', tone: 'step', title: 'ATTACK STEP', sub: 'เลือกสปิริตที่จะโจมตี' });
+        if (e.phase === 'attack' && !newTurn) out.push({ kind: 'banner', tone: 'step', title: 'ATTACK STEP', sub: 'เลือกสปิริตที่จะโจมตี', player: s.turnPlayer });
         // ป้ายเล็กของสเต็ปช่วงต้นเทิร์น (Start → Core → Draw → Refresh → Main) และ End
         const gotCore = events.some((x) => x.type === 'coreGained' && x.player === s.turnPlayer);
         const mini: Partial<Record<typeof e.phase, [string, string]>> = {
@@ -1401,7 +1401,7 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
         t += 800;
         break;
       case 'extraStep':
-        out.push({ kind: 'banner', tone: 'step', title: e.step === 'refresh' ? 'REFRESH STEP' : 'ATTACK STEP', sub: `อีกครั้ง (${db.get(s.cards[e.cardId]!.cardNo).name})`, delay: t });
+        out.push({ kind: 'banner', tone: 'step', player: s.cards[e.cardId]!.owner, title: e.step === 'refresh' ? 'REFRESH STEP' : 'ATTACK STEP', sub: `อีกครั้ง (${db.get(s.cards[e.cardId]!.cardNo).name})`, delay: t });
         t += 900;
         break;
       case 'cleansed':

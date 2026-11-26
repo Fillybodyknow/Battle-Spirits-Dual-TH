@@ -657,7 +657,7 @@ export type Step =
   /** สามารถอัญเชิญการ์ดในแทรชเรา 1 ใบที่ตรงตัวกรอง (จ่ายคอสต์ตามคอสต์ในแทรช) repeat = กี่ใบก็ได้ */
   | { do: 'summonFromTrash'; filter: CardFilter; repeat?: true; /** ถ้าเงื่อนไขจริง การลดคอสต์ถือว่าลดจนครบแล้ว */ fullReductionIf?: Condition }
   /** ส่งคอร์ไลฟ์คู่แข่ง N เม็ดไปที่รีเสิร์ฟคู่แข่ง */
-  | { do: 'opponentLifeToReserve'; count: number; /** ส่งลงแทรชคู่แข่งแทนรีเสิร์ฟ */ to?: 'trash'; /** BS12: count × จำนวนนี้ */ per?: CountPer }
+  | { do: 'opponentLifeToReserve'; count: number; /** ส่งลงแทรชคู่แข่งแทนรีเสิร์ฟ · void = ไปวอยด์ (BS15 ไกเซอร์แอตลาส) */ to?: 'trash' | 'void'; /** BS12: count × จำนวนนี้ */ per?: CountPer }
   /** ส่ง Core บนสปิริตนี้ N ดวงลงแทรชเรา (เลือก Core ธรรมดาก่อน) */
   | { do: 'selfCoresToTrash'; count: number; /** ส่งไปรีเสิร์ฟเราแทนแทรช */ to?: 'reserve' }
   /** เมื่อจบการต่อสู้นี้ ทำ steps */
@@ -693,6 +693,9 @@ export type Step =
       millAsked?: true;
       /** เอฟเฟกต์ [เมื่อสปิริตนี้ถูกอัญเชิญ] ของการ์ดนี้ไม่ทำงาน */
       noTriggers?: true;
+      /** (engine ใช้ภายใน) BS15 ดังกาโร: ถามแล้วว่าจะใช้คอร์จากวอยด์ไหม / วางคอร์จากวอยด์ 1 เม็ดแทนรีเสิร์ฟ */
+      voidAsked?: true;
+      fromVoid?: true;
     }
   /** (engine ใช้ภายใน) Brave ที่อัญเชิญด้วยเอฟเฟกต์: เลือกสปิริตที่จะร่วมร่าง หรือไม่เลือก = ลงเป็นสปิริต */
   | { do: 'braveOrSpirit'; cardId: string }
@@ -714,7 +717,7 @@ export type Step =
   /** ถ้าการ์ดที่ returnFromTrash ล่าสุดของเอฟเฟกต์นี้นำขึ้นมือตรงตัวกรอง: ทำ steps */
   | { do: 'ifReturned'; filter: CardFilter; steps: Step[] }
   /** ในเทิร์นนี้ เลือกการ์ดของคู่แข่งที่ตรงตัวกรอง count ตัว: โจมตี/ป้องกันไม่ได้ */
-  | { do: 'disableChosenOpponent'; filter: CardFilter; count?: number; countPerAllyFamily?: string; if?: Condition; dispersed?: true; per?: CountPer; }
+  | { do: 'disableChosenOpponent'; filter: CardFilter; count?: number; countPerAllyFamily?: string; if?: Condition; dispersed?: true; per?: CountPer; /** BS15 คานาบูน: ป้องกันไม่ได้อย่างเดียว (ยังโจมตีได้) */ blockOnly?: true }
   /** อัญเชิญไม่จ่ายคอสต์: subject = การ์ดต้นเหตุ (เช่น การ์ดสปิริตที่ใช้เป็นเมจิค) / self = การ์ดนี้ (ในแทรช) */
   | { do: 'summonCardFree'; which: 'subject' | 'self'; /** "เมื่อเป็นเช่นนั้น": ทำต่อเมื่ออัญเชิญสำเร็จ */ then?: Step[] }
   /** สามารถทิ้งการ์ดในมือเราได้ไม่เกิน max ใบ (จำจำนวนไว้ใช้กับ removeCoresPerDiscarded) */
@@ -905,7 +908,7 @@ export type Step =
   /** ในเทิร์นนี้ ขณะสปิริตของเราที่ตรงตัวกรองโจมตีอยู่ เอฟเฟกต์ของคู่แข่งจบแอทแท็คสเต็ปไม่ได้ */
   | { do: 'noEndAttackStepThisTurn'; filter: CardFilter }
   /** ในการต่อสู้นี้ คู่แข่งต้องป้องกันด้วยสปิริต 2 ตัว หรืออัลติเมท 2 ตัว แล้วผู้โจมตีเลือกสู้ 1 ตัว */
-  | { do: 'pairBlock' }
+  | { do: 'pairBlock'; /** BS15: จำนวนสปิริตที่ต้องป้องกันพร้อมกัน (ไม่ระบุ = 2) */ count?: number; /** BS15 บีฮีมอธ: ผู้โจมตีคือการ์ดต้นเหตุ (allyAttack) ไม่ใช่การ์ดนี้ */ attacker?: 'subject' }
   /** อัญเชิญการ์ดในแทรชเรา 1 ใบที่ตรงตัวกรอง (สามารถ, จ่ายคอสต์) · then = ทำต่อเมื่ออัญเชิญสำเร็จ */
   | { do: 'summonFromTrashThen'; filter: CardFilter; then: Step[] }
   /** อัญเชิญไม่จ่ายคอสต์การ์ดในมือ/แทรชเราที่ตรงตัวกรองได้ไม่เกิน max ใบ */
@@ -1033,7 +1036,10 @@ export type Step =
   /** แก๊สอุซางิ: ทิ้งการ์ดที่วางแสดงนอกมือของคู่แข่ง count ใบ (เราเลือก) */
   | { do: 'discardOpponentShown'; count: number; per?: CountPer }
   /** เควตซัลโคอาตล์: นำคอร์ (ไม่ใช่โซลคอร์: โซลคอร์ไปไลฟ์ไม่ได้ถ้าเอฟเฟกต์ไม่ระบุ) บนการ์ดของเราที่ตรงตัวกรอง 1 เม็ด มาวางที่ไลฟ์ของเรา */
-  | { do: 'allyCoreToLife'; filter: CardFilter };
+  | { do: 'allyCoreToLife'; filter: CardFilter }
+  // ---------------- BS15 เขียว
+  /** แชโดว์ลีฟ: ให้ Bunshin ของสปิริตของเรา 1 ตัวทำงาน (ใช้จำนวนสูงสุดของ Bunshin ที่มี) */
+  | { do: 'activateBunshin' };
 
 /** ขอบเขตของ BP+ ถาวร */
 export type StaticScope =
@@ -1542,7 +1548,7 @@ export type Ability =
   | { kind: 'burstOnDiscard'; source: number }
   // ---------------- BS08
   /** คอร์บนการ์ดของเราที่ตรงตัวกรองจะเหลือน้อยกว่า min เม็ดโดยคู่แข่งไม่ได้ */
-  | { kind: 'coreFloor'; source: number; levels: number[]; if?: Condition; filter: CardFilter; /** lv1 = เท่าเลเวลคอสต์ Lv1 ของแต่ละการ์ด */ min: number | 'lv1' }
+  | { kind: 'coreFloor'; source: number; levels: number[]; if?: Condition; filter: CardFilter; /** lv1 = เท่าเลเวลคอสต์ Lv1 ของแต่ละการ์ด */ min: number | 'lv1'; /** BS15 โยโรอิฟุคุโร: เฉพาะการ์ดนี้ */ self?: true }
   /** แอทแท็คสเต็ปของคู่แข่ง: สปิริตนี้ป้องกันสปิริตที่ BP น้อยกว่าสปิริตนี้ไม่ได้ */
   | { kind: 'cannotBlockLowerBp'; source: number; levels: number[] }
   /** ขณะทำการ Showdown สปิริตนี้ BP+amount */
@@ -1668,7 +1674,12 @@ export type Ability =
   /** เธิร์ดอายส์ สเนก: คอร์ที่คู่แข่งจะนำจากวอยด์มาเพิ่มโดยเอฟเฟกต์ ถูกนำมาวางบนสปิริตนี้แทน */
   | { kind: 'stealOpponentVoid'; source: number; levels: number[] }
   /** ควีน เมดูค: สปิริตของเราที่ตรงตัวกรองทำให้ไลฟ์คู่แข่งลดลง (โจมตี) = คอร์ไลฟ์ไปวอยด์แทนรีเสิร์ฟ/แทรช */
-  | { kind: 'lifeToVoidOnHit'; source: number; levels: number[]; filter: CardFilter };
+  | { kind: 'lifeToVoidOnHit'; source: number; levels: number[]; filter: CardFilter }
+  // ---------------- BS15 เขียว
+  /** ไนท์อีเกิล: สปิริตร่างแยกทั้งหมดของเรา BP ของ Lv1 ถือว่าเป็น bp */
+  | { kind: 'cloneBp'; source: number; levels: number[]; bp: number }
+  /** ดังกาโร: เมื่อเราจะสร้างสปิริตร่างแยก สามารถวางคอร์จากวอยด์ 1 เม็ดแทนคอร์จากรีเสิร์ฟ (ไม่แสดงผลซ้ำซ้อน) */
+  | { kind: 'cloneVoidCore'; source: number; levels: number[] };
 
 /** สคริปต์ของการ์ดหนึ่งใบ เรียงตาม effects (null = ยังไม่รองรับ, array = บรรทัดเดียวมีหลายความสามารถ) */
 export type CardScript = (DistributiveOmit<Ability, 'source'> | DistributiveOmit<Ability, 'source'>[] | null)[];

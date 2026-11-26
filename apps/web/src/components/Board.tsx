@@ -1276,6 +1276,9 @@ function SongZone({ player, partner, compact }: { player: PlayerId; partner?: bo
 }
 
 /** ป้ายหกเหลี่ยม "Turn N · สเต็ป" บนสนามของผู้ถือเทิร์น */
+/** เส้นแสงลอยบนพื้น Field ของฝั่งที่ถือเทิร์น (ตำแหน่ง/ความสูง/จังหวะคงที่) */
+const FIELD_STREAKS = Array.from({ length: 16 }, (_, i) => ({ left: (i * 6.3 + (i % 3) * 5 + 2) % 98, delay: (i * 0.41) % 3, dur: 2 + (i % 4) * 0.45, h: 36 + ((i * 17) % 50) }));
+
 /**
  * แผ่นรองเล่นของผู้เล่น
  *  ซ้าย: Burst / Life / Reserve · กลาง: Field · ขวา: Deck / Trash
@@ -1420,6 +1423,35 @@ export function PlayerMat({ player, top }: { player: PlayerId; top?: boolean }) 
             <span className={`rounded-full px-4 py-1.5 text-sm font-bold shadow-lg ${fieldOver ? 'bg-yellow-300 text-slate-900' : 'bg-black/70 text-yellow-200'}`}>
               {fieldDrop.label}
             </span>
+          </div>
+        )}
+        {/* แสงฝั่งที่ต้องตัดสินใจฉายลงพื้น Field ของเจ้าของด้วย (จากขอบนอกเข้ามา) · ชั้นล่างสุดของช่อง: อยู่ใต้ตัวหนังสือ การ์ด และคอร์ */}
+        {acting && !fxBlocking && !state.winner && (
+          <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-md">
+            {/* เส้นแสงลอยจากขอบนอกเข้ากลางกระดาน (แบบเดียวกับออร่าขอบจอ · พิกัดของแผ่น: ล่าง = ขอบนอกทั้งสองฝั่ง) */}
+            {FIELD_STREAKS.map((s, i) => (
+              <span
+                key={i}
+                className="absolute bottom-0 w-[2px] rounded-full"
+                style={{
+                  left: `${s.left}%`,
+                  height: s.h,
+                  background: `linear-gradient(0deg, transparent, rgba(${top ? '244,63,94' : '56,189,248'},0.9), transparent)`,
+                  boxShadow: `0 0 8px rgba(${top ? '244,63,94' : '56,189,248'},0.9)`,
+                  animation: `aura-rise-up ${s.dur}s ${s.delay}s ease-in infinite`,
+                }}
+              />
+            ))}
+          <div
+            className="absolute inset-0 rounded-md"
+            style={{
+              background: `linear-gradient(0deg, rgba(${top ? '244,63,94' : '56,189,248'},0.55), rgba(${top ? '244,63,94' : '56,189,248'},0.24) 45%, rgba(${top ? '244,63,94' : '56,189,248'},0.08) 75%, transparent 98%)`,
+              // ขอบนอกสว่างเป็นเส้นแสง + เรืองรอบขอบช่อง
+              boxShadow: `inset 0 -3px 0 rgba(${top ? '244,63,94' : '56,189,248'},0.85), inset 0 -26px 40px -18px rgba(${top ? '244,63,94' : '56,189,248'},0.75), inset 0 0 22px rgba(${top ? '244,63,94' : '56,189,248'},0.35)`,
+              mixBlendMode: 'screen',
+              animation: 'aura-pulse 2.6s ease-in-out infinite',
+            }}
+          />
           </div>
         )}
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center select-none">

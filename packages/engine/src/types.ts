@@ -445,7 +445,7 @@ export interface GameState {
   /** Draw Step แบบกดจั่วเอง: ผู้เล่นที่ต้องกดจั่ว (ระหว่างนี้ทำ action อื่นไม่ได้) */
   awaitingDraw?: PlayerId;
   /** "ในเทิร์นนี้ สปิริตนั้นจะโจมตี/ป้องกันไม่ได้" */
-  turnLocks?: { cardId: string; turn: number }[];
+  turnLocks?: { cardId: string; turn: number; /** BS15: ป้องกันไม่ได้อย่างเดียว */ blockOnly?: boolean }[];
   /** "ในเทิร์นนี้ สปิริต/เน็กซัสของคู่แข่งทั้งหมดสูญเสียเอฟเฟกต์ทั้งหมด": การ์ดของ player เสียเอฟเฟกต์ในเทิร์น turn */
   effectsLost?: { player: PlayerId; turn: number }[];
   /** "ในเทิร์นนี้ สปิริต/อัลติเมทที่มีเจ็มตั้งแต่ N เม็ดถือว่ามีเจ็ม 0" */

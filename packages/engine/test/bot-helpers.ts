@@ -8,11 +8,14 @@ export const STARTERS: Record<string, readonly DeckEntry[]> = { sd01: SD01_DECK,
 /** ชุดการ์ด Booster ทั้งหมด (BS01…) */
 export const BOOSTER_SETS = [...new Set(db.all().map((c) => c.set).filter((x): x is string => !!x && /^BS[0-9]+$/.test(x)))].sort();
 
-/** เด็คทดสอบจากการ์ดทั้งชุด (ใบละ 3 จนครบอย่างน้อย 40 ใบ) ไว้ให้บอทลองเอฟเฟกต์ของทุกใบ */
+/**
+ * เด็คทดสอบจากการ์ดทั้งชุด (ใบละ 1 ใบ เติมจนครบอย่างน้อย 40 ใบ) ไว้ให้บอทลองเอฟเฟกต์ของทุกใบ
+ * (เดิมใบละ 3 = เด็ค 100–180 ใบ: สองฝั่งตั้งรับเต็มสนามแล้วเกมลากจนเด็คหมดเกิน 60 เทิร์น เทสต์ช้าจนหมดเวลา)
+ */
 export function setDeck(set: string): string[] {
   const cards = db.all().filter((c) => c.set === set && ['spirit', 'brave', 'nexus', 'magic', 'ultimate'].includes(c.type));
   const out: string[] = [];
-  for (const c of cards) out.push(c.cardNo, c.cardNo, c.cardNo);
+  for (const c of cards) out.push(c.cardNo);
   while (out.length < 40) out.push(...out.slice(0, 40 - out.length));
   return out;
 }

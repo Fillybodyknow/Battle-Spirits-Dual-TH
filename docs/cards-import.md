@@ -15,7 +15,7 @@
 | ชุด | การ์ด | สถานะ |
 |---|---|---|
 | BS14 | BS24 แดง (21) + ขาว (20) + ม่วง (19) | แดง ✅ ขาว ✅ (50.0.0) · ม่วง ✅ (51.0.0) |
-| BS15 | BS24 เขียว (20) + เหลือง (20) + ฟ้า (20) | ยังไม่ทำ (ต้องสร้างชุดใหม่: data/bs15-scripts.ts + loader ใน packages/cards/src/index.ts) |
+| BS15 | BS24 เขียว (20) + เหลือง (20) + ฟ้า (20) | เขียว ✅ (52.0.0 · สร้างชุด bs15 แล้ว) · **เหลือง = แบตช์ถัดไป** |
 | BS16 | BSC15 (16) + BSC16 (42) | ยังไม่ทำ (สร้างชุดใหม่ bs16 เหมือนกัน · BSC16 = ธีมดีว่า ทีมไชนี่ฮาร์ท/แอปโซลูท/ลีเจนด์ดอล) |
 
 ## ขั้นตอนต่อแบตช์
@@ -37,9 +37,14 @@
   Destructive Curse = `replaceDestroy.oppLife` (+ `subject.card` สำหรับ "ได้รับ Destructive Curse") · `lifeToVoidOnHit` (loseLife `to: 'void'`) · `stealOpponentVoid` (`stealVoid` ใน takeVoid / gainLifeFromVoid) ·
   step `discardOpponentShown` / `allyCoreToLife` (คอร์ธรรมดาเท่านั้น: **โซลคอร์ไม่ไปไลฟ์ เว้นแต่เอฟเฟกต์ระบุ** เจ้าของโปรเจกต์กำหนด · ตัวกรอง `minNormalCores`) · `summonFromTrashFree.noTriggers` (→ `placeCores.noTriggers`) · `staticBp.perOpponentPileCores` · `handCostDelta.ownMainStepOnly`
 
+## กลไกที่เพิ่มแล้วระหว่างงานนี้ (BS15)
+
+- เขียว: `pairBlock.count` (ป้องกันด้วยสปิริต N ตัว ต่อสู้ตัวเดียว) + `.attacker: 'subject'` (บีฮีมอธ: allyAttack) · `cloneBp` (BP Lv1 ของร่างแยก: `cloneBpFor` ใน currentBpRaw) ·
+  `cloneVoidCore` (ดังกาโร: placeCores.clone ถาม `fromVoid`) · `disableChosenOpponent.blockOnly` (`turnLocked(…, forBlock)`) · step `activateBunshin` (`bunshinOf`) ·
+  `coreFloor.self` · `opponentLifeToReserve.to: 'void'` · โยโรอิฟุคุโร "เปิดแสดงการ์ดอัลติเมทในมือ" = มีผลเมื่อมีการ์ดอัลติเมทในมือ (ไม่ถาม)
+
 ## กลไกที่ต้องทำในแบตช์ถัด ๆ ไป (จากที่ถอดไว้)
 
-- เขียว: บังคับป้องกันด้วยสปิริต 2-3 ตัวแต่ต่อสู้ตัวเดียว (บีฮีมอธ / จีโอ / เทรนตัน), ร่างแยก BP 11000 (ไนท์อีเกิล), ดังกาโร (วอยด์แทนรีเสิร์ฟตอนสร้างร่างแยก)
 - เหลือง: มาริกะ (นักร้องครบ 4 คน), โคริสทัล, แบทเทิลแคนเซิล (จบการต่อสู้ไม่เทียบ BP), อัลติเมทพลาสมา, มิคาฟาร์
 - ฟ้า: นับเมจิคที่ถูกทิ้งเด็คโดยอัลติเมท, คาสเซิลโกเล็ม (ทำให้ "เด็คจะไม่ถูกทิ้ง" ไม่มีผล), ร็อคโกเล็ม, ม่อนโกคู (BP ×2)
 - BSC16: ดีว่าสเตจ (ชนะเกม), ชุดตุ๊กตาเพนต้นให้ทีม, คัทลียา, ริวเนะ-มาโตะ X (ตีระบุทั้งทีม)

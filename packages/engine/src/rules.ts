@@ -549,7 +549,9 @@ function currentBpRaw(state: GameState, db: CardDatabase, cardId: string): numbe
   // BS11 ฮะจิริว: BP (ที่พิมพ์ตามเลเวล) เหมือนฮะจิริว
   const copy = statCopySource(state, db, cardId);
   const baseDef = copy ? db.get(state.cards[copy]!.cardNo) : def;
-  let bp = (baseDef.levels.find((l) => l.level === ownLevel)?.bp ?? 0) + card.turnBp + (card.battleBp ?? 0);
+  // BS15 ไนท์อีเกิล: สปิริตร่างแยก BP ของ Lv1 ถือว่าเป็น N
+  const cloneBase = card.cardNo === 'SMP-BUNSHIN' && ownLevel === 1 ? cloneBpFor(state, db, card.owner) : null;
+  let bp = (cloneBase ?? baseDef.levels.find((l) => l.level === ownLevel)?.bp ?? 0) + card.turnBp + (card.battleBp ?? 0);
   // "ในเทิร์นนี้ สปิริตเราทั้งหมด BP+": รวมตัวที่ลงสนามหลังเอฟเฟกต์ทำงาน
   for (const b of state.turnBuffs ?? []) {
     if (b.player === card.owner && b.turn === state.turn && (def.type === 'spirit' || def.type === 'brave') && (!b.filter || matchesFilter(state, db, cardId, b.filter)) && !namedOnlyBlocker(state, db, b.sourceId, cardId))
@@ -2155,9 +2157,9 @@ export function canAttackWith(state: GameState, db: CardDatabase, cardId: string
   );
 }
 
-/** "ในเทิร์นนี้ สปิริตนั้นจะโจมตี/ป้องกันไม่ได้" */
-export function turnLocked(state: GameState, cardId: string): boolean {
-  return (state.turnLocks ?? []).some((l) => l.cardId === cardId && l.turn === state.turn);
+/** "ในเทิร์นนี้ สปิริตนั้นจะโจมตี/ป้องกันไม่ได้" (blockOnly = ป้องกันไม่ได้อย่างเดียว: forBlock) */
+export function turnLocked(state: GameState, cardId: string, forBlock = false): boolean {
+  return (state.turnLocks ?? []).some((l) => l.cardId === cardId && l.turn === state.turn && (!l.blockOnly || forBlock));
 }
 
 /**
@@ -2185,7 +2187,7 @@ export function blockersFor(state: GameState, db: CardDatabase, defender: Player
     if (b?.blockers.includes(id)) return false; // ประกาศป้องกันไปแล้ว (ป้องกันได้แม้เสื่อมสภาพก็ไม่นับซ้ำ)
     if (b?.blockFilter && !matchesFilter(state, db, id, b.blockFilter)) return false;
     if (attacker && attackerUnblockable(state, attacker.id, def.type)) return false;
-    if (turnLocked(state, id)) return false;
+    if (turnLocked(state, id, true)) return false;
     if (oneCoreLocked(state, db, id)) return false;
     if (coreTaxed(state, defender) && !card.cores.some((c) => !state.cores[c]!.isSoul)) return false;
     // ไทรซอร์ดอน: ป้องกันสปิริตที่ BP น้อยกว่าสปิริตนี้ไม่ได้
@@ -2204,9 +2206,9 @@ export function blockersFor(state: GameState, db: CardDatabase, defender: Player
     const first = b.blockers[0];
     if (first) {
       const same = list.filter((x) => kind(x) === kind(first));
-      return b.blockers.length + same.length >= 2 ? same : [];
+      return b.blockers.length + same.length >= (b.levelBlock ?? 2) ? same : [];
     }
-    return list.filter((x) => list.filter((y) => kind(y) === kind(x)).length >= 2);
+    return list.filter((x) => list.filter((y) => kind(y) === kind(x)).length >= (b.levelBlock ?? 2));
   }
   // แคนดี้-ซาร์ด: ป้องกันได้เฉพาะเมื่อรวม Lv ของผู้ป้องกัน (ที่ประกาศแล้ว + ที่ป้องกันได้ทั้งหมด) ถึงเกณฑ์
   if (b?.levelBlock) {
@@ -2386,6 +2388,7 @@ export function coreFloorOf(state: GameState, db: CardDatabase, cardId: string):
     const lv = cardLevel(state, db, id);
     for (const ab of db.get(state.cards[id]!.cardNo).abilities) {
       if (ab.kind !== 'coreFloor' || !ab.levels.includes(lv) || !conditionHolds(state, id, ab.if, false, false, db)) continue;
+      if (ab.self && id !== cardId) continue;
       if (!matchesFilter(state, db, cardId, ab.filter)) continue;
       // BS11 ทามะกิ: "ต่ำกว่าที่เลเวลคอสต์ที่ Lv1 ต้องการ" = จำนวนคอร์ของ Lv1 ของการ์ดนั้น
       const min = ab.min === 'lv1' ? (db.get(state.cards[cardId]!.cardNo).levels[0]?.cores ?? 0) : ab.min;
@@ -2583,6 +2586,17 @@ export function symbolOverrideOf(state: GameState, db: CardDatabase, cardId: str
     }
   }
   return null;
+}
+
+// ---------------- BS15 เขียว
+/** ไนท์อีเกิล: BP ของ Lv1 ของสปิริตร่างแยกของผู้เล่นนี้ (null = ไม่มีผล) */
+export function cloneBpFor(state: GameState, db: CardDatabase, player: PlayerId): number | null {
+  let best: number | null = null;
+  for (const src of staticSources(state, db, [player], 'cloneBp')) {
+    const a = db.get(state.cards[src.cardId]!.cardNo).abilities.find((x) => x.kind === 'cloneBp' && x.source === src.source);
+    if (a?.kind === 'cloneBp' && (best === null || a.bp > best)) best = a.bp;
+  }
+  return best;
 }
 
 // ---------------- BS14 ม่วง

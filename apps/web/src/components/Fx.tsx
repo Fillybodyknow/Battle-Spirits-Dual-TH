@@ -38,8 +38,8 @@ const BANNER_TONE = {
 function Banner({ fx, onDone }: { fx: Extract<Fx, { kind: 'banner' }>; onDone: () => void }) {
   const win = fx.tone === 'win';
   const mini = fx.tone === 'mini';
-  // ป้ายสเต็ป: ของเราสีฟ้า ของคู่แข่งสีแดง
-  const theirs = useGame((s) => mini && !!fx.player && viewPlayer(s) !== fx.player);
+  // ป้ายสเต็ป (เล็ก + ATTACK STEP): ของเราสีฟ้า ของคู่แข่งสีแดง
+  const theirs = useGame((s) => (mini || fx.tone === 'step') && !!fx.player && viewPlayer(s) !== fx.player);
   const showFx = useGame((s) => s.showFx);
   const shown = (fx.delay ?? 0) === 0;
   // นับเวลาปิดเมื่อป้ายแสดงจริงแล้ว (ป้ายที่มี delay ต้องรอแอนิเมชันก่อนหน้า เช่น โยนเหรียญ)

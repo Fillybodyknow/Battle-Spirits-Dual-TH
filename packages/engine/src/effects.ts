@@ -1778,6 +1778,28 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       // Bunshin: วางคอร์จากรีเสิร์ฟตั้งแต่ 1 เม็ด (ไม่ใช่การอัญเชิญ)
       if (step.clone) {
         const c = s.cards[step.cardId]!;
+        // BS15 ดังกาโร: สามารถวางคอร์จากวอยด์ 1 เม็ดแทนคอร์จากรีเสิร์ฟ (ไม่แสดงผลซ้ำซ้อน = ถามครั้งเดียว)
+        if (step.fromVoid && s.players[me].deck.includes(step.cardId)) {
+          const got = takeVoid(ctx, me, 1);
+          if (got.length > 0) {
+            emitStatic(ctx, staticSources(s, db, [me], 'cloneVoidCore')[0]);
+            // คอร์ใหม่ยังไม่อยู่ในโซนไหน: ผ่านรีเสิร์ฟก่อน (putOnField ดึงคอร์ออกจากที่อยู่เดิม)
+            s.players[me].reserve.push(...got);
+            putOnField(ctx, item, step, got);
+            return;
+          }
+        }
+        if (!step.voidAsked && !step.fromVoid && s.players[me].deck.includes(step.cardId) && staticSources(s, db, [me], 'cloneVoidCore').length > 0) {
+          const rest = { ...step, voidAsked: true as const };
+          item.steps.unshift({
+            do: 'chooseOne',
+            options: [
+              { label: 'สปิริตร่างแยก: วางคอร์จากวอยด์ 1 เม็ด (ดังกาโร)', steps: [{ ...step, fromVoid: true as const }] },
+              ...(s.players[me].reserve.length > 0 ? [{ label: 'สปิริตร่างแยก: วางคอร์จากรีเสิร์ฟ', steps: [rest] }] : []),
+            ],
+          });
+          return;
+        }
         if (s.players[me].reserve.length === 0 || !s.players[me].deck.includes(step.cardId)) {
           if (c.realCardNo) {
             c.cardNo = c.realCardNo;
@@ -1923,7 +1945,7 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
     case 'opponentLifeToReserve': {
       const n = step.count * (step.per ? countPer(ctx, item, step.per) : 1);
       if (n <= 0) return;
-      if (!loseLife(ctx, opp, n, me, step.to === 'trash' ? 'trash' : undefined)) queueLifeLostTriggers(ctx, opp, n);
+      if (!loseLife(ctx, opp, n, me, step.to)) queueLifeLostTriggers(ctx, opp, n);
       return;
     }
 
@@ -2540,7 +2562,8 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
     // ---------------- BS10 Bunshin
     case 'bunshin': {
       const p = s.players[me];
-      const max = Math.min(step.max, p.deck.length, p.reserve.length);
+      // BS15 ดังกาโร: วางคอร์จากวอยด์แทนรีเสิร์ฟได้ = ไม่ต้องมีคอร์ในรีเสิร์ฟ
+      const max = Math.min(step.max, p.deck.length, staticSources(s, db, [me], 'cloneVoidCore').length > 0 ? Infinity : p.reserve.length);
       if (max <= 0) return;
       if (step.n === undefined) {
         item.steps.unshift({
@@ -2915,13 +2938,16 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       s.noEndAttackStep = [...(s.noEndAttackStep ?? []).filter((x) => x.turn === s.turn), { player: me, turn: s.turn, filter: step.filter }];
       return;
 
-    case 'pairBlock':
-      if (s.battle && s.battle.attackerId === self && s.battle.step === 'flashBeforeBlock') {
+    case 'pairBlock': {
+      // BS15 บีฮีมอธ: ผู้โจมตี = การ์ดต้นเหตุ (allyAttack) · จีโอ/เทรนตัน: ป้องกันด้วยสปิริต 3 ตัว
+      const atk = step.attacker === 'subject' ? item.subjectId : self;
+      if (s.battle && s.battle.attackerId === atk && s.battle.step === 'flashBeforeBlock') {
         s.battle.pairBlock = true;
-        s.battle.levelBlock = 2;
+        s.battle.levelBlock = Math.max(s.battle.levelBlock ?? 0, step.count ?? 2);
         s.battle.maxBlockers = 99;
       }
       return;
+    }
 
     case 'summonFromTrashThen': {
       const candidates = myTrash(s, me).filter((id) => matchesFilter(s, db, id, step.filter) && inTrashOk(id));
@@ -4215,6 +4241,17 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
     }
 
     // ---------------- BS14 ม่วง
+    case 'activateBunshin': {
+      // BS15 แชโดว์ลีฟ: Bunshin ของสปิริตของเราที่เลเวลตอนนี้ใช้ได้ (ใช้จำนวนสูงสุด)
+      let max = 0;
+      for (const id of s.players[me].field) {
+        const b = bunshinOf(ctx, id);
+        if (b > max) max = b;
+      }
+      if (max > 0) item.steps.unshift({ do: 'bunshin', max });
+      return;
+    }
+
     case 'curseResolve': {
       // Curse: ผู้ป้องกัน (สปิริต) ตอนตัดสินผลที่ยังอยู่บนสนาม เลือกทำลาย 1 ตัว
       const ids = (s.battle?.blockersAtResolve ?? []).filter((id) => s.cards[id]?.owner === opp && s.players[opp].field.includes(id));
@@ -4357,6 +4394,28 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       return;
     }
   }
+}
+
+/** BS15: จำนวนใบของ Bunshin ที่การ์ดนี้มี (ใช้ได้ที่เลเวลตอนนี้) · 0 = ไม่มี */
+function bunshinOf(ctx: Ctx, cardId: string): number {
+  const { s, db } = ctx;
+  if (effectsNegated(s, db, cardId)) return 0;
+  const level = cardLevel(s, db, cardId);
+  const find = (steps: Step[]): number => {
+    let n = 0;
+    for (const st of steps) {
+      if (st.do === 'bunshin') n = Math.max(n, st.max);
+      if (st.do === 'chooseOne') for (const o of st.options) n = Math.max(n, find(o.steps));
+      if (st.do === 'when') n = Math.max(n, find(st.steps), st.else ? find(st.else) : 0);
+    }
+    return n;
+  };
+  let n = 0;
+  for (const ab of db.get(s.cards[cardId]!.cardNo).abilities) {
+    if ((ab.kind !== 'trigger' && ab.kind !== 'activated') || !ab.levels.includes(level)) continue;
+    n = Math.max(n, find(ab.steps));
+  }
+  return n;
 }
 
 /** BS14 เธิร์ดอายส์ สเนก: คอร์ที่ player จะนำจากวอยด์มาเพิ่มด้วยเอฟเฟกต์ของตัวเอง ถูกนำไปวางบนสปิริตของคู่แข่งแทน (คืน true = ขโมยแล้ว) */
@@ -5333,7 +5392,7 @@ function applyCardPick(ctx: Ctx, cur: QueuedEffect, choice: Extract<PendingChoic
       if ((step.count ?? 1) > 1) cur.steps.unshift({ ...step, count: step.count! - 1 });
       break;
     case 'disableChosenOpponent': {
-      s.turnLocks = [...(s.turnLocks ?? []).filter((l) => l.turn === s.turn), { cardId: pick, turn: s.turn }];
+      s.turnLocks = [...(s.turnLocks ?? []).filter((l) => l.turn === s.turn), { cardId: pick, turn: s.turn, ...(step.blockOnly ? { blockOnly: true } : {}) }];
       emit(ctx, { type: 'cardLocked', cardId: pick });
       const rest = (step.count ?? 1) - 1;
       if (rest > 0) cur.steps.unshift({ ...step, count: rest });
