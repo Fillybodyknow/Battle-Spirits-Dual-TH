@@ -9,6 +9,7 @@ import {
   attackTaxFor,
   symbolOverrideOf,
   lifeVoidSource,
+  forcedBlocker,
   attackReserveTaxFor,
   nexusExhaustPayMax,
   effectSummonTax,
@@ -721,6 +722,8 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
 
     // BS13 เดรมาซาดาร์: "เอฟเฟกต์นี้ ทำงานในเมนสเต็ปไม่ได้"
     if (s.phase === 'main' && def.abilities.some((a) => a.kind === 'magic' && a.timing === use && a.notMain)) fail('WRONG_TIMING', 'เอฟเฟกต์นี้ใช้ในเมนสเต็ปไม่ได้');
+    // BS15 อัลติเมทพลาสมา: ใช้ได้เฉพาะเมื่อเงื่อนไขจริง
+    if (def.abilities.some((a) => a.kind === 'magic' && a.timing === use && a.useIf && !conditionHolds(s, cardId, a.useIf, false, false, ctx.db))) fail('WRONG_TIMING', 'ตอนนี้ใช้การ์ดเมจิคนี้ไม่ได้ (เงื่อนไขของการ์ด)');
     if (magicUsedUp(s, ctx.db, player, def.cardNo, use)) fail('ONCE_PER_TURN', 'เอฟเฟกต์นี้ใช้ได้เทิร์นละ 1 ครั้ง');
     const paidWithSoul = payment.some((id) => s.cores[id]?.isSoul);
     // ใช้เป็นเมจิค: จ่ายคอสต์อย่างเดียว ไม่วาง Core (การ์ดสปิริตที่ใช้เป็นเมจิคก็เช่นกัน)
@@ -851,6 +854,8 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     if (fa && fa.attackerId !== attackerId) fail('MUST_ATTACK', `ต้องโจมตีด้วย ${ctx.db.get(s.cards[fa.attackerId]!.cardNo).name} ก่อน`);
     s.forcedAttack = undefined;
     if (s.firstAttack?.turn !== s.turn) s.firstAttack = { turn: s.turn, cardId: attackerId };
+    // BS15 ร็อคโกเล็ม: จดการ์ดที่โจมตีแล้วในเทิร์นนี้
+    s.attackedThisTurn = { turn: s.turn, ids: [...(s.attackedThisTurn?.turn === s.turn ? s.attackedThisTurn.ids : []), attackerId] };
 
     // BS09 สุสานของจักรพรรดิมาร: ต้องส่งคอร์ N เม็ดบนตัวที่สั่งโจมตีลงแทรชก่อนโจมตี · สูญสลาย = ไม่ได้โจมตี
     const tax = attackTaxFor(s, ctx.db, player);
@@ -940,6 +945,11 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     if (card.state !== 'refresh' && !canBlockExhausted(ctx.s, ctx.db, blockerId)) fail('EXHAUSTED', 'การ์ดเสื่อมสภาพอยู่');
     if (attackerUnblockable(ctx.s, battle.attackerId, ctx.db.get(card.cardNo).type)) fail('CANNOT_BLOCK', 'การโจมตีนี้ป้องกันไม่ได้');
     if (battle.blockFilter && !matchesFilter(ctx.s, ctx.db, blockerId, battle.blockFilter)) fail('CANNOT_BLOCK', 'การต่อสู้นี้ป้องกันด้วยการ์ดนี้ไม่ได้');
+    // BS15 แกลเลียน โกเล็ม: ต้องป้องกันด้วยสปิริตที่ถูกระบุ
+    {
+      const fb = forcedBlocker(ctx.s, ctx.db);
+      if (fb && fb !== blockerId) fail('MUST_BLOCK', 'ต้องป้องกันด้วยสปิริตที่ถูกระบุ (เอฟเฟกต์ของคู่แข่ง)');
+    }
     if (!canBlockWith(ctx, player).includes(blockerId)) {
       fail('CANNOT_BLOCK', battle.consecutiveBlade ? 'ต้องป้องกันด้วยสปิริตที่ไม่มีชีลด์ให้ครบก่อน ([Consecutive Blade])' : 'ป้องกันด้วยการ์ดนี้ไม่ได้');
     }
@@ -1430,6 +1440,9 @@ function resolveBattle(ctx: Ctx): void {
       lostLife = true;
       queueLifeLostTriggers(ctx, defender, dmg);
     }
+  } else if (battle.noCompare) {
+    // BS15 แบทเทิลแคนเซิล: จบการต่อสู้โดยไม่เทียบ BP (ไม่มีใครถูกทำลายจากการต่อสู้)
+    emit(ctx, { type: 'battleCancelled' });
   } else {
     // เทียบ BP กับผู้ป้องกันทีละตัว โดยใช้ BP ก่อนมีใครถูกทำลาย (ต่อสู้พร้อมกัน)
     // BS10 เจเนอรัล เซโตะไดโช: ในการต่อสู้นี้เทียบ Lv แทน BP
@@ -1456,6 +1469,8 @@ function resolveBattle(ctx: Ctx): void {
     if (!attackerLoses && destroyedBlockers.length > 0 && battle.refreshOnWin?.includes(attacker.id) && inBattle(s, attacker.id)) {
       refreshByEffect(ctx, attacker.id, attacker.id);
     }
+    // BS15 โคเคทริส: ผู้ป้องกันที่ชนะและทำลายผู้โจมตีจากการเทียบ BP → ฟื้นสภาพ
+    for (const r of results) if (r.bp > bpA && battle.refreshOnWin?.includes(r.id) && inBattle(s, r.id)) refreshByEffect(ctx, r.id, r.id);
 
     const perBlocker = battle.lifeOnBlockerDestroyed + (battle.consecutiveBlade ? battle.lifeOnBlockerDestroyedByBlade : 0);
     if (destroyedBlockers.length > 0 && perBlocker > 0) {

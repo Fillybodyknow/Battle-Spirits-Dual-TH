@@ -128,6 +128,10 @@ export interface Battle {
   endEffects: QueuedEffect[];
   /** BS14 Curse: ผู้ป้องกันตอนตัดสินผลการต่อสู้ */
   blockersAtResolve?: string[];
+  /** BS15 โคริสทัล: ไม่ถูกทำลายในการต่อสู้นี้ */
+  noDestroy?: string[];
+  /** BS15 แบทเทิลแคนเซิล: จบการต่อสู้โดยไม่เทียบ BP */
+  noCompare?: boolean;
   /** ไลฟ์ที่คู่แข่งเสีย ต่อผู้ป้องกัน 1 ตัวที่ถูกทำลายในการต่อสู้นี้ */
   lifeOnBlockerDestroyed: number;
   /** เหมือน lifeOnBlockerDestroyed แต่นับเฉพาะเมื่อใช้ [Consecutive Blade] */
@@ -445,6 +449,12 @@ export interface GameState {
   /** Draw Step แบบกดจั่วเอง: ผู้เล่นที่ต้องกดจั่ว (ระหว่างนี้ทำ action อื่นไม่ได้) */
   awaitingDraw?: PlayerId;
   /** "ในเทิร์นนี้ สปิริตนั้นจะโจมตี/ป้องกันไม่ได้" */
+  /** BS15 ร็อคโกเล็ม: การ์ดที่ประกาศโจมตีแล้วในเทิร์นนี้ */
+  attackedThisTurn?: { turn: number; ids: string[] };
+  /** BS15 แกลเลียน โกเล็ม: ในเทิร์นนี้คู่แข่งต้องป้องกันด้วยการ์ดนี้ถ้าทำได้ */
+  forcedBlockers?: { cardId: string; turn: number }[];
+  /** BS15 มิคาฟาร์: เทิร์นนี้ 1 ครั้ง เมจิคของ player นำสปิริตคู่แข่งกลับมือ/เด็ค = ไลฟ์คู่แข่ง 1 เม็ด */
+  magicBounceLife?: { player: PlayerId; turn: number; used?: boolean };
   turnLocks?: { cardId: string; turn: number; /** BS15: ป้องกันไม่ได้อย่างเดียว */ blockOnly?: boolean }[];
   /** "ในเทิร์นนี้ สปิริต/เน็กซัสของคู่แข่งทั้งหมดสูญเสียเอฟเฟกต์ทั้งหมด": การ์ดของ player เสียเอฟเฟกต์ในเทิร์น turn */
   effectsLost?: { player: PlayerId; turn: number }[];
@@ -663,6 +673,8 @@ export type GameEvent =
   /** เมจิก/เบิร์สทำเอฟเฟกต์จบแล้ว ลง Trash (ตอนนี้) */
   | { type: 'spellResolved'; player: PlayerId; cardId: string }
   | { type: 'lifeGained'; player: PlayerId; amount: number }
+  /** BS15 แบทเทิลแคนเซิล: การต่อสู้จบโดยไม่เทียบ BP */
+  | { type: 'battleCancelled' }
   | { type: 'costPaid'; player: PlayerId; cardId: string; paid: number }
   | { type: 'soulToTrash'; cardId: string }
   | { type: 'consecutiveBlade'; cardId: string }

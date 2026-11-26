@@ -157,6 +157,8 @@ export function formatEvent(e: GameEvent, s: GameState): string | null {
       return `${name(e.targetId)} ตกเป็นเป้า: ${playerLabel(e.player)} ใช้ Kagemusha ได้`;
     case 'lifeGained':
       return `${playerLabel(e.player)} ได้ไลฟ์ +${e.amount}`;
+    case 'battleCancelled':
+      return 'การต่อสู้จบโดยไม่เทียบ BP';
     case 'costPaid':
       return `${playerLabel(e.player)} จ่ายคอสต์ ${e.paid} ให้ ${name(e.cardId)}`;
     case 'soulToTrash':

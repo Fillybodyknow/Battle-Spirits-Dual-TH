@@ -58,6 +58,7 @@ import {
   useSeat,
   hasEvolutionNow,
   freezeForCache,
+  conditionHolds,
 } from '@bs/engine';
 
 /** การ์ดทุกชุดที่ UI ใช้: Starter Deck 01–04 (SD01-…SD04-) */
@@ -131,7 +132,9 @@ export function handMagicTimings(s: GameState, cardId: string): MagicTiming[] {
   const def = db.get(s.cards[cardId]!.cardNo);
   // BS13 เดรมาซาดาร์: "เอฟเฟกต์นี้ ทำงานในเมนสเต็ปไม่ได้" (notMain)
   const notMainNow = (t: MagicTiming) => s.phase === 'main' && def.abilities.some((a) => a.kind === 'magic' && a.timing === t && a.notMain);
-  if (def.type === 'magic') return magicTimings(def.cardNo).filter((t) => !notMainNow(t));
+  // BS15 อัลติเมทพลาสมา: ใช้ได้เฉพาะเมื่อเงื่อนไขของการ์ดจริง (useIf)
+  const blockedNow = (t: MagicTiming) => def.abilities.some((a) => a.kind === 'magic' && a.timing === t && a.useIf && !conditionHolds(s, cardId, a.useIf, false, false, db));
+  if (def.type === 'magic') return magicTimings(def.cardNo).filter((t) => !notMainNow(t) && !blockedNow(t));
   return [...new Set(handMagic(s, db, cardId).map((m) => m.timing))].filter((t) => !notMainNow(t));
 }
 
@@ -1395,6 +1398,11 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
       case 'extraTurn':
         out.push({ kind: 'banner', tone: 'turn', title: 'EXTRA TURN!', sub: `${db.get(s.cards[e.cardId]!.cardNo).name} · ได้เล่นอีก 1 เทิร์นหลังจบเทิร์นนี้`, delay: t });
         t += 1100;
+        break;
+      case 'battleCancelled':
+        // BS15 แบทเทิลแคนเซิล
+        out.push({ kind: 'banner', tone: 'burst', title: 'BATTLE CANCEL', sub: 'จบการต่อสู้โดยไม่เทียบ BP', delay: t });
+        t += 900;
         break;
       case 'magicNegated':
         out.push({ kind: 'banner', tone: 'step', title: 'ไร้ผล!', sub: `เอฟเฟกต์ของ ${db.get(s.cards[e.cardId]!.cardNo).name}`, delay: t });

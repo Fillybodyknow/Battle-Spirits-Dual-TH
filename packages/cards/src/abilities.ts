@@ -333,7 +333,7 @@ export type VoidTarget =
 /** ขั้นตอนของเอฟเฟกต์ ทำตามลำดับ */
 export type Step =
   /** เราจั่วการ์ด */
-  | { do: 'draw'; count: number; if?: Condition; /** จำนวนใบ × จำนวนคอร์ไลฟ์ที่ลดลง (trigger lifeLost) */ perLifeLost?: true; per?: CountPer; }
+  | { do: 'draw'; count: number; if?: Condition; /** (engine ใช้ภายใน) BS15 หอสมุดคัมภีร์: ถามจั่ว 2 เท่าแล้ว */ libAsked?: true; /** จำนวนใบ × จำนวนคอร์ไลฟ์ที่ลดลง (trigger lifeLost) */ perLifeLost?: true; per?: CountPer; }
   /** ในเทิร์นนี้ สปิริตนี้ BP+ */
   | {
       do: 'buffSelf';
@@ -375,7 +375,7 @@ export type Step =
   /** (Draw Step) จำนวนจั่วของ Draw Step นี้ +amount */
   | { do: 'addDrawStepDraw'; amount: number }
   /** คู่แข่งเลือกทิ้งการ์ดบนมือตัวเอง count ใบ */
-  | { do: 'opponentDiscards'; count: number; if?: Condition; /** จำนวนใบ = จำนวนการ์ดที่มือคู่แข่งเพิ่มขึ้น (trigger oppHandIncreased) */ perHandIncrease?: true }
+  | { do: 'opponentDiscards'; count: number; if?: Condition; /** BS15 เคลียร์เอดจ์: ทิ้งการ์ดที่วางแสดงนอกมือได้ด้วย */ withShown?: true; /** จำนวนใบ = จำนวนการ์ดที่มือคู่แข่งเพิ่มขึ้น (trigger oppHandIncreased) */ perHandIncrease?: true }
   /** ถ้าเอฟเฟกต์นี้ทำให้การ์ดที่มี Soul Core วางอยู่สูญสลาย: ทำ steps */
   | { do: 'ifDepletedSoul'; steps: Step[] }
   /** ส่งคอร์ในรีเสิร์ฟคู่แข่งทั้งหมดไปแทรชคู่แข่ง */
@@ -426,6 +426,8 @@ export type Step =
       do: 'destroyChosenOpponent';
       filter: CardFilter;
       count?: number;
+      /** BS15 แบร์เซนทอร์: คอสต์ที่ทำลายได้ (maxCost) +amount ต่อจำนวนนี้ */
+      costPlusPer?: { per: CountPer; amount: number };
       exclude?: string[];
       if?: Condition;
       /** BP ไม่เกิน: self = BP ปัจจุบันของสปิริตนี้, subjectLv1 = BP ที่ Lv1 ของสปิริตต้นเหตุ */
@@ -478,7 +480,7 @@ export type Step =
   /** นำการ์ดทั้งหมดในแทรชเราไปไว้ใต้สุดเด็ค (เรียงลำดับได้) */
   | { do: 'trashToDeckBottom' }
   /** สามารถอัญเชิญไม่จ่ายคอสต์การ์ดบนมือเรา 1 ใบที่ตรงตัวกรอง */
-  | { do: 'summonFromHandFree'; filter: CardFilter; if?: Condition; /** อัญเชิญได้ไม่เกิน max ใบ (ไม่ระบุ = 1) */ max?: number; /** BS11 ริวเซ็น: สีละ 1 ใบ */ distinctColors?: true; /** BS12 ทรูธ-อีเด็น: เอฟเฟกต์ [เมื่อสปิริต/เบรฟนี้ถูกอัญเชิญ] ของการ์ดที่อัญเชิญจะไม่ทำงาน */ noTriggers?: true }
+  | { do: 'summonFromHandFree'; filter: CardFilter; if?: Condition; /** อัญเชิญได้ไม่เกิน max ใบ (ไม่ระบุ = 1) */ max?: number; /** BS11 ริวเซ็น: สีละ 1 ใบ */ distinctColors?: true; /** BS12 ทรูธ-อีเด็น: เอฟเฟกต์ [เมื่อสปิริต/เบรฟนี้ถูกอัญเชิญ] ของการ์ดที่อัญเชิญจะไม่ทำงาน */ noTriggers?: true; /** BS15 อองเปอเรอร์: max × จำนวนนี้ */ per?: CountPer }
   /**
    * ในเทิร์นนี้ เลือกการ์ดของคู่แข่งที่ตรงตัวกรอง BP-amount แล้วทำลายตัวที่ BP กลายเป็น 0
    * count = จำนวนตัว (ไม่ระบุ = 1), countPerAllyFamily = จำนวนตัวเท่าสปิริตเราเผ่านี้
@@ -641,7 +643,7 @@ export type Step =
   /** ในการต่อสู้นี้ สปิริตเราที่ถูกทำลายโดยคู่แข่งจะยังอยู่บนสนามในรูปแบบเสื่อมสภาพ */
   | { do: 'battleStaysOnDestroy'; if?: Condition }
   /** ใช้งานการ์ดเมจิค [Flash] 1 ใบในมือเราโดยไม่จ่ายคอสต์ */
-  | { do: 'useMagicFromHandFree' }
+  | { do: 'useMagicFromHandFree'; /** BS15 มิคาฟาร์: withShown = ใช้การ์ดที่วางแสดงนอกมือได้ด้วย */ filter?: CardFilter }
   /** ส่ง Soul Core บนสปิริตเราที่ตรงตัวกรอง 1 ตัว (เลือก) ลงแทรช */
   | { do: 'allySoulToTrash'; filter: CardFilter }
   /** นำการ์ดในมือเราที่ตรงตัวกรอง 1 ใบไป "วางแสดงนอกมือ" (ทั้งสองฝ่ายเห็น ใช้งานได้เหมือนอยู่ในมือจนจบเกม) */
@@ -849,7 +851,7 @@ export type Step =
   /** ในเทิร์นนี้ คู่แข่งอัญเชิญการ์ดประเภทเหล่านี้ที่คอสต์ไม่เกิน maxCost ไม่ได้ */
   | { do: 'summonBanThisTurn'; maxCost: number; types: CardType[] }
   /** คู่แข่งเลือกทิ้งการ์ดบนมือจนเหลือ keep ใบ */
-  | { do: 'opponentDiscardTo'; keep: number }
+  | { do: 'opponentDiscardTo'; keep: number; /** BS15 เคลียร์เอดจ์: นับ/ทิ้งการ์ดที่วางแสดงนอกมือด้วย */ withShown?: true }
   /** สามารถนำการ์ดในแทรชเราที่ตรงตัวกรอง (มีเบิร์ส) 1 ใบไปเซ็ท */
   | { do: 'setBurstFromTrash'; filter: CardFilter }
   /** ในเทิร์นนี้ สปิริต/อัลติเมทของคู่แข่งทั้งหมดเสียเจ็มสีนี้ 1 เม็ด */
@@ -1039,7 +1041,23 @@ export type Step =
   | { do: 'allyCoreToLife'; filter: CardFilter }
   // ---------------- BS15 เขียว
   /** แชโดว์ลีฟ: ให้ Bunshin ของสปิริตของเรา 1 ตัวทำงาน (ใช้จำนวนสูงสุดของ Bunshin ที่มี) */
-  | { do: 'activateBunshin' };
+  | { do: 'activateBunshin' }
+  // ---------------- BS15 เหลือง
+  /** มิเรฟา: เปิดการ์ดใบบนสุดเด็คเรา ตรงตัวกรอง = ทำ then · หลังจากนั้นนำการ์ดที่เปิดขึ้นมือ */
+  | { do: 'revealTopIf'; filter: CardFilter; then: Step[] }
+  /** โคริสทัล: ในการต่อสู้นี้ การ์ดนี้จะไม่ถูกทำลาย */
+  | { do: 'battleIndestructibleSelf' }
+  /** อองจู / โซเฟีย (U Trigger ฮิต): ในการต่อสู้นี้ ไม่ถูกป้องกันโดยสปิริตคู่แข่งที่คอสต์ไม่เกินคอสต์ของการ์ดที่ U Trigger วางที่แทรช */
+  | { do: 'uTriggerCostUnblock' }
+  /** มิคาฟาร์ (U Trigger ฮิต): เทิร์นนี้ 1 ครั้ง เมื่อเอฟเฟกต์เมจิคของเรานำสปิริตคู่แข่งกลับขึ้นมือ/เข้าเด็ค = ไลฟ์คู่แข่ง 1 เม็ดไปรีเสิร์ฟ */
+  | { do: 'magicBounceLifeThisTurn' }
+  /** แบทเทิลแคนเซิล: ตอนตัดสินผลการต่อสู้ จบการต่อสู้โดยไม่เทียบ BP */
+  | { do: 'battleNoCompare' }
+  // ---------------- BS15 ฟ้า
+  /** ม่อนโกคู: BP ของการ์ดนี้เพิ่มเป็น 2 เท่า (จนจบการต่อสู้นี้) */
+  | { do: 'doubleBpSelf' }
+  /** แกลเลียน โกเล็ม: เลือกระบุสปิริตคู่แข่ง 1 ตัว ในเทิร์นนี้คู่แข่งต้องป้องกันด้วยสปิริตนั้นถ้าทำได้ */
+  | { do: 'forceBlockChosen'; filter: CardFilter };
 
 /** ขอบเขตของ BP+ ถาวร */
 export type StaticScope =
@@ -1171,7 +1189,9 @@ export type TriggerEvent =
   | 'oppMainStepStart'
   // ---------------- BS13 หกเทพพิสุทธิ์
   /** การ์ดนี้ถูกนำกลับขึ้นมือ/เด็คจากฟิลด์โดยเอฟเฟกต์ของคู่แข่ง (ใช้คู่กับ destroyedByOpponentEffect / depletedByOpponent = "ออกจากฟิลด์โดยเอฟเฟกต์ของคู่แข่ง") */
-  | 'leftByOpponentEffect';
+  | 'leftByOpponentEffect'
+  /** BS15 ชาร์กไฮดรา: สปิริต/อัลติเมทของคู่แข่ง (subject) ถูกทำลาย (ด้วยเหตุใดก็ได้) */
+  | 'oppSpiritDestroyed';
 
 /** เงื่อนไขของสปิริตที่ทำให้ trigger แบบ ally* ทำงาน */
 export interface SubjectFilter {
@@ -1235,6 +1255,10 @@ export interface SubjectFilter {
   // ---------------- BS11
   /** allyBurstActivated: เบิร์สนั้นถูกสั่งใช้โดย Catalyze */
   catalyzed?: true;
+  /** BS15 มาริกะ: คอสต์ที่พิมพ์บนการ์ดต้นเหตุไม่เกินค่านี้ */
+  maxCost?: number;
+  /** BS15 รูปปั้นแซฟไฟร์ (oppDeckMilled): การทิ้งเด็คเป็นเอฟเฟกต์ของ U Trigger (ผลเมื่อฮิต) */
+  uTriggerMill?: true;
 }
 
 /** เงื่อนไขเปิด Burst */
@@ -1274,6 +1298,8 @@ export type Ability =
       noStack?: true;
       /** oppDeckMilled: การ์ดที่ถูกทิ้งต้องมีอย่างน้อย 1 ใบตรงตัวกรองนี้ */
       milled?: CardFilter;
+      /** BS15 รูปปั้นแซฟไฟร์ (oppDeckMilled): ทิ้งได้ไม่เกิน N ใบ */
+      milledMax?: number;
       /** ทำงานขณะการ์ดอยู่บนมือ / ในแทรช (ไม่ดูเลเวล) */
       zone?: 'hand' | 'trash';
       /** "เมนสเต็ป...": ทำงานเฉพาะ Main Step */
@@ -1319,6 +1345,10 @@ export type Ability =
       toHand?: true;
       /** BS14 Destructive Curse (ควีน เมดูค): จ่ายด้วยการส่งคอร์ไลฟ์คู่แข่ง N เม็ดไปแทรชคู่แข่ง */
       oppLife?: number;
+      /** BS15 วอตชิโน: จ่ายด้วยการเสื่อมสภาพสปิริตคู่แข่งที่ตรงตัวกรอง 1 ตัว */
+      exhaustOpp?: CardFilter;
+      /** BS15 ไรออต โกเล็ม: จ่ายด้วยการเสื่อมสภาพการ์ดของเราที่ตรงตัวกรอง 1 ใบ (เน็กซัส) */
+      exhaustOwn?: CardFilter;
       if?: Condition;
     }
   /** "ถ้าเรามี <name> อยู่, การลดคอสต์ทั้งหมดของการ์ดนี้ถือว่าลดจนครบแล้ว" */
@@ -1388,7 +1418,7 @@ export type Ability =
   /** "เจ็มของสปิริตนี้ถือว่าเป็นเจ็มสี color ด้วย" */
   | { kind: 'symbolAlsoColor'; source: number; levels: number[]; color: Color }
   /** "เมื่ออัญเชิญการ์ดที่ชื่อมีคำ ... สปิริตนี้เจ็มสี color เพิ่ม count" (นับเฉพาะตอนจ่ายคอสต์การ์ดนั้น) */
-  | { kind: 'summonSymbol'; source: number; levels: number[]; if?: Condition; nameIncludes?: string[]; /** การ์ดที่อัญเชิญตรงตัวกรอง (Spirit Soul: การ์ดอัลติเมท) */ filter?: CardFilter; color: Color; count: number }
+  | { kind: 'summonSymbol'; source: number; levels: number[]; if?: Condition; /** BS15 นางฟ้าร่อน: เจ็ม × จำนวนการ์ดของเราที่ตรงตัวกรอง (สปิริตดีว่าทุกตัวได้รับเจ็ม) */ perAllies?: CardFilter; nameIncludes?: string[]; /** การ์ดที่อัญเชิญตรงตัวกรอง (Spirit Soul: การ์ดอัลติเมท) */ filter?: CardFilter; color: Color; count: number }
   /** "การ์ดของคู่แข่งที่ตรงตัวกรองทั้งหมด Lv คอสต์ +amount" */
   | { kind: 'levelCostBoost'; source: number; levels: number[]; if?: Condition; filter: CardFilter; amount: number }
   /** "สปิริตของเราที่ตรงตัวกรองจะไม่ถูกถอดคอร์โดยคู่แข่ง" */
@@ -1482,6 +1512,8 @@ export type Ability =
       noDispersion?: true;
       /** BS13 เดรมาซาดาร์: "เอฟเฟกต์นี้ ทำงานในเมนสเต็ปไม่ได้" */
       notMain?: true;
+      /** BS15 อัลติเมทพลาสมา: ใช้งานได้เฉพาะเมื่อเงื่อนไขจริง (ตรวจด้วยการ์ดเมจิคนี้) */
+      useIf?: Condition;
     }
   /** "การ์ดสปิริตนี้ ถือว่าเป็นการ์ดเมจิคด้วย" (ตัวกรอง types magic นับการ์ดนี้ด้วย) */
   | { kind: 'alsoMagic'; source: number }
@@ -1541,7 +1573,7 @@ export type Ability =
   /** "เมื่อ <attacker> ของเราโจมตี คู่แข่งป้องกันได้ด้วยสปิริต/อัลติเมทตั้งแต่ 1 ตัวที่ Lv รวมตั้งแต่ minLevel แล้วเราเลือกสู้ 1 ตัว" */
   | { kind: 'blockLevelSum'; source: number; levels: number[]; if?: Condition; attacker: CardFilter; minLevel: number }
   /** "แอทแท็คสเต็ปของเรา: <attacker> ของเราจะไม่ถูกป้องกันโดยสปิริต/อัลติเมทคอสต์ไม่เกิน maxCost ของคู่แข่ง" */
-  | { kind: 'unblockableByCost'; source: number; levels: number[]; if?: Condition; attacker: CardFilter; maxCost: number }
+  | { kind: 'unblockableByCost'; source: number; levels: number[]; if?: Condition; attacker: CardFilter; maxCost?: number; /** BS15 วิงบีฮีมอธ: ไม่ถูกป้องกันโดยสปิริต Lv ไม่เกินนี้ */ maxLevel?: number }
   /** "การ์ดสปิริตนี้, เมื่อ..., จะถือว่ามีคอสต์ N" (ในมือ/นอกมือ) */
   | { kind: 'selfCostIf'; source: number; cost: number; if: Condition }
   /** "การ์ดนี้ที่เซ็ทอยู่ เมื่อถูกทิ้งโดยคู่แข่ง, สามารถสั่งใช้เบิร์สโดยไม่สนเงื่อนไขได้" */
@@ -1558,7 +1590,7 @@ export type Ability =
   /** สปิริตของเราที่ตรงตัวกรองทั้งหมดได้รับ [Evolution] */
   | { kind: 'grantEvolution'; source: number; levels: number[]; filter: CardFilter }
   /** ผู้เล่นทุกคนนำคอร์จากวอยด์มาวางที่ไลฟ์ไม่ได้ */
-  | { kind: 'noLifeFromVoid'; source: number; levels: number[] }
+  | { kind: 'noLifeFromVoid'; source: number; levels: number[]; /** BS15 ประตูชัย: เฉพาะคู่แข่ง */ opponentOnly?: true }
   // ---------------- BS09
   /** ถ้าเงื่อนไขจริง สปิริตนี้ได้รับเผ่านี้ */
   | { kind: 'familyAlso'; source: number; levels: number[]; if?: Condition; family: string; /** BS10: การ์ดของเราที่ตรงตัวกรองได้รับแทน (ไม่ใช่ตัวการ์ดนี้) */ allies?: CardFilter }
@@ -1623,7 +1655,7 @@ export type Ability =
    *  nexusCost = ที่คอสต์เท่ากับคอสต์ของเน็กซัสของเรา (เมียวโอบัวม่วง: แอทแท็คสเต็ปของเรา)
    *  gemColor = นอกจากที่มีสีเดียวกับสีเจ็มบนฟิลด์ของคู่แข่งเอง (อาบิส-อโพคาลิพส์)
    */
-  | { kind: 'burstMagicBan'; source: number; levels: number[]; mode: 'nexusCost' | 'gemColor'; ownAttackStepOnly?: true; granted?: true }
+  | { kind: 'burstMagicBan'; source: number; levels: number[]; mode: 'nexusCost' | 'gemColor'; ownAttackStepOnly?: true; granted?: true; /** BS15 ประตูชัย: ห้ามเฉพาะเมจิค (เบิร์สสั่งใช้ได้) */ magicOnly?: true }
   /** Charge: [เอฟเฟกต์ทิ้งเด็คคู่แข่ง] ที่ไม่ใช่ของอัลติเมทของเรา จำนวนทิ้ง +amount */
   | { kind: 'millBoost'; source: number; levels: number[]; amount: number; granted?: true }
   /** ทรูธ-อีเด็น: การ์ดนี้อัญเชิญไม่ได้ถ้าไม่จ่ายอย่างน้อย min คอสต์ (อัญเชิญไม่จ่ายคอสต์ไม่ได้) */
@@ -1679,7 +1711,17 @@ export type Ability =
   /** ไนท์อีเกิล: สปิริตร่างแยกทั้งหมดของเรา BP ของ Lv1 ถือว่าเป็น bp */
   | { kind: 'cloneBp'; source: number; levels: number[]; bp: number }
   /** ดังกาโร: เมื่อเราจะสร้างสปิริตร่างแยก สามารถวางคอร์จากวอยด์ 1 เม็ดแทนคอร์จากรีเสิร์ฟ (ไม่แสดงผลซ้ำซ้อน) */
-  | { kind: 'cloneVoidCore'; source: number; levels: number[] };
+  | { kind: 'cloneVoidCore'; source: number; levels: number[] }
+  // ---------------- BS15 เหลือง
+  /** หอสมุดคัมภีร์: สปิริตของผู้เล่นทุกคนจะไม่ฟื้นสภาพโดยเอฟเฟกต์ */
+  | { kind: 'noEffectRefresh'; source: number; levels: number[] }
+  /** หอสมุดคัมภีร์ Lv2: แอทแท็คสเต็ปของเรา จั่วการ์ดด้วยเอฟเฟกต์เมจิคของเรา → สามารถเสื่อมสภาพเน็กซัสนี้ เพื่อจั่ว 2 เท่า (ไม่ซ้อน) */
+  | { kind: 'magicDrawDouble'; source: number; levels: number[] }
+  // ---------------- BS15 ฟ้า
+  /** ร็อคโกเล็ม: แอทแท็คสเต็ปของผู้เล่นทุกคน สปิริตที่ตรงตัวกรองของผู้เล่นทุกคนโจมตีได้เทิร์นละ 1 ครั้ง */
+  | { kind: 'attackOncePerTurn'; source: number; levels: number[]; filter: CardFilter }
+  /** คาสเซิลโกเล็ม: แอทแท็คสเต็ปของเรา "เด็คจะไม่ถูกทิ้ง" ของสปิริตคอสต์ไม่เกิน maxCost / เน็กซัส ของคู่แข่งไม่มีผล */
+  | { kind: 'ignoreOppNoMill'; source: number; levels: number[]; maxCost: number };
 
 /** สคริปต์ของการ์ดหนึ่งใบ เรียงตาม effects (null = ยังไม่รองรับ, array = บรรทัดเดียวมีหลายความสามารถ) */
 export type CardScript = (DistributiveOmit<Ability, 'source'> | DistributiveOmit<Ability, 'source'>[] | null)[];

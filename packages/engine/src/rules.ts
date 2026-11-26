@@ -811,7 +811,10 @@ export function costBlockBan(state: GameState, db: CardDatabase, attackerId: str
     const lv = cardLevel(state, db, id);
     for (const ab of db.get(state.cards[id]!.cardNo).abilities) {
       if (ab.kind !== 'unblockableByCost' || !ab.levels.includes(lv) || !conditionHolds(state, id, ab.if, false, false, db)) continue;
-      if (matchesFilter(state, db, attackerId, ab.attacker) && fieldCost(state, db, blockerId) <= ab.maxCost) return { cardId: id, source: ab.source };
+      if (!matchesFilter(state, db, attackerId, ab.attacker)) continue;
+      if (ab.maxCost !== undefined && fieldCost(state, db, blockerId) <= ab.maxCost) return { cardId: id, source: ab.source };
+      // BS15 วิงบีฮีมอธ: สปิริต Lv ไม่เกิน N ป้องกันไม่ได้
+      if (ab.maxLevel !== undefined && ['spirit', 'brave'].includes(db.get(state.cards[blockerId]!.cardNo).type) && cardLevel(state, db, blockerId) <= ab.maxLevel) return { cardId: id, source: ab.source };
     }
   }
   return null;
@@ -1426,7 +1429,7 @@ export function magicBanned(state: GameState, player: PlayerId, db?: CardDatabas
  * BS12 เมียวโอบัวม่วง / อาบิส-อโพคาลิพส์: การ์ดของคู่แข่งที่ห้ามผู้เล่นนี้สั่งใช้เบิร์ส/ใช้งานการ์ดเมจิคใบนี้ (คืนต้นเหตุ)
  *  nexusCost = คอสต์เท่ากับคอสต์ของเน็กซัสของคู่แข่ง (เจ้าของเอฟเฟกต์) · gemColor = ไม่มีสีเดียวกับสีเจ็มบนฟิลด์ของผู้เล่นนี้
  */
-export function cardBanSource(state: GameState, db: CardDatabase, player: PlayerId, def: CardDef): StaticSource | null {
+export function cardBanSource(state: GameState, db: CardDatabase, player: PlayerId, def: CardDef, forBurst = false): StaticSource | null {
   const opp = player === 'p1' ? 'p2' : 'p1';
   for (const id of state.players[opp].field) {
     if (effectsNegated(state, db, id)) continue;
@@ -1437,6 +1440,7 @@ export function cardBanSource(state: GameState, db: CardDatabase, player: Player
     ];
     for (const { ab, src } of entries) {
       if (ab.kind !== 'burstMagicBan') continue;
+      if (forBurst && ab.magicOnly) continue;
       if (ab.ownAttackStepOnly && !(state.phase === 'attack' && state.turnPlayer === opp)) continue;
       if (ab.mode === 'nexusCost') {
         const costs = state.players[opp].field.filter((n) => db.get(state.cards[n]!.cardNo).type === 'nexus').map((n) => fieldCost(state, db, n));
@@ -1681,7 +1685,9 @@ function payableCostInner(state: GameState, db: CardDatabase, player: PlayerId, 
       // Spirit Soul: "เมื่อเราทำการอัญเชิญการ์ดอัลติเมท"
       if (ab.filter?.types && !ab.filter.types.includes(def.type)) continue;
       if (!ab.levels.includes(cardLevel(state, db, id)) || !conditionHolds(state, id, ab.if, false, false, db)) continue;
-      for (let i = 0; i < ab.count; i++) summonGems.push(ab.color);
+      // BS15 นางฟ้าร่อน: สปิริตดีว่าทุกตัวของเราได้รับเจ็ม = เจ็ม × จำนวนตัว
+      const k = ab.perAllies ? state.players[player].field.filter((x) => matchesFilter(state, db, x, ab.perAllies!)).length : 1;
+      for (let i = 0; i < ab.count * k; i++) summonGems.push(ab.color);
     }
   }
   // ไม่มีการ์ด "เจ็มถือว่าเป็นสี...ด้วย" บนสนาม: เจ็มแต่ละเม็ดมีสีเดียว นับตามสีได้เลย (เร็ว)
@@ -1970,8 +1976,27 @@ export function negatedBy(state: GameState, db: CardDatabase, cardId: string): S
 }
 
 /** ทาเนงาชิมะ: เด็คของผู้เล่นทุกคนจะไม่ถูกทิ้ง */
-export function millBlocked(state: GameState, db: CardDatabase): boolean {
-  return fieldHas(state, db, ['p1', 'p2'], 'noMill');
+export function millBlocked(state: GameState, db: CardDatabase, by?: PlayerId): boolean {
+  if (!by) return fieldHas(state, db, ['p1', 'p2'], 'noMill');
+  return millBlockSources(state, db, by).length > 0;
+}
+
+/** การ์ดที่ทำให้เด็คไม่ถูกทิ้ง (ผู้ทิ้งเด็ค = by) · BS15 คาสเซิลโกเล็ม: ของคู่แข่งที่เป็นสปิริตคอสต์ไม่เกิน N / เน็กซัส ไม่มีผลในแอทแท็คสเต็ปของ by */
+export function millBlockSources(state: GameState, db: CardDatabase, by: PlayerId): StaticSource[] {
+  const all = staticSources(state, db, ['p1', 'p2'], 'noMill');
+  if (all.length === 0 || state.phase !== 'attack' || state.turnPlayer !== by) return all;
+  let maxCost = -1;
+  for (const src of staticSources(state, db, [by], 'ignoreOppNoMill')) {
+    const a = db.get(state.cards[src.cardId]!.cardNo).abilities.find((x) => x.kind === 'ignoreOppNoMill' && x.source === src.source);
+    if (a?.kind === 'ignoreOppNoMill') maxCost = Math.max(maxCost, a.maxCost);
+  }
+  if (maxCost < 0) return all;
+  return all.filter((src) => {
+    const c = state.cards[src.cardId]!;
+    if (c.owner === by) return true;
+    const d = db.get(c.cardNo);
+    return !(d.type === 'nexus' || (['spirit', 'brave'].includes(d.type) && fieldCost(state, db, src.cardId) <= maxCost));
+  });
 }
 
 /** คิชูด็อก: จั่วตั้งแต่ 2 ใบในครั้งเดียวโดยเอฟเฟกต์ = การ์ดบนสนาม/ในมือของฝ่ายนั้นไปใต้สุดเด็ค */
@@ -2115,7 +2140,7 @@ export function fieldCard(state: GameState, player: PlayerId, cardId: string): C
 export function burstBlocked(state: GameState, db: CardDatabase, player: PlayerId, burstDef?: CardDef): boolean {
   if (state.battle?.noBurst === player) return true;
   // BS12 เมียวโอบัวม่วง / อาบิส-อโพคาลิพส์: ห้ามเบิร์สใบนี้ตามคอสต์/สี
-  if (burstDef && cardBanSource(state, db, player, burstDef)) return true;
+  if (burstDef && cardBanSource(state, db, player, burstDef, true)) return true;
   // BS09 ไดบีท: ในเทิร์นนี้คู่แข่งสั่งใช้เบิร์สไม่ได้
   if ((state.burstBans ?? []).some((b) => b.player === player && b.turn === state.turn)) return true;
   const opp = player === 'p1' ? 'p2' : 'p1';
@@ -2140,6 +2165,7 @@ export function canAttackWith(state: GameState, db: CardDatabase, cardId: string
   const def = db.get(card.cardNo);
   if (!isSpiritLike(def) || card.state !== 'refresh') return false;
   if (turnLocked(state, cardId)) return false;
+  if (attackOnceLocked(state, db, cardId)) return false;
   if (!effectsNegated(state, db, cardId)) {
     const level = cardLevel(state, db, cardId);
     if (def.abilities.some((a) => a.kind === 'cannotAttack' && a.levels.includes(level) && conditionHolds(state, cardId, a.if, false, false, db))) return false;
@@ -2234,6 +2260,8 @@ export function blockersFor(state: GameState, db: CardDatabase, defender: Player
  */
 export function blockForced(state: GameState, db: CardDatabase): boolean {
   const b = state.battle;
+  // BS15 แกลเลียน โกเล็ม: ต้องป้องกันด้วยสปิริตที่ถูกระบุถ้าทำได้
+  if (forcedBlocker(state, db)) return true;
   if (!b?.mustBlock) return false;
   if (b.levelBlock) return false;
   if (b.blockTax && !b.blockTax.paid) return false;
@@ -2449,8 +2477,14 @@ export function ignoreSummonConditionSource(state: GameState, db: CardDatabase, 
 }
 
 /** ฟุทสึโนะมิทามะ: ผู้เล่นทุกคนนำคอร์จากวอยด์มาวางที่ไลฟ์ไม่ได้ */
-export function noLifeFromVoidSource(state: GameState, db: CardDatabase): StaticSource | null {
-  return staticSources(state, db, ['p1', 'p2'], 'noLifeFromVoid')[0] ?? null;
+export function noLifeFromVoidSource(state: GameState, db: CardDatabase, player?: PlayerId): StaticSource | null {
+  for (const src of staticSources(state, db, ['p1', 'p2'], 'noLifeFromVoid')) {
+    // BS15 ประตูชัย: เฉพาะคู่แข่ง
+    const a = db.get(state.cards[src.cardId]!.cardNo).abilities.find((x) => x.kind === 'noLifeFromVoid' && x.source === src.source);
+    if (a?.kind === 'noLifeFromVoid' && a.opponentOnly && (!player || state.cards[src.cardId]!.owner === player)) continue;
+    return src;
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------- แคชผลคำนวณ (หน้าเว็บ)
@@ -2517,6 +2551,11 @@ export function payableCost(state: GameState, db: CardDatabase, player: PlayerId
 export function noRefreshSource(state: GameState, db: CardDatabase, cardId: string, byEffect: boolean): StaticSource | null {
   const card = state.cards[cardId];
   if (!card) return null;
+  // BS15 หอสมุดคัมภีร์: สปิริตของผู้เล่นทุกคนจะไม่ฟื้นสภาพโดยเอฟเฟกต์
+  if (byEffect) {
+    const lib = staticSources(state, db, ['p1', 'p2'], 'noEffectRefresh')[0];
+    if (lib) return lib;
+  }
   const opp = card.owner === 'p1' ? 'p2' : 'p1';
   for (const src of state.players[opp].field) {
     if (effectsNegated(state, db, src)) continue;
@@ -2586,6 +2625,27 @@ export function symbolOverrideOf(state: GameState, db: CardDatabase, cardId: str
     }
   }
   return null;
+}
+
+// ---------------- BS15 ฟ้า
+/** ร็อคโกเล็ม: การ์ดนี้โจมตีไปแล้วในเทิร์นนี้ และมีผล "โจมตีได้เทิร์นละ 1 ครั้ง" กับการ์ดนี้ */
+export function attackOnceLocked(state: GameState, db: CardDatabase, cardId: string): boolean {
+  const rec = state.attackedThisTurn;
+  if (!rec || rec.turn !== state.turn || !rec.ids.includes(cardId) || state.phase !== 'attack') return false;
+  for (const src of staticSources(state, db, ['p1', 'p2'], 'attackOncePerTurn')) {
+    const a = db.get(state.cards[src.cardId]!.cardNo).abilities.find((x) => x.kind === 'attackOncePerTurn' && x.source === src.source);
+    if (a?.kind === 'attackOncePerTurn' && matchesFilter(state, db, cardId, a.filter)) return true;
+  }
+  return false;
+}
+
+/** แกลเลียน โกเล็ม: สปิริตที่คู่แข่งต้องใช้ป้องกันในการต่อสู้นี้ (ยังไม่มีผู้ป้องกัน + ป้องกันได้) */
+export function forcedBlocker(state: GameState, db: CardDatabase): string | null {
+  const b = state.battle;
+  if (!b || b.blockers.length > 0) return null;
+  const defender = state.cards[b.attackerId]!.owner === 'p1' ? 'p2' : 'p1';
+  const can = blockersFor(state, db, defender);
+  return (state.forcedBlockers ?? []).find((f) => f.turn === state.turn && can.includes(f.cardId))?.cardId ?? null;
 }
 
 // ---------------- BS15 เขียว

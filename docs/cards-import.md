@@ -15,8 +15,8 @@
 | ชุด | การ์ด | สถานะ |
 |---|---|---|
 | BS14 | BS24 แดง (21) + ขาว (20) + ม่วง (19) | แดง ✅ ขาว ✅ (50.0.0) · ม่วง ✅ (51.0.0) |
-| BS15 | BS24 เขียว (20) + เหลือง (20) + ฟ้า (20) | เขียว ✅ (52.0.0 · สร้างชุด bs15 แล้ว) · **เหลือง = แบตช์ถัดไป** |
-| BS16 | BSC15 (16) + BSC16 (42) | ยังไม่ทำ (สร้างชุดใหม่ bs16 เหมือนกัน · BSC16 = ธีมดีว่า ทีมไชนี่ฮาร์ท/แอปโซลูท/ลีเจนด์ดอล) |
+| BS15 | BS24 เขียว (20) + เหลือง (20) + ฟ้า (20) | เขียว ✅ (52.0.0 · สร้างชุด bs15 แล้ว) · เหลือง ✅ ฟ้า ✅ (53.0.0) |
+| BS16 | BSC15 (16) + BSC16 (42) | **แบตช์ถัดไป** · ยังไม่ทำ (สร้างชุดใหม่ bs16 เหมือนกัน · BSC16 = ธีมดีว่า ทีมไชนี่ฮาร์ท/แอปโซลูท/ลีเจนด์ดอล) |
 
 ## ขั้นตอนต่อแบตช์
 
@@ -42,11 +42,16 @@
 - เขียว: `pairBlock.count` (ป้องกันด้วยสปิริต N ตัว ต่อสู้ตัวเดียว) + `.attacker: 'subject'` (บีฮีมอธ: allyAttack) · `cloneBp` (BP Lv1 ของร่างแยก: `cloneBpFor` ใน currentBpRaw) ·
   `cloneVoidCore` (ดังกาโร: placeCores.clone ถาม `fromVoid`) · `disableChosenOpponent.blockOnly` (`turnLocked(…, forBlock)`) · step `activateBunshin` (`bunshinOf`) ·
   `coreFloor.self` · `opponentLifeToReserve.to: 'void'` · โยโรอิฟุคุโร "เปิดแสดงการ์ดอัลติเมทในมือ" = มีผลเมื่อมีการ์ดอัลติเมทในมือ (ไม่ถาม)
+- เหลือง: `replaceDestroy.exhaustOpp` (วอตชิโน) · SubjectFilter `maxCost` · `unblockableByCost.maxLevel` (maxCost ไม่บังคับแล้ว) · `summonSymbol.perAllies` · magic `useIf` (engine useMagic + `handMagicTimings` ในเว็บ) ·
+  `noEffectRefresh` (ใน `noRefreshSource` เมื่อ byEffect) · `magicDrawDouble` (step draw ถาม `libAsked`) · step `revealTopIf` / `battleIndestructibleSelf` (`battle.noDestroy`) / `uTriggerCostUnblock` (`blockFilter`) /
+  `magicBounceLifeThisTurn` (`state.magicBounceLife` ตรวจใน `returnCard`) / `battleNoCompare` (`battle.noCompare` → event `battleCancelled`) · `summonFromHandFree.per` (คูณ max) · `useMagicFromHandFree.filter.withShown` · `refreshOnBattleWin` ใช้กับผู้ป้องกันได้
+
+- ฟ้า: `replaceDestroy.exhaustOwn` · `destroyChosenOpponent.costPlusPer` · trigger `oppSpiritDestroyed` · oppDeckMilled `milledMax` + subject `uTriggerMill` + item.milled จาก trigger (CountPer `milledByThis`) ·
+  `attackOncePerTurn` (`state.attackedThisTurn` / `attackOnceLocked`) · `ignoreOppNoMill` (`millBlockSources`) · step `doubleBpSelf` / `forceBlockChosen` (`state.forcedBlockers` / `forcedBlocker` ใน blockForced + declareBlock) ·
+  `burstMagicBan.magicOnly` · `noLifeFromVoid.opponentOnly` · `opponentDiscards/DiscardTo.withShown` · oppBurstActivated ทำงานกับการ์ดบนสนามด้วย
 
 ## กลไกที่ต้องทำในแบตช์ถัด ๆ ไป (จากที่ถอดไว้)
 
-- เหลือง: มาริกะ (นักร้องครบ 4 คน), โคริสทัล, แบทเทิลแคนเซิล (จบการต่อสู้ไม่เทียบ BP), อัลติเมทพลาสมา, มิคาฟาร์
-- ฟ้า: นับเมจิคที่ถูกทิ้งเด็คโดยอัลติเมท, คาสเซิลโกเล็ม (ทำให้ "เด็คจะไม่ถูกทิ้ง" ไม่มีผล), ร็อคโกเล็ม, ม่อนโกคู (BP ×2)
 - BSC16: ดีว่าสเตจ (ชนะเกม), ชุดตุ๊กตาเพนต้นให้ทีม, คัทลียา, ริวเนะ-มาโตะ X (ตีระบุทั้งทีม)
 
 ## ข้อตกลงคำ/เผ่าที่เจ้าของโปรเจกต์ยืนยันแล้ว (ใช้ต่อ)
