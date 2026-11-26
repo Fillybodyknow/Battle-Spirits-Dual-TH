@@ -1,6 +1,6 @@
 import { rarityOf, type CardDef, type SymbolColor, type TextEffect } from '@bs/cards';
 import { baseCost, bpOf, cardLevel, currentBp, payableCost, type GameState } from '@bs/engine';
-import { cardArt } from '../assets';
+import { cardArt, GEM_IMG } from '../assets';
 import { braveText, COLOR_BG, COLOR_LABEL, RARITY_BADGE, TYPE_LABEL, playerLabel } from '../format';
 import { useEffect, useRef } from 'react';
 import { actingPlayer, db, useGame, hiddenFrom, resolvingEffect } from '../store';
@@ -32,13 +32,52 @@ const PLACE_LABEL: Record<Place, string> = {
 const TYPE_ICON: Record<CardDef['type'], string> = { spirit: 'S', ultimate: 'U', brave: 'B', nexus: 'N', magic: 'M' };
 const TIMING_LABEL = { main: 'Main', flash: 'Flash', burst: 'Burst' } as const;
 
-/** เน้นคำสำคัญในข้อความเอฟเฟกต์: [คีย์เวิร์ด] และ (โซลคอร์) */
-function EffectText({ text }: { text: string }) {
-  const parts = text.split(/(\[[^\]]+\]|\(โซลคอร์\)|โซลคอร์)/g);
+const GEM_TH: Record<string, string> = { แดง: 'red', ม่วง: 'purple', เขียว: 'green', ขาว: 'white', เหลือง: 'yellow', ฟ้า: 'blue' };
+/** รูปเจ็มในบรรทัดข้อความ (สูงเท่าตัวอักษร) */
+function InlineGem({ color }: { color: string }) {
+  const src = GEM_IMG[color];
+  return src ? <img src={src} alt={`เจ็ม${color}`} draggable={false} className="mx-px inline-block h-[1.15em] w-auto -translate-y-px align-middle" /> : null;
+}
+
+/**
+ * เน้นคำสำคัญในข้อความเอฟเฟกต์: [คีย์เวิร์ด], (โซลคอร์), Rush
+ * เจ็มในข้อความ = รูปเจ็ม: "<เจ็มม่วง>" (เงื่อนไข Rush) · "(เจ็มขาว 2 เม็ด)" = (เจ็ม×2)
+ */
+export function EffectText({ text }: { text: string }) {
+  const parts = text.split(/(\[[^\]]+\]|\(โซลคอร์\)|โซลคอร์|<เจ็ม[^>]*>|\(เจ็ม(?:แดง|ม่วง|เขียว|ขาว|เหลือง|ฟ้า)(?: \d+ เม็ด)?\)|\bRush\b)/g);
   return (
     <>
-      {parts.map((part, i) =>
-        /^\[.+\]$/.test(part) ? (
+      {parts.map((part, i) => {
+        // <เจ็มม่วง>
+        const single = /^<เจ็ม(แดง|ม่วง|เขียว|ขาว|เหลือง|ฟ้า)>$/.exec(part);
+        if (single)
+          return (
+            <span key={i} className="whitespace-nowrap">
+              &lt;
+              <InlineGem color={GEM_TH[single[1]!]!} />
+              &gt;
+            </span>
+          );
+        // (เจ็มขาว 2 เม็ด) / (เจ็มขาว)
+        const count = /^\(เจ็ม(แดง|ม่วง|เขียว|ขาว|เหลือง|ฟ้า)(?: (\d+) เม็ด)?\)$/.exec(part);
+        if (count)
+          return (
+            <span key={i} className="whitespace-nowrap font-semibold text-orange-200">
+              (
+              {Array.from({ length: Number(count[2] ?? 1) }, (_, k) => (
+                <InlineGem key={k} color={GEM_TH[count[1]!]!} />
+              ))}
+              )
+            </span>
+          );
+        // <เจ็ม N สี> / Rush
+        if (/^<เจ็ม.*>$/.test(part) || part === 'Rush')
+          return (
+            <span key={i} className="font-semibold text-orange-300">
+              {part}
+            </span>
+          );
+        return /^\[.+\]$/.test(part) ? (
           <span key={i} className="font-semibold text-orange-300">
             {part}
           </span>
@@ -48,8 +87,8 @@ function EffectText({ text }: { text: string }) {
           </span>
         ) : (
           part
-        ),
-      )}
+        );
+      })}
     </>
   );
 }

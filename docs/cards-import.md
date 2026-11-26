@@ -16,7 +16,11 @@
 |---|---|---|
 | BS14 | BS24 แดง (21) + ขาว (20) + ม่วง (19) | แดง ✅ ขาว ✅ (50.0.0) · ม่วง ✅ (51.0.0) |
 | BS15 | BS24 เขียว (20) + เหลือง (20) + ฟ้า (20) | เขียว ✅ (52.0.0 · สร้างชุด bs15 แล้ว) · เหลือง ✅ ฟ้า ✅ (53.0.0) |
-| BS16 | BSC15 (16) + BSC16 (42) | **แบตช์ถัดไป** · ยังไม่ทำ (สร้างชุดใหม่ bs16 เหมือนกัน · BSC16 = ธีมดีว่า ทีมไชนี่ฮาร์ท/แอปโซลูท/ลีเจนด์ดอล) |
+| BSC01 | BSC15 (16) | ✅ (54.0.0 · ชุด bsc01: data/bsc01-scripts.ts + loadBSC01Cards) |
+| BSC02 | BSC16 (42) | ✅ (54.0.0 · ชุด bsc02: data/bsc02-scripts.ts + loadBSC02Cards) · **ครบทุกชุดใน cards-list แล้ว** |
+
+**การ์ด BSC = ชุดในเกมแยกชื่อ "BSC01, BSC02, …"** (เจ้าของโปรเจกต์กำหนด ไม่ใช้ BS16) · BSC15 = BSC01, BSC16 = BSC02 (แยกสองชุด) ·
+`BOOSTER_SETS` (bot-helpers.ts) และแบนเนอร์ชุดล่าสุด (`useLatestBoosters` ใน Home.tsx) รับ `/^BSC?\d+$/` แล้ว (แบนเนอร์เรียงตามลำดับใน `loadAllCards()` = ชุดที่เพิ่มทีหลังอยู่บน)
 
 ## ขั้นตอนต่อแบตช์
 
@@ -50,9 +54,19 @@
   `attackOncePerTurn` (`state.attackedThisTurn` / `attackOnceLocked`) · `ignoreOppNoMill` (`millBlockSources`) · step `doubleBpSelf` / `forceBlockChosen` (`state.forcedBlockers` / `forcedBlocker` ใน blockForced + declareBlock) ·
   `burstMagicBan.magicOnly` · `noLifeFromVoid.opponentOnly` · `opponentDiscards/DiscardTo.withShown` · oppBurstActivated ทำงานกับการ์ดบนสนามด้วย
 
-## กลไกที่ต้องทำในแบตช์ถัด ๆ ไป (จากที่ถอดไว้)
+## กลไกที่เพิ่มแล้วระหว่างงานนี้ (BSC01)
 
-- BSC16: ดีว่าสเตจ (ชนะเกม), ชุดตุ๊กตาเพนต้นให้ทีม, คัทลียา, ริวเนะ-มาโตะ X (ตีระบุทั้งทีม)
+- step `opponentCoresDownToOne` (ซาโตริดีมอน) / `bounceOpponentBurst` (event `burstToHand`, 2VS2 เลือกเบิร์สคู่แข่งแบบ OPP_ONE_BURST_STEPS) · `exhaustAllOpponent.bothSides` ·
+  `opponentCannotAttack.filter` (`attackBans[].filter`) · `lifeShieldThisTurn.maxCost` / `.spiritsOnly` (ตรวจที่ `lifeShielded` ใน rules.ts) · `depletionSave.selfVoid` (ทัวร์มาลีน: ทำเองไม่ถาม) ·
+  trigger `allyBurstActivated` ทำงานจากแทรช (`zone: 'trash'`) · เงื่อนไข `handHas.count`
+
+## กลไกที่เพิ่มแล้วระหว่างงานนี้ (BSC02)
+
+- step `winGame` (EndReason `effectWin`) · `revealTopToShown` (นอกมือ) · `showFromHandAny` (+ CountPer `shownByThis`) · `alliesToBottomReveal` (ฮาร์ดบีท: revealSummon `noTriggers`) · `trashCoreToVoid` · `battleUnblockableLevel` (`battle.unblockLevels`)
+- คัทลียา: step `timingLockChosen` → `state.timingLocks` + `timingLocked()` ใน rules.ts (ดูข้อความบรรทัด "แอทแท็คสเต็ปของคู่แข่ง" / "เมื่อสปิริตนี้ป้องกัน" · ตรวจใน staticSources, staticBp, extraSymbol, ป้องกันขณะเสื่อมสภาพ, Flash, queueTriggers)
+- ทีมจากเบรฟ = ability `teamAlso` (granted) + `cardTeams()` ใช้แทน `def.teams` · ตัวกรอง `braveNamed` / `minLevel` / `shownOnly` · เงื่อนไข `alliesMatchAtLeast.distinctNames` · CountPer `max`
+- trigger `onStageSummoned` (allyOnStage: subject = ตัวที่ On Stage อัญเชิญ: `item.onStageSummonedId`) · `maxLevelThisTurn.target: subject` · `blockTax.fieldToTrash` · `unblockableByCost.bySpirits`
+- `debuffChosenOpponent.untilBattleEnd` / `buffChosen.untilBattleEnd` + `amountFrom: exhaustedBp` (exhaustOwn จด `item.exhaustedBp`) · `replaceDestroy.ask` (toHand แบบถาม)
 
 ## ข้อตกลงคำ/เผ่าที่เจ้าของโปรเจกต์ยืนยันแล้ว (ใช้ต่อ)
 

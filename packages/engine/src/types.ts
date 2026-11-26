@@ -155,7 +155,10 @@ export interface Battle {
   /** จบ Attack Step เมื่อจบการต่อสู้นี้ ถ้าเงื่อนไขของผู้เล่นนี้เป็นจริงตอนจบ (ยูคิเกิร์ล) */
   endAttackStepIf?: { player: PlayerId; sourceId: string; cond: Condition };
   /** คู่แข่งต้องส่งคอร์รีเสิร์ฟ N เม็ดลงแทรชก่อนป้องกัน (ฮิเมะเนโกะ) · paid = จ่ายแล้วในการต่อสู้นี้ */
-  blockTax?: { reserveToTrash: number; discard?: number; paid?: boolean };
+  blockTax?: { reserveToTrash: number; discard?: number; /** BSC02: คอร์บนฟิลด์ (สนาม/รีเสิร์ฟ) ไปแทรช */ fieldToTrash?: number; paid?: boolean };
+  /** BSC02 โซโลวิง: ผู้โจมตีไม่ถูกป้องกันโดยสปิริตเลเวลเหล่านี้ */
+  unblockLevels?: number[];
+
   /** เฟลมมังกรคลั่ง: ถ้าผู้โจมตี (ของ player ที่มีโซลคอร์) ถูกป้องกัน ส่งคอร์ไลฟ์ของฝ่ายป้องกันลงรีเสิร์ฟ amount เม็ด */
   lifeOnBlocked?: { player: PlayerId; amount: number; done?: boolean };
   /** ผู้โจมตีถือว่าไร้สีในการต่อสู้นี้ (ไลท์นิ่ง-ชิออน) */
@@ -289,6 +292,12 @@ export interface QueuedEffect {
   kageDone?: string[];
   /** (BS07) เอฟเฟกต์ On Stage: การ์ดที่อัญเชิญด้วยเอฟเฟกต์นี้ถือว่าอัญเชิญโดย On Stage */
   onStage?: boolean;
+  /** BSC02: การ์ดที่เอฟเฟกต์ On Stage นี้อัญเชิญ (trigger allyOnStage.onStageSummoned) */
+  onStageSummonedId?: string;
+  /** BSC02 งานขอบคุณแฟนคลับ: BP ของสปิริตที่ exhaustOwn เพิ่งเสื่อมสภาพ */
+  exhaustedBp?: number;
+  /** BSC02 ทริคสเตอร์: จำนวนการ์ดที่ showFromHandAny วางแสดง */
+  shownCount?: number;
   /** (BS07) trigger summon: การ์ดถูกอัญเชิญโดย On Stage / โดยเอฟเฟกต์ของการ์ดนี้ */
   summonByOnStage?: boolean;
   summonBySource?: string;
@@ -420,7 +429,7 @@ export interface GameState {
   /** 2VS2: ที่นั่งของทีมเจ้าของเทิร์นที่เซ็ทเบิร์สแล้วในเทิร์นนี้ (ต่างคนต่างเซ็ทได้คนละครั้ง: กติกา 15) */
   burstSetSeats?: Seat[];
   /** "ในเทิร์นนี้ ... โจมตีไม่ได้": การ์ดของ player ประเภท types โจมตีไม่ได้ในเทิร์น turn */
-  attackBans?: { player: PlayerId; turn: number; types: string[]; /** การ์ดต้นเหตุ: ตัวที่ไม่รับผลเอฟเฟกต์ของการ์ดนี้ (Shield / ก็อด-เซคส์) ยังโจมตีได้ */ sourceId?: string }[];
+  attackBans?: { player: PlayerId; turn: number; types: string[]; /** การ์ดต้นเหตุ: ตัวที่ไม่รับผลเอฟเฟกต์ของการ์ดนี้ (Shield / ก็อด-เซคส์) ยังโจมตีได้ */ sourceId?: string; /** BSC01: เฉพาะตัวที่ตรงตัวกรอง */ filter?: CardFilter }[];
   /** "ในเทิร์นนี้ สปิริตเราทั้งหมด BP+": สปิริตของ player ที่ตรง filter BP+amount ในเทิร์น turn */
   turnBuffs?: { player: PlayerId; turn: number; amount: number; filter?: CardFilter; sourceId?: string }[];
   /** เอฟเฟกต์ "เทิร์นละ 1 ครั้ง" ที่ใช้ไปแล้ว (player:cardNo:source) ล้างตอนจบเทิร์น */
@@ -456,6 +465,8 @@ export interface GameState {
   /** BS15 มิคาฟาร์: เทิร์นนี้ 1 ครั้ง เมจิคของ player นำสปิริตคู่แข่งกลับมือ/เด็ค = ไลฟ์คู่แข่ง 1 เม็ด */
   magicBounceLife?: { player: PlayerId; turn: number; used?: boolean };
   turnLocks?: { cardId: string; turn: number; /** BS15: ป้องกันไม่ได้อย่างเดียว */ blockOnly?: boolean }[];
+  /** BSC02 คัทลียา: ในเทิร์นนี้ เอฟเฟกต์ "แอทแท็คสเต็ปของคู่แข่ง" / "เมื่อสปิริตนี้ป้องกัน" ของการ์ดนี้ไม่ทำงาน */
+  timingLocks?: { cardId: string; turn: number }[];
   /** "ในเทิร์นนี้ สปิริต/เน็กซัสของคู่แข่งทั้งหมดสูญเสียเอฟเฟกต์ทั้งหมด": การ์ดของ player เสียเอฟเฟกต์ในเทิร์น turn */
   effectsLost?: { player: PlayerId; turn: number }[];
   /** "ในเทิร์นนี้ สปิริต/อัลติเมทที่มีเจ็มตั้งแต่ N เม็ดถือว่ามีเจ็ม 0" */
@@ -463,7 +474,7 @@ export interface GameState {
   /** เทิร์นที่มีสปิริตกลายเป็น BP0 โดย debuff ไปแล้ว */
   bpZeroTurn?: number;
   /** ในเทิร์นนี้ ไลฟ์ของผู้เล่นนี้ไม่ได้รับความเสียหายจากการโจมตีของสปิริต/อัลติเมทคอสต์ตั้งแต่ minCost (ลิมิเต็ดบาเรีย) */
-  lifeShields?: { player: PlayerId; minCost: number; turn: number }[];
+  lifeShields?: { player: PlayerId; minCost: number; turn: number; /** BSC01 เบิร์สต์แบริเออร์: คอสต์ไม่เกิน / เฉพาะสปิริต */ maxCost?: number; spiritsOnly?: true }[];
   /** สปิริต/อัลติเมทที่ทำให้ไลฟ์ของ player เสียหายแล้วในเทิร์นนี้ (ลองเคพ) */
   lifeDamageBy?: { turn: number; player: PlayerId; ids: string[] };
   /** การโจมตีใบแรกสุดของเทิร์น */
@@ -550,7 +561,7 @@ export interface GameState {
   log: GameEvent[];
 }
 
-export type EndReason = 'lifeZero' | 'deckOut' | 'concede';
+export type EndReason = 'lifeZero' | 'deckOut' | 'concede' | /** BSC02 ดีว่าสเตจ: ชนะด้วยเอฟเฟกต์ */ 'effectWin';
 
 /** ปลายทางของการย้าย Core */
 export type CoreTarget = { area: 'reserve' } | { cardId: string };
@@ -625,6 +636,8 @@ export type GameEvent =
   /** สปิริตร่างแยกถูกทิ้ง (จะกลับขึ้นมือ/เข้าเด็ค / หงายแล้วไม่ใช่การ์ดสปิริต) */
   | { type: 'cloneDiscarded'; player: PlayerId; cardId: string }
   | { type: 'burstSet'; player: PlayerId; replacedCardId: string | null }
+  /** BSC01: เบิร์สถูกนำกลับขึ้นมือ */
+  | { type: 'burstToHand'; player: PlayerId; cardId: string }
   | { type: 'burstDiscarded'; player: PlayerId; cardId: string; /** ถูกเอฟเฟกต์ของคู่แข่งทำลาย (ไม่ใช่เจ้าของทิ้งเอง) */ byEffect?: true }
   | { type: 'depleted'; cardId: string }
   | { type: 'attackDeclared'; attackerId: string }
@@ -688,7 +701,7 @@ export type GameEvent =
   /** นำ Soul Core จากแทรชมาวางบนการ์ดนี้ (โอเทนตะ) */
   | { type: 'soulFromTrash'; cardId: string }
   /** ในเทิร์นนี้ ไลฟ์ไม่ได้รับความเสียหายจากการโจมตีของสปิริตคอสต์ตั้งแต่ minCost (ลิมิเต็ดบาเรีย) */
-  | { type: 'lifeShield'; player: PlayerId; minCost: number }
+  | { type: 'lifeShield'; player: PlayerId; minCost: number; maxCost?: number }
   /** สปิริตนี้ต้องโจมตีมาที่ holder เป็นใบแรกของสเต็ป (อิจิโกะฮิโทฟุริ) */
   | { type: 'forcedAttack'; cardId: string; holderId: string }
   /** สปิริตของ player ตกเป็นเป้า: เปิดให้ใช้ Kagemusha */

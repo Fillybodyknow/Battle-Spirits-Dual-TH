@@ -22,7 +22,7 @@ export type Condition =
   /** (trigger summon) การ์ดนี้ถูกอัญเชิญจากเด็ค */
   | { summonedFromDeck: true }
   /** มีการ์ดบนมือเราที่ตรงตัวกรอง */
-  | { handHas: CardFilter }
+  | { handHas: CardFilter; /** BSC01: ตั้งแต่ N ใบ (ไม่ระบุ = 1) */ count?: number }
   /** เอฟเฟกต์ (Burst) นี้ถูกสั่งใช้โดย [Catalyze] */
   | { catalyzed: true }
   /** การ์ดเจ้าของเอฟเฟกต์มี Core อย่างน้อย N ดวง */
@@ -102,7 +102,7 @@ export type Condition =
   /** สปิริตนี้ถูกนำไปวางชิดด้านข้างโดย My Unit ในการต่อสู้นี้ */
   | { inUnit: true }
   /** สปิริต/อัลติเมทของเราที่ตรงตัวกรองอย่างน้อย count ตัว */
-  | { alliesMatchAtLeast: { filter: CardFilter; count: number } }
+  | { alliesMatchAtLeast: { filter: CardFilter; count: number; /** BSC02: นับเฉพาะชื่อการ์ดที่ต่างกัน */ distinctNames?: true } }
   /** การ์ดนี้ยังไม่ได้ใช้ "เทิร์นละ 1 ครั้ง" ชื่อนี้ (ใช้คู่กับ step markOnce: นับเฉพาะครั้งที่ทำจริง) */
   | { onceFree: string }
   /** สปิริตนี้ (เบรฟ granted = ผู้ร่วมร่าง) ตรงตัวกรอง */
@@ -203,6 +203,10 @@ export interface CountPer {
   selfCores?: true;
   /** BS14 ซัพเพรสชัน: จำนวนสปิริตที่ฟื้นสภาพโดยเอฟเฟกต์นี้ */
   refreshedByThis?: true;
+  /** BSC02 ทริคสเตอร์: จำนวนการ์ดที่เอฟเฟกต์นี้นำไปวางแสดงนอกมือ (showFromHandAny) */
+  shownByThis?: true;
+  /** BSC02: สูงสุด N (หลังคูณ/หาร) */
+  max?: number;
   /** หารด้วย (ต่อ 2 ตัว = 2) ไม่ระบุ = 1 */
   div?: number;
 }
@@ -307,6 +311,12 @@ export interface CardFilter {
   hasBraves?: true;
   /** BS14: เลเวลปัจจุบันไม่เกิน N (เฉพาะบนสนาม) */
   maxLevel?: number;
+  /** BSC02: เลเวลปัจจุบันตั้งแต่ N (เฉพาะบนสนาม) */
+  minLevel?: number;
+  /** BSC02 ราเควล: ร่วมร่างกับเบรฟที่ชื่อมีคำเหล่านี้ */
+  braveNamed?: string[];
+  /** BSC02 ทริคสเตอร์: เฉพาะการ์ดที่วางแสดงนอกมือ (ใช้คู่กับ withShown) */
+  shownOnly?: true;
   /** (engine ใช้ภายใน) เป็นการ์ดใบใดใบหนึ่งเหล่านี้ (Curse: ผู้ป้องกันตอนตัดสินผลการต่อสู้) */
   onlyIds?: string[];
 }
@@ -344,7 +354,19 @@ export type Step =
       untilBattleEnd?: true;
     }
   /** ในเทิร์นนี้ เลือกสปิริต/อัลติเมท 1 ตัว (ฝ่ายใดก็ได้) BP+ */
-  | { do: 'buffChosen'; amount: number; /** เฉพาะสปิริตของเรา */ ally?: true; filter?: CardFilter; /** หลังจากนั้น ถ้าสปิริตนั้นมี BP ตั้งแต่ค่านี้ ฟื้นสภาพสปิริตนั้น */ refreshIfMinBp?: number }
+  | {
+      do: 'buffChosen';
+      amount: number;
+      /** เฉพาะสปิริตของเรา */
+      ally?: true;
+      filter?: CardFilter;
+      /** หลังจากนั้น ถ้าสปิริตนั้นมี BP ตั้งแต่ค่านี้ ฟื้นสภาพสปิริตนั้น */
+      refreshIfMinBp?: number;
+      /** BSC02 งานขอบคุณแฟนคลับ: BP+ เท่ากับ BP ของสปิริตที่ exhaustOwn ก่อนหน้าในเอฟเฟกต์นี้เสื่อมสภาพ */
+      amountFrom?: 'exhaustedBp';
+      /** "ในการต่อสู้นี้" */
+      untilBattleEnd?: true;
+    }
   /** สปิริตต้นเหตุ (subject) BP+ ในเทิร์นนี้ */
   | { do: 'buffSubject'; amount: number }
   /** [True-Rage]: คู่แข่งต้องป้องกันถ้าทำได้ (ใช้ระหว่างการต่อสู้) */
@@ -462,6 +484,8 @@ export type Step =
   | { do: 'millPerDestroyedCost' }
   /** ทิ้งเบิร์สที่เซ็ทอยู่ของคู่แข่ง */
   | { do: 'discardOpponentBurst' }
+  /** BSC01 ทัวร์มาลีนดรากูน: นำเบิร์สของคู่แข่ง 1 ใบกลับขึ้นมือ (ไม่ใช่การทิ้ง) */
+  | { do: 'bounceOpponentBurst' }
   /** สปิริตที่เป็นต้นเหตุของ trigger (เช่น สปิริตที่ทิ้งเด็ค) ฟื้นสภาพ */
   | { do: 'refreshSubject'; if?: Condition }
   /**
@@ -489,6 +513,8 @@ export type Step =
       do: 'debuffChosenOpponent';
       amount: number;
       filter: CardFilter;
+      /** BSC02 เวียร์จ: "ในการต่อสู้นี้" (ไม่ระบุ = ในเทิร์นนี้) */
+      untilBattleEnd?: true;
       /** "ทำลายสปิริตที่กลายเป็น BP0 โดยเอฟเฟกต์นี้" (ไม่ระบุ = BP0 แล้วยังอยู่บนสนาม) */
       destroyAtZero?: true;
       /** "เสื่อมสภาพสปิริตที่กลายเป็น BP0 โดยเอฟเฟกต์นี้" */
@@ -505,7 +531,7 @@ export type Step =
       charged?: true;
     }
   /** ในเทิร์นนี้ การ์ดของคู่แข่งประเภทเหล่านี้ทั้งหมดโจมตีไม่ได้ */
-  | { do: 'opponentCannotAttack'; types: CardType[]; if?: Condition }
+  | { do: 'opponentCannotAttack'; types: CardType[]; if?: Condition; /** BSC01 เนเมียนไลอ้อน: เฉพาะตัวที่ตรงตัวกรอง (เช่น คอสต์ไม่เกิน 4) */ filter?: CardFilter }
   /** เสื่อมสภาพสปิริตคู่แข่ง N ตัว (เลือกทีละตัว จากตัวที่ยังฟื้นสภาพ) */
   | {
       do: 'exhaustOpponent';
@@ -564,7 +590,7 @@ export type Step =
    * แสดงใบบนสุดเด็ค N ใบ อัญเชิญไม่จ่ายคอสต์ใบที่ตรงตัวกรองได้สูงสุด max ใบ (null = กี่ใบก็ได้)
    * ที่เหลือไว้ใต้สุดเด็ค (เรียงลำดับได้)
    */
-  | { do: 'revealSummon'; count: number; filter: CardFilter; max: number | null; /** ที่เหลือ: ใต้สุดเด็ค (ค่าเริ่มต้น) / ลงแทรช */ rest?: 'bottom' | 'trash' }
+  | { do: 'revealSummon'; count: number; filter: CardFilter; max: number | null; /** ที่เหลือ: ใต้สุดเด็ค (ค่าเริ่มต้น) / ลงแทรช */ rest?: 'bottom' | 'trash'; /** BSC02 ฮาร์ดบีท: "เมื่อสปิริตนี้ถูกอัญเชิญ" ไม่ทำงาน */ noTriggers?: true }
   /** (Burst) หลังเอฟเฟกต์นี้ อัญเชิญการ์ดสปิริตนี้ไม่จ่ายคอสต์ */
   | { do: 'summonThisFree' }
   /** ทิ้งการ์ดบนมือเราทั้งหมด แล้วจั่วการ์ดเท่าจำนวนการ์ดบนมือคู่แข่ง */
@@ -584,7 +610,7 @@ export type Step =
       per?: CountPer;
     }
   /** เสื่อมสภาพสปิริต/อัลติเมทของคู่แข่งที่ตรงตัวกรองทั้งหมด */
-  | { do: 'exhaustAllOpponent'; filter: CardFilter; if?: Condition }
+  | { do: 'exhaustAllOpponent'; filter: CardFilter; if?: Condition; /** BSC01 ฮานะโนะแมนทิส: ของผู้เล่นทุกคน */ bothSides?: true }
   /**
    * ส่งคอร์บนสปิริต/อัลติเมทของคู่แข่งไปรีเสิร์ฟ (หรือแทรช) ของคู่แข่ง ทีละเม็ด (เลือกเป้าหมายทุกครั้ง)
    *  - untilOne: เลือก 1 ตัว ส่งจนเหลือคอร์ 1 เม็ด
@@ -743,7 +769,7 @@ export type Step =
   /** ในการต่อสู้นี้ ผู้โจมตี (สปิริตนี้) ไม่ถูกป้องกันโดยสปิริตคู่แข่งที่คอสต์ไม่เกินคอสต์ของสปิริตนี้ */
   | { do: 'unblockableByCostAtMostSelf' }
   /** ในการต่อสู้นี้ คู่แข่งจะป้องกันได้ต้องส่งคอร์รีเสิร์ฟ N เม็ดลงแทรช */
-  | { do: 'blockTax'; reserveToTrash: number; /** ทิ้งการ์ดบนมือแทน (อาคิตะ-ด็อก) */ discard?: number }
+  | { do: 'blockTax'; reserveToTrash: number; /** ทิ้งการ์ดบนมือแทน (อาคิตะ-ด็อก) */ discard?: number; /** BSC02 มิเรีย: ส่งคอร์บนฟิลด์ของตัวเอง (สนาม/รีเสิร์ฟ) N เม็ดไปแทรช */ fieldToTrash?: number }
   /** ทำลายเบรฟที่ให้เอฟเฟกต์นี้ (ร่วมร่างอยู่) ถ้าทำได้ ทำ then */
   | { do: 'destroySourceBrave'; then?: Step[] }
   /** ถ้า debuff ของเอฟเฟกต์นี้ทำให้สปิริตคู่แข่งกลายเป็น BP0 เป็นตัวแรกของเทิร์น: ทำ steps */
@@ -794,7 +820,7 @@ export type Step =
   /** สามารถเลือกสปิริตของคู่แข่ง 1 ตัว: ตัวนั้นต้องโจมตีมาที่สปิริตนี้เป็นใบแรกสุดของสเต็ป ถ้าทำได้ */
   | { do: 'forceAttackChosen' }
   /** ในเทิร์นนี้ ไลฟ์เราไม่ได้รับความเสียหายจากการโจมตีของสปิริต/อัลติเมทคอสต์ตั้งแต่ minCost */
-  | { do: 'lifeShieldThisTurn'; minCost: number }
+  | { do: 'lifeShieldThisTurn'; minCost?: number; /** BSC01 เบิร์สต์แบริเออร์: การโจมตีของสปิริตคอสต์ไม่เกิน N (อัลติเมทไม่นับ) */ maxCost?: number; spiritsOnly?: true }
   /** (engine ใช้ภายใน) Kagemusha: จดว่าการ์ดนี้ถูกอัญเชิญแล้ว เอฟเฟกต์ที่เล็งอยู่ต้องเล็งการ์ดนี้แทน */
   | { do: 'kageSet'; cardId: string }
   // ---------------- BS07
@@ -917,7 +943,24 @@ export type Step =
   | { do: 'summonFreeHandOrTrash'; filter: CardFilter; max: number; /** BS12: เลือกจากโซนเหล่านี้เท่านั้น (ไม่ระบุ = มือและแทรช) */ zones?: ('hand' | 'trash')[]; /** BS12: max × จำนวนนี้ */ per?: CountPer }
   // ---------------- BS12
   /** ในเทิร์นนี้ ถือว่าเป็น Lv สูงสุด: allies = สปิริตเราทั้งหมด (รวมตัวที่ลงทีหลัง), chosen = สปิริตที่เพิ่งเลือก (refreshChosenAlly) */
-  | { do: 'maxLevelThisTurn'; target: 'allies' | 'chosen' }
+  | { do: 'maxLevelThisTurn'; target: 'allies' | 'chosen' | 'subject' }
+  // ---------------- BSC02
+  /** ดีว่าสเตจ: เราชนะเกม */
+  | { do: 'winGame' }
+  /** นักร้อง เอ็นจู: เปิดใบบนสุดเด็ค ตรงตัวกรอง = วางแสดงนอกมือ (ใช้ได้เสมือนอยู่ในมือ) · ไม่ตรง = ใต้สุดเด็ค */
+  | { do: 'revealTopToShown'; filter: CardFilter }
+  /** ทริคสเตอร์: สามารถนำการ์ดในมือที่ตรงตัวกรองกี่ใบก็ได้ไปวางแสดงนอกมือ แล้วทำ then (CountPer shownByThis) */
+  | { do: 'showFromHandAny'; filter: CardFilter; then: Step[] }
+  /** คัทลียา: เลือกระบุสปิริตคู่แข่ง 1 ตัว ในเทิร์นนี้เอฟเฟกต์ "แอทแท็คสเต็ปของคู่แข่ง" / "เมื่อสปิริตนี้ป้องกัน" ของตัวนั้นไม่ทำงาน */
+  | { do: 'timingLockChosen' }
+  /** โซโลวิง: ในการต่อสู้นี้ ผู้โจมตีไม่ถูกป้องกันโดยสปิริตเลเวลนี้ของคู่แข่ง */
+  | { do: 'battleUnblockableLevel'; level: number }
+  /** ดีว่าเมดเลย์: ส่งคอร์ในแทรชเรา N เม็ดไปวอยด์ */
+  | { do: 'trashCoreToVoid'; count: number }
+  /** (engine ใช้ภายใน) มิเรีย: ผู้ควบคุมเลือกส่งคอร์บนฟิลด์ของตัวเอง 1 เม็ด (รีเสิร์ฟ หรือบนการ์ดใบไหน) ไปแทรช */
+  | { do: 'fieldCoreToTrash' }
+  /** ฮาร์ดบีท: สามารถนำสปิริตของเราที่ตรง filter กี่ตัวก็ได้กลับใต้สุดเด็ค แล้วเปิดใบบนสุดเท่าจำนวนนั้น อัญเชิญไม่จ่ายคอสต์การ์ดที่ตรง summon กี่ใบก็ได้ ("เมื่อถูกอัญเชิญ" ไม่ทำงาน) ที่เหลือทิ้ง */
+  | { do: 'alliesToBottomReveal'; filter: CardFilter; summon: CardFilter }
   /** BS12 โอนิมารุ: นำโซลคอร์ในแทรชเรามาวางที่สปิริตของเรา 1 ตัวที่ตรงตัวกรอง (เลือก) */
   | { do: 'trashSoulToAlly'; filter: CardFilter }
   /** ทำลายเบรฟที่ร่วมร่างอยู่ของคู่แข่งทั้งหมด */
@@ -997,6 +1040,8 @@ export type Step =
   | { do: 'ownLifeToSelf'; count: number }
   /** ส่งคอร์บนสปิริต/อัลติเมทของผู้เล่นทุกคนตัวละ 1 เม็ดลงแทรชเจ้าของ */
   | { do: 'coresOffEverySpirit' }
+  /** BSC01 ซาโตริดีมอน: ส่งคอร์บนสปิริตทั้งหมดของคู่แข่งไปรีเสิร์ฟคู่แข่ง จนเหลือตัวละ 1 เม็ด (ไม่ใช่การเล็งเป้า) */
+  | { do: 'opponentCoresDownToOne' }
   /** ในการต่อสู้นี้ สปิริตของเราที่กำลังโจมตีอยู่ได้รับเจ็มสีนี้เพิ่ม */
   | { do: 'symbolAttackerBattle'; color: Color; count: number }
   /** ทิ้งใบบนสุดเด็คเรา 1 ใบ แล้วทำ steps ของกรณีแรกที่ตรง ไม่ตรงเลย = นำการ์ดที่ทิ้งขึ้นมือ (otherwiseToHand) */
@@ -1282,6 +1327,8 @@ export type Ability =
       on: TriggerEvent | TriggerEvent[];
       /** เหตุการณ์ ally*: สปิริตที่เป็นต้นเหตุต้องตรงเงื่อนไขนี้ */
       subject?: SubjectFilter;
+      /** BSC02 allyOnStage: การ์ดต้นเหตุของ step (subject) = ตัวที่ถูกอัญเชิญโดย On Stage นั้น (ตัวกรอง subject ยังตรวจตัวที่กลับใต้เด็ค) */
+      onStageSummoned?: true;
       levels: number[];
       steps: Step[];
       /** "แอทแท็คสเต็ปของผู้เล่นทุกคน": ทำงานเฉพาะใน Attack Step (เทิร์นใครก็ได้) */
@@ -1343,6 +1390,8 @@ export type Ability =
       life?: number;
       /** BS10 นาเดชิโกะ: กลับขึ้นมือแทนการถูกทำลาย */
       toHand?: true;
+      /** BSC02 เวียร์จ: "สามารถกลับขึ้นมือได้" = ถามก่อน (ใช้กับ toHand) */
+      ask?: true;
       /** BS14 Destructive Curse (ควีน เมดูค): จ่ายด้วยการส่งคอร์ไลฟ์คู่แข่ง N เม็ดไปแทรชคู่แข่ง */
       oppLife?: number;
       /** BS15 วอตชิโน: จ่ายด้วยการเสื่อมสภาพสปิริตคู่แข่งที่ตรงตัวกรอง 1 ตัว */
@@ -1573,7 +1622,7 @@ export type Ability =
   /** "เมื่อ <attacker> ของเราโจมตี คู่แข่งป้องกันได้ด้วยสปิริต/อัลติเมทตั้งแต่ 1 ตัวที่ Lv รวมตั้งแต่ minLevel แล้วเราเลือกสู้ 1 ตัว" */
   | { kind: 'blockLevelSum'; source: number; levels: number[]; if?: Condition; attacker: CardFilter; minLevel: number }
   /** "แอทแท็คสเต็ปของเรา: <attacker> ของเราจะไม่ถูกป้องกันโดยสปิริต/อัลติเมทคอสต์ไม่เกิน maxCost ของคู่แข่ง" */
-  | { kind: 'unblockableByCost'; source: number; levels: number[]; if?: Condition; attacker: CardFilter; maxCost?: number; /** BS15 วิงบีฮีมอธ: ไม่ถูกป้องกันโดยสปิริต Lv ไม่เกินนี้ */ maxLevel?: number }
+  | { kind: 'unblockableByCost'; source: number; levels: number[]; if?: Condition; attacker: CardFilter; maxCost?: number; /** BS15 วิงบีฮีมอธ: ไม่ถูกป้องกันโดยสปิริต Lv ไม่เกินนี้ */ maxLevel?: number; /** BSC02 วันหยุดของดีว่า: ไม่ถูกป้องกันโดยสปิริตใด ๆ ของคู่แข่ง */ bySpirits?: true }
   /** "การ์ดสปิริตนี้, เมื่อ..., จะถือว่ามีคอสต์ N" (ในมือ/นอกมือ) */
   | { kind: 'selfCostIf'; source: number; cost: number; if: Condition }
   /** "การ์ดนี้ที่เซ็ทอยู่ เมื่อถูกทิ้งโดยคู่แข่ง, สามารถสั่งใช้เบิร์สโดยไม่สนเงื่อนไขได้" */
@@ -1593,6 +1642,8 @@ export type Ability =
   | { kind: 'noLifeFromVoid'; source: number; levels: number[]; /** BS15 ประตูชัย: เฉพาะคู่แข่ง */ opponentOnly?: true }
   // ---------------- BS09
   /** ถ้าเงื่อนไขจริง สปิริตนี้ได้รับเผ่านี้ */
+  /** BSC02 ชุดตุ๊กตาเพนต้น: การ์ดนี้ (granted = ผู้ร่วมร่าง) เป็นทีมเหล่านี้ด้วย */
+  | { kind: 'teamAlso'; source: number; levels: number[]; teams: string[]; granted?: true }
   | { kind: 'familyAlso'; source: number; levels: number[]; if?: Condition; family: string; /** BS10: การ์ดของเราที่ตรงตัวกรองได้รับแทน (ไม่ใช่ตัวการ์ดนี้) */ allies?: CardFilter }
   /** การ์ดของเราที่ตรงตัวกรอง ใช้โซลคอร์ร่วมจ่ายคอสต์อัญเชิญ เพื่ออัญเชิญโดยไม่สนเงื่อนไข (《เงื่อนไขอัญเชิญ》) ได้ */
   | { kind: 'ignoreSummonCondition'; source: number; levels: number[]; filter: CardFilter }
@@ -1690,7 +1741,14 @@ export type Ability =
    * คิงฟอร์เทรส: สปิริตของเราที่ตรงตัวกรอง เมื่อจะสูญสลายโดยเอฟเฟกต์ที่ไม่ใช่ของอัลติเมทของคู่แข่ง
    * นำคอร์จากรีเสิร์ฟมาวางให้ถึง Lv1 แล้วอยู่ต่อในรูปแบบฟื้นสภาพ (ทำเองเมื่อรีเสิร์ฟพอ)
    */
-  | { kind: 'depletionSave'; source: number; levels: number[]; filter: CardFilter }
+  | {
+      kind: 'depletionSave';
+      source: number;
+      levels: number[];
+      filter: CardFilter;
+      /** BSC01 ทัวร์มาลีนดรากูน: การ์ดนี้เอง เมื่อจะสูญสลายโดยคู่แข่ง (ทุกเอฟเฟกต์) นำคอร์จากวอยด์ 1 เม็ดมาวาง อยู่ต่อแบบเสื่อมสภาพ · เลเวล = ก่อนถูกถอดคอร์ */
+      selfVoid?: true;
+    }
   // ---------------- BS13 หกเทพพิสุทธิ์
   /** เจียส: คอร์ที่ได้รับในคอร์สเต็ปของเรา +amount */
   | { kind: 'coreStepBonus'; source: number; levels: number[]; amount: number; if?: Condition }

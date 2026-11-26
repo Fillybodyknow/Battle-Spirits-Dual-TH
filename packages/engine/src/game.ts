@@ -4,8 +4,9 @@ import { destroyCard, enqueue, fireTriggers, refreshByEffect, newBatch, queueExh
 import { nextRandom, shuffle } from './rng';
 import { normalizeSeats } from './seats';
 import { burstSetDone } from './seats';
-import { activeSeat, allZones, asSeat, restoreSeats, seatOfCard, seatsOf, teamHand, teamTrash, useSeat } from './seats';
+import { activeSeat, allZones, asSeat, ownField, restoreSeats, seatOfCard, seatsOf, teamHand, teamTrash, useSeat } from './seats';
 import {
+  lifeShielded,
   attackTaxFor,
   symbolOverrideOf,
   lifeVoidSource,
@@ -300,7 +301,13 @@ function startDraw(ctx: Ctx): void {
   const { s } = ctx;
   const player = s.turnPlayer;
   // 2VS2 (ฝั่งที่มีเพื่อนร่วมทีม): จั่วอัตโนมัติ ไม่ต้องรอใครกด (เจ้าของโปรเจกต์กำหนด) · 1VS2 ฝั่งที่เล่นคนเดียวยังกดจั่วเอง
-  if (s.config.manualDraw && !s.players[player].partner) {
+  // ไม่มีอะไรให้จั่ว (สลากสืบทอดบัลลังก์: ทิ้งใบบนสุดเด็ค "แทนการจั่ว") = ไม่ต้องรอกดจั่ว
+  const base = (s.solo === player ? 2 : 1) + (s.drawStepExtra ?? 0);
+  const extraDraw = s.players[player].field.some((id) => {
+    const level = cardLevel(s, ctx.db, id);
+    return ctx.db.get(s.cards[id]!.cardNo).abilities.some((ab) => ab.kind === 'drawStep' && ab.levels.includes(level) && ab.extraDraw.length > 0);
+  });
+  if (s.config.manualDraw && !s.players[player].partner && (base > 0 || extraDraw)) {
     // รอผู้เล่นกดจั่ว (action 'drawStep')
     s.awaitingDraw = player;
     return;
@@ -1419,7 +1426,7 @@ function resolveBattle(ctx: Ctx): void {
       }
     }
     // ลิมิเต็ดบาเรีย: ไลฟ์ไม่ได้รับความเสียหายจากการโจมตีของสปิริตคอสต์ตั้งแต่ N
-    if ((s.lifeShields ?? []).some((l) => l.player === defender && l.turn === s.turn && fieldCost(s, db, attacker.id) >= l.minCost)) dmg = 0;
+    if (lifeShielded(s, db, defender, attacker.id)) dmg = 0;
     // BS11 หิมะน้ำแข็ง เซอร์เคิล: การ์ดที่ถูกระบุทำความเสียหายแก่ไลฟ์ไม่ได้ในเทิร์นนี้
     if ((s.noLifeDamageCards ?? []).some((l) => l.cardId === attacker.id && l.player === defender && l.turn === s.turn)) dmg = 0;
     // BS08 กำแพงผลึกขาว (โซลคอร์): ในเทิร์นนี้ไลฟ์เสียหายรวมได้ไม่เกิน 1 (loseLife ตัดซ้ำอีกชั้นสำหรับความเสียหายทุกแบบ)
@@ -1586,6 +1593,13 @@ function payBlockTax(ctx: Ctx, defender: PlayerId, attackerId: string): void {
     return;
   }
   const p = ctx.s.players[defender];
+  // BSC02 มิเรีย: ฝ่ายป้องกันเลือกเองว่าจะส่งคอร์จากรีเสิร์ฟ หรือจากการ์ดใบไหนบนฟิลด์ของตัวเอง
+  if (tax.fieldToTrash) {
+    tax.paid = true;
+    const steps: Step[] = Array.from({ length: tax.fieldToTrash }, () => ({ do: 'fieldCoreToTrash' as const }));
+    enqueue(ctx, { controller: defender, sourceId: attackerId, steps, paidWithSoul: false, trashWhenDone: false, announce: false });
+    return;
+  }
   const pay = [...p.reserve].sort((a, b) => Number(ctx.s.cores[a]!.isSoul) - Number(ctx.s.cores[b]!.isSoul)).slice(0, tax.reserveToTrash);
   for (const id of pay) removeFrom(p.reserve, id);
   p.trashCores.push(...pay);

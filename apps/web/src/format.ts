@@ -57,7 +57,7 @@ export function setSeatNames(names: Partial<Record<PlayerId, string>> | null) {
 }
 export const playerLabel = (p: PlayerId) => seatNames?.[p] ?? (p === 'p1' ? 'ผู้เล่น 1' : 'ผู้เล่น 2');
 
-const END_REASON = { lifeZero: 'Life เป็น 0', deckOut: 'เด็คหมด', concede: 'ยอมแพ้' } as const;
+const END_REASON = { lifeZero: 'Life เป็น 0', deckOut: 'เด็คหมด', concede: 'ยอมแพ้', effectWin: 'ชนะด้วยเอฟเฟกต์การ์ด' } as const;
 
 export function cardName(state: GameState, cardId: string): string {
   const card = state.cards[cardId];
@@ -95,6 +95,8 @@ export function formatEvent(e: GameEvent, s: GameState): string | null {
       return `สปิริตร่างแยกของ${playerLabel(e.player)}ถูกทิ้ง (${name(e.cardId)})`;
     case 'burstSet':
       return `${playerLabel(e.player)} เซ็ท Burst${e.replacedCardId ? ' (ใบเก่าลง Trash)' : ''}`;
+    case 'burstToHand':
+      return `Burst ของ${playerLabel(e.player)}กลับขึ้นมือ`;
     case 'burstDiscarded':
       return `${playerLabel(e.player)} ทิ้ง Burst (${name(e.cardId)}) ลง Trash`;
     case 'depleted':
@@ -150,7 +152,9 @@ export function formatEvent(e: GameEvent, s: GameState): string | null {
     case 'soulFromTrash':
       return `นำ Soul Core จากแทรชวางบน ${name(e.cardId)}`;
     case 'lifeShield':
-      return `ในเทิร์นนี้ ไลฟ์ของ${playerLabel(e.player)}ไม่ได้รับความเสียหายจากการโจมตีของสปิริตคอสต์ ${e.minCost} ขึ้นไป`;
+      return e.maxCost !== undefined
+        ? `ในเทิร์นนี้ ไลฟ์ของ${playerLabel(e.player)}ไม่ลดลงจากการโจมตีของสปิริตคอสต์ไม่เกิน ${e.maxCost}`
+        : `ในเทิร์นนี้ ไลฟ์ของ${playerLabel(e.player)}ไม่ได้รับความเสียหายจากการโจมตีของสปิริตคอสต์ ${e.minCost} ขึ้นไป`;
     case 'forcedAttack':
       return `${name(e.cardId)} ต้องโจมตีมาที่ ${name(e.holderId)} เป็นใบแรก`;
     case 'kagemushaChance':

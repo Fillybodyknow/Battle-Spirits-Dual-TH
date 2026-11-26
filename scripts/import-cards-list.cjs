@@ -38,6 +38,7 @@ for (const b of blocks) {
 }
 for (const [file, list] of Object.entries(out)) {
   const p = root + file;
+  fs.mkdirSync(path.dirname(p), { recursive: true });
   const prev = fs.existsSync(p) ? fs.readFileSync(p, 'utf8').replace(/\s*$/, '') + '\n\n' : '';
   fs.writeFileSync(p, prev + list.join('\n\n') + '\n');
   console.log(file, '+', list.length);

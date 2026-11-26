@@ -5,8 +5,8 @@ import { actorOf, applyAction, botDecide, createGame, legalActions, type Action,
 export const db = loadAllCards();
 export const STARTERS: Record<string, readonly DeckEntry[]> = { sd01: SD01_DECK, sd02: SD02_DECK, sd03: SD03_DECK, sd04: SD04_DECK };
 
-/** ชุดการ์ด Booster ทั้งหมด (BS01…) */
-export const BOOSTER_SETS = [...new Set(db.all().map((c) => c.set).filter((x): x is string => !!x && /^BS[0-9]+$/.test(x)))].sort();
+/** ชุดการ์ด Booster ทั้งหมด (BS01… / BSC01…) */
+export const BOOSTER_SETS = [...new Set(db.all().map((c) => c.set).filter((x): x is string => !!x && /^BSC?[0-9]+$/.test(x)))].sort();
 
 /**
  * เด็คทดสอบจากการ์ดทั้งชุด (ใบละ 1 ใบ เติมจนครบอย่างน้อย 40 ใบ) ไว้ให้บอทลองเอฟเฟกต์ของทุกใบ

@@ -1198,7 +1198,29 @@ function boardCenter(w: number, h: number): Rect {
   return { x: (innerWidth - sidebar) / 2 - w / 2, y: innerHeight / 2 - h / 2, w, h };
 }
 
+/** คีย์เฟรมกล่องแบบ left/top/width/height (ต้องจัดหน้า + วาดการ์ดใหม่ทุกเฟรม: ใช้กับท่าที่ยังไม่ได้ย้ายไปใช้ boxFrame เท่านั้น) */
 const frame = (r: Rect, extra: Keyframe = {}): Keyframe => ({ left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px`, ...extra });
+
+/**
+ * กล่องที่บินด้วย transform ล้วน (การ์ดจอเลื่อน/ย่อให้ ไม่ต้องจัดหน้าและวาดการ์ดใหม่ทุกเฟรม → ไม่กระตุกบนมือถือ/iPad)
+ * placeBox: ตั้งกล่องจริงเป็นขนาดใหญ่สุดของทาง (ย่อลงเป็นหลัก ภาพคม) มุมซ้ายบนจอ · boxFrame: translate + scale ไปยังกรอบเป้าหมาย
+ * extra.transform (rotate / rotateY / scale) หมุนรอบกลางกล่องเหมือนเดิม
+ */
+type BoxSize = { w: number; h: number };
+function placeBox(el: HTMLElement, rects: Rect[]): BoxSize {
+  const w = Math.max(1, ...rects.map((r) => r.w));
+  const h = Math.max(1, ...rects.map((r) => r.h));
+  Object.assign(el.style, { left: '0px', top: '0px', width: `${w}px`, height: `${h}px`, transformOrigin: '0 0' });
+  el.dataset.fxBox = '1';
+  return { w, h };
+}
+function boxFrame(base: BoxSize, r: Rect, extra: Keyframe = {}): Keyframe {
+  const { transform, ...rest } = extra;
+  return {
+    ...rest,
+    transform: `translate(${r.x + r.w / 2}px, ${r.y + r.h / 2}px) ${transform ?? 'rotate(0deg)'} scale(${r.w / base.w}, ${r.h / base.h}) translate(${-base.w / 2}px, ${-base.h / 2}px)`,
+  };
+}
 
 const COLOR_HEX: Record<string, string> = { red: '#ef4444', purple: '#a855f7', green: '#22c55e', white: '#e2e8f0', yellow: '#facc15', blue: '#38bdf8' };
 
@@ -1456,10 +1478,12 @@ function FlyCard({ fx, onDone }: { fx: Extract<Fx, { kind: 'fly' }>; onDone: () 
       const big = boardCenter(208, 290);
       const end = rectOf(document.querySelector(fx.to)) ?? from;
       const small = { x: end.x + end.w / 2 - 20, y: end.y + end.h / 2 - 28, w: 40, h: 56 };
+      const base = placeBox(el, [from, big]);
+      const f = (r: Rect, e: Keyframe) => boxFrame(base, r, e);
       anim = el.animate(
         fx.mode === 'magic'
-          ? [frame(from, { opacity: 1 }), frame(big, { opacity: 1, offset: 0.22 }), frame(big, { opacity: 1, offset: 0.78 }), frame(small, { opacity: 0 })]
-          : [frame(from, { opacity: 1, transform: 'rotateY(180deg)' }), frame(big, { opacity: 1, transform: 'rotateY(0deg)', offset: 0.35 }), frame(big, { opacity: 1, offset: 0.8 }), frame(big, { opacity: 0, transform: 'scale(1.15)' })],
+          ? [f(from, { opacity: 1 }), f(big, { opacity: 1, offset: 0.22 }), f(big, { opacity: 1, offset: 0.78 }), f(small, { opacity: 0 })]
+          : [f(from, { opacity: 1, transform: 'rotateY(180deg) scale(1)' }), f(big, { opacity: 1, transform: 'rotateY(0deg) scale(1)', offset: 0.35 }), f(big, { opacity: 1, transform: 'rotateY(0deg) scale(1)', offset: 0.8 }), f(big, { opacity: 0, transform: 'rotateY(0deg) scale(1.15)' })],
         { duration: fx.mode === 'magic' ? 2000 : 1900, delay: fx.delay, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' },
       );
       if (fx.mode === 'burst') setTimeout(() => setFlipped(true), fx.delay + 280);
@@ -1506,20 +1530,23 @@ function FlyCard({ fx, onDone }: { fx: Extract<Fx, { kind: 'fly' }>; onDone: () 
           ],
           { duration: total, delay: fx.delay, fill: 'forwards' },
         );
-      } else
+      } else {
+      const base = placeBox(el, [from, mid, to]);
+      const f = (r: Rect, e: Keyframe) => boxFrame(base, r, e);
       anim = el.animate(
         fx.mode === 'draw'
-          ? [frame(from, { opacity: fx.fromReveal ? 1 : 0.6 }), frame(to, { opacity: 1 })]
+          ? [f(from, { opacity: fx.fromReveal ? 1 : 0.6 }), f(to, { opacity: 1 })]
           : fx.mode === 'move'
             ? [
-                frame(from, { opacity: 1, transform: `rotate(${fx.fromRotate ?? 0}deg)`, filter: fx.fromRotate ? 'brightness(0.75)' : 'none' }),
-                frame(mid, { offset: 0.5, opacity: 1, transform: 'rotate(-6deg)', filter: 'none' }),
-                frame(to, { opacity: fx.shrink ? 0.2 : 1, transform: 'rotate(0deg)', filter: 'none' }),
+                f(from, { opacity: 1, transform: `rotate(${fx.fromRotate ?? 0}deg)` }),
+                f(mid, { offset: 0.5, opacity: 1, transform: 'rotate(-6deg)' }),
+                f(to, { opacity: fx.shrink ? 0.2 : 1, transform: 'rotate(0deg)' }),
               ]
-          : [frame(from, { opacity: 1 }), frame(mid, { offset: 0.55, opacity: 1, transform: 'scale(1.12)' }), frame(to, { opacity: 1 })],
+          : [f(from, { opacity: 1, transform: 'scale(1)' }), f(mid, { offset: 0.55, opacity: 1, transform: 'scale(1.12)' }), f(to, { opacity: 1, transform: 'scale(1)' })],
         // ย้ายโซน: ค้างที่จุดเริ่มระหว่างรอคิว (การ์ดออกจากโซนเดิมใน state ไปแล้ว ไม่ให้หายวับ)
         { duration: fx.mode === 'draw' ? 420 : fx.mode === 'move' ? 480 : 520, delay: fx.delay, easing: 'cubic-bezier(.3,.7,.3,1)', fill: fx.mode === 'move' ? 'both' : 'forwards' },
       );
+      }
       if (fx.revealFirst || fx.flipMid) setTimeout(() => setRevealed(false), fx.delay + (fx.revealLate ? 420 : 240));
     }
     anim.onfinish = () => {
@@ -2217,12 +2244,14 @@ function SpellFx({ fx, onDone }: { fx: Extract<Fx, { kind: 'spell' }>; onDone: (
     const rest = restRect(fx.owner, fx.tone, fx.cardId);
     // เบิร์ส: ตอนทำงานยกขึ้นจากช่อง (ขยาย ~1.7 เท่า เยื้องเข้าหากลางกระดานไม่ให้ล้นขอบจอ) · กลับลงช่องตอนรอเลือก
     const stage = fx.tone === 'burst' ? liftFromSlot(rest) : rest;
+    const base = placeBox(el, [stage, rest, ...(fx.fromRect ? [fx.fromRect] : [])]);
+    const f = (r: Rect, e: Keyframe = {}) => boxFrame(base, r, e);
     /** ตำแหน่งปัจจุบันของการ์ด (ไว้เริ่มท่าถัดไป) */
     let cur = stage;
     const moveTo = (to: Rect, ms: number, at = 0) => {
       const from = cur;
       cur = to;
-      const a = el.animate([frame(from, { opacity: 1, transform: 'rotate(0deg)' }), frame(to, { opacity: 1, transform: 'rotate(0deg)' })], {
+      const a = el.animate([f(from, { opacity: 1, transform: 'rotate(0deg)' }), f(to, { opacity: 1, transform: 'rotate(0deg)' })], {
         duration: ms,
         delay: at,
         easing: 'cubic-bezier(.3,.8,.3,1)',
@@ -2234,7 +2263,7 @@ function SpellFx({ fx, onDone }: { fx: Extract<Fx, { kind: 'spell' }>; onDone: (
     if (fx.from === 'stage') {
       // ค้างรอเลือกอยู่ที่มือ / ช่อง Burst (หงาย): เอฟเฟกต์ทำงานอีกครั้ง = เรืองแสงตรงนั้น (เบิร์สยกขึ้นจากช่องก่อน)
       cur = rest;
-      anims.push(el.animate([frame(rest, { opacity: 1 }), frame(rest, { opacity: 1 })], { duration: 1, fill: 'forwards' }));
+      anims.push(el.animate([f(rest, { opacity: 1 }), f(rest, { opacity: 1 })], { duration: 1, fill: 'forwards' }));
       if (flip) anims.push(flip.animate([{ transform: 'rotateY(0deg)' }, { transform: 'rotateY(0deg)' }], { duration: 1, fill: 'forwards' }));
       if (fx.pulses.length > 0 && stage !== rest) {
         timers.push(setTimeout(() => moveTo(stage, CAST_MS.rise), Math.max(0, fx.pulses[0]! - CAST_MS.rise)));
@@ -2246,9 +2275,9 @@ function SpellFx({ fx, onDone }: { fx: Extract<Fx, { kind: 'spell' }>; onDone: (
       anims.push(
         el.animate(
           [
-            frame(start, { opacity: 1, filter: 'brightness(1)', boxShadow: '0 0 0 rgba(0,0,0,0)', easing: 'cubic-bezier(.2,.9,.3,1)' }),
-            frame(stage, { offset: L, opacity: 1, filter: 'brightness(1.25)', boxShadow: '0 40px 40px rgba(0,0,0,0.55)' }),
-            frame(stage, { opacity: 1, filter: 'brightness(1)', boxShadow: '0 40px 40px rgba(0,0,0,0.55)' }),
+            f(start, { opacity: 1, transform: 'rotate(0deg)', easing: 'cubic-bezier(.2,.9,.3,1)' }),
+            f(stage, { offset: L, opacity: 1, transform: 'rotate(0deg)' }),
+            f(stage, { opacity: 1, transform: 'rotate(0deg)' }),
           ],
           { duration: CAST_MS.intro, delay: D, fill: 'both' },
         ),
@@ -2288,7 +2317,7 @@ function SpellFx({ fx, onDone }: { fx: Extract<Fx, { kind: 'spell' }>; onDone: (
           const trash = rectOf(document.querySelector(`[data-trash="${fx.owner}"]`));
           if (!trash) return onDone();
           const small = { x: trash.x + trash.w / 2 - 22, y: trash.y + trash.h / 2 - 31, w: 44, h: 62 };
-          const a = el.animate([frame(cur, { opacity: 1, transform: 'rotate(0deg)' }), frame(small, { opacity: 0.3, transform: 'rotate(-8deg)' })], {
+          const a = el.animate([f(cur, { opacity: 1, transform: 'rotate(0deg)' }), f(small, { opacity: 0.3, transform: 'rotate(-8deg)' })], {
             duration: CAST_MS.exit,
             easing: 'cubic-bezier(.5,0,.6,1)',
             fill: 'forwards',
@@ -2299,7 +2328,7 @@ function SpellFx({ fx, onDone }: { fx: Extract<Fx, { kind: 'spell' }>; onDone: (
           // เมจิคไทป์เพลง: ย่อลงไปวางที่โซนเพลงบนฟิลด์
           const slot = rectOf(document.querySelector(`[data-song-card="${fx.cardId}"]`));
           if (!slot) return onDone();
-          const a = el.animate([frame(cur, { opacity: 1, transform: 'rotate(0deg)' }), frame(slot, { opacity: 1, transform: 'rotate(0deg)' })], {
+          const a = el.animate([f(cur, { opacity: 1, transform: 'rotate(0deg)' }), f(slot, { opacity: 1, transform: 'rotate(0deg)' })], {
             duration: CAST_MS.exit,
             easing: 'cubic-bezier(.5,0,.6,1)',
             fill: 'forwards',
@@ -2448,7 +2477,8 @@ function ChainLink({ id, from, to, colorFrom, colorTo, glow, fresh, rich }: { id
   const motion = (
     <>
       {fresh && <animate attributeName="d" values={`${dSlack};${dTaut};${d1}`} keyTimes="0;0.4;1" dur={`${CL_SNAP}s`} begin={`${CL_LOCK_AT}s`} fill="freeze" calcMode="spline" keySplines=".2 .9 .3 1;.3 0 .4 1" />}
-      <animate attributeName="d" values={`${d1};${d2};${d1}`} dur="1.9s" begin={fresh ? `${CL_LOCK_AT + CL_SNAP}s` : '0s'} repeatCount="indefinite" calcMode="spline" keySplines={sway} />
+      {/* แกว่งตลอด (ชุดกราฟิกสูง): ไม่มี filter แล้ว วาดแค่เส้นโซ่ */}
+      {rich && <animate attributeName="d" values={`${d1};${d2};${d1}`} dur="1.9s" begin={fresh ? `${CL_LOCK_AT + CL_SNAP}s` : '0s'} repeatCount="indefinite" calcMode="spline" keySplines={sway} />}
     </>
   );
   const base = fresh ? dSlack : d1;
@@ -2475,15 +2505,10 @@ function ChainLink({ id, from, to, colorFrom, colorTo, glow, fresh, rich }: { id
           return `${(p.x - ((q.y - p.y) / len) * off).toFixed(1)},${(p.y + ((q.x - p.x) / len) * off).toFixed(1)}`;
         });
         return (
-          <polyline
-            key={v}
-            points={pts.join(' ')}
-            fill="none"
-            stroke="#fff"
-            strokeWidth={2.2}
-            strokeLinejoin="round"
-            style={{ filter: `drop-shadow(0 0 4px ${colorTo}) drop-shadow(0 0 8px ${colorTo})`, animation: `fx-cl-arc 0.7s ${CL_LOCK_AT + 0.05 + v * 0.07}s linear both` }}
-          />
+          <g key={v} style={{ animation: `fx-cl-arc 0.7s ${CL_LOCK_AT + 0.05 + v * 0.07}s linear both` }}>
+            <polyline points={pts.join(' ')} fill="none" stroke={colorTo} strokeOpacity={0.45} strokeWidth={9} strokeLinejoin="round" strokeLinecap="round" />
+            <polyline points={pts.join(' ')} fill="none" stroke="#fff" strokeWidth={2.2} strokeLinejoin="round" />
+          </g>
         );
       })
     : null;
@@ -2506,7 +2531,9 @@ function ChainLink({ id, from, to, colorFrom, colorTo, glow, fresh, rich }: { id
           </mask>
         )}
       </defs>
-      <g mask={fresh ? `url(#${id}-m)` : undefined} style={{ filter: `drop-shadow(0 0 9px ${glow})` }}>
+      <g mask={fresh ? `url(#${id}-m)` : undefined}>
+        {/* แสงเรืองรอบโซ่ (แทน drop-shadow ที่ต้องวาดใหม่ทุกเฟรมตอนโซ่แกว่ง) */}
+        <use href={`#${pathId}`} fill="none" stroke={glow} strokeOpacity={0.45} strokeWidth={26 * S} strokeLinecap="round" />
         {/* เงา/ขอบมืดของโซ่ */}
         <use href={`#${pathId}`} fill="none" stroke="#020617" strokeOpacity={0.85} strokeWidth={17 * S} strokeLinecap="round" />
         {/* ห่วงโซ่ (รี) */}
@@ -2521,7 +2548,9 @@ function ChainLink({ id, from, to, colorFrom, colorTo, glow, fresh, rich }: { id
       {arcs}
       {/* ลูกพลังงานวิ่งไปตามโซ่: ข้อใหม่ = เร็วและสว่างหลังล็อก, ข้อเก่า = ประกายช้า ๆ */}
       {(fresh ? [0, 0.12] : [0]).map((lag, i) => (
-        <circle key={i} r={(fresh ? 6 - i * 2 : 3.5) * 1.7} fill="#fff" opacity={0} style={{ filter: `drop-shadow(0 0 8px ${colorTo}) drop-shadow(0 0 3px #fff)` }}>
+        <g key={i} opacity={0}>
+          <circle r={(fresh ? 6 - i * 2 : 3.5) * 4.2} fill={colorTo} fillOpacity={0.3} />
+          <circle r={(fresh ? 6 - i * 2 : 3.5) * 1.7} fill="#fff" />
           <animate
             attributeName="opacity"
             values="0;1;1;0"
@@ -2533,7 +2562,7 @@ function ChainLink({ id, from, to, colorFrom, colorTo, glow, fresh, rich }: { id
           <animateMotion dur={fresh ? '0.6s' : '1.6s'} begin={fresh ? `${CL_LOCK_AT + CL_SNAP + lag}s` : `${lag + 0.3}s`} repeatCount={fresh ? 2 : 'indefinite'}>
             <mpath href={`#${pathId}`} />
           </animateMotion>
-        </circle>
+        </g>
       ))}
       {fresh && lock(exitA, colorFrom)}
       {fresh && lock(exitB, colorTo)}
@@ -2541,10 +2570,13 @@ function ChainLink({ id, from, to, colorFrom, colorTo, glow, fresh, rich }: { id
   );
 }
 
-/** วงเวทรอบการ์ดใหม่ในกอง Chain: วงซ้อนหลายชั้นหมุนสวนกัน + อักษรรอบวง + ดาวหกแฉก */
+/**
+ * วงเวทรอบการ์ดใหม่ในกอง Chain: วงซ้อนหลายชั้นหมุนสวนกัน + อักษรรอบวง + ดาวหกแฉก
+ * แต่ละชั้นเป็น <svg> แยกที่หมุนด้วย transform ของตัวเอง (การ์ดจอหมุนให้ ไม่ต้องวาดใหม่) · แสงเรือง = วงไล่สีด้านหลัง (เดิม drop-shadow ทั้ง SVG ที่หมุนข้างใน = วาดใหม่ทุกเฟรม)
+ */
 function MagicCircle({ id, color, glow, spin, scale }: { id: string; color: string; glow: string; spin: boolean; scale: number }) {
-  const rot = (sec: number, reverse: boolean) =>
-    spin ? { transformBox: 'fill-box' as const, transformOrigin: 'center', animation: `fx-cl-spin ${sec}s linear infinite${reverse ? ' reverse' : ''}` } : undefined;
+  const size = 340 * scale;
+  const rot = (sec: number, reverse: boolean): CSSProperties | undefined => (spin ? { animation: `fx-cl-spin ${sec}s linear infinite${reverse ? ' reverse' : ''}` } : undefined);
   const tri = (deg: number) =>
     [0, 120, 240]
       .map((k) => {
@@ -2552,43 +2584,41 @@ function MagicCircle({ id, color, glow, spin, scale }: { id: string; color: stri
         return `${(Math.cos(r) * 134).toFixed(1)},${(Math.sin(r) * 134).toFixed(1)}`;
       })
       .join(' ');
-  // วงกลมโปร่งใสขนาดเท่ากันทุกชั้น: ให้กรอบของแต่ละชั้นสมมาตร หมุนรอบกึ่งกลางพอดี
-  const pad = <circle r={166} fill="none" stroke="none" />;
-  return (
-    <svg
-      width={340 * scale}
-      height={340 * scale}
-      viewBox="-170 -170 340 340"
-      className="absolute overflow-visible"
-      style={{ left: -170 * scale, top: -170 * scale, filter: `drop-shadow(0 0 8px ${glow})`, animation: 'fx-cl-ring 1.2s cubic-bezier(.2,.8,.2,1) both' }}
-    >
-      <defs>
-        <path id={`${id}-rune`} d="M 0 -147 A 147 147 0 1 1 -0.01 -147" />
-      </defs>
-      <g style={rot(26, false)}>
-        {pad}
-        <circle r={162} fill="none" stroke={color} strokeWidth={3} />
-        <circle r={155} fill="none" stroke={color} strokeWidth={9} strokeDasharray="2 9" strokeOpacity={0.85} />
-      </g>
-      <g style={rot(20, true)}>
-        {pad}
-        <text fill={color} fontSize={12} fontWeight={800} opacity={0.9}>
-          <textPath href={`#${id}-rune`} textLength={918} lengthAdjust="spacing">
-            {'CHAIN • LINK • SPIRIT • BURST • CHAIN • LINK • SPIRIT • BURST • '}
-          </textPath>
-        </text>
-        <circle r={139} fill="none" stroke={color} strokeWidth={1.5} strokeOpacity={0.8} />
-      </g>
-      <g style={rot(14, false)}>
-        {pad}
-        <polygon points={tri(0)} fill="none" stroke={color} strokeWidth={2} strokeOpacity={0.85} />
-        <polygon points={tri(180)} fill="none" stroke={color} strokeWidth={2} strokeOpacity={0.85} />
-      </g>
-      <g style={rot(9, true)}>
-        {pad}
-        <circle r={124} fill="none" stroke={color} strokeWidth={5} strokeDasharray="30 14" strokeOpacity={0.95} />
-      </g>
+  const layer = (style: CSSProperties | undefined, children: React.ReactNode) => (
+    <svg width={size} height={size} viewBox="-170 -170 340 340" className="absolute inset-0 overflow-visible" style={style}>
+      {children}
     </svg>
+  );
+  return (
+    <div className="absolute" style={{ left: -size / 2, top: -size / 2, width: size, height: size, animation: 'fx-cl-ring 1.2s cubic-bezier(.2,.8,.2,1) both' }}>
+      <div className="absolute rounded-full" style={{ inset: '-6%', background: `radial-gradient(circle, transparent 52%, ${glow} 62%, transparent 72%)`, opacity: 0.55 }} />
+      {layer(rot(26, false), (
+        <>
+          <circle r={162} fill="none" stroke={color} strokeWidth={3} />
+          <circle r={155} fill="none" stroke={color} strokeWidth={9} strokeDasharray="2 9" strokeOpacity={0.85} />
+        </>
+      ))}
+      {layer(rot(20, true), (
+        <>
+          <defs>
+            <path id={`${id}-rune`} d="M 0 -147 A 147 147 0 1 1 -0.01 -147" />
+          </defs>
+          <text fill={color} fontSize={12} fontWeight={800} opacity={0.9}>
+            <textPath href={`#${id}-rune`} textLength={918} lengthAdjust="spacing">
+              {'CHAIN • LINK • SPIRIT • BURST • CHAIN • LINK • SPIRIT • BURST • '}
+            </textPath>
+          </text>
+          <circle r={139} fill="none" stroke={color} strokeWidth={1.5} strokeOpacity={0.8} />
+        </>
+      ))}
+      {layer(rot(14, false), (
+        <>
+          <polygon points={tri(0)} fill="none" stroke={color} strokeWidth={2} strokeOpacity={0.85} />
+          <polygon points={tri(180)} fill="none" stroke={color} strokeWidth={2} strokeOpacity={0.85} />
+        </>
+      ))}
+      {layer(rot(9, true), <circle r={124} fill="none" stroke={color} strokeWidth={5} strokeDasharray="30 14" strokeOpacity={0.95} />)}
+    </div>
   );
 }
 
@@ -2608,15 +2638,19 @@ function EdgeBand({ side, color, glow, rich }: { side: 'left' | 'right'; color: 
   return (
     <div
       className={`absolute inset-y-0 ${left ? 'left-0' : 'right-0'}`}
-      style={{ width: 92, filter: `drop-shadow(0 0 12px ${glow})`, ['--from' as string]: left ? '-110%' : '110%', animation: 'fx-cl-band-in 0.45s 0.05s cubic-bezier(.2,.8,.2,1) both' }}
+      style={{ width: 92, ['--from' as string]: left ? '-110%' : '110%', animation: 'fx-cl-band-in 0.45s 0.05s cubic-bezier(.2,.8,.2,1) both' }}
     >
+      {/* แสงเรืองขอบด้านใน (แทน drop-shadow ทั้งแถบที่ต้องวาดใหม่ทุกเฟรมเพราะลายโซ่เลื่อน) */}
+      <div className="absolute inset-y-0" style={{ [left ? 'left' : 'right']: '40%', width: 60, background: `linear-gradient(${left ? 90 : 270}deg, ${glow}, transparent)`, opacity: 0.5 }} />
       <div className="absolute inset-0" style={{ clipPath: clip }}>
         <div className="absolute inset-0" style={{ background: `linear-gradient(${left ? 90 : 270}deg, ${glow}, rgba(2,6,23,0.88) 80%)` }} />
         {/* ลายโซ่ */}
-        <div
-          className="absolute inset-y-0"
-          style={{ ...edge, width: 36, backgroundImage: `url("data:image/svg+xml,${link}")`, backgroundRepeat: 'repeat-y', animation: rich ? 'fx-cl-band-scroll 1.4s linear infinite' : undefined }}
-        />
+        <div className="absolute inset-y-0 overflow-hidden" style={{ ...edge, width: 36 }}>
+          <div
+            className="absolute inset-x-0 top-0"
+            style={{ bottom: -60, backgroundImage: `url("data:image/svg+xml,${link}")`, backgroundRepeat: 'repeat-y', animation: rich ? 'fx-cl-band-scroll 1.4s linear infinite' : undefined }}
+          />
+        </div>
         {/* อักษร CHAIN แนวตั้ง */}
         <div className="absolute inset-y-0 overflow-hidden text-[11px] font-black tracking-[0.4em] text-white/60 italic" style={{ ...textEdge, writingMode: 'vertical-rl', transform: left ? undefined : 'rotate(180deg)' }}>
           <span className="block whitespace-nowrap" style={{ animation: rich ? 'fx-cl-band-text 6s linear infinite' : undefined }}>
@@ -2667,6 +2701,7 @@ const CHAIN_HEAT = [
 function ChainAddFx({ fx, onDone }: { fx: Extract<Fx, { kind: 'chainAdd' }>; onDone: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
+  const shineRef = useRef<HTMLDivElement>(null);
   const [on, setOn] = useState(fx.delay === 0);
   const state = useGame((s) => s.state);
   const me = useGame(viewPlayer);
@@ -2695,15 +2730,28 @@ function ChainAddFx({ fx, onDone }: { fx: Extract<Fx, { kind: 'chainAdd' }>; onD
     const spot = stackLayout(sides)[fx.index];
     if (!el || !spot) return onDone();
     const big = { x: spot.x - spot.w * 0.06, y: spot.y - spot.h * 0.06, w: spot.w * 1.12, h: spot.h * 1.12 };
+    const base = placeBox(el, [from, big, spot]);
+    const f = (r: Rect, e: Keyframe) => boxFrame(base, r, e);
     // easing ใส่รายช่วง: ถ้าใส่ทั้งแอนิเมชัน เวลาจะถูกบีบจนการ์ดเริ่มจางตั้งแต่ราว 1.1 วิ (แทนที่จะค้างถึง CHAIN_HOLD_END)
     const ease = 'cubic-bezier(.2,.8,.2,1)';
     const anim = el.animate(
       [
-        frame(from, { opacity: 1, transform: 'rotate(0deg)', filter: 'brightness(1.6)', easing: ease }),
-        frame(big, { offset: 0.12, opacity: 1, transform: 'rotate(-4deg)', filter: 'brightness(1.5)', easing: ease }),
-        frame(spot, { offset: 0.18, opacity: 1, transform: 'rotate(0deg)', filter: 'brightness(1)' }),
-        frame(spot, { offset: CHAIN_HOLD_END, opacity: 1, transform: 'rotate(0deg) scale(1)', filter: 'brightness(1.1)', easing: 'ease-in' }),
-        frame(spot, { opacity: 0, transform: 'rotate(0deg) scale(0.92)', filter: 'brightness(1.4)' }),
+        f(from, { opacity: 1, transform: 'rotate(0deg) scale(1)', easing: ease }),
+        f(big, { offset: 0.12, opacity: 1, transform: 'rotate(-4deg) scale(1)', easing: ease }),
+        f(spot, { offset: 0.18, opacity: 1, transform: 'rotate(0deg) scale(1)' }),
+        f(spot, { offset: CHAIN_HOLD_END, opacity: 1, transform: 'rotate(0deg) scale(1)', easing: 'ease-in' }),
+        f(spot, { opacity: 0, transform: 'rotate(0deg) scale(0.92)' }),
+      ],
+      { duration: CHAIN_LINK_MS, fill: 'forwards' },
+    );
+    // ความสว่าง = แผ่นขาวซ้อน (เดิม filter: brightness ตลอดฉาก Chain = วาดการ์ดใหม่ทุกเฟรม)
+    const shine = shineRef.current?.animate(
+      [
+        { opacity: 0.45, easing: ease },
+        { offset: 0.12, opacity: 0.38, easing: ease },
+        { offset: 0.18, opacity: 0 },
+        { offset: CHAIN_HOLD_END, opacity: 0.08, easing: 'ease-in' },
+        { opacity: 0.3 },
       ],
       { duration: CHAIN_LINK_MS, fill: 'forwards' },
     );
@@ -2725,6 +2773,7 @@ function ChainAddFx({ fx, onDone }: { fx: Extract<Fx, { kind: 'chainAdd' }>; onD
     }, CL_LOCK_AT * 1000);
     return () => {
       anim.cancel();
+      shine?.cancel();
       clearTimeout(tUnfocus);
       clearTimeout(tShake);
       unfocus();
@@ -2799,20 +2848,19 @@ function ChainAddFx({ fx, onDone }: { fx: Extract<Fx, { kind: 'chainAdd' }>; onD
           const hot = heat > 0 && prand(i * 7 + 2) < 0.45;
           const color = hot ? accent.ring : x < midX ? '#fcd34d' : '#7dd3fc';
           const size = 2 + prand(i * 5 + 3) * 3.5;
+          // เอียงทิศลอย: เลื่อนข้าง ±60px ตลอดความสูง 75% ของจอ = หมุนกล่องนอกคงที่ แล้วลอยขึ้นตรง ๆ ในกล่อง
+          const tilt = (Math.atan2((prand(i * 11 + 4) - 0.5) * 120, innerHeight * 0.75) * 180) / Math.PI;
           return (
-            <span
-              key={i}
-              className="absolute -bottom-3 rounded-full"
-              style={{
-                left: x,
-                width: size,
-                height: size,
-                background: color,
-                boxShadow: `0 0 ${size * 3}px ${color}`,
-                ['--dx' as string]: `${(prand(i * 11 + 4) - 0.5) * 120}px`,
-                animation: `fx-cl-ember ${1.6 + prand(i * 13 + 5) * 1.4}s ${prand(i * 17 + 6) * 1.4}s ease-out infinite both`,
-              }}
-            />
+            <span key={i} className="absolute -bottom-3" style={{ left: x, width: size, height: size, rotate: `${tilt.toFixed(2)}deg`, transformOrigin: '50% 100%' }}>
+              <span
+                className="absolute inset-0 rounded-full"
+                style={{
+                  background: color,
+                  boxShadow: `0 0 ${size * 3}px ${color}`,
+                  animation: `fx-cl-ember ${1.6 + prand(i * 13 + 5) * 1.4}s ${prand(i * 17 + 6) * 1.4}s ease-out infinite both`,
+                }}
+              />
+            </span>
           );
         })}
         {/* สปอตไลต์หลังการ์ดแต่ละใบ */}
@@ -2923,6 +2971,7 @@ function ChainAddFx({ fx, onDone }: { fx: Extract<Fx, { kind: 'chainAdd' }>; onD
           style={{ boxShadow: `0 0 0 2px ${tone.ring}, 0 0 34px 10px ${tone.glow}`, ...(prev ? pull(spot, prev, 12) : {}), animation: `fx-cl-recoil 0.42s ${CL_LOCK_AT}s ease-out both` }}
         >
           <CardFace def={db.get(card.cardNo)} />
+          <div ref={shineRef} className="absolute inset-0 rounded-lg bg-white" style={{ opacity: 0 }} />
           <div className="absolute inset-0 overflow-hidden rounded-lg">
             <div className="absolute -inset-y-[20%] left-0 w-2/5" style={{ background: 'linear-gradient(100deg, transparent, rgba(255,255,255,0.8), transparent)', animation: 'fx-cl-sheen 0.75s 0.5s ease-in-out both' }} />
           </div>
@@ -3254,10 +3303,23 @@ function Damage({ fx, onDone }: { fx: Extract<Fx, { kind: 'damage' }>; onDone: (
           ],
           380,
         );
-      document.querySelector(`[data-life="${fx.player}"]`)?.animate(
-        [{ boxShadow: '0 0 0 0 rgba(244,63,94,0)', filter: 'brightness(1)' }, { boxShadow: '0 0 24px 8px rgba(244,63,94,0.9)', filter: 'brightness(1.6)', offset: 0.3 }, { boxShadow: '0 0 0 0 rgba(244,63,94,0)', filter: 'brightness(1)' }],
-        { duration: 900, easing: 'ease-out' },
-      );
+      // ช่อง Life เรืองแดงวาบ: แผ่นซ้อนที่เปลี่ยนแค่ opacity (เดิมแอนิเมต box-shadow + filter ของช่อง Life = วาดใหม่ทุกเฟรม)
+      const life = rectOf(document.querySelector(`[data-life="${fx.player}"]`));
+      if (life)
+        spawnFx(
+          {
+            left: `${life.x}px`,
+            top: `${life.y}px`,
+            width: `${life.w}px`,
+            height: `${life.h}px`,
+            borderRadius: '12px',
+            background: 'rgba(255,228,230,0.28)',
+            boxShadow: '0 0 24px 8px rgba(244,63,94,0.9)',
+            opacity: '0',
+          },
+          [{ opacity: 0 }, { opacity: 1, offset: 0.3 }, { opacity: 0 }],
+          { duration: 900, easing: 'ease-out' },
+        );
     }
     const done = setTimeout(onDone, fx.delay + 1500 + (fx.lethal ? LETHAL_SLOW_EXTRA : 0));
     return () => {
@@ -3622,6 +3684,9 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
     return { card: c, onBoard: !!c && st.players[c.owner].field.includes(fx.cardId) };
   });
   const ref = useRef<HTMLDivElement>(null);
+  const whiteRef = useRef<HTMLDivElement>(null);
+  const haloRef = useRef<HTMLDivElement>(null);
+  const grayRef = useRef<HTMLDivElement>(null);
   const [impact, setImpact] = useState<{ x: number; y: number } | null>(null);
   const [chargeFlash, setChargeFlash] = useState<{ x: number; y: number; ms: number } | null>(null);
   const [beam, setBeam] = useState<{ x: number; y: number; len: number; ang: number; ms: number } | null>(null);
@@ -3693,37 +3758,52 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
     const yaw = side * 42;
     // แกนเอนหลัง = ตั้งฉากกับทิศที่พุ่ง · แกนหันข้าง = ทิศที่พุ่ง
     const tilt = (leanDeg: number, yawDeg: number) => `perspective(900px) rotate3d(${-fy0},${fx0},0,${leanDeg}deg) rotate3d(${fx0},${fy0},0,${yawDeg}deg)`;
-    const glow = (b: number, r: number, a: number) => `brightness(${b}) saturate(1) drop-shadow(0 0 ${r}px rgba(255,244,190,${a}))`;
+    // แสง (สว่างขึ้น / เรืองรอบการ์ด / ซีดลง) = ชั้นซ้อนบนการ์ดที่เปลี่ยนแค่ opacity (เดิมแอนิเมต filter ทั้งใบทุกเฟรม = หนักมากบนมือถือ)
+    // g = [ความสว่าง, รัศมีแสงเรือง px, ความเข้มแสงเรือง, ความอิ่มสี]
+    const glow = (b: number, r: number, a: number, sat = 1) => ({ g: [b, r, a, sat] as [number, number, number, number] });
     // แพ้: ถูกกระแทกกระเด็นกลับ (ตามสัดส่วน CHARGE_KNOCK: 0 = ถึงช่องเดิม) เซ แล้วหยุดตั้งตรงตรงนั้น ภาพร้าว/แตกเล่นต่อที่จุดนี้
     const K = CHARGE_KNOCK;
     // ทุกคีย์เฟรมใช้ลำดับฟังก์ชันเดียวกัน (translate · tilt · rotate · scale / filter ชุดเดียวกัน) เบราว์เซอร์จึงไล่ค่าได้ลื่น
     const T = (x: number, y: number, deg: number, rotZ: string, sc: number, leanDeg = 0) => `translate(${x}px,${y}px) ${tilt(leanDeg, deg)} ${rotZ} scale(${sc})`;
     const aimRot = `rotate(${aim.toFixed(1)}deg)`;
-    const end: Keyframe[] = fx.dies
+    type ChargeFrame = { transform: string; g: [number, number, number, number]; offset?: number; easing?: string };
+    const end: ChargeFrame[] = fx.dies
       ? [
-          { transform: T(hx * (K + 0.12), hy * (K + 0.12), 0, 'rotate(-14deg)', 1.08), filter: 'brightness(2.4) saturate(0.6) drop-shadow(0 0 0px rgba(255,244,190,0))', offset: BACK, easing: E.recoil },
-          { transform: T(hx * (K - 0.04), hy * (K - 0.04), 0, 'rotate(7deg)', 1.02), filter: 'brightness(1.4) saturate(0.4) drop-shadow(0 0 0px rgba(255,244,190,0))', offset: 0.7 },
-          { transform: T(hx * K, hy * K, 0, 'rotate(-2deg)', 1), filter: 'brightness(1.1) saturate(0.3) drop-shadow(0 0 0px rgba(255,244,190,0))', offset: HOME },
-          { transform: T(hx * K, hy * K, 0, 'rotate(0deg)', 1), filter: 'brightness(1) saturate(0.3) drop-shadow(0 0 0px rgba(255,244,190,0))' },
+          { transform: T(hx * (K + 0.12), hy * (K + 0.12), 0, 'rotate(-14deg)', 1.08), ...glow(2.4, 0, 0, 0.6), offset: BACK, easing: E.recoil },
+          { transform: T(hx * (K - 0.04), hy * (K - 0.04), 0, 'rotate(7deg)', 1.02), ...glow(1.4, 0, 0, 0.4), offset: 0.7 },
+          { transform: T(hx * K, hy * K, 0, 'rotate(-2deg)', 1), ...glow(1.1, 0, 0, 0.3), offset: HOME },
+          { transform: T(hx * K, hy * K, 0, 'rotate(0deg)', 1), ...glow(1, 0, 0, 0.3) },
         ]
       : [
-          { transform: T(hx * 0.97, hy * 0.97, 0, aimRot, 1.1), filter: glow(1.15, 8, 0.4), offset: BACK, easing: E.home },
-          { transform: T(0, 0, 0, rotEnd, 1), filter: glow(1, 0, 0), offset: HOME },
-          { transform: T(0, 0, 0, rotEnd, 1), filter: glow(1, 0, 0) },
+          { transform: T(hx * 0.97, hy * 0.97, 0, aimRot, 1.1), ...glow(1.15, 8, 0.4), offset: BACK, easing: E.home },
+          { transform: T(0, 0, 0, rotEnd, 1), ...glow(1, 0, 0), offset: HOME },
+          { transform: T(0, 0, 0, rotEnd, 1), ...glow(1, 0, 0) },
         ];
+    const frames: ChargeFrame[] = [
+      { transform: T(0, 0, 0, rot, 1), ...glow(1, 0, 0), easing: E.lift },
+      // ง้าง: ตีตรง = เอนหลัง · ตีซ้าย = บิดตัวขวา · ตีขวา = บิดตัวซ้าย (หมุนในระนาบ + หันข้าง) ถอยเล็กน้อย
+      { transform: T(-hx * 0.03, -hy * 0.03, yaw, `rotate(${twist}deg)`, 1.06, lean), ...glow(1.3, 10, 0.6), offset: LIFT, easing: E.wind },
+      // ชาร์จ (ลูกแสง): ค่อย ๆ ถอยหลังตามแนวเป้า พร้อมค่อย ๆ คลายตัวหันหัวไปหาเป้าเต็มที่ ขาวจ้า
+      { transform: T(-hx * 0.22, -hy * 0.22, 0, aimRot, 1.12, lean * 0.25), ...glow(4, 40, 1), offset: WIND, easing: E.dash },
+      // พุ่ง/ชน: หัวการ์ดนำเข้าเป้า เอียงเลยไปนิดตอนกระแทก
+      { transform: T(hx, hy, 0, `rotate(${(aim * 1.15).toFixed(1)}deg)`, 1.16), ...glow(1.7, 20, 0.9), offset: HIT_AT, easing: E.recoil },
+      ...end,
+    ];
+    const at = (k: ChargeFrame) => ({ ...(k.offset !== undefined ? { offset: k.offset } : {}), ...(k.easing ? { easing: k.easing } : {}) });
+    const layerTiming: KeyframeAnimationOptions = { duration: CHARGE_MS, delay: fx.delay, easing: 'linear', fill: onBoard ? 'forwards' : 'both' };
+    const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+    const layers = [
+      // สว่างขึ้น (brightness 4 = เกือบขาว)
+      whiteRef.current?.animate(frames.map((k) => ({ opacity: clamp01((k.g[0] - 1) * 0.3), ...at(k) })), layerTiming),
+      // แสงเรืองรอบการ์ด
+      haloRef.current?.animate(frames.map((k) => ({ opacity: clamp01((k.g[2] * k.g[1]) / 40), ...at(k) })), layerTiming),
+      // ซีดลง (แพ้)
+      fx.dies ? grayRef.current?.animate(frames.map((k) => ({ opacity: clamp01(1 - k.g[3]), ...at(k) })), layerTiming) : undefined,
+    ].filter((a): a is Animation => !!a);
     const anim = el.animate(
       // ทึบตลอดทาง: ตัวการ์ดตั้ง opacity 0 ไว้ (ซ่อนก่อนถึงคิว) ถ้าคีย์เฟรมท้าย ๆ ไม่ระบุ
       // เบราว์เซอร์จะไล่ความทึบกลับไปหา 0 ทำให้การ์ดจางลงตอนวิ่งกลับ
-      [
-        { transform: T(0, 0, 0, rot, 1), filter: glow(1, 0, 0), easing: E.lift },
-        // ง้าง: ตีตรง = เอนหลัง · ตีซ้าย = บิดตัวขวา · ตีขวา = บิดตัวซ้าย (หมุนในระนาบ + หันข้าง) ถอยเล็กน้อย
-        { transform: T(-hx * 0.03, -hy * 0.03, yaw, `rotate(${twist}deg)`, 1.06, lean), filter: glow(1.3, 10, 0.6), offset: LIFT, easing: E.wind },
-        // ชาร์จ (ลูกแสง): ค่อย ๆ ถอยหลังตามแนวเป้า พร้อมค่อย ๆ คลายตัวหันหัวไปหาเป้าเต็มที่ ขาวจ้า
-        { transform: T(-hx * 0.22, -hy * 0.22, 0, aimRot, 1.12, lean * 0.25), filter: glow(4, 40, 1), offset: WIND, easing: E.dash },
-        // พุ่ง/ชน: หัวการ์ดนำเข้าเป้า เอียงเลยไปนิดตอนกระแทก
-        { transform: T(hx, hy, 0, `rotate(${(aim * 1.15).toFixed(1)}deg)`, 1.16), filter: glow(1.7, 20, 0.9), offset: HIT_AT, easing: E.recoil },
-        ...end,
-      ].map((k) => ({ ...k, opacity: 1 })),
+      frames.map((k) => ({ transform: k.transform, ...at(k), opacity: 1 })),
       // ผู้โจมตีที่ยังอยู่บนสนาม: ก่อนถึงคิวแสดงการ์ดตัวจริง (มี Core / BP / Brave) แล้วค่อยสลับเป็นภาพที่วิ่ง
       // ผู้โจมตีที่แพ้ (ออกจากสนามแล้ว): ภาพนี้ยืนแทนที่ช่องเดิมไปจนวิ่ง
       { duration: CHARGE_MS, delay: fx.delay, easing: 'linear', fill: onBoard ? 'forwards' : 'both' },
@@ -3856,6 +3936,7 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
       if (real) real.style.visibility = '';
       anim.cancel();
       for (const a of extra) a.cancel();
+      for (const a of layers) a.cancel();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -3867,9 +3948,14 @@ function Charge({ fx, onDone }: { fx: Extract<Fx, { kind: 'charge' }>; onDone: (
         className="pointer-events-none fixed z-[42] rounded-lg shadow-[0_10px_30px_rgba(0,0,0,0.7)]"
         style={{ left: cx - cardW / 2, top: cy - cardH / 2, width: cardW, height: cardH, ...(onBoard ? { opacity: 0 } : {}) }}
       >
+        {/* แสงเรืองรอบการ์ด (opacity อย่างเดียว) */}
+        <div ref={haloRef} className="absolute inset-0 rounded-lg" style={{ opacity: 0, boxShadow: '0 0 40px 14px rgba(255,244,190,0.95), 0 0 16px 4px rgba(255,255,255,0.9)' }} />
         <Upside on={upsideFor(card?.owner)}>
           <div className="relative h-full w-full">
             <CardFace def={db.get(fx.cardNo)} />
+            {/* สว่างจ้า / ซีด (opacity อย่างเดียว) */}
+            <div ref={whiteRef} className="absolute inset-0 rounded-lg" style={{ opacity: 0, background: 'radial-gradient(circle, #fff 0%, #fffbe8 55%, #fef3c7 100%)' }} />
+            <div ref={grayRef} className="absolute inset-0 rounded-lg" style={{ opacity: 0, background: 'rgba(100,116,139,0.55)' }} />
             {/* Brave ที่ร่วมร่าง วิ่งไปพร้อมผู้ร่วมร่าง (หาตำแหน่งบนกระดานไม่เจอ: ติดไปกับการ์ด) */}
             {(detached ? [] : (card?.braves ?? [])).map((b, bi, all) => (
               <div
@@ -4115,19 +4201,26 @@ function Ghost({ fx, onDone }: { fx: Extract<Fx, { kind: 'ghost' }>; onDone: () 
                 const [nx, ny] = SHARD_EDGE[(i + 1) % SHARD_EDGE.length]!;
                 const ang = Math.atan2((y + ny) / 2 - cy, (x + nx) / 2 - cx);
                 const dist = 70 + ((i * 29) % 50);
+                const tx = Math.cos(ang) * dist;
+                const ty = Math.sin(ang) * dist + 30;
+                const rot = (i % 2 ? 1 : -1) * (25 + ((i * 17) % 40));
                 return (
                   <div
                     key={i}
                     className="absolute inset-0 opacity-0"
-                    style={
-                      {
-                        clipPath: `polygon(${cx}% ${cy}%, ${x}% ${y}%, ${nx}% ${ny}%)`,
-                        '--tx': `${Math.cos(ang) * dist}px`,
-                        '--ty': `${Math.sin(ang) * dist + 30}px`,
-                        '--rot': `${(i % 2 ? 1 : -1) * (25 + ((i * 17) % 40))}deg`,
-                        animation: `fx-g-shard 0.65s ${D + GHOST_MS.destroyBreak}ms cubic-bezier(.15,.7,.3,1) forwards`,
-                      } as React.CSSProperties
-                    }
+                    style={{ clipPath: `polygon(${cx}% ${cy}%, ${x}% ${y}%, ${nx}% ${ny}%)` }}
+                    // ค่าจริงในคีย์เฟรม (ไม่ใช้ตัวแปร CSS / filter) = การ์ดจอเล่นให้ ไม่ต้องวาดเศษการ์ดใหม่ทุกเฟรม
+                    ref={(el) => {
+                      if (!el || el.dataset.fxShard) return;
+                      el.dataset.fxShard = '1';
+                      el.animate(
+                        [
+                          { opacity: 1, transform: 'translate(0px, 0px) rotate(0deg) scale(1)' },
+                          { opacity: 0, transform: `translate(${tx}px, ${ty}px) rotate(${rot}deg) scale(0.55)` },
+                        ],
+                        { duration: 650, delay: D + GHOST_MS.destroyBreak, easing: 'cubic-bezier(.15,.7,.3,1)', fill: 'forwards' },
+                      );
+                    }}
                   >
                     <CardFace def={def} />
                   </div>
@@ -4323,7 +4416,8 @@ export function AttackArrow() {
   if (lines.length === 0) return null;
   const color = blockers ? '#38bdf8' : '#f43f5e';
   return (
-    <svg data-attack-arrow className="pointer-events-none fixed inset-0 z-30 h-full w-full" style={{ filter: `drop-shadow(0 0 8px ${color})` }}>
+    // ไม่ใส่ filter: SVG เต็มจอ + เส้นประวิ่งตลอดการต่อสู้ = วาด drop-shadow ทั้งจอใหม่ทุกเฟรม (FPS ตกบนมือถือ/iPad) · แสงเรือง = เส้นกว้างจาง ๆ ซ้อนใต้
+    <svg data-attack-arrow className="pointer-events-none fixed inset-0 z-30 h-full w-full">
       <defs>
         <marker id="fx-arrowhead" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse">
           <path d="M 0 0 L 10 5 L 0 10 z" fill={color} />
@@ -4337,6 +4431,7 @@ export function AttackArrow() {
         const end = { x: l.x2 - (dx / len) * 40, y: l.y2 - (dy / len) * 40 };
         return (
           <g key={i}>
+            <line x1={l.x1} y1={l.y1} x2={end.x} y2={end.y} stroke={color} strokeOpacity={0.12} strokeWidth={30} strokeLinecap="round" />
             <line x1={l.x1} y1={l.y1} x2={end.x} y2={end.y} stroke={color} strokeOpacity={0.25} strokeWidth={18} strokeLinecap="round" />
             <line
               x1={l.x1}

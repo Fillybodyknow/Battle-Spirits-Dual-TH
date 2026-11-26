@@ -148,12 +148,12 @@ function useLatestBoosters(n: number): { set: string; count: number; highlights:
   return useMemo(() => {
     const bySet = new Map<string, string[]>();
     for (const c of db.all()) {
-      // ชุดในเกม (BS01…) จากข้อมูลการ์ด: รหัสการ์ดเป็นรหัสที่พิมพ์บนการ์ดจริง (BS31-C003 ฯลฯ) ใช้แยกชุดไม่ได้
-      const m = /^BS(\d+)$/.exec(c.set ?? '');
-      if (m) bySet.set(m[1]!, [...(bySet.get(m[1]!) ?? []), c.cardNo]);
+      // ชุดในเกม (BS01… / BSC01…) จากข้อมูลการ์ด: รหัสการ์ดเป็นรหัสที่พิมพ์บนการ์ดจริง (BS31-C003 ฯลฯ) ใช้แยกชุดไม่ได้
+      // ลำดับใน db = ลำดับที่ชุดถูกเพิ่มเข้าเกม (loadAllCards) → ชุดล่าสุดอยู่ท้าย
+      if (c.set && /^BSC?\d+$/.test(c.set)) bySet.set(c.set, [...(bySet.get(c.set) ?? []), c.cardNo]);
     }
     return [...bySet.keys()]
-      .sort((a, b) => Number(b) - Number(a))
+      .reverse()
       .slice(0, n)
       .map((set) => {
         const cards = bySet.get(set)!;
@@ -184,7 +184,7 @@ function NewsBanner() {
       key: `booster-${b.set}`,
       tag: k === 0 ? 'ชุดการ์ดใหม่' : 'ชุดการ์ด',
       tagClass: 'from-fuchsia-400 to-rose-500',
-      title: `Booster Set ${b.set}`,
+      title: b.set.startsWith('BSC') ? `Collection ${b.set}` : `Booster Set ${b.set.slice(2)}`,
       sub: `การ์ด ${b.count} ใบ${b.highlights[0] ? ` · การ์ดเด่น ${db.get(b.highlights[0]).name}` : ''}`,
       glow: GLOW[db.get(b.highlights[0] ?? db.all()[0]!.cardNo).colors[0] ?? 'blue'] ?? GLOW.blue!,
       cards: b.highlights,

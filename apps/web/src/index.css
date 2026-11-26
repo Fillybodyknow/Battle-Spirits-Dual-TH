@@ -52,10 +52,11 @@ body {
   80% { transform: translateX(0) skewX(-12deg); opacity: 1; }
   100% { transform: translateX(110%) skewX(-12deg); opacity: 0; }
 }
+/* ตัวอักษรบีบเข้า: ขยายแนวนอนด้วย transform (เดิม letter-spacing = จัดหน้าใหม่ทุกเฟรม) */
 @keyframes fx-banner-text {
-  0% { letter-spacing: 0.6em; opacity: 0; }
-  25% { letter-spacing: 0.12em; opacity: 1; }
-  100% { letter-spacing: 0.08em; opacity: 1; }
+  0% { transform: scaleX(1.6); opacity: 0; }
+  25% { transform: scaleX(1.03); opacity: 1; }
+  100% { transform: scaleX(1); opacity: 1; }
 }
 /* cut-in อัญเชิญ */
 @keyframes fx-rays { to { transform: rotate(360deg); } }
@@ -271,7 +272,7 @@ body {
   100% { transform: scale(1) rotate(0); opacity: 1; }
 }
 @keyframes fx-chain-word {
-  0% { transform: scale(1.8); opacity: 0; letter-spacing: 0.5em; }
+  0% { transform: scale(2.2, 1.8); opacity: 0; }
   40% { transform: scale(1); opacity: 1; }
   100% { transform: scale(1); opacity: 0.9; }
 }
@@ -543,18 +544,15 @@ body {
 @keyframes fx-fb-dim { 0%, 15% { opacity: 0; } 25% { opacity: 1; } 100% { opacity: 1; } }
 
 /* การ์ดออกจากสนาม → ดวงวิญญาณ */
+/* สั่นก่อนแตก: transform อย่างเดียว (สีแดงวาบ = แผ่นซ้อนในการ์ด) */
 @keyframes fx-g-crack-card {
-  0% { transform: translate(0,0); filter: brightness(1); opacity: 1; }
-  15% { transform: translate(-5px,1px) rotate(-2deg); filter: brightness(1.8); }
+  0% { transform: translate(0,0); opacity: 1; }
+  15% { transform: translate(-5px,1px) rotate(-2deg); }
   35% { transform: translate(5px,-1px) rotate(2deg); }
-  55% { transform: translate(-4px,0) rotate(-1deg); filter: brightness(1.3); }
-  80% { transform: translate(3px,0) scale(1.03); filter: brightness(2.2); }
+  55% { transform: translate(-4px,0) rotate(-1deg); }
+  80% { transform: translate(3px,0) scale(1.03); }
   99% { opacity: 1; }
   100% { transform: scale(1.04); opacity: 0; }
-}
-@keyframes fx-g-shard {
-  0% { opacity: 1; transform: translate(0,0) rotate(0) scale(1); filter: brightness(2); }
-  100% { opacity: 0; transform: translate(var(--tx), var(--ty)) rotate(var(--rot)) scale(0.55); filter: brightness(0.8); }
 }
 @keyframes fx-g-dissolve {
   0% { clip-path: inset(0 0 0 0); filter: grayscale(0) brightness(1); }
@@ -598,7 +596,8 @@ body {
 @keyframes fx-cl-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 @keyframes fx-cl-seam { 0% { transform: skewX(-14deg) scaleY(0); opacity: 0; } 100% { transform: skewX(-14deg) scaleY(1); opacity: 1; } }
 @keyframes fx-cl-heat { from { opacity: 0.18; } to { opacity: 0.4; } }
-@keyframes fx-cl-ember { 0% { transform: translate(0, 0); opacity: 0; } 15% { opacity: 1; } 100% { transform: translate(var(--dx), -75vh); opacity: 0; } }
+/* ประกายไฟ: ทิศเฉียงมาจากการหมุนกล่องนอก (rotate คงที่) · ไม่ใช้ตัวแปร CSS ในคีย์เฟรม = การ์ดจอทำแทนได้ */
+@keyframes fx-cl-ember { 0% { transform: translateY(0); opacity: 0; } 15% { opacity: 1; } 100% { transform: translateY(-75vh); opacity: 0; } }
 @keyframes fx-cl-shock { 0% { transform: scale(0.4); opacity: 0; } 12% { opacity: 1; } 100% { transform: scale(3.4); opacity: 0; } }
 @keyframes fx-cl-recoil { 0% { transform: translate(0, 0); } 25% { transform: translate(var(--rx), var(--ry)) scale(1.03); } 55% { transform: translate(calc(var(--rx) * -0.4), calc(var(--ry) * -0.4)); } 100% { transform: translate(0, 0); } }
 @keyframes fx-cl-sheen { from { transform: translateX(-130%) skewX(-12deg); } to { transform: translateX(300%) skewX(-12deg); } }
@@ -608,14 +607,15 @@ body {
 @keyframes fx-cl-arc { 0% { opacity: 0; } 8% { opacity: 1; } 22% { opacity: 0; } 40% { opacity: 0.9; } 52% { opacity: 0; } 70% { opacity: 0.7; } 80%, 100% { opacity: 0; } }
 /* แถบขอบจอฉาก Chain */
 @keyframes fx-cl-band-in { from { transform: translateX(var(--from)); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-@keyframes fx-cl-band-scroll { from { background-position: 0 0; } to { background-position: 0 -60px; } }
+@keyframes fx-cl-band-scroll { from { transform: translateY(0); } to { transform: translateY(-60px); } }
 @keyframes fx-cl-band-text { from { transform: translateY(0); } to { transform: translateY(-1000px); } }
 @keyframes fx-cl-band-flash { 0% { opacity: 0; } 20% { opacity: 0.85; } 100% { opacity: 0; } }
 /* Spell Stage (เมจิก / เบิร์ส): รัศมี, แสงเรือง, จอสลัวตอนทำงาน, ลอยเบา ๆ ตอนค้างรอเลือก */
 @keyframes fx-spell-rays { 0% { transform: rotate(0deg) scale(0.4); opacity: 0; } 20% { opacity: 0.9; } 100% { transform: rotate(40deg) scale(1.15); opacity: 0; } }
 @keyframes fx-spell-glow { 0% { filter: brightness(2.4); transform: scale(1.08); } 35% { filter: brightness(1.4); transform: scale(1.02); } 100% { filter: brightness(1); transform: scale(1); } }
 @keyframes fx-spell-dim { 0% { opacity: 0; } 20% { opacity: 1; } 70% { opacity: 1; } 100% { opacity: 0; } }
-@keyframes fx-spell-idle { 0%, 100% { transform: translateY(0); filter: brightness(1); } 50% { transform: translateY(-6px); filter: brightness(1.12); } }
+/* ลอยขึ้นลงวนตลอด: transform อย่างเดียว (filter ในแอนิเมชันวนตลอด = วาดการ์ดใหม่ทุกเฟรม) */
+@keyframes fx-spell-idle { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
 /* แถบกลาง: คำแนะนำ "ต้องทำอะไรก่อน" แทนปุ่มที่ยังกดไม่ได้ */
 @keyframes fx-hint-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(253, 224, 71, 0); } 50% { box-shadow: 0 0 14px 2px rgba(253, 224, 71, 0.45); } }
 /* แผงลงการ์ด: คอร์ที่จะจ่าย / วาง (ยกขึ้น + ป้าย) */

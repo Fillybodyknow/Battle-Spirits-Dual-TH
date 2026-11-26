@@ -689,6 +689,8 @@ export function layoutRect(el: Element | null): Rect | null {
   if (!el) return null;
   const r = el.getBoundingClientRect();
   if (r.width <= 0) return null;
+  // กล่องที่บินด้วย transform (placeBox ใน Fx.tsx): offsetWidth = ขนาดอ้างอิง ไม่ใช่ขนาดที่เห็น → ใช้กรอบที่เห็นจริง
+  if (el instanceof HTMLElement && el.dataset.fxBox) return { x: r.left, y: r.top, w: r.width, h: r.height };
   let k = fieldScaleOf(el);
   // กระดานเอียง (ตั้งค่า → เอียงกระดาน): ฝั่งไกลดูเล็กลง ฝั่งใกล้ดูใหญ่ขึ้น → ปรับขนาดตามที่เห็นจริง
   // ใช้อัตราส่วนพื้นที่กรอบ (ไม่ขึ้นกับการหมุน 90° ของการ์ดเสื่อมสภาพ) จำกัดช่วงกันค่าแปลกตอนการ์ดหมุนเฉียง
@@ -1724,6 +1726,14 @@ function eventsToFx(events: GameEvent[], s: GameState, prev: GameState, rects: R
           break;
         }
         out.push({ kind: 'fly', cardId: e.cardId, from: slot ?? burstSeatSel(s, e.player, e.cardId), to: `[data-trash="${e.player}"]`, mode: 'move', shrink: true, delay: t, hideTarget: false });
+        break;
+      }
+      case 'burstToHand': {
+        // ช่อง Burst → มือ (คว่ำ: ไม่เปิดเผยการ์ด)
+        const slot = burstRect(rects, s, e.player, e.cardId);
+        out.push({ kind: 'fly', cardId: e.cardId, from: slot ?? burstSeatSel(s, e.player, e.cardId), to: `[data-hand-card="${e.cardId}"]`, mode: 'move', faceDown: true, delay: t, hideTarget: true });
+        out.push({ kind: 'float', anchor: `[data-hand-card="${e.cardId}"]`, text: 'BURST กลับขึ้นมือ', tone: 'bad', delay: t });
+        t += 260;
         break;
       }
       case 'burstSet': {
