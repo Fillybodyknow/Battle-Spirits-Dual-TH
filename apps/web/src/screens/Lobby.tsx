@@ -5,6 +5,7 @@
  *  - หน้าห้อง: โต๊ะ 1 โต๊ะ 2 ที่นั่ง กด ENTRY เพื่อนั่ง (ครบสองคน = เริ่มเกม)
  */
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { DuelRoom, LobbyEntry, TableSeat } from '../online/transport';
 import { sfx } from '../sfx';
 import {
@@ -40,6 +41,9 @@ import { DeckBox, keyCards } from '../components/DeckBox';
 import { COLOR_LABEL } from '../format';
 import { deckInfo, STARTER_DECKS } from '../decks';
 import { startVsBot } from '../bot/vsBot';
+import { casualHistory } from '../casualHistory';
+import { Modal } from '../components/Modal';
+import { Icon } from '../components/Icon';
 import { db } from '../store';
 import { BackButton, CardArt, deckColor, deckSize } from './shared';
 import { AvatarImg } from '../components/AccountDialog';
@@ -47,7 +51,7 @@ import { AvatarImg } from '../components/AccountDialog';
 const LOBBY_DECK_KEY = 'bs-lobby-deck';
 const COMMENTS = ['', 'ยินดีต้อนรับทุกคน', 'มือใหม่ ฝึกเล่น', 'เด็คสนุก ๆ', 'ดวลจริงจัง', 'Starter Deck เท่านั้น', 'ทดสอบเด็ค'];
 
-type View = { kind: 'menu' } | { kind: 'create' } | { kind: 'list' } | { kind: 'room'; code: string };
+type View = { kind: 'menu' } | { kind: 'create' } | { kind: 'list' } | { kind: 'room'; code: string } | { kind: 'casual' };
 
 /** หน้าที่เปิดอยู่ (จำไว้ตอนไปหน้าดู/จัดเด็คแล้วกลับมา) */
 let lastView: View = { kind: 'menu' };
@@ -324,12 +328,13 @@ function DuelMenu({ onRoom, onTeam, onCasual }: { onRoom: () => void; onTeam: ()
 /** หลังรอกี่วินาทีจึงเสนอดวลกับบอท */
 const CASUAL_BOT_AFTER = 60;
 
-/** หน้าต่าง Casual Match: เลือกเด็ค → หาคู่ดวลอัตโนมัติ (1VS1) · รอนานเสนอดวลกับบอท */
-function CasualMatch({ deck, onClose }: { deck: DeckId; onClose: () => void }) {
+/** หน้า Casual Match: แบนเนอร์ + คำอธิบาย (ซ้าย) · รายละเอียด / ประวัติ / เด็ค / ปุ่ม DUEL (ขวา) */
+function CasualPage({ deck }: { deck: DeckId }) {
   const casual = useGame((s) => s.casual);
   const online = useGame((s) => s.online);
   const setScreen = useGame((s) => s.setScreen);
   const [now, setNow] = useState(() => Date.now());
+  const [panel, setPanel] = useState<'details' | 'history' | null>(null);
   const searching = casual?.status === 'searching';
   const found = casual?.status === 'found' || !!online;
   useEffect(() => {
@@ -346,80 +351,191 @@ function CasualMatch({ deck, onClose }: { deck: DeckId; onClose: () => void }) {
   }, [go, setScreen]);
   const waited = casual ? Math.max(0, Math.floor((now - casual.since) / 1000)) : 0;
   const mmss = `${Math.floor(waited / 60)}:${String(waited % 60).padStart(2, '0')}`;
-  const close = () => {
-    if (searching) casualCancel();
-    if (!found) onClose();
-  };
   const playBot = () => {
     casualCancel();
-    onClose();
     const starters = Object.keys(STARTER_DECKS);
     startVsBot({ p1: deck, p2: starters[Math.floor(Math.random() * starters.length)]! }, { level: 3 });
   };
+  const art = keyCards(deck, 3);
   const colors = [...new Set(deckInfo(deck).entries.flatMap((e) => db.find(e.cardNo)?.colors ?? []))];
   return (
-    <div className="fixed inset-0 z-40 flex justify-center bg-black/70" onClick={close}>
-      <div className="flex h-full w-[52rem] max-w-full flex-col justify-center bg-gradient-to-b from-slate-800/95 via-slate-900/95 to-slate-950/95 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="border-b-2 border-yellow-400 pb-3 text-center text-2xl font-black text-white">Casual Match</div>
-        <div className="bg-black/50 px-8 py-5">
-          <div className="text-center text-sm text-slate-300">จับคู่ดวลกับผู้เล่นออนไลน์อัตโนมัติ (1VS1) · ผลการดวลได้ EXP ตามปกติ</div>
-          <div className="mt-3 flex items-center justify-center gap-6">
-            <DeckBox deck={deck} open size={1} />
-            <div>
-              <div className="text-xs text-slate-400">เด็คที่ใช้</div>
-              <div className="text-lg font-black text-white">{deckInfo(deck).label}</div>
-              <div className="text-xs text-slate-400">
-                {deckSize(deck)} ใบ · สี {colors.map((c) => COLOR_LABEL[c as keyof typeof COLOR_LABEL] ?? c).join(' / ')}
+    <div className="relative z-10 grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_24rem] gap-10 px-16 py-6">
+      {/* ซ้าย: แบนเนอร์ + คำอธิบาย */}
+      <div className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-yellow-300/30 bg-slate-950/70 shadow-[0_20px_60px_rgba(0,0,0,0.6)]">
+        <div className="relative min-h-0 flex-1 overflow-hidden bg-gradient-to-br from-amber-500/30 via-indigo-950 to-sky-900/60">
+          {/* เส้นแสงเฉียง */}
+          <div className="pointer-events-none absolute -top-1/4 left-[18%] h-[150%] w-40 rotate-[28deg] bg-gradient-to-b from-yellow-300/0 via-yellow-300/15 to-yellow-300/0" />
+          <div className="pointer-events-none absolute -top-1/4 left-[30%] h-[150%] w-6 rotate-[28deg] bg-gradient-to-b from-sky-300/0 via-sky-300/25 to-sky-300/0" />
+          <div className="pointer-events-none absolute -top-1/4 right-[14%] h-[150%] w-24 rotate-[28deg] bg-gradient-to-b from-fuchsia-300/0 via-fuchsia-300/10 to-fuchsia-300/0" />
+          {/* การ์ดเด่นของเด็คที่ใช้ เรียงพัด */}
+          <div className="absolute inset-0 flex items-center justify-center">
+            {art.map((no, i) => (
+              <div
+                key={no}
+                className="absolute w-[24%] max-w-56 rounded-xl shadow-[0_16px_40px_rgba(0,0,0,0.7)] ring-2 ring-yellow-200/40"
+                style={{ transform: `translateX(${(i - 1) * 62}%) rotate(${(i - 1) * 9}deg) translateY(${i === 1 ? -6 : 4}%)`, zIndex: i === 1 ? 2 : 1 }}
+              >
+                <CardArt cardNo={no} className="w-full rounded-xl" />
               </div>
-              {!casual && !found && (
-                <button type="button" onClick={() => pickDeckScreen(deck)} className="mt-2 rounded-lg border border-white/30 bg-black/60 px-4 py-1.5 text-sm font-bold text-sky-200 hover:border-sky-300">
-                  เปลี่ยนเด็ค
-                </button>
+            ))}
+          </div>
+          <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-slate-950/95 via-slate-950/40 to-transparent" />
+          <div className="absolute inset-x-0 bottom-6 text-center">
+            <div className="text-[clamp(2.5rem,5.5vw,4.5rem)] leading-none font-black tracking-tight text-white italic drop-shadow-[0_4px_18px_rgba(250,204,21,0.55)]">CASUAL MATCH</div>
+            <div className="mt-2 text-sm font-bold tracking-[0.35em] text-yellow-200/90">จับคู่ดวลอัตโนมัติ · 1VS1</div>
+          </div>
+          {/* กำลังหาคู่ / พบคู่ */}
+          {(searching || found) && (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-slate-950/75 backdrop-blur-[2px]">
+              {found ? (
+                <>
+                  <div className="text-4xl font-black text-yellow-300 drop-shadow">พบคู่ดวลแล้ว!</div>
+                  <div className="text-sm text-slate-300">กำลังเข้าห้องดวล…</div>
+                </>
+              ) : (
+                <>
+                  <div className="relative flex h-28 w-28 items-center justify-center">
+                    <span className="absolute inset-0 rounded-full border-2 border-yellow-300/60" style={{ animation: 'casual-ping 1.6s ease-out infinite' }} />
+                    <span className="absolute inset-0 rounded-full border-2 border-yellow-300/60" style={{ animation: 'casual-ping 1.6s ease-out 0.8s infinite' }} />
+                    <Emblem icon="casual" color="#facc15" size={80} />
+                  </div>
+                  <div className="text-2xl font-black text-white">กำลังหาคู่ดวล…</div>
+                  <div className="font-mono text-xl text-yellow-200">{mmss}</div>
+                  <div className="text-xs text-slate-400">จับคู่เฉพาะผู้เล่นที่ใช้แอปเวอร์ชันหลักเดียวกัน</div>
+                  {waited >= CASUAL_BOT_AFTER && (
+                    <div className="mt-1 flex items-center gap-3 rounded-lg border border-sky-300/30 bg-sky-500/15 px-4 py-2 text-sm text-sky-100">
+                      ยังไม่เจอคู่ดวล · ลองดวลกับบอทระหว่างนี้ไหม?
+                      <button type="button" onClick={playBot} className="rounded-md bg-sky-500 px-3 py-1 font-black text-white hover:bg-sky-400">
+                        ดวลกับบอท
+                      </button>
+                    </div>
+                  )}
+                </>
               )}
             </div>
-          </div>
-        </div>
-        <div className="flex flex-col items-center gap-3 bg-gradient-to-b from-yellow-900/20 to-transparent px-16 py-6">
-          {found ? (
-            <>
-              <div className="text-2xl font-black text-yellow-300">พบคู่ดวลแล้ว!</div>
-              <div className="text-sm text-slate-300">กำลังเข้าห้องดวล…</div>
-            </>
-          ) : searching ? (
-            <>
-              <div className="relative flex h-24 w-24 items-center justify-center">
-                <span className="absolute inset-0 rounded-full border-2 border-yellow-300/60" style={{ animation: 'casual-ping 1.6s ease-out infinite' }} />
-                <span className="absolute inset-0 rounded-full border-2 border-yellow-300/60" style={{ animation: 'casual-ping 1.6s ease-out 0.8s infinite' }} />
-                <Emblem icon="casual" color="#facc15" size={70} />
-              </div>
-              <div className="text-xl font-black text-white">กำลังหาคู่ดวล…</div>
-              <div className="font-mono text-lg text-yellow-200">{mmss}</div>
-              <div className="text-xs text-slate-400">จับคู่เฉพาะผู้เล่นที่ใช้แอปเวอร์ชันหลักเดียวกัน</div>
-              {waited >= CASUAL_BOT_AFTER && (
-                <div className="mt-1 flex items-center gap-3 rounded-lg border border-sky-300/30 bg-sky-500/10 px-4 py-2 text-sm text-sky-100">
-                  ยังไม่เจอคู่ดวล · ลองดวลกับบอทระหว่างนี้ไหม?
-                  <button type="button" onClick={playBot} className="rounded-md bg-sky-500 px-3 py-1 font-black text-white hover:bg-sky-400">
-                    ดวลกับบอท
-                  </button>
-                </div>
-              )}
-              <button type="button" onClick={close} className="mt-2 w-96 rounded-lg border border-white/40 bg-black py-2.5 text-lg font-black text-lime-300 hover:border-lime-300">
-                ยกเลิกการหาคู่
-              </button>
-            </>
-          ) : (
-            <>
-              <button type="button" onClick={() => void casualStart(deck)} className="w-96 rounded-lg bg-gradient-to-b from-yellow-300 to-amber-500 py-3 text-xl font-black text-slate-900 shadow-[0_0_24px_rgba(250,204,21,0.35)] hover:brightness-110">
-                เริ่มหาคู่ดวล
-              </button>
-              <button type="button" onClick={onClose} className="w-96 rounded-lg border border-white/40 bg-black py-2.5 text-lg font-black text-lime-300 hover:border-lime-300">
-                ยกเลิก
-              </button>
-            </>
           )}
         </div>
+        <div className="border-t border-white/10 bg-black/40 px-6 py-4 text-center text-base leading-relaxed text-slate-200">
+          ดวลกับผู้เล่นออนไลน์ที่ระบบจับคู่ให้ ไม่ต้องสร้างห้องหรือแลกรหัส · ชนะหรือแพ้ได้ EXP ตามปกติ
+          <br />
+          จัดเด็คที่อยากลอง แล้วมาประลองกับคู่แข่งหน้าใหม่กัน!
+        </div>
       </div>
+
+      {/* ขวา: เมนู + เด็ค + ปุ่ม DUEL */}
+      <div className="flex min-h-0 flex-col gap-3">
+        {(
+          [
+            ['details', 'รายละเอียด Casual Match'],
+            ['history', 'ประวัติการดวล'],
+          ] as const
+        ).map(([k, label]) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => setPanel(k)}
+            className="flex items-center justify-between rounded-lg border border-white/50 bg-black/80 px-5 py-3.5 text-left text-base font-bold text-white transition hover:border-yellow-300 hover:text-yellow-100"
+          >
+            {label}
+            <Icon name="chevron" className="text-lg" />
+          </button>
+        ))}
+        <div className="flex-1" />
+        <button
+          type="button"
+          disabled={searching || found}
+          onClick={() => pickDeckScreen(deck)}
+          className="flex flex-col items-center gap-1 rounded-xl border border-white/10 bg-slate-800/70 px-4 py-4 transition hover:border-sky-300/60 disabled:cursor-default disabled:hover:border-white/10"
+          title="เปลี่ยนเด็ค"
+        >
+          <DeckBox deck={deck} open size={0.9} />
+          <div className="mt-1 text-base font-black text-white">{deckInfo(deck).label}</div>
+          <div className="text-xs text-slate-400">
+            {deckSize(deck)} ใบ · สี {colors.map((c) => COLOR_LABEL[c as keyof typeof COLOR_LABEL] ?? c).join(' / ')}
+          </div>
+          {!searching && !found && <div className="text-xs font-bold text-sky-300">แตะเพื่อเปลี่ยนเด็ค</div>}
+        </button>
+        {searching ? (
+          <button type="button" onClick={() => casualCancel()} className="rounded-xl border-2 border-white/40 bg-black py-4 text-2xl font-black tracking-widest text-lime-300 hover:border-lime-300">
+            ยกเลิกการหาคู่
+          </button>
+        ) : (
+          <button
+            type="button"
+            disabled={found}
+            onClick={() => void casualStart(deck)}
+            className="rounded-xl bg-gradient-to-b from-lime-300 to-emerald-500 py-4 text-3xl font-black tracking-[0.3em] text-slate-900 shadow-[0_0_28px_rgba(163,230,53,0.45)] transition hover:brightness-110 disabled:opacity-50"
+          >
+            DUEL
+          </button>
+        )}
+      </div>
+
+      {panel === 'details' && <CasualDetails onClose={() => setPanel(null)} />}
+      {panel === 'history' && <CasualHistoryPanel onClose={() => setPanel(null)} />}
     </div>
+  );
+}
+
+/** รายละเอียด Casual Match */
+function CasualDetails({ onClose }: { onClose: () => void }) {
+  return createPortal(
+    <Modal front title="รายละเอียด Casual Match" onClose={onClose}>
+      <ul className="list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-slate-200">
+        <li>กด DUEL แล้วระบบจะจับคู่คุณกับผู้เล่นที่กำลังหาคู่อยู่ในตอนนั้น (1VS1) คนที่รอนานที่สุดได้คู่ก่อน</li>
+        <li>จับคู่เฉพาะผู้เล่นที่ใช้แอปเวอร์ชันหลักเดียวกัน (ตัวเลขหน้าสุดของเวอร์ชัน) ถ้ามีป้ายให้อัปเดตแอป อัปเดตก่อนจะเจอคู่ได้มากขึ้น</li>
+        <li>ใช้เด็คที่จัดถูกกติกาเท่านั้น (อย่างน้อย 40 ใบ ชื่อเดียวกันไม่เกิน 3 ใบ)</li>
+        <li>เจอคู่แล้วเสี่ยงลำดับและเลือกเริ่มก่อน/หลังเหมือนห้องดวลปกติ · ชนะหรือแพ้ได้ EXP ตามปกติ</li>
+        <li>รอนานเกิน 1 นาที เลือกดวลกับบอทระหว่างนี้ได้ · ปิดแอประหว่างรอ = ออกจากคิวเอง</li>
+        <li>ผลการดวล Casual Match ดูย้อนหลังได้ที่ "ประวัติการดวล" (เก็บในเครื่องนี้ 50 เกมล่าสุด)</li>
+      </ul>
+    </Modal>,
+    document.body,
+  );
+}
+
+/** ประวัติการดวล Casual Match (ในเครื่องนี้) */
+function CasualHistoryPanel({ onClose }: { onClose: () => void }) {
+  const list = casualHistory();
+  const wins = list.filter((r) => r.won).length;
+  const rate = list.length ? Math.round((wins / list.length) * 100) : 0;
+  const when = (t: number) => new Date(t).toLocaleString('th-TH', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  return createPortal(
+    <Modal front title="ประวัติการดวล" subtitle="Casual Match · เก็บในเครื่องนี้" onClose={onClose}>
+      {list.length === 0 ? (
+        <p className="py-6 text-center text-sm text-slate-400">ยังไม่มีประวัติการดวล · กด DUEL เพื่อเริ่มหาคู่</p>
+      ) : (
+        <>
+          <div className="flex gap-6 text-sm text-slate-300">
+            <span>
+              ดวล <b className="text-white">{list.length}</b> เกม
+            </span>
+            <span>
+              ชนะ <b className="text-emerald-300">{wins}</b> · แพ้ <b className="text-rose-300">{list.length - wins}</b>
+            </span>
+            <span>
+              อัตราชนะ <b className="text-yellow-200">{rate}%</b>
+            </span>
+          </div>
+          <div className="flex max-h-[50vh] flex-col gap-1.5 overflow-y-auto pr-1">
+            {list.map((r) => (
+              <div key={r.id} className="flex items-center gap-3 rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm">
+                <span className={`w-14 shrink-0 rounded px-2 py-0.5 text-center text-xs font-black ${r.won ? 'bg-emerald-500/25 text-emerald-200' : 'bg-rose-500/25 text-rose-200'}`}>{r.won ? 'ชนะ' : 'แพ้'}</span>
+                {r.opponentAvatar ? <AvatarImg cardNo={r.opponentAvatar} className="h-8 w-8 shrink-0 rounded-full" /> : <span className="h-8 w-8 shrink-0 rounded-full bg-slate-700" />}
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-bold text-white">vs {r.opponent}</div>
+                  <div className="truncate text-xs text-slate-400">
+                    {r.myDeck} ปะทะ {r.oppDeck} · {r.turns} เทิร์น
+                  </div>
+                </div>
+                <span className="shrink-0 text-xs text-slate-500">{when(r.at)}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </Modal>,
+    document.body,
   );
 }
 
@@ -928,10 +1044,10 @@ export function Lobby() {
   };
   const [deck, setDeck] = useLobbyDeck();
   const casual = useGame((s) => s.casual);
-  const [casualOpen, setCasualOpen] = useState(!!casual);
 
   // อยู่ในห้องดวลแล้ว (สร้าง / เข้า / กลับมาจากกระดาน): แสดงหน้าห้อง
-  const current: View = duel ? { kind: 'room', code: duel.code } : view.kind === 'room' ? { kind: 'list' } : view;
+  // กำลังหาคู่ Casual Match (กลับมาจากหน้าอื่น) = หน้า Casual Match
+  const current: View = duel ? { kind: 'room', code: duel.code } : casual ? { kind: 'casual' } : view.kind === 'room' ? { kind: 'list' } : view;
   const back = () => {
     if (online && online.status !== 'waiting') return setScreen('game');
     if (duel) {
@@ -942,6 +1058,10 @@ export function Lobby() {
       return;
     }
     if (current.kind === 'menu') return setScreen('home');
+    if (current.kind === 'casual') {
+      if (casual?.status === 'searching') casualCancel();
+      return setView({ kind: 'menu' });
+    }
     setView({ kind: 'menu' });
     setRoomMatch(true);
   };
@@ -951,6 +1071,7 @@ export function Lobby() {
     create: [team ? 'CREATE TEAM ROOM' : 'CREATE ROOM', team ? 'สร้างห้อง Team Battle' : 'สร้างห้อง'],
     list: [team ? 'TEAM BATTLE' : 'ROOM LIST', team ? 'รายการห้อง Team Battle' : 'รายการห้อง'],
     room: [roomTeam ? 'TEAM BATTLE' : 'ROOM MATCH', roomTeam ? 'ห้อง Team Battle (2VS2)' : 'ห้องดวล'],
+    casual: ['CASUAL MATCH', 'จับคู่ดวลอัตโนมัติ'],
   }[current.kind];
 
   return (
@@ -963,15 +1084,16 @@ export function Lobby() {
       {!onlineAvailable ? (
         <div className="flex flex-1 items-center justify-center text-amber-300">ยังไม่ได้ตั้งค่า Firebase (apps/web/.env.local)</div>
       ) : current.kind === 'menu' ? (
-        <DuelMenu onRoom={() => (setTeam(false), setRoomMatch(true))} onTeam={() => (setTeam(true), setRoomMatch(true))} onCasual={() => setCasualOpen(true)} />
+        <DuelMenu onRoom={() => (setTeam(false), setRoomMatch(true))} onTeam={() => (setTeam(true), setRoomMatch(true))} onCasual={() => setView({ kind: 'casual' })} />
       ) : current.kind === 'create' ? (
         <CreateRoom key={String(team)} deck={deck} team={team} />
+      ) : current.kind === 'casual' ? (
+        <CasualPage deck={deck} />
       ) : current.kind === 'list' ? (
         <RoomList key={String(team)} onOpen={(code) => void duelJoin(code, deck)} team={team} />
       ) : (
         <RoomView deck={deck} setDeck={setDeck} />
       )}
-      {(casualOpen || !!casual) && !duel && <CasualMatch deck={deck} onClose={() => setCasualOpen(false)} />}
       {roomMatch && !duel && (
         <RoomMatch
           team={team}

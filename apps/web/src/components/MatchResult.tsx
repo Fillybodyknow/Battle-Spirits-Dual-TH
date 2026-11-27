@@ -7,6 +7,8 @@ import { BTN } from './Modal';
 import { restartVsBot, vsBotExit, vsBotInfo } from '../bot/vsBot';
 import { addExp, matchExp } from '../progression/level';
 import { ExpGain } from './LevelBadge';
+import { recordCasual } from '../casualHistory';
+import { CASUAL_PREFIX } from '../store';
 
 const REASON: Record<string, (win: string, lose: string) => string> = {
   lifeZero: (_w, l) => `Life ของ ${l} เป็น 0!`,
@@ -167,6 +169,25 @@ export function MatchResult({ fx, onClose }: { fx: Extract<Fx, { kind: 'result' 
     if (!me) return null;
     const r = matchExp({ mode: online ? 'online' : 'bot', won: fx.winner === me, stars: bot?.stars, story: bot?.story, firstClearBonus: bot?.firstClearBonus, turn: useGame.getState().state.turn, reason: fx.reason });
     return addExp(`result-${online?.code ?? 'bot'}-${fx.id}`, r.exp, r.note);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fx.id]);
+
+  // Casual Match: บันทึกผลลงประวัติการดวล (ครั้งเดียวต่อเกม)
+  useEffect(() => {
+    if (!online || online.spectator || !online.code.startsWith(CASUAL_PREFIX)) return;
+    const me = online.me;
+    const opp = opponentOf(me);
+    const g = useGame.getState();
+    recordCasual({
+      id: `${online.code}-${online.setup?.round ?? 1}`,
+      at: Date.now(),
+      won: fx.winner === me,
+      opponent: names?.[opp] ?? 'คู่แข่ง',
+      ...(online.avatars?.[opp] ? { opponentAvatar: online.avatars[opp] } : {}),
+      myDeck: deckInfo(decks[me]).label,
+      oppDeck: deckInfo(decks[opp]).label,
+      turns: g.state.turn,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fx.id]);
 
