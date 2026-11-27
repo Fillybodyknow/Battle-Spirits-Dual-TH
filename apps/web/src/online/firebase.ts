@@ -4,7 +4,7 @@
  */
 import { initializeApp, type FirebaseApp } from 'firebase/app';
 import { getAuth, signInAnonymously } from 'firebase/auth';
-import { get, getDatabase, onChildAdded, onDisconnect, onValue, ref, remove, runTransaction, set, type Database } from 'firebase/database';
+import { get, getDatabase, goOffline, goOnline, onChildAdded, onDisconnect, onValue, ref, remove, runTransaction, set, type Database } from 'firebase/database';
 import { actionKey, decodeAction, encodeAction, type LobbyEntry, type RoomInfo, type Transport } from './transport';
 
 const env = import.meta.env;
@@ -31,6 +31,54 @@ export function database(): Database {
   db ??= getDatabase(firebaseApp());
   return db;
 }
+
+/**
+ * ต่อ Realtime Database เฉพาะตอนใช้งาน (แผนฟรีของ Firebase รับการเชื่อมต่อพร้อมกันได้ 100)
+ *  - งานครั้งเดียว (อ่าน/เขียน: ซิงก์บัญชี, รายการห้อง) = ต่อระหว่างทำ (withDb)
+ *  - ตัวฟัง (ห้องดวล / เกมออนไลน์ / ปิง) = ต่อค้างตลอดที่ฟังอยู่ (holdDb)
+ *  - ไม่มีใครใช้ต่อเนื่อง DB_IDLE_MS = ตัดการเชื่อมต่อ (goOffline) · ใช้ใหม่ = ต่อกลับเอง (goOnline)
+ * ตัดการเชื่อมต่อ = เซิร์ฟเวอร์ทำ onDisconnect ที่ลงไว้ (เอาออกจากรายการห้อง / สมาชิก / ปิง) → ระหว่างอยู่ในห้องต้องมีตัวฟังค้างไว้เสมอ
+ */
+export const DB_IDLE_MS = 30_000;
+let holds = 0;
+let dbOnline = true;
+let idleTimer: ReturnType<typeof setTimeout> | null = null;
+export function holdDb(): () => void {
+  const d = database();
+  holds++;
+  if (idleTimer) {
+    clearTimeout(idleTimer);
+    idleTimer = null;
+  }
+  if (!dbOnline) {
+    goOnline(d);
+    dbOnline = true;
+  }
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    holds--;
+    if (holds > 0) return;
+    idleTimer = setTimeout(() => {
+      idleTimer = null;
+      if (holds > 0) return;
+      goOffline(d);
+      dbOnline = false;
+    }, DB_IDLE_MS);
+  };
+}
+/** ทำงานกับฐานข้อมูลครั้งเดียว: ต่อระหว่างทำ แล้วนับเวลาตัดการเชื่อมต่อ */
+export async function withDb<T>(fn: () => Promise<T>): Promise<T> {
+  const release = holdDb();
+  try {
+    return await fn();
+  } finally {
+    release();
+  }
+}
+/** สถานะสำหรับทดสอบ / ดีบัก */
+export const dbConnection = () => ({ holds, online: dbOnline });
 
 const roomRef = (code: string) => ref(database(), `rooms/${code}`);
 
@@ -66,7 +114,7 @@ function toInfo(v: unknown): RoomInfo | null {
   };
 }
 
-export const firebaseTransport: Transport = {
+const rawTransport: Transport = {
   name: 'Firebase',
 
   async signIn() {
@@ -220,3 +268,26 @@ export const firebaseTransport: Transport = {
     });
   },
 };
+
+/** ตัวฟังที่ต้องต่อค้างไว้ตลอด (คืนฟังก์ชันเลิกฟัง) · ที่เหลือ = งานครั้งเดียว */
+const WATCHERS = new Set<keyof Transport>(['watchRoom', 'watchActions', 'watchPath', 'watchConnected']);
+export const firebaseTransport: Transport = Object.fromEntries(
+  Object.entries(rawTransport).map(([k, v]) => {
+    if (typeof v !== 'function' || k === 'signIn') return [k, v];
+    const fn = v as (...a: unknown[]) => unknown;
+    if (WATCHERS.has(k as keyof Transport)) {
+      return [
+        k,
+        (...a: unknown[]) => {
+          const release = holdDb();
+          const unsub = fn(...a) as () => void;
+          return () => {
+            unsub();
+            release();
+          };
+        },
+      ];
+    }
+    return [k, (...a: unknown[]) => withDb(() => fn(...a) as Promise<unknown>)];
+  }),
+) as unknown as Transport;

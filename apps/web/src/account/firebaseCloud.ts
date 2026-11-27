@@ -23,7 +23,7 @@ import {
   type User,
 } from 'firebase/auth';
 import { get, ref, set } from 'firebase/database';
-import { database, firebaseApp } from '../online/firebase';
+import { database, firebaseApp, withDb } from '../online/firebase';
 import { AccountError, type CloudBackend, type CloudData, type CloudDeck, type CloudUser } from './cloud';
 
 const auth = (): Auth => getAuth(firebaseApp());
@@ -162,7 +162,8 @@ export const firebaseCloud: CloudBackend = {
 
   async load(uid) {
     const db = database();
-    const [user, profile] = await Promise.all([get(ref(db, `users/${uid}`)), get(ref(db, `profiles/${uid}`))]);
+    // ต่อฐานข้อมูลเฉพาะระหว่างซิงก์ (ไม่ค้างการเชื่อมต่อ: แผนฟรีรับพร้อมกันได้ 100)
+    const [user, profile] = await withDb(() => Promise.all([get(ref(db, `users/${uid}`)), get(ref(db, `profiles/${uid}`))]));
     const u = (user.val() ?? {}) as { decks?: Record<string, CloudDeck>; settings?: CloudData['settings'] };
     const p = profile.val() as CloudData['profile'];
     return {
@@ -173,14 +174,14 @@ export const firebaseCloud: CloudBackend = {
   },
 
   async saveProfile(uid, profile) {
-    await set(ref(database(), `profiles/${uid}`), profile);
+    await withDb(() => set(ref(database(), `profiles/${uid}`), profile));
   },
 
   async saveDeck(uid, id, deck) {
-    await set(ref(database(), `users/${uid}/decks/${id}`), deck.deleted ? { deleted: true, updated: deck.updated } : { code: deck.code ?? '', updated: deck.updated });
+    await withDb(() => set(ref(database(), `users/${uid}/decks/${id}`), deck.deleted ? { deleted: true, updated: deck.updated } : { code: deck.code ?? '', updated: deck.updated }));
   },
 
   async saveSettings(uid, settings) {
-    await set(ref(database(), `users/${uid}/settings`), settings);
+    await withDb(() => set(ref(database(), `users/${uid}/settings`), settings));
   },
 };

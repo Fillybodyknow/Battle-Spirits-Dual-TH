@@ -275,6 +275,7 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
 - ไอคอนใช้ SVG ใน `components/Icon.tsx` (อีโมจิ/สัญลักษณ์พิเศษเป็นกล่องว่างบน Windows 7)
 - สี Tailwind v4 เป็น `oklch()`: ถ้าอัปเดต Tailwind ให้รัน `npm run legacy-colors`
 - โหมดออนไลน์: `?online=local` ใช้ transport ในเครื่อง (ทดสอบสองแท็บได้โดยไม่ต้องมี Firebase) · `&lag=<ms>` = จำลองเน็ตช้าของแท็บนั้น
+- **ต่อ Realtime Database เฉพาะตอนใช้** (`holdDb` / `withDb` ใน online/firebase.ts · แผนฟรีรับพร้อมกัน 100): เมธอดของ `firebaseTransport` ถูกห่อให้อัตโนมัติ (ตัวฟัง `watch*` = ต่อค้างตลอดที่ฟัง, ที่เหลือ = ต่อระหว่างทำ) · บัญชี (`firebaseCloud`) ห่อด้วย `withDb` · ไม่มีใครใช้ 30 วิ (`DB_IDLE_MS`) = `goOffline` · ใช้ฐานข้อมูลทางใหม่ต้องผ่าน transport หรือ `withDb` · ตัดการเชื่อมต่อ = onDisconnect ทำงาน (สมาชิก/ปิง/รายการห้องหาย) ระหว่างอยู่ในห้องต้องมีตัวฟังค้างไว้
 - **ปิง / การเชื่อมต่อ (`online/net.ts` + `components/NetStatus.tsx`)**: ทุกที่นั่งเขียน `rooms/<code>/pings/<ที่นั่ง>` = `{ ms, n }` ทุก 3 วิ (ms = เวลาที่เซิร์ฟเวอร์ตอบรับครั้งก่อน, ลบเองเมื่อหลุด) ·
   `SeatPing` ข้างชื่อบน PlayerPlate / TeamMiniPlate · `NetWarning` = หลุด (`.info/connected` ผ่าน `transport.watchConnected`) / action ที่ส่งแล้วยังไม่กลับ (`markSent` ใน sendActions → `markEchoed` ใน receive) / ที่นั่งอื่นเงียบเกิน `STALE_MS`
 - **บัญชีผู้ใช้ (`src/account/`)**: Firebase Auth (Google / Email) ผูกกับ uid ไม่ระบุตัวเดิม (`linkWithPopup` / `linkWithCredential`) · ซิงก์ชื่อ รูปโปรไฟล์ (`bs-avatar`) เด็ค และการตั้งค่า
