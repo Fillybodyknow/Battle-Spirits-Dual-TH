@@ -80,6 +80,9 @@ import { gainLockSource, voidStealerOf, millBlockSources, cardColors,
   payableCost,
   removeCore,
   removeFrom,
+  fieldSymbols,
+  summonExhaustedSource,
+  braveSpiritBanSource,
 } from './rules';
 import { shuffle } from './rng';
 import { teamHand, teamTrash } from './seats';
@@ -326,6 +329,14 @@ export function queueTriggers(
       ...(opts.milled ? { milled: opts.milled } : {}),
     });
   }
+}
+
+/** เอฟเฟกต์นี้มาจากบรรทัดที่ไม่พูดถึงอัลติเมท (AbilityMeta.spiritsOnly) · เมจิค (ไม่มี source) = ทุกบรรทัดของการ์ด */
+function itemSpiritsOnly(ctx: Ctx, item: QueuedEffect): boolean {
+  const card = ctx.s.cards[item.sourceId];
+  if (!card) return false;
+  const abs = ctx.db.get(card.cardNo).abilities.filter((a) => item.source === undefined || a.source === item.source);
+  return abs.length > 0 && abs.every((a) => a.spiritsOnly === true);
 }
 
 /** สปิริตต้นเหตุ (เช่น ผู้โจมตี / สปิริตที่ทิ้งเด็ค) ตรงเงื่อนไขของ trigger หรือไม่ */
@@ -819,7 +830,7 @@ function depleteByOpponent(ctx: Ctx, item: QueuedEffect, cardId: string, level: 
   if (hadSoul) item.depletedSoul = true;
   item.depleted = true;
   // กติกา 10: สูญสลายไม่ใช่การถูกทำลาย → เปิดได้เฉพาะเบิร์สที่เขียน "ถูกทำลาย/สูญสลาย"
-  pendBurst(ctx, owner, 'afterAllyDepletedByOpponent');
+  pendBurst(ctx, owner, 'afterAllyDepletedByOpponent', undefined, ctx.db.get(ctx.s.cards[cardId]!.cardNo).type === 'ultimate');
   queueRightAfterCurrent(ctx, () => queueTriggers(ctx, cardId, 'depletedByOpponent', newBatch(ctx), { level, soulSnapshot: hadSoul }));
   // BS16 มูนโบว์ ดรากูน: สูญสลายโดยเอฟเฟกต์ของสปิริต/อัลติเมท
   {
@@ -972,9 +983,12 @@ function flushBursts(ctx: Ctx): boolean {
     }
     const extra = extraBurstEvents(s, ctx.db, player);
     const anyExtra = events.some((e) => extra.includes(e));
-    const ab = ctx.db.get(s.cards[burstId]!.cardNo).abilities.find(
-      (x) => x.kind === 'burst' && (events.includes(x.on) || (!!x.alsoDepleted && events.includes('afterAllyDepletedByOpponent')) || anyExtra),
-    );
+    const ab = ctx.db.get(s.cards[burstId]!.cardNo).abilities.find((x) => {
+      if (x.kind !== 'burst') return false;
+      // อัลติเมทไม่ใช่สปิริต: "หลังจากสปิริต..." ต้องมีสปิริตที่ไม่ใช่อัลติเมทเป็นต้นเหตุ
+      const evs = x.subjectSpiritsOnly ? pending.filter((p) => p.player === player && !p.ultimateOnly).map((p) => p.on) : events;
+      return evs.includes(x.on) || (!!x.alsoDepleted && evs.includes('afterAllyDepletedByOpponent')) || anyExtra;
+    });
     if (!ab || ab.kind !== 'burst') return;
     const subjectId = pending.find((p) => p.player === player && (p.on === ab.on || (ab.alsoDepleted && p.on === 'afterAllyDepletedByOpponent')))?.subjectId;
     // BS09 จินเบร์: ต้องจ่ายคอสต์เพิ่มเพื่อสั่งใช้เบิร์ส (คอร์ไม่พอ = เปิดไม่ได้)
@@ -1422,7 +1436,14 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
     return conditionHolds(s, self, cond, item.paidWithSoul, item.catalyzed, db);
   };
   const opp = opponentOf(me);
-  const spiritLike = (id: string) => isSpiritLike(db.get(s.cards[id]!.cardNo));
+  // อัลติเมทไม่ใช่สปิริต: บรรทัดเอฟเฟกต์ที่ไม่พูดถึงอัลติเมท "สปิริต" = สปิริต + เบรฟ (การ์ดนี้เองยังนับ เช่น "อัลติเมทนี้")
+  // ตัวกรองของ step ที่ระบุ 'ultimate' เอง ("สปิริต/อัลติเมท" ในบรรทัดที่มีสปิริตเดี่ยว ๆ ด้วย) = รวมอัลติเมท
+  const stepTypes = (step as { filter?: { types?: string[] } }).filter?.types;
+  const spiritsOnly = !stepTypes?.includes('ultimate') && itemSpiritsOnly(ctx, item);
+  const spiritLike = (id: string) => {
+    const d = db.get(s.cards[id]!.cardNo);
+    return isSpiritLike(d) && !(spiritsOnly && d.type === 'ultimate' && id !== self);
+  };
   /** เอฟเฟกต์นี้ส่งผลถึงการ์ดนี้ได้ (ไม่ติด Ultra Shield ฯลฯ) */
   // ทุกจุดเรียกหลังกรองเป้าตามเอฟเฟกต์แล้ว: ถูกกัน = การ์ดนี้ควรโดนแต่ Shield กันไว้ → เรืองแสงการ์ดที่ให้ Shield
   // BS11 โฮมุระแมนดริล: [เอฟเฟกต์ทำลาย BP] ของการ์ดที่ระบุ ขอบเขต +N และ Ultra Shield ป้องกันไม่ได้
@@ -1476,6 +1497,13 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
   const handPool = (p: PlayerId, st: Step): string[] => ('filter' in st && st.filter && (st.filter as CardFilter).withShown ? s.players[p].hand : handCards(s, p));
 
   // BS07 "ต่อจำนวน ...": คูณจำนวน/ค่าก่อนทำ (ได้ 0 = ไม่ทำ)
+  // BSC04 เน-รันเทล: "BP ไม่เกินสปิริตนี้" = BP ปัจจุบันของการ์ดนี้ตอนทำ step
+  if ('filter' in step && step.filter && (step.filter as CardFilter).maxBpSelf) {
+    const { maxBpSelf: _m, ...f } = step.filter as CardFilter;
+    void _m;
+    item.steps.unshift({ ...step, filter: { ...f, maxBp: onField(ctx, self) ? currentBp(s, db, self) : 0 } } as Step);
+    return;
+  }
   if ('per' in step && step.per) {
     const k = countPer(ctx, item, step.per);
     if (k <= 0) return;
@@ -2136,6 +2164,17 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
         if (step.cardId === item.sourceId && !inAnyZone(ctx, me, step.cardId)) item.trashWhenDone = true;
         return;
       }
+      // BSC04 ไดอาน่า-เฟลอร์ X: คู่แข่งให้เบรฟอยู่ในรูปแบบสปิริตไม่ได้ (รวมการอัญเชิญ) → ร่วมร่างได้อย่างเดียว · ไม่มีผู้ร่วมร่าง = อัญเชิญไม่ได้ (การ์ดอยู่ที่เดิม)
+      if (def.type === 'brave' && !step.noSummon) {
+        const ban = braveSpiritBanSource(s, db, me);
+        if (ban) {
+          emitStatic(ctx, ban);
+          if (braveHostsFor(ctx, me, step.cardId).length > 0) item.steps.unshift({ do: 'braveOrSpirit', cardId: step.cardId, noSpirit: true });
+          else if (step.cardId === item.sourceId && !inAnyZone(ctx, me, step.cardId)) item.trashWhenDone = true;
+          else if (!inAnyZone(ctx, me, step.cardId)) s.players[me].trashCards.push(step.cardId);
+          return;
+        }
+      }
       // BS10 สิงโตควันม่วง: "เมื่อทำการอัญเชิญการ์ดนี้ สามารถทิ้งใบบนสุดเด็คได้" (อัญเชิญไม่จ่ายคอสต์ก็ทิ้งได้)
       if (!step.noSummon && !step.millAsked) {
         const mab = def.abilities.find((a) => a.kind === 'millCostReduce');
@@ -2200,16 +2239,24 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       const name = db.get(s.cards[step.cardId]!.cardNo).name;
       ask(ctx, item, {
         kind: 'card',
-        prompt: `${name}: เลือกสปิริตที่จะร่วมร่าง หรือลงสนามเป็นสปิริต`,
+        prompt: step.noSpirit ? `${name}: เลือกสปิริตที่จะร่วมร่าง (ลงเป็นสปิริตไม่ได้)` : `${name}: เลือกสปิริตที่จะร่วมร่าง หรือลงสนามเป็นสปิริต`,
         candidates: braveHostsFor(ctx, me, step.cardId),
-        optional: true,
-        skipLabel: 'ลงสนามเป็นสปิริต',
+        ...(step.noSpirit ? {} : { optional: true, skipLabel: 'ลงสนามเป็นสปิริต' }),
         step,
       });
       return;
     }
 
     case 'braveFate': {
+      // BSC04 ไดอาน่า-เฟลอร์ X: คู่แข่งให้เบรฟอยู่ในรูปแบบสปิริตไม่ได้ → ลงแทรช
+      {
+        const ban = braveSpiritBanSource(s, db, me);
+        if (ban) {
+          emitStatic(ctx, ban);
+          item.steps.unshift({ do: 'braveTrash', cardId: step.cardId });
+          return;
+        }
+      }
       // กติกา 04 ข้อ 2.2: คงอยู่ = กำหนดคอร์ใหม่โดยดึงจากรีเสิร์ฟ · รีเสิร์ฟไม่พอเลเวล 1 = คงอยู่ไม่ได้ ลงแทรชพร้อมร่างต้น
       if (s.players[me].reserve.length < summonMinCores(s, db, step.cardId)) {
         item.steps.unshift({ do: 'braveTrash', cardId: step.cardId });
@@ -2594,7 +2641,7 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
 
     case 'buffChosen': {
       const candidates = (step.ally ? s.players[me].field : PLAYERS.flatMap((p) => s.players[p].field)).filter(
-        (id) => isSpiritLike(db.get(s.cards[id]!.cardNo)) && (!step.filter || matchesFilter(s, db, id, step.filter)),
+        (id) => spiritLike(id) && (!step.filter || matchesFilter(s, db, id, step.filter)),
       );
       if (candidates.length === 0) return;
       // BSC02: BP+ เท่ากับ BP ของสปิริตที่เพิ่งเสื่อมสภาพ (ไม่มี = ไม่ทำ)
@@ -2670,6 +2717,14 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       return;
 
     case 'summonFromTrashFree': {
+      // BSC04 มิเรีย: คอสต์ต่ำกว่าสปิริตต้นเหตุ (ที่ถูกทำลาย)
+      if (step.belowSubjectCost) {
+        const sub = item.subjectId && s.cards[item.subjectId];
+        if (!sub) return;
+        item.steps.unshift({ ...step, belowSubjectCost: undefined, filter: { ...step.filter, maxCost: db.get(sub.cardNo).cost - 1 } });
+        return;
+      }
+      if ((step.max ?? 1) < 1) return;
       const candidates = myTrash(s, me).filter((id) => matchesFilter(s, db, id, step.filter) && inTrashOk(id));
       if (candidates.length === 0) return;
       ask(ctx, item, { kind: 'card', prompt: 'เลือกการ์ดในแทรชที่จะอัญเชิญไม่จ่ายคอสต์', candidates, optional: true, skipLabel: 'ไม่อัญเชิญ', step });
@@ -2806,7 +2861,7 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       if (battle.chosenBlockers.length >= battle.maxBlockers) return;
       const candidates = s.players[opponentOf(me)].field.filter(
         (id) =>
-          isSpiritLike(db.get(s.cards[id]!.cardNo)) && !battle.chosenBlockers.includes(id) && (!step.filter || matchesFilter(s, db, id, step.filter)) && hits(id),
+          spiritLike(id) && !battle.chosenBlockers.includes(id) && (!step.filter || matchesFilter(s, db, id, step.filter)) && hits(id),
       );
       if (candidates.length === 0) return;
       const left = battle.maxBlockers - battle.chosenBlockers.length;
@@ -3094,6 +3149,60 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       return;
     }
 
+    case 'selfToDeckBottom':
+      if (onField(ctx, self)) returnCard(ctx, self, 'deckBottom');
+      return;
+
+    case 'separateBraveId':
+      if (s.cards[step.braveId] && braveHostOf(s, step.braveId)) separateBrave(ctx, step.braveId);
+      return;
+
+    case 'trashCoresSpread': {
+      // BSC04 เซน่า-ริวมิน: คอร์ทั้งหมดในแทรชเราไปวางบนสปิริตของเราตามใจชอบ
+      const allies = s.players[me].field.filter((id) => spiritLike(id));
+      const left = step.left ?? s.players[me].trashCores.length;
+      if (left <= 0 || allies.length === 0) return;
+      if (allies.length === 1) {
+        moveTrashCores(ctx, me, allies[0]!, left);
+        return;
+      }
+      const caps: Record<string, number> = {};
+      for (const id of allies) caps[id] = left;
+      ask(ctx, item, { kind: 'distribute', prompt: `แบ่งคอร์ในแทรช ${left} เม็ดวางบนสปิริตของเรา`, candidates: allies, caps, total: left, to: 'place', step: { ...step, left } });
+      return;
+    }
+
+    case 'separateOwnBrave': {
+      // BSC04 คอสตูมเชนจ์: เลือกสปิริตร่วมร่างของเรา (เบรฟหลายใบ = ถามว่าแยกใบไหน)
+      const candidates = s.players[me].field.filter((id) => s.cards[id]!.braves.length > 0);
+      if (candidates.length === 0) return;
+      ask(ctx, item, { kind: 'card', prompt: 'เลือกสปิริตร่วมร่างของเราที่จะแยกเบรฟออก', candidates, step });
+      return;
+    }
+
+    case 'separateOpponentBraves': {
+      const candidates = s.players[opp].field.filter((id) => s.cards[id]!.braves.length > 0 && hits(id));
+      if (candidates.length === 0) return;
+      ask(ctx, item, { kind: 'card', prompt: 'เลือกสปิริต/อัลติเมทร่วมร่างของคู่แข่งที่จะแยกเบรฟทั้งหมดออก', candidates, step });
+      return;
+    }
+
+    case 'braveFromHandOnto': {
+      const hostsFor = (braveId: string) =>
+        braveHostsFor(ctx, me, braveId).filter((id) => spiritLike(id) && db.get(s.cards[id]!.cardNo).type === 'spirit' && matchesFilter(s, db, id, step.host));
+      if (!step.braveId) {
+        const candidates = handCards(s, me).filter((id) => db.get(s.cards[id]!.cardNo).type === 'brave' && matchesFilter(s, db, id, step.filter) && hostsFor(id).length > 0);
+        if (candidates.length === 0) return;
+        ask(ctx, item, { kind: 'card', prompt: 'เลือกการ์ดเบรฟในมือที่จะอัญเชิญไม่จ่ายคอสต์ (ร่วมร่างโดยตรง)', candidates, optional: true, skipLabel: 'ไม่อัญเชิญ', step });
+        return;
+      }
+      if (!s.players[me].hand.includes(step.braveId)) return;
+      const hosts = hostsFor(step.braveId);
+      if (hosts.length === 0) return;
+      ask(ctx, item, { kind: 'card', prompt: `${db.get(s.cards[step.braveId]!.cardNo).name}: เลือกสปิริตที่จะร่วมร่าง`, candidates: hosts, step });
+      return;
+    }
+
     case 'voidCoresSpread': {
       const allies = s.players[me].field.filter((id) => spiritLike(id));
       let left = step.left;
@@ -3375,7 +3484,8 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       }
       if (step.max < 1) return;
       const zones = step.zones ?? ['hand', 'trash'];
-      const candidates = [...(zones.includes('hand') ? handPool(me, step) : []), ...(zones.includes('trash') ? myTrash(s, me).filter(inTrashOk) : [])].filter(
+      const shown = zones.includes('shown') && !zones.includes('hand') ? s.players[me].hand.filter((id) => (s.shownCards ?? []).includes(id)) : [];
+      const candidates = [...(zones.includes('hand') ? handPool(me, step) : []), ...shown, ...(zones.includes('trash') ? myTrash(s, me).filter(inTrashOk) : [])].filter(
         (id) => matchesFilter(s, db, id, step.filter) && freeSummonOk(id),
       );
       if (candidates.length === 0) return;
@@ -4028,7 +4138,8 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
 
     case 'myUnit': {
       const b = s.battle;
-      if (!b || b.attackerId !== self || !onField(ctx, self)) return;
+      // BSC04 ซายะ-ไชน์: My Unit ตอนป้องกันได้ด้วย (สปิริตนี้เป็นผู้ป้องกัน)
+      if (!b || (b.attackerId !== self && !b.blockers.includes(self)) || !onField(ctx, self)) return;
       const picked = (step.picked ?? []).filter((id) => onField(ctx, id));
       if (picked.length >= step.count) {
         // วางชิดผู้โจมตี: ตัวแรกด้านขวา ตัวที่สองด้านซ้าย (ลำดับบนสนาม)
@@ -4039,6 +4150,13 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
         if (picked[1]) f.splice(at, 0, picked[1]);
         b.unit = [...new Set([...(b.unit ?? []), ...picked])];
         emit(ctx, { type: 'myUnit', attackerId: self, cardIds: picked });
+        // BSC04: "เมื่อนำ...มาวางชิดด้วย My Unit" / "เมื่อสปิริตนี้ถูกนำไปวางชิดด้วย My Unit" / "เมื่อสปิริตของเราใช้ My Unit" (ต่อจากเอฟเฟกต์นี้)
+        queueRightAfterCurrent(ctx, () => {
+          const batch = newBatch(ctx);
+          for (const id of picked) queueTriggers(ctx, self, 'unitFormed', batch, { subject: id });
+          for (const id of picked) queueTriggers(ctx, id, 'placedInUnit', batch, { subject: self });
+          for (const id of [...s.players[me].field]) queueTriggers(ctx, id, 'allyUnitFormed', batch, { subject: self });
+        });
         return;
       }
       const candidates = s.players[me].field.filter(
@@ -4063,7 +4181,7 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
         if (repl) {
           ask(ctx, item, {
             kind: 'option',
-            prompt: `On Stage: ${db.get(s.cards[id]!.cardNo).name} กลับไปใต้สุดเด็ค หรือเสื่อมสภาพแทน (${db.get(s.cards[repl.cardId]!.cardNo).name})`,
+            prompt: `On Stage: ${db.get(s.cards[id]!.cardNo).name} กลับไปใต้สุดเด็ค หรือเสื่อมสภาพ${db.get(s.cards[repl.cardId]!.cardNo).type === 'nexus' ? db.get(s.cards[repl.cardId]!.cardNo).name : 'สปิริตนั้น'}แทน`,
             options: ['กลับไปใต้สุดเด็ค', 'เสื่อมสภาพแทน (ถือว่ากลับใต้สุดเด็คแล้ว)'],
             step: {
               do: 'chooseOne',
@@ -4079,6 +4197,15 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       if (step.exhaust) {
         const repl = onStageReplaceSource(ctx, me);
         emitStatic(ctx, repl);
+        const replAb = repl ? db.get(s.cards[repl.cardId]!.cardNo).abilities.find((a) => a.kind === 'onStageReplace' && a.source === repl.source) : undefined;
+        if (repl && replAb?.kind === 'onStageReplace' && replAb.exhaustSelf) {
+          // แบ็คสเตจ: เน็กซัสเสื่อมสภาพ สปิริตอยู่ต่อสภาพเดิม (ถือว่ากลับใต้สุดเด็คแล้ว)
+          s.cards[repl.cardId]!.state = 'exhausted';
+          emit(ctx, { type: 'exhausted', cardId: repl.cardId });
+          emit(ctx, { type: 'onStage', player: me, cardId: id, exhaustedInstead: true });
+          queueExhaustTriggers(ctx, repl.cardId);
+          return;
+        }
         s.cards[id]!.state = 'exhausted';
         emit(ctx, { type: 'onStage', player: me, cardId: id, exhaustedInstead: true });
         queueExhaustTriggers(ctx, id);
@@ -4151,7 +4278,8 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       const candidates = s.players[opp].field.filter((id) => (step.filter ? matchesFilter(s, db, id, step.filter) : spiritLike(id)) && value(id) <= step.maxTotal && hits(id));
       if (candidates.length === 0 || step.final) return;
       const what = byCost ? `คอสต์รวมไม่เกิน ${step.maxTotal}` : `BP รวมไม่เกิน ${step.maxTotal.toLocaleString()}`;
-      askBudget(ctx, item, candidates, step, `เลือกสปิริตของคู่แข่งที่จะ${step.action === 'bounce' ? 'กลับขึ้นมือ' : 'ทำลาย'} (${what})`, byCost ? 'คอสต์' : 'BP', step.maxTotal, value);
+      const verb = step.action === 'bounce' ? 'กลับขึ้นมือ' : step.action === 'noBlock' ? 'ป้องกันไม่ได้ในการต่อสู้นี้' : 'ทำลาย';
+      askBudget(ctx, item, candidates, step, `เลือกสปิริต/อัลติเมทของคู่แข่งที่จะ${verb} (${what})`, byCost ? 'คอสต์' : 'BP', step.maxTotal, value);
       return;
     }
 
@@ -4195,15 +4323,18 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       return;
     }
 
-    case 'symbolThisTurn':
-      if (!onField(ctx, self)) return;
+    case 'symbolThisTurn': {
+      // BSC04 ไดยะ-รูน: สปิริตต้นเหตุ (ตัวที่โจมตีอยู่) ได้รับเจ็ม
+      const tgt = step.target === 'subject' ? item.subjectId : self;
+      if (!tgt || !onField(ctx, tgt)) return;
       if (step.untilBattleEnd) {
-        const c = s.cards[self]!;
+        const c = s.cards[tgt]!;
         c.battleSymbols = [...(c.battleSymbols ?? []), { color: step.color, count: step.count }];
         return;
       }
-      s.turnSymbols = [...(s.turnSymbols ?? []).filter((t) => t.turn === s.turn), { cardId: self, turn: s.turn, color: step.color, count: step.count }];
+      s.turnSymbols = [...(s.turnSymbols ?? []).filter((t) => t.turn === s.turn), { cardId: tgt, turn: s.turn, color: step.color, count: step.count }];
       return;
+    }
 
     case 'negateSubjectMagic': {
       const q = s.queue.find((x) => x !== item && x.sourceId === item.subjectId && x.trashWhenDone && !x.started);
@@ -4257,6 +4388,10 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       return;
 
     case 'blockExhaustedThisTurn': {
+      if (step.all) {
+        s.turnBlockExhausted = [...(s.turnBlockExhausted ?? []).filter((t) => t.turn === s.turn), { cardId: '', player: me, turn: s.turn }];
+        return;
+      }
       const candidates = s.players[me].field.filter((id) => spiritLike(id) && matchesFilter(s, db, id, step.filter));
       if (candidates.length === 0) return;
       ask(ctx, item, { kind: 'card', prompt: 'เลือกสปิริตของเราที่จะป้องกันได้แม้อยู่ในรูปแบบเสื่อมสภาพในเทิร์นนี้', candidates, step });
@@ -5084,6 +5219,35 @@ function soulDriveOf(ctx: Ctx, cardId: string): { source: number; steps: Step[] 
 }
 
 /** สปิริตของผู้เล่นที่ Brave ใบนี้ร่วมร่างได้ (คอสต์ถึง, ยังไม่มี Brave) */
+/** BSC04: แยกเบรฟออกจากผู้ร่วมร่างด้วยเอฟเฟกต์ → เจ้าของเลือกให้อยู่ต่อเป็นสปิริต (วางคอร์จากรีเสิร์ฟ) หรือลงแทรช (กติกา 04 ข้อ 2) */
+function separateBrave(ctx: Ctx, braveId: string): void {
+  const { s } = ctx;
+  const hostId = braveHostOf(s, braveId);
+  if (!hostId) return;
+  const host = s.cards[hostId]!;
+  removeFrom(host.braves, braveId);
+  const at = s.queue[0]?.started ? 1 : 0;
+  s.queue.splice(at, 0, {
+    controller: s.cards[braveId]!.owner,
+    sourceId: braveId,
+    steps: [{ do: 'braveFate', cardId: braveId, state: host.state }],
+    paidWithSoul: false,
+    trashWhenDone: false,
+    announce: false,
+    started: true,
+  });
+}
+
+/** BSC04: ย้ายคอร์ n เม็ดจากแทรชของผู้เล่นไปวางบนการ์ด */
+function moveTrashCores(ctx: Ctx, player: PlayerId, cardId: string, n: number): void {
+  const p = ctx.s.players[player];
+  const moved = p.trashCores.slice(0, n);
+  if (moved.length === 0) return;
+  p.trashCores = p.trashCores.filter((c) => !moved.includes(c));
+  ctx.s.cards[cardId]!.cores.push(...moved);
+  emit(ctx, { type: 'coresMoved', player, count: moved.length });
+}
+
 function braveHostsFor(ctx: Ctx, player: PlayerId, braveId: string): string[] {
   const braveDef = ctx.db.get(ctx.s.cards[braveId]!.cardNo);
   return ctx.s.players[player].field.filter((id) => braveFits(braveDef, ctx.db.get(ctx.s.cards[id]!.cardNo)) && braveRoom(ctx.s, ctx.db, id, braveId));
@@ -5199,6 +5363,14 @@ function putOnField(ctx: Ctx, item: QueuedEffect, step: Extract<Step, { do: 'pla
     }
     return;
   }
+  // BSC04 เซฟี่-แอริส: เมนสเต็ป ลงสนามในรูปแบบเสื่อมสภาพ
+  {
+    const ex = summonExhaustedSource(s, ctx.db, step.cardId);
+    if (ex) {
+      card.state = 'exhausted';
+      emitStatic(ctx, ex);
+    }
+  }
   emit(ctx, { type: 'summoned', player: me, cardId: step.cardId, paid: 0, from: from === 'other' && item.sourceId === step.cardId ? 'burst' : from, ...(item.onStage ? { onStage: true as const } : {}) });
   if (item.onStage) item.onStageSummonedId = step.cardId;
   // กติกา 03: ดึงคอร์จากสปิริตบนสนามมาวาง = สปิริตนั้นสูญสลายทันที (เป็นส่วนของการอัญเชิญ ก่อน "เมื่อสปิริตนี้ถูกอัญเชิญ" ทำงาน)
@@ -5251,6 +5423,9 @@ function multiSummon(ctx: Ctx, player: PlayerId, choice: Extract<PendingChoice, 
     const fit = (i: number): boolean => i >= colorsOf.length || colorsOf[i]!.some((c) => !used.has(c) && (used.add(c), fit(i + 1) || (used.delete(c), false)));
     if (!fit(0)) fail('INVALID_PICK', 'อัญเชิญได้สีละ 1 ใบ');
   }
+  // BSC04 ไดอาน่า-เฟลอร์ X: เบรฟต้องร่วมร่าง
+  if (braveSpiritBanSource(s, ctx.db, player) && picks.some((pk) => !pk.braveOnto && ctx.db.get(s.cards[pk.cardId]!.cardNo).type === 'brave'))
+    fail('SUMMON_BANNED', 'อัญเชิญเบรฟในรูปแบบสปิริตไม่ได้ (เอฟเฟกต์ของคู่แข่ง)');
   const summoned: string[] = [];
   const fromHand = choice.step.do === 'summonFromHandFree';
   const from = fromHand ? 'hand' : 'deck';
@@ -5271,6 +5446,13 @@ function multiSummon(ctx: Ctx, player: PlayerId, choice: Extract<PendingChoice, 
     s.players[player].field.push(pk.cardId);
     card.cores = [...(pk.cores ?? [])];
     card.state = 'refresh';
+    {
+      const ex = summonExhaustedSource(s, ctx.db, pk.cardId);
+      if (ex) {
+        card.state = 'exhausted';
+        emitStatic(ctx, ex);
+      }
+    }
     emit(ctx, { type: 'summoned', player, cardId: pk.cardId, paid: 0, from });
     summoned.push(pk.cardId);
   }
@@ -5297,6 +5479,8 @@ const BOUNCE_STEPS = new Set<string>(['bounceOpponent', 'bounceAllOpponent', 're
 
 /** "ต่อจำนวน ..." ของ step */
 function countPer(ctx: Ctx, item: QueuedEffect, per: CountPer): number {
+  // BSC04 แคธี่-เรม: จำนวนเจ็มสีนี้บนฟิลด์เรา
+  if (per.ownSymbols) return fieldSymbols(ctx.s, ctx.db, item.controller)[per.ownSymbols] ?? 0;
   const { s, db } = ctx;
   const me = item.controller;
   const self = selfOf(ctx, item);
@@ -5352,7 +5536,10 @@ function onStageReplaceSource(ctx: Ctx, player: PlayerId): StaticSource | null {
     if (effectsNegated(s, db, id)) continue;
     const lv = cardLevel(s, db, id);
     for (const ab of db.get(s.cards[id]!.cardNo).abilities) {
-      if (ab.kind === 'onStageReplace' && ab.levels.includes(lv) && conditionHolds(s, id, ab.if, false, false, db)) return { cardId: id, source: ab.source };
+      if (ab.kind !== 'onStageReplace' || !ab.levels.includes(lv) || !conditionHolds(s, id, ab.if, false, false, db)) continue;
+      // แบ็คสเตจ: เสื่อมสภาพเน็กซัสนี้แทน = ต้องฟื้นสภาพอยู่
+      if (ab.exhaustSelf && s.cards[id]!.state !== 'refresh') continue;
+      return { cardId: id, source: ab.source };
     }
   }
   return null;
@@ -5485,7 +5672,12 @@ export function resolveChoice(ctx: Ctx, player: PlayerId, pick: ChoicePick): voi
     entries.push(...cardEntries);
     if (choice.to === 'place') {
       // เทนเซย์: วางคอร์วอยด์ตามที่แบ่ง
-      for (const e of entries) if (s.players[player].field.includes(e.cardId)) addVoidCores(ctx, player, e.cardId, e.n);
+      for (const e of entries) {
+        if (!s.players[player].field.includes(e.cardId)) continue;
+        // BSC04 เซน่า-ริวมิน: คอร์จากแทรช
+        if (step.do === 'trashCoresSpread') moveTrashCores(ctx, player, e.cardId, e.n);
+        else addVoidCores(ctx, player, e.cardId, e.n);
+      }
     } else cur.steps.unshift({ do: 'coresOffBatch', alloc: entries, to: choice.to, kage: player === cur.controller });
     s.choice = null;
     runQueue(ctx);
@@ -5782,7 +5974,11 @@ function applyCardPick(ctx: Ctx, cur: QueuedEffect, choice: Extract<PendingChoic
       cur.steps.unshift({ do: 'placeCores', cardId: pick });
       break;
     case 'summonFromTrashFree':
-      cur.steps.unshift({ do: 'placeCores', cardId: pick, ...(step.noTriggers ? { noTriggers: true as const } : {}) });
+      cur.steps.unshift(
+        { do: 'placeCores', cardId: pick, ...(step.noTriggers ? { noTriggers: true as const } : {}) },
+        // BSC04 ชูว: อัญเชิญต่ออีก (สูงสุด max ใบ)
+        ...((step.max ?? 1) > 1 ? [{ ...step, max: (step.max ?? 1) - 1 }] : []),
+      );
       break;
     case 'bounceOpponentBrave': {
       // BS14: เบรฟออกจากผู้ร่วมร่าง (ผู้ร่วมร่างอยู่ต่อ) → มือ / บนสุดเด็คของเจ้าของ
@@ -6000,6 +6196,37 @@ function applyCardPick(ctx: Ctx, cur: QueuedEffect, choice: Extract<PendingChoic
     case 'returnSubjectToDeck':
       returnToDeckBottomAny(ctx, pick);
       break;
+    case 'separateOwnBrave': {
+      const braves = s.cards[pick]!.braves;
+      if (braves.length === 1) separateBrave(ctx, braves[0]!);
+      else if (braves.length > 1)
+        cur.steps.unshift({
+          do: 'chooseOne',
+          options: braves.map((b) => ({ label: `แยก ${ctx.db.get(s.cards[b]!.cardNo).name}`, steps: [{ do: 'separateBraveId', braveId: b } as Step] })),
+        });
+      break;
+    }
+    case 'separateOpponentBraves':
+      for (const b of [...s.cards[pick]!.braves]) separateBrave(ctx, b);
+      break;
+    case 'braveFromHandOnto': {
+      if (!step.braveId) {
+        cur.steps.unshift({ ...step, braveId: pick });
+        break;
+      }
+      // ร่วมร่างโดยตรง (ไม่จ่ายคอสต์) · "เมื่อเบรฟนี้ถูกอัญเชิญ" ทำงานตามปกติ (กติกา 04)
+      const braveId = step.braveId;
+      const from = detach(ctx, player, braveId);
+      const host = s.cards[pick]!;
+      const brave = s.cards[braveId]!;
+      host.braves.push(braveId);
+      brave.cores = [];
+      brave.state = host.state;
+      emit(ctx, { type: 'summoned', player, cardId: braveId, paid: 0, from });
+      emit(ctx, { type: 'braved', cardId: braveId, hostId: pick });
+      queueSummonTriggers(ctx, braveId, newBatch(ctx), { from, bySource: cur.sourceId, level: braveSummonLevel(ctx, braveId) });
+      break;
+    }
     case 'braveOrSpirit': {
       // ร่วมร่างทันที: ไม่วาง Core · กติกา 04: อัญเชิญแบบร่วมร่างโดยตรง "เมื่อเบรฟนี้ถูกอัญเชิญ" ก็ทำงานตามปกติ
       const from = detach(ctx, player, step.cardId);
@@ -6201,7 +6428,11 @@ function applyCardPick(ctx: Ctx, cur: QueuedEffect, choice: Extract<PendingChoic
       break;
     case 'opponentTotalBp': {
       const bp = step.metric === 'cost' ? fieldCost(s, ctx.db, pick) : currentBp(s, ctx.db, pick);
-      if (step.action === 'bounce' && !bounceRedirect(ctx, cur, player, [pick], cur.steps)) {
+      if (step.action === 'noBlock') {
+        // BSC04 ฟงนีน่า: ในการต่อสู้นี้ตัวที่ถูกระบุป้องกันไม่ได้
+        if (s.battle) s.battle.noBlockIds = [...(s.battle.noBlockIds ?? []), pick];
+        emit(ctx, { type: 'cardLocked', cardId: pick });
+      } else if (step.action === 'bounce' && !bounceRedirect(ctx, cur, player, [pick], cur.steps)) {
         returnCard(ctx, pick, 'hand');
         cur.bouncedCount = (cur.bouncedCount ?? 0) + 1;
       }

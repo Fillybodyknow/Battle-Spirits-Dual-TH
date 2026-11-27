@@ -222,14 +222,16 @@ let checkingMaxLevel = false;
 function maxLevelAllySourceInner(state: GameState, db: CardDatabase, cardId: string): StaticSource | null {
   const owner = state.cards[cardId]!.owner;
   for (const id of state.players[owner].field) {
-    if (id === cardId) continue;
     const def = db.get(state.cards[id]!.cardNo);
     if (!def.abilities.some((a) => a.kind === 'maxLevelAllies')) continue;
     if (effectsNegated(state, db, id)) continue;
     const lv = levelOf(def, state.cards[id]!.cores.length - levelCostBoost(state, db, id));
     for (const ab of def.abilities) {
       if (ab.kind !== 'maxLevelAllies' || !ab.levels.includes(lv)) continue;
+      // การ์ดต้นเหตุเองนับด้วยถ้าตรงตัวกรอง ("สปิริตทั้งหมดของเรา" รวมตัวเอง: โอโอจิโระไทเกอร์ / เวนดี้-เคท)
+      // ไม่วนซ้ำ: เลเวลของต้นเหตุคิดจากจำนวนคอร์ตรง ๆ (levelOf) ไม่ผ่าน cardLevel
       if (ab.ownAttackStepOnly && !(state.turnPlayer === owner && state.phase === 'attack')) continue;
+      if (ab.if && !conditionHolds(state, id, ab.if, false, false, db)) continue;
       if (matchesFilter(state, db, cardId, ab.filter)) return { cardId: id, source: ab.source };
     }
   }
@@ -511,6 +513,8 @@ export function conditionHolds(
   // ---------------- BS07
   if ('songsAtLeast' in cond) return (owner.songs ?? []).length >= cond.songsAtLeast;
   if ('inUnit' in cond) return !!state.battle?.unit?.includes(sourceId);
+  // BSC04 ชุดซานต้า: ผู้ร่วมร่าง (การ์ดนี้) มีเผ่านี้ที่พิมพ์บนการ์ด
+  if ('selfFamily' in cond) return !!db && db.get(card.cardNo).family.includes(cond.selfFamily);
   if ('alliesMatchAtLeast' in cond) {
     if (!db) return false;
     const f = withTeamOf(state, db, cond.alliesMatchAtLeast.filter, sourceId);
@@ -770,6 +774,12 @@ export function matchesFilter(state: GameState, db: CardDatabase, cardId: string
     if (!owner.field.some((x) => x !== cardId && matchesFilter(state, db, x, filter.sameColorAlly!) && cardColors(state, db, x).some((c) => mine.includes(c)))) return false;
   }
   if (filter.inBattle && !(state.battle && (state.battle.attackerId === cardId || state.battle.blockers.includes(cardId)))) return false;
+  // BSC04 ไดอาน่า-เฟลอร์: ต่อสู้อยู่กับการ์ดของคู่แข่งประเภทนี้
+  if (filter.battlingTypes) {
+    const b = state.battle;
+    const foes = !b ? [] : b.attackerId === cardId ? b.blockers : b.blockers.includes(cardId) ? [b.attackerId] : [];
+    if (!foes.some((f) => state.cards[f] && filter.battlingTypes!.includes(db.get(state.cards[f]!.cardNo).type))) return false;
+  }
   if (filter.highestBp) {
     const owner = state.players[card.owner];
     if (!owner.field.includes(cardId)) return false;
@@ -795,6 +805,12 @@ function cardFamiliesRaw(state: GameState, db: CardDatabase, cardId: string): st
     for (const a of sdef.abilities) {
       if (a.kind !== 'familyAlso' || !a.allies || !a.levels.includes(slv) || !conditionHolds(state, src, a.if, false, false, db)) continue;
       if (def.type === a.allies.types?.[0] || (!a.allies.types && isSpiritLike(def))) given.push(a.family);
+    }
+  }
+  // BSC04 ชุดซานต้า: เบรฟที่ร่วมร่างให้เผ่า (granted · เงื่อนไขดูที่ผู้ร่วมร่าง)
+  for (const b of card.braves) {
+    for (const a of db.get(state.cards[b]!.cardNo).abilities) {
+      if (a.kind === 'familyAlso' && a.granted && conditionHolds(state, cardId, a.if, false, false, db)) given.push(a.family);
     }
   }
   if (given.length) return [...new Set([...def.family, ...given])];
@@ -1227,6 +1243,12 @@ export function attackerUnblockable(state: GameState, attackerId: string, blocke
 /** สปิริตนี้ป้องกันได้แม้อยู่ในรูปแบบเสื่อมสภาพ */
 export function canBlockExhausted(state: GameState, db: CardDatabase, cardId: string): boolean {
   if ((state.turnBlockExhausted ?? []).some((t) => t.cardId === cardId && t.turn === state.turn)) return true;
+  // BSC04 ซายะ-ไชน์: ในเทิร์นนี้สปิริตทั้งหมดของเรา (รวมตัวที่ลงทีหลัง · ไม่รวมอัลติเมท)
+  if (
+    (state.turnBlockExhausted ?? []).some((t) => !t.cardId && t.player === state.cards[cardId]!.owner && t.turn === state.turn) &&
+    db.get(state.cards[cardId]!.cardNo).type !== 'ultimate'
+  )
+    return true;
   // BS14 การ์เน็ตดราก้อน: "สปิริตเราเผ่า ... ทั้งหมด ป้องกันได้แม้อยู่ในรูปแบบเสื่อมสภาพ"
   const owner = state.cards[cardId]!.owner;
   for (const id of state.players[owner].field) {
@@ -2168,15 +2190,41 @@ export function attackLifeDamage(state: GameState, db: CardDatabase, attackerId:
   // กำแพงผลึกขาว: ในเทิร์นนี้ไลฟ์เสียหายรวมได้ไม่เกิน 1 (ที่เสียไปแล้วหลังเริ่มมีผลนับด้วย)
   const capOne = (state.lifeCapOne ?? []).find((l) => l.player === defender && l.turn === state.turn);
   if (capOne) dmg = Math.min(dmg, Math.max(0, 1 - (capOne.used ?? 0)));
-  if (dmg > 0 && lifeDamageCapped(state, db, defender)) {
+  if (dmg > 0 && lifeDamageCapped(state, db, defender, attackerId)) {
     const rec = state.lifeDamageBy?.turn === state.turn && state.lifeDamageBy.player === defender ? state.lifeDamageBy : null;
     dmg = rec?.ids.includes(attackerId) ? 0 : 1;
   }
   return dmg;
 }
 
-export function lifeDamageCapped(state: GameState, db: CardDatabase, player: PlayerId): boolean {
-  return fieldHas(state, db, [player], 'lifeDamageCap');
+export function lifeDamageCapped(state: GameState, db: CardDatabase, player: PlayerId, attackerId?: string): boolean {
+  // BSC04 แบ็คสเตจ: เฉพาะผู้โจมตีที่มีเจ็มตั้งแต่ N เม็ด
+  return staticSources(state, db, [player], 'lifeDamageCap').some((src) => {
+    const ab = db.get(state.cards[src.cardId]!.cardNo).abilities.find((a) => a.kind === 'lifeDamageCap' && a.source === src.source);
+    if (ab?.kind !== 'lifeDamageCap' || !ab.minSymbols) return true;
+    return !!attackerId && !!state.cards[attackerId] && cardSymbolTotal(state, db, attackerId) >= ab.minSymbols;
+  });
+}
+
+/** BSC04 เซฟี่-แอริส: เมนสเต็ป การ์ดที่ตรงตัวกรองที่ถูกอัญเชิญ ลงสนามในรูปแบบเสื่อมสภาพ (ความสามารถของผู้เล่นคนใดก็ได้) */
+export function summonExhaustedSource(state: GameState, db: CardDatabase, cardId: string): StaticSource | null {
+  if (state.phase !== 'main') return null;
+  for (const src of staticSources(state, db, ['p1', 'p2'], 'summonExhausted')) {
+    const ab = db.get(state.cards[src.cardId]!.cardNo).abilities.find((a) => a.kind === 'summonExhausted' && a.source === src.source);
+    if (ab?.kind === 'summonExhausted' && matchesFilter(state, db, cardId, ab.filter)) return src;
+  }
+  return null;
+}
+
+/** BSC04 กาแล็กซี่เอ็กซ์โป: การ์ดนี้วางคอร์ไม่ได้ นอกจากเอฟเฟกต์ของการ์ดนี้ */
+export function coreLocked(state: GameState, db: CardDatabase, cardId: string): boolean {
+  const card = state.cards[cardId];
+  return !!card && db.get(card.cardNo).abilities.some((a) => a.kind === 'coreLock') && !effectsNegated(state, db, cardId);
+}
+
+/** BSC04 ไดอาน่า-เฟลอร์ X: การ์ดของคู่แข่งที่ทำให้ผู้เล่นนี้อัญเชิญเบรฟในรูปแบบสปิริตไม่ได้ */
+export function braveSpiritBanSource(state: GameState, db: CardDatabase, player: PlayerId): StaticSource | null {
+  return staticSources(state, db, [player === 'p1' ? 'p2' : 'p1'], 'oppNoBraveSpirit')[0] ?? null;
 }
 
 /** [Quick] ของการ์ดในมือนี้: ของตัวเอง หรือได้รับจากการ์ดบนสนามของเรา (เกรย์ไนท์) */
@@ -2360,6 +2408,7 @@ export function blockersFor(state: GameState, db: CardDatabase, defender: Player
     const card = state.cards[id]!;
     const def = db.get(card.cardNo);
     if (b?.blockers.includes(id)) return false; // ประกาศป้องกันไปแล้ว (ป้องกันได้แม้เสื่อมสภาพก็ไม่นับซ้ำ)
+    if (b?.noBlockIds?.includes(id)) return false; // BSC04 ฟงนีน่า: ในการต่อสู้นี้ป้องกันไม่ได้
     if (b?.blockFilter && !matchesFilter(state, db, id, b.blockFilter)) return false;
     if (attacker && attackerUnblockable(state, attacker.id, def.type)) return false;
     if (turnLocked(state, id, true)) return false;

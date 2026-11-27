@@ -59,6 +59,8 @@ import bsc02 from '../data/bsc02.json';
 import { BSC02_SCRIPTS } from '../data/bsc02-scripts';
 import bsc03 from '../data/bsc03.json';
 import { BSC03_SCRIPTS } from '../data/bsc03-scripts';
+import bsc04 from '../data/bsc04.json';
+import { BSC04_SCRIPTS } from '../data/bsc04-scripts';
 import { attachScripts } from './abilities';
 import { createCardDatabase, type CardDatabase } from './database';
 import type { DeckEntry } from './deck';
@@ -141,6 +143,7 @@ export function loadAllCards(): CardDatabase {
     ...loadBS16Cards().all(),
     ...loadBS17Cards().all(),
     ...loadBSC03Cards().all(),
+    ...loadBSC04Cards().all(),
   ]);
 }
 
@@ -219,6 +222,11 @@ export function loadBSC02Cards(): CardDatabase {
 /** การ์ดชุด BSC03 (การ์ด "ชุด: BSC03" = ต้นรหัส BSC17 ใน assets/files/cards/ + data/bsc03-scripts.ts) */
 export function loadBSC03Cards(): CardDatabase {
   return createCardDatabase(attachScripts(bsc03, BSC03_SCRIPTS));
+}
+
+/** การ์ดชุด BSC04 (การ์ด "ชุด: BSC04" = ต้นรหัส BSC18 ใน assets/files/cards/ + data/bsc04-scripts.ts) */
+export function loadBSC04Cards(): CardDatabase {
+  return createCardDatabase(attachScripts(bsc04, BSC04_SCRIPTS));
 }
 
 /** การ์ดชุด Booster Set 12 (การ์ด "ชุด: BS12" ใน assets/files/cards/ + data/bs12-scripts.ts) */

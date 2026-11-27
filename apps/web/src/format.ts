@@ -106,7 +106,7 @@ export function formatEvent(e: GameEvent, s: GameState): string | null {
     case 'burstDiscarded':
       return `${playerLabel(e.player)} ทิ้ง Burst (${name(e.cardId)}) ลง Trash`;
     case 'depleted':
-      return `${name(e.cardId)} สูญสลาย`;
+      return e.braveBan ? `${name(e.cardId)} ลง Trash (อยู่ในรูปแบบสปิริตไม่ได้)` : `${name(e.cardId)} สูญสลาย`;
     case 'attackDeclared':
       return `${name(e.attackerId)} ประกาศโจมตี`;
     case 'blockDeclared':

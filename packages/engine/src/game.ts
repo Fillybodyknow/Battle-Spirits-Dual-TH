@@ -1,5 +1,5 @@
 import type { CardDatabase, CardDef, Step } from '@bs/cards';
-import { assertUsableCore, checkDepletion, checkLifeZero, destroy, drawCard, emit, emitStatic, endGame, lifeDamageLeft, loseLife, newCore, payCost, pendBurst, setPhase, type Ctx } from './ctx';
+import { assertUsableCore, checkDepletion, checkLifeZero, destroy, drawCard, emit, emitStatic, endGame, lifeDamageLeft, loseLife, newCore, payCost, pendBurst, setPhase, trashBannedBraves, type Ctx } from './ctx';
 import { destroyCard, enqueue, fireTriggers, refreshByEffect, newBatch, queueExhaustTriggers, queueLifeLostTriggers, queueMagicUsedTriggers, queueSummonTriggers, queueTriggers, resolveChoice, runQueue } from './effects';
 import { nextRandom, shuffle } from './rng';
 import { normalizeSeats } from './seats';
@@ -69,6 +69,9 @@ import {
   activatableAbilities,
   activatableOptions,
   noRefreshSource,
+  summonExhaustedSource,
+  coreLocked,
+  braveSpiritBanSource,
 } from './rules';
 import {
   DEFAULT_CONFIG,
@@ -608,6 +611,8 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     if (def.type === 'ultimate' && soulPay && !summonConditionOk(s, db, cardId, { paidWithSoul: false })) emitStatic(ctx, ignoreSummonConditionSource(s, db, cardId));
     // เฮียวจินดราก้อน: ในเทิร์นนี้อัญเชิญคอสต์ไม่เกิน N ไม่ได้
     if (summonBanned(s, db, player, def)) fail('SUMMON_BANNED', 'ในเทิร์นนี้อัญเชิญการ์ดนี้ไม่ได้ (เอฟเฟกต์ของคู่แข่ง)');
+    // BSC04 ไดอาน่า-เฟลอร์ X: คู่แข่งอัญเชิญเบรฟในรูปแบบสปิริตไม่ได้ (ร่วมร่างโดยตรงได้)
+    if (def.type === 'brave' && !braveOnto && braveSpiritBanSource(s, db, player)) fail('SUMMON_BANNED', 'ให้เบรฟอยู่ในรูปแบบสปิริตไม่ได้ (เอฟเฟกต์ของคู่แข่ง)');
 
     const p = s.players[player];
     const card = s.cards[cardId]!;
@@ -706,6 +711,14 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     p.field.push(cardId);
     card.state = 'refresh';
     card.cores = [...placed];
+    // BSC04 เซฟี่-แอริส: ลงสนามในรูปแบบเสื่อมสภาพ
+    {
+      const ex = summonExhaustedSource(s, db, cardId);
+      if (ex) {
+        card.state = 'exhausted';
+        emitStatic(ctx, ex);
+      }
+    }
     emit(ctx, { type: 'summoned', player, cardId, paid, ...(flash && !inTrash ? { quick: true } : {}), ...(inTrash ? { fromTrash: true as const } : {}) });
     if (flash) {
       flash.consecutivePasses = 0;
@@ -724,6 +737,8 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     const def = cardInHand(ctx, player, cardId);
     if (def.type !== 'nexus') fail('WRONG_CARD_TYPE', 'วางได้เฉพาะ Nexus');
 
+    // BSC04 กาแล็กซี่เอ็กซ์โป: วางคอร์ตอนวางเน็กซัสนี้ไม่ได้
+    if (placement.length > 0 && def.abilities.some((a) => a.kind === 'coreLock')) fail('CORE_LOCKED', 'การ์ดนี้วางคอร์ไม่ได้ (นอกจากเอฟเฟกต์ของการ์ดนี้)');
     const { paid, placed } = payCost(ctx, player, def, payment, placement);
     const p = ctx.s.players[player];
     const card = ctx.s.cards[cardId]!;
@@ -837,6 +852,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
       if ('cardId' in to) {
         fieldCard(ctx.s, player, to.cardId);
         requireOwnSeat(ctx, player, to.cardId);
+        if (coreLocked(ctx.s, ctx.db, to.cardId) && !ctx.s.cards[to.cardId]!.cores.includes(coreId)) fail('CORE_LOCKED', 'การ์ดนี้วางคอร์ไม่ได้ (นอกจากเอฟเฟกต์ของการ์ดนี้)');
       }
       removeCore(ctx.s, coreId);
       if ('cardId' in to) ctx.s.cards[to.cardId]!.cores.push(coreId);
@@ -1202,6 +1218,8 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     if (hostId === null) {
       // แยกร่าง: Brave อยู่บนสนามเดี่ยว ๆ สภาพเดียวกับผู้ร่วมร่าง
       if (!from) fail('NOT_BRAVED', 'Brave นี้ไม่ได้ร่วมร่างอยู่');
+      // BSC04 ไดอาน่า-เฟลอร์ X: คู่แข่งให้เบรฟอยู่ในรูปแบบสปิริตไม่ได้ = แยกร่างไม่ได้
+      if (braveSpiritBanSource(s, db, player)) fail('BRAVE_SPIRIT_BANNED', 'ให้เบรฟอยู่ในรูปแบบสปิริตไม่ได้ (เอฟเฟกต์ของคู่แข่ง)');
       if (new Set(placement).size !== placement.length) fail('DUPLICATE_CORE', 'ใช้ Core ดวงเดียวกันซ้ำ');
       for (const id of placement) assertUsableCore(ctx, player, id);
       const need = summonMinCores(s, db, braveId);
@@ -1423,7 +1441,7 @@ function beginAttack(ctx: Ctx, player: PlayerId, attackerId: string, fa: { attac
     for (const id of [...s.players[opponentOf(player)].field]) queueTriggers(ctx, id, 'oppAttack', batch, { subject: attackerId });
     queueExhaustTriggers(ctx, attackerId, false);
     // Burst "หลังจากสปิริต/อัลติเมทคู่แข่งโจมตี" (เซ็นโงคุฮิเมะ คุอง)
-    pendBurst(ctx, opponentOf(player), 'afterOpponentAttack');
+    pendBurst(ctx, opponentOf(player), 'afterOpponentAttack', undefined, ctx.db.get(s.cards[attackerId]!.cardNo).type === 'ultimate');
     runQueue(ctx);
 }
 
@@ -1491,7 +1509,7 @@ function resolveBattle(ctx: Ctx): void {
     // BS08 กำแพงผลึกขาว (โซลคอร์): ในเทิร์นนี้ไลฟ์เสียหายรวมได้ไม่เกิน 1 (loseLife ตัดซ้ำอีกชั้นสำหรับความเสียหายทุกแบบ)
     dmg = Math.min(dmg, lifeDamageLeft(s, defender));
     // ลองเคพ: เสียหายได้ 1 เม็ดต่อสปิริต 1 ตัวต่อเทิร์น
-    if (dmg > 0 && lifeDamageCapped(s, db, defender)) {
+    if (dmg > 0 && lifeDamageCapped(s, db, defender, attacker.id)) {
       const rec = s.lifeDamageBy?.turn === s.turn && s.lifeDamageBy.player === defender ? s.lifeDamageBy : { turn: s.turn, player: defender, ids: [] as string[] };
       const capped = rec.ids.includes(attacker.id) ? 0 : 1;
       if (capped < dmg) emitStatic(ctx, staticSources(s, db, [defender], 'lifeDamageCap'));
@@ -1744,6 +1762,8 @@ export function applyAction(state: GameState, input: Action, db: CardDatabase): 
       }
       else if (ctx.s.battle) endBattle(ctx);
     }
+    // BSC04 ไดอาน่า-เฟลอร์ X: เบรฟของคู่แข่งที่อยู่ในรูปแบบสปิริตลงแทรช (ตรวจท้ายทุก action)
+    if (!ctx.s.winner) trashBannedBraves(ctx);
     // BS13 เอล-ราฟิล: ไลฟ์ 0 อยู่แล้วไม่มีผล "ไม่แพ้" แล้ว = แพ้
     if (!ctx.s.winner && !ctx.s.choice) checkLifeZero(ctx);
   } catch (e) {

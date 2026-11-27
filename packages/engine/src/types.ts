@@ -203,6 +203,8 @@ export interface Battle {
   resolved?: boolean;
   /** My Unit: สปิริตที่ถูกนำมาวางชิดผู้โจมตี */
   unit?: string[];
+  /** BSC04 ฟงนีน่า: การ์ดของคู่แข่งที่ป้องกันไม่ได้ในการต่อสู้นี้ */
+  noBlockIds?: string[];
   /** แคนดี้-ซาร์ด: ฝ่ายป้องกันต้องใช้สปิริต/อัลติเมทที่ Lv รวมตั้งแต่ค่านี้ (ป้องกันหลายตัว แล้วผู้โจมตีเลือกสู้ 1 ตัว) */
   levelBlock?: number;
   /** BS09 ไดบีท: ต้องป้องกันด้วยสปิริต 2 ตัว หรืออัลติเมท 2 ตัว (ใช้กลไกเดียวกับ levelBlock: levelBlock = 2) */
@@ -448,7 +450,14 @@ export interface GameState {
   /** รอผู้เล่นตัดสินใจ */
   choice: PendingChoice | null;
   /** เงื่อนไข Burst ที่เกิดขึ้นแล้ว รอถามเจ้าของ Burst เมื่อเอฟเฟกต์ที่กำลังทำงานจบ */
-  pendingBursts: { player: PlayerId; on: BurstEvent; /** การ์ดต้นเหตุ (เช่น การ์ดของคู่แข่งที่เอฟเฟกต์อัญเชิญเพิ่งทำงาน) */ subjectId?: string }[];
+  pendingBursts: {
+    player: PlayerId;
+    on: BurstEvent;
+    /** การ์ดต้นเหตุ (เช่น การ์ดของคู่แข่งที่เอฟเฟกต์อัญเชิญเพิ่งทำงาน) */
+    subjectId?: string;
+    /** ต้นเหตุทุกตัวเป็นอัลติเมท: เบิร์ส "หลังจากสปิริต..." (subjectSpiritsOnly) ไม่เปิด */
+    ultimateOnly?: true;
+  }[];
   /** ขั้นตอนของเทิร์นที่ต้องเดินต่อเมื่อเลือกเสร็จ (เช่น เอฟเฟกต์ใน Draw Step ให้เลือกทิ้งการ์ด) */
   resume: 'afterDraw' | 'afterStart' | 'resolveBattle' | 'endBattle' | 'endTurn' | 'drawStepStart' | 'declareAttack' | null;
   /** BS09 สุสานของจักรพรรดิมาร: การโจมตีที่รอผู้เล่นเลือกคอร์ที่จะจ่ายก่อน */
@@ -525,7 +534,7 @@ export interface GameState {
   /** ในเทิร์นนี้ การ์ดนี้เจ็มสี color เพิ่ม count เม็ด */
   turnSymbols?: { cardId: string; turn: number; color: string; count: number }[];
   /** ในเทิร์นนี้ การ์ดนี้ป้องกันได้แม้อยู่ในรูปแบบเสื่อมสภาพ */
-  turnBlockExhausted?: { cardId: string; turn: number }[];
+  turnBlockExhausted?: { cardId: string; turn: number; /** BSC04 ซายะ-ไชน์: สปิริตทั้งหมดของผู้เล่นนี้ (cardId ว่าง) */ player?: PlayerId }[];
   /** ในเทิร์นนี้ การ์ดในมือ/นอกมือของ player ที่ตรงตัวกรอง คอสต์ +delta */
   turnHandCost?: { player: PlayerId; turn: number; filter: CardFilter; delta: number }[];
   /** ความสามารถ "เกมละ 1 ครั้ง" ที่ใช้แล้ว (player:cardNo:source) */
@@ -685,7 +694,7 @@ export type GameEvent =
   /** BSC01: เบิร์สถูกนำกลับขึ้นมือ */
   | { type: 'burstToHand'; player: PlayerId; cardId: string }
   | { type: 'burstDiscarded'; player: PlayerId; cardId: string; /** ถูกเอฟเฟกต์ของคู่แข่งทำลาย (ไม่ใช่เจ้าของทิ้งเอง) */ byEffect?: true }
-  | { type: 'depleted'; cardId: string }
+  | { type: 'depleted'; cardId: string; /** BSC04 ไดอาน่า-เฟลอร์ X: เบรฟที่อยู่ในรูปแบบสปิริตลงแทรช (ไม่ใช่การสูญสลาย) */ braveBan?: true }
   | { type: 'attackDeclared'; attackerId: string }
   | { type: 'blockDeclared'; blockerId: string }
   | { type: 'noBlock' }

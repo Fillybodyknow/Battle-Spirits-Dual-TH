@@ -21,6 +21,7 @@
 | BS16 | BS25 แดง (14) + ขาว (17) + ม่วง (15) | แดง ✅ ขาว ✅ ม่วง ✅ (55.0.0 · ครบ 46 ใบ) |
 | BS17 | BS25 เขียว (14) + เหลือง (14) + ฟ้า (17) | เขียว ✅ เหลือง ✅ ฟ้า ✅ (56.0.0 · ครบ 45 ใบ) |
 | BSC03 | BSC17 (18 อัลติเมททุกสี) | ✅ (57.0.0 · ชุด bsc03: data/bsc03-scripts.ts + loadBSC03Cards · ถอดจากภาพเอง: `cards-list/BSC17.text`) |
+| BSC04 | BSC18 (48 ดีว่าสีเหลือง) | ✅ (58.0.0 · ชุด bsc04: data/bsc04-scripts.ts + loadBSC04Cards · ถอดจากภาพเอง: `cards-list/BSC18.text` · ชื่อใหม่ยังไม่ได้ให้เจ้าของโปรเจกต์ตรวจ) |
 
 **การ์ด BSC = ชุดในเกมแยกชื่อ "BSC01, BSC02, …"** (เจ้าของโปรเจกต์กำหนด ไม่ใช้ BS16) · BSC15 = BSC01, BSC16 = BSC02 (แยกสองชุด) ·
 `BOOSTER_SETS` (bot-helpers.ts) และแบนเนอร์ชุดล่าสุด (`useLatestBoosters` ใน Home.tsx) รับ `/^BSC?\d+$/` แล้ว (แบนเนอร์เรียงตามลำดับใน `loadAllCards()` = ชุดที่เพิ่มทีหลังอยู่บน)
@@ -120,3 +121,11 @@
 - `ultimateSymbolsAlso` (เจ็มอัลติเมทถือเป็นสีอื่น: `ultimateAlsoColors` ใน cardGems / fieldSymbolsRaw / payableCost / ownGemColors / gemColorCount · ตัวกันวนซ้ำ `checkingUltAlso`) · `lv1CostZero` (`lv1CostZeroSource` ใน cardLevelRaw / summonMinCores / checkDepletion · `checkingLv1Zero`)
 - `noVoidGainBySpirits` (takeVoid: ต้นเหตุเป็นสปิริต/เบรฟ) · step `unblockableByUltimatesThisTurn` (`state.ultUnblockTurns` ใน blockersFor) · `catalyze.anyBurst` (เบิร์สที่ไม่ใช่โซลเบิร์ส) · `battleLifeIfBlocked.per` · `symbolThisTurn.color: ultimate`
 - ตัวแปลง: เงื่อนไขอัญเชิญ "สปิริตสีA/Bของเรา…" (สีใดสีหนึ่ง = anyOf) / "อัลติเมทของเรา…" / "สปิริตเผ่า [X] ของเรา…"
+
+## กลไกที่เพิ่มแล้วระหว่างงานนี้ (BSC04)
+
+- My Unit: trigger `unitFormed` (สปิริตที่ใช้ My Unit · subject = ตัวที่นำมาวางชิด · ตัวช่วย `unitWith()` ใช้ `oncePerBatch`) / `placedInUnit` (ตัวที่ถูกนำไปวางชิด · subject = ตัวที่ใช้ My Unit) / `allyUnitFormed` (การ์ดของเราทุกใบ) ทำงานต่อจากเอฟเฟกต์ My Unit · step `myUnit` ใช้ตอนป้องกันได้ (`myUnit(..., { on: 'block' })`)
+- `opponentTotalBp.action: 'noBlock'` (`battle.noBlockIds` ใน blockersFor) · `summonFromTrashFree.belowSubjectCost` / `.max` · `summonFreeHandOrTrash.zones: 'shown'` · `symbolThisTurn.target: 'subject'` · `blockExhaustedThisTurn.all` · ตัวกรอง `battlingTypes` / `maxBpSelf` (แปลงเป็น maxBp ตอนเริ่ม step) · CountPer `ownSymbols` · `revealPickRestTrash.per`
+- ability `summonExhausted` (เซฟี่-แอริส: `summonExhaustedSource` ใน summon / placeCores / multiSummon) · `coreLock` (กาแล็กซี่เอ็กซ์โป: deployNexus + moveCores) · `oppNoBraveSpirit` ("ให้เบรฟอยู่ในรูปแบบสปิริตไม่ได้": action summon / placeCores → braveOrSpirit.noSpirit ร่วมร่างอย่างเดียว / multiSummon / แยกร่างใน action brave / braveFate = ลงแทรช · เบรฟที่ยืนเดี่ยวอยู่ก่อนลงแทรช `trashBannedBraves` ใน checkDepletion + ท้าย applyAction, event depleted.braveBan) · `onStageReplace.exhaustSelf` (แบ็คสเตจ) · `lifeDamageCap.minSymbols` · `maxLevelAllies.if` (นับการ์ดต้นเหตุเองด้วยถ้าตรงตัวกรอง: โอโอจิโระไทเกอร์ / เวนดี้-เคท) · `familyAlso.granted` + เงื่อนไข `selfFamily` (ชุดซานต้า)
+- step `separateOwnBrave` / `separateOpponentBraves` (`separateBrave` → braveFate ของเจ้าของเบรฟ: อยู่ต่อด้วยคอร์จากรีเสิร์ฟ หรือลงแทรช) · `braveFromHandOnto` · `trashCoresSpread` · `selfToDeckBottom` · เบิร์ส afterAllyDestroyedByOpponent มี subject = สปิริตที่ถูกทำลาย (subjectToHand ของวินด์เซอร์เคิล / คอสตูมเชนจ์)
+- ชื่อ/คำที่ใช้: ทีม ไชนี่ฮาร์ท / แอปโซลูท / พริตตี้เอนิมอลส์ / ทไวไลท์โกธิค / ลีเจนด์ดอล (ตามของเดิม) · 歌姫X = "นักร้อง X" · ชื่อใหม่: โลล่า-เบียคุรัน, โปรอน-ซาจิต้า, การ์เน็ต-รูตี้, เลโอน่า-ไลค์บูม, เวนดี้-เคท, ชูว, แคธี่-เรม, ไม-อาสึกะ, นักร้อง โรเมด้า, นักร้อง คาน่อน

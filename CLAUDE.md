@@ -184,6 +184,11 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
   ข้อความ "ถูกทำลาย/สูญสลาย" = trigger `on: ['destroyedByOpponent', 'depletedByOpponent']` / เบิร์ส `alsoDepleted: true` · "ถูกทำลายโดยเอฟเฟกต์ของคู่แข่ง" (ไม่นับแพ้เทียบ BP) = `destroyedByOpponentEffect`
   · เอฟเฟกต์ "เมื่อถูกทำลาย" ทำงานขณะยังอยู่บนสนาม (engine ส่งลงแทรชก่อน: "วางคอร์บนสปิริตนี้" = คอร์กลับรีเสิร์ฟ)
 - **BP0 ไม่ถูกทำลายเอง** (เจ้าของโปรเจกต์กำหนด): ทำลายเฉพาะการ์ดที่เขียน "ทำลาย…ที่กลายเป็น BP0" = `debuffChosenOpponent.destroyAtZero`
+- **อัลติเมทไม่ใช่สปิริต** (58.0.0): `attachScripts` ปรับสคริปต์ตามข้อความการ์ดเอง (`spiritWording` ใน abilities.ts) ·
+  บรรทัดที่ไม่พูดถึงอัลติเมท หรือมีคำว่า "สปิริต" เดี่ยว ๆ (`hasBareSpirit`) = `spiritsOnly` → `spiritLike` ใน execStep ไม่รวมอัลติเมท (ยกเว้นการ์ดนี้เอง และ step ที่ `filter.types` มี 'ultimate') ·
+  บรรทัดที่ไม่พูดถึงอัลติเมทเลย: ตัด 'ultimate' ออกจาก types สปิริต/อัลติเมท + เงื่อนไข allyHas/opponentHas/alliesAtLeast ที่ไม่ระบุประเภทนับแค่สปิริต (ยกเว้นอ้างชื่อการ์ด) ·
+  ท่อน "เมื่อสปิริต…" ของ trigger = subject.types สปิริต · ท่อน "หลังจากสปิริต…" ของเบิร์ส = `subjectSpiritsOnly` (`pendBurst(..., ultimate)` จด `ultimateOnly`) ·
+  **เขียนสคริปต์**: ส่วนที่ข้อความเป็น "สปิริต/อัลติเมท" ต้องใส่ `types` ที่มี 'ultimate' เอง · step ที่ไม่มีตัวกรองแต่หมายถึงสปิริต/อัลติเมท = ใส่ `spiritsOnly: false` ที่ความสามารถ
 - **เบิร์ส "หลังจากสปิริตของเราถูกทำลายโดยคู่แข่ง"** (`afterAllyDestroyedByOpponent`): นับเฉพาะสปิริต/อัลติเมท (รวมเบรฟที่อยู่เดี่ยวเป็นสปิริต) ตรวจใน `destroy` ของ ctx.ts · เน็กซัส และเบรฟที่ร่วมร่างถูกทำลายออก (`destroyOpponentBrave`) ไม่เปิด (เจ้าของโปรเจกต์กำหนด)
 - **กติกา 14 (ตรวจแล้ว 23.0.0)**: บังคับป้องกัน True-Rage / Consecutive Blade ตรวจที่ `blockForced` ใน rules.ts (engine + หน้าเว็บใช้ตัวเดียวกัน; ป้องกันต้องจ่ายก่อน/ต้องใช้ Lv รวม = ไม่บังคับ) ·
   Dispersion (`disperse` ใน effects.ts): เมจิคที่เล็งหลายเป้าพร้อมกัน ("อย่างละ 1 ตัว" / "นอกจากนั้น") ใส่ `noDispersion: true` ที่ ability magic, เล็งเน็กซัสกระจายไม่ได้,

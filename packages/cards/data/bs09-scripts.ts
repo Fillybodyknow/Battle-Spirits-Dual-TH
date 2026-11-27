@@ -131,7 +131,7 @@ export const BS09_SCRIPTS: Record<string, CardScript> = {
       kind: 'trigger',
       on: 'attack',
       levels: [2],
-      steps: [when({ allyHas: { nameIncludes: ['หกขุนศึกเซ็นโงคุ มุโดว'] } }, [{ do: 'removeOpponentCores', count: 3, to: 'trash', filter: { types: [...SPIRITISH!, 'nexus'] }, withReserve: true }])],
+      steps: [when({ allyHas: { nameIncludes: ['หกขุนศึกเซ็นโงคุ มุโดว'] } }, [{ do: 'removeOpponentCores', count: 3, to: 'trash', filter: { types: [...SPIRIT!, 'nexus'] }, withReserve: true }])],
     },
   ],
   'จอมมารสวรรค์ ก็อด-เซคส์ -รูปแบบที่ศูนย์-': [

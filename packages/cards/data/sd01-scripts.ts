@@ -23,7 +23,8 @@ export const SD01_SCRIPTS: Record<string, CardScript> = {
       levels: [1, 2],
       attackStepOnly: true,
       ownTurnOnly: true,
-      steps: [{ do: 'chooseBlockers' }],
+      // "เลือกสปิริต/อัลติเมทของคู่แข่ง" (บรรทัดนี้มี "สปิริตเรา" ด้วย: ต้องระบุอัลติเมทเอง)
+      steps: [{ do: 'chooseBlockers', filter: { types: ['spirit', 'ultimate', 'brave'] } }],
     },
     trueRage([2]),
   ],

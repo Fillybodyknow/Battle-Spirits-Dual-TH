@@ -253,11 +253,15 @@ describe('Booster Set 12', () => {
 
   it('โอโอจิโระไทเกอร์: สปิริตเราที่มีโซลคอร์ถือว่าเป็น Lv สูงสุด', () => {
     const s = setup();
-    put(s, 'p1', no('โอโอจิโระไทเกอร์'), 1);
+    const tiger = put(s, 'p1', no('โอโอจิโระไทเกอร์'), 1);
     const withSoul = put(s, 'p1', DARIU, 1, true);
     const plain = put(s, 'p1', DARIU, 1);
     expect(cardLevel(s, db, withSoul)).toBe(3);
     expect(cardLevel(s, db, plain)).toBe(1);
+    // ตัวเองไม่มีโซลคอร์ = Lv ตามคอร์ · มีโซลคอร์ = นับตัวเองด้วย ("สปิริตของเรา" ไม่ยกเว้นตัวเอง)
+    expect(cardLevel(s, db, tiger)).toBe(1);
+    const soulTiger = put(s, 'p1', no('โอโอจิโระไทเกอร์'), 1, true);
+    expect(cardLevel(s, db, soulTiger)).toBe(3);
   });
 
   it('กันดาละ-ไฮดรา Assault (เมื่อโจมตี): เสื่อมสภาพเน็กซัสเพื่อฟื้นสภาพ · Lv2 นำเน็กซัสในแทรชกลับขึ้นมือแทนได้', () => {

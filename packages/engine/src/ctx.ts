@@ -1,5 +1,5 @@
 import type { CardDatabase, CardDef } from '@bs/cards';
-import { cardLevel, currentBp, destroyBurstBanSource, fail, noLoseSource, noRefreshSource, fieldCost, isSpiritLike, levelOf, locateCore, minCores, levelBoostSources, lv1CostZeroSource, payableCost, removeCore, removeFrom, summonLevelCostBoost, type StaticSource } from './rules';
+import { cardLevel, currentBp, destroyBurstBanSource, fail, noLoseSource, noRefreshSource, fieldCost, isSpiritLike, levelOf, locateCore, minCores, levelBoostSources, lv1CostZeroSource, braveSpiritBanSource, payableCost, removeCore, removeFrom, summonLevelCostBoost, type StaticSource } from './rules';
 import { PLAYERS, opponentOf, type EndReason, type GameEvent, type GameState, type Phase, type PlayerId } from './types';
 import { newBatch, queueLifeLostTriggers, queueTriggers } from './effects';
 import { activeSeat, allZones, ownerZones, seatOfCard, zonesOf } from './seats';
@@ -89,9 +89,19 @@ export function handIncreasedByEffect(ctx: Ctx, player: PlayerId): void {
 }
 
 /** จดเงื่อนไข Burst ไว้ ถามเจ้าของเมื่อเอฟเฟกต์ที่กำลังทำงานจบ (ดู flushBursts) */
-export function pendBurst(ctx: Ctx, player: PlayerId, on: GameState['pendingBursts'][number]['on'], subjectId?: string): void {
+export function pendBurst(ctx: Ctx, player: PlayerId, on: GameState['pendingBursts'][number]['on'], subjectId?: string, ultimate?: boolean): void {
   const list = ctx.s.pendingBursts;
-  if (!list.some((b) => b.player === player && b.on === on)) list.push({ player, on, ...(subjectId ? { subjectId } : {}) });
+  const had = list.find((b) => b.player === player && b.on === on);
+  // อัลติเมทไม่ใช่สปิริต: จดว่าต้นเหตุเป็นอัลติเมทล้วนหรือไม่ (มีสปิริตร่วมด้วย = เบิร์ส "หลังจากสปิริต..." เปิดได้)
+  if (had) {
+    // ต้นเหตุเดิมเป็นอัลติเมทล้วน แล้วมีสปิริตตามมา: ใช้สปิริตเป็นต้นเหตุ
+    if (!ultimate && had.ultimateOnly) {
+      delete had.ultimateOnly;
+      if (subjectId) had.subjectId = subjectId;
+    }
+    return;
+  }
+  list.push({ player, on, ...(subjectId ? { subjectId } : {}), ...(ultimate ? { ultimateOnly: true as const } : {}) });
 }
 
 export function setPhase(ctx: Ctx, phase: Phase): void {
@@ -210,7 +220,8 @@ export function destroy(ctx: Ctx, cardId: string, by?: PlayerId, bySource?: stri
   if (bk && spirit && bySource === bk.burstId && owner !== bk.controller) bk.count++;
   emit(ctx, { type: 'destroyed', cardId, cost, ...(bySource ? { bySource } : {}) });
   if (bpBan) emitStatic(ctx, bpBan);
-  if (by && by !== owner && spirit && !bpBan && !effectBan) pendBurst(ctx, owner, 'afterAllyDestroyedByOpponent');
+  // ต้นเหตุ = สปิริตที่ถูกทำลาย (วินด์เซอร์เคิล / คอสตูมเชนจ์: นำการ์ดที่ถูกทำลายขึ้นมือ)
+  if (by && by !== owner && spirit && !bpBan && !effectBan) pendBurst(ctx, owner, 'afterAllyDestroyedByOpponent', cardId, ctx.db.get(ctx.s.cards[cardId]!.cardNo).type === 'ultimate');
 }
 
 /** ไลฟ์ไปรีเสิร์ฟของเจ้าของ; คืน true ถ้าไลฟ์หมดแล้วจบเกม */
@@ -278,7 +289,27 @@ export function checkLifeZero(ctx: Ctx): void {
 }
 
 /** สูญสลาย: Spirit/Ultimate/Brave ที่ Core ต่ำกว่าเลเวลต่ำสุด; คืน id ที่สูญสลาย */
+/**
+ * BSC04 ไดอาน่า-เฟลอร์ X: "คู่แข่งจะให้เบรฟอยู่ในรูปแบบสปิริตไม่ได้" → เบรฟของคู่แข่งที่ยืนเดี่ยวเป็นสปิริตอยู่ (รวมตัวที่อยู่ก่อน) ลงแทรช
+ * ไม่ใช่การถูกทำลาย/สูญสลาย (trigger "เมื่อถูกทำลาย" ไม่ทำงาน)
+ */
+export function trashBannedBraves(ctx: Ctx): void {
+  for (const player of PLAYERS) {
+    const field = ctx.s.players[player].field;
+    if (!field.some((id) => ctx.db.get(ctx.s.cards[id]!.cardNo).type === 'brave')) continue;
+    const ban = braveSpiritBanSource(ctx.s, ctx.db, player);
+    if (!ban) continue;
+    for (const cardId of [...field]) {
+      if (ctx.db.get(ctx.s.cards[cardId]!.cardNo).type !== 'brave') continue;
+      emitStatic(ctx, ban);
+      sendToTrash(ctx, cardId);
+      emit(ctx, { type: 'depleted', cardId, braveBan: true });
+    }
+  }
+}
+
 export function checkDepletion(ctx: Ctx): string[] {
+  trashBannedBraves(ctx);
   const depleted: string[] = [];
   for (const player of PLAYERS) {
     for (const cardId of [...ctx.s.players[player].field]) {

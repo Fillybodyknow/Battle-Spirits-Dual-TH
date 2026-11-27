@@ -391,6 +391,48 @@ describe('Booster Set 05', () => {
     expect(s.players.p1.hand.length).toBe(hand); // วางไป 1 จั่วมา 1
   });
 
+  it('No.32 ไอส์แลนด์รูท Lv2: "สปิริต" ไม่รวมอัลติเมท (อัลติเมทโจมตี = ไม่ทำงาน, เลือกเป้าได้เฉพาะสปิริต)', () => {
+    const ULT = no('อัลติเมท เบรดร้า'); // อัลติเมท Lv3 ใช้คอร์ 1 (Lv3 ไม่มีเอฟเฟกต์ตอนโจมตี)
+    const board = () => {
+      const s = setup();
+      put(s, 'p2', no('No.32 ไอส์แลนด์รูท'), 3, true); // Lv2 มีโซลคอร์
+      const allySpirit = put(s, 'p2', DARIU, 1);
+      const allyUlt = put(s, 'p2', ULT, 1);
+      const oppSpirit = put(s, 'p1', DARIU, 3);
+      const oppUlt = put(s, 'p1', ULT, 3);
+      return { s, allySpirit, allyUlt, oppSpirit, oppUlt };
+    };
+    const islandAsked = (s: GameState) => s.choice?.kind === 'option' && (s.choice as { options: string[] }).options.some((o) => o.includes('Soul Core'));
+    // อัลติเมทของคู่แข่งโจมตี: "เมื่อสปิริตของคู่แข่งโจมตี" ไม่ทำงาน
+    {
+      const b = board();
+      const s = attack(b.s, b.oppUlt);
+      expect(islandAsked(s)).toBe(false);
+    }
+    // สปิริตโจมตี: วางโซลคอร์ได้เฉพาะสปิริตเรา · ถอดคอร์ได้เฉพาะสปิริตคู่แข่ง
+    {
+      const b = board();
+      let s = attack(b.s, b.oppSpirit);
+      expect(islandAsked(s)).toBe(true);
+      s = choose(s, (s.choice as { options: string[] }).options.findIndex((o) => o.includes('Soul Core')));
+      // สปิริตเราตัวเดียว (อัลติเมทเราไม่ใช่ตัวเลือก) = วางให้เองไม่ถาม
+      if (s.choice?.kind === 'card') {
+        expect(s.choice.candidates).not.toContain(b.allyUlt);
+        s = choose(s, b.allySpirit);
+      }
+      expect(s.cards[b.allySpirit]!.cores.some((x) => s.cores[x]!.isSoul)).toBe(true);
+      expect(s.cards[b.allyUlt]!.cores.some((x) => s.cores[x]!.isSoul)).toBe(false);
+      const c = s.choice as { kind: string; candidates?: string[] } | null;
+      if (c?.candidates) {
+        expect(c.candidates).not.toContain(b.oppUlt);
+      } else {
+        // มีเป้าเดียว = ทำเองไม่ถาม: อัลติเมทคู่แข่งต้องไม่ถูกถอดคอร์
+        expect(s.cards[b.oppUlt]!.cores.length).toBe(3);
+        expect(s.cards[b.oppSpirit]!.cores.length).toBe(1);
+      }
+    }
+  });
+
   it('ทิพบอล Lv2: เริ่มแอทแท็คสเต็ปคู่แข่ง ย้าย Soul Core → ในเทิร์นนี้การ์ดที่มีเจ็มตั้งแต่ 2 เม็ดถือว่าไม่มีเจ็ม', () => {
     let s = setup();
     put(s, 'p2', no('No.11 ทิพบอล'), 1, true); // Lv2 ใช้ Core 1

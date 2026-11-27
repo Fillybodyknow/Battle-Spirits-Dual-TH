@@ -436,7 +436,7 @@ export const BS15_SCRIPTS: Record<string, CardScript> = {
       kind: 'magic',
       timing: 'flash',
       steps: [
-        { do: 'buffChosen', amount: 5000 },
+        { do: 'buffChosen', amount: 5000, filter: { types: SPIRITISH } },
         when(rush('white'), [{ do: 'refreshChosenAlly', filter: { types: SPIRIT, color: 'blue' } }]),
         when(rush('white', 2), [{ do: 'bounceAllOpponent', filter: { types: SPIRIT, minSymbols: 2 } }]),
       ],

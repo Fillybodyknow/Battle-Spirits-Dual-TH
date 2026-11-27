@@ -280,6 +280,8 @@ export const BS10_SCRIPTS: Record<string, CardScript> = {
       kind: 'trigger',
       on: 'attack',
       levels: [3, 4, 5],
+      // "บนสปิริตและอัลติเมทของเรา" (voidCoresSpread ไม่มีตัวกรอง → spiritsOnly: false)
+      spiritsOnly: false,
       steps: [may('Soul Drive: นำ Soul Core ออกจากเกม เพื่อวางคอร์วอยด์บนสปิริต/อัลติเมทของเรา', [{ do: 'soulToVoid' }, { do: 'voidCoresSpread' }], soulOnSelf)],
     },
     { kind: 'trigger', on: ['attack', 'block'], levels: [4, 5], steps: [{ do: 'exhaustOpponent', count: 1, filter: { types: SPIRITISH } }] },

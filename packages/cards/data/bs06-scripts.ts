@@ -43,7 +43,7 @@ export const BS06_SCRIPTS: Record<string, CardScript> = {
       soul: true,
       on: 'afterLifeLost',
       steps: [
-        { do: 'exhaustOpponent', count: 2 },
+        { do: 'exhaustOpponent', count: 2, filter: { types: SPIRITISH } },
         // Catalyze: หลังจากนั้น สปิริตรูปแบบเสื่อมสภาพของคู่แข่ง 2 ตัวไปไว้ใต้สุดเด็ค
         { do: 'bounceOpponent', filter: { types: SPIRIT, state: 'exhausted' }, to: 'deckBottom', count: 2, if: { catalyzed: true } },
         { do: 'summonThisFree' },
@@ -244,7 +244,8 @@ export const BS06_SCRIPTS: Record<string, CardScript> = {
   ],
   โฮทารุมารุ: [{ kind: 'blockOpponentBurst', granted: true, anyTurn: true, levels: [], if: { allyInBattle: { families: [AWAKENER, SWORDMASTER, SWORD] } } }],
   'ดาบปีกวายุ โควจิกิริ': [
-    { kind: 'burst', soul: true, on: 'afterOpponentSummonEffect', steps: [{ do: 'exhaustOpponentTotalCost', maxTotal: 12 }, { do: 'summonThisFree' }] },
+    // "เสื่อมสภาพสปิริต/อัลติเมทของคู่แข่ง...คอสต์รวมไม่เกิน 12" (exhaustOpponentTotalCost ไม่มีตัวกรอง → spiritsOnly: false)
+    { kind: 'burst', soul: true, on: 'afterOpponentSummonEffect', spiritsOnly: false, steps: [{ do: 'exhaustOpponentTotalCost', maxTotal: 12 }, { do: 'summonThisFree' }] },
     {
       kind: 'activated',
       granted: true,

@@ -366,7 +366,8 @@ export const BS05_SCRIPTS: Record<string, CardScript> = {
       levels: [2],
       steps: [
         may('ย้าย Soul Core บนเน็กซัสนี้ไปสปิริตเรา: ส่งคอร์ 2 เม็ดบนสปิริตคู่แข่ง 1 ตัวไปรีเสิร์ฟ', [{ do: 'soulToAlly' }, { do: 'removeOpponentCores', count: 1, perPick: 2 }], {
-          all: [soulOnSelf, { alliesAtLeast: 1 }, { opponentHas: { types: SPIRITISH }, withCores: true }],
+          // "สปิริต" ทั้งบรรทัด (อัลติเมทไม่นับ): trigger ไม่ทำงานเมื่ออัลติเมทคู่แข่งโจมตี · วางโซลบนอัลติเมทเรา/ถอดคอร์อัลติเมทคู่แข่งไม่ได้
+          all: [soulOnSelf, { alliesAtLeast: 1 }, { opponentHas: { types: SPIRIT }, withCores: true }],
         }),
       ],
     },
