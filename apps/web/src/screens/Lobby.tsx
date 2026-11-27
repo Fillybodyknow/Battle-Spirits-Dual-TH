@@ -8,6 +8,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { DuelRoom, LobbyEntry, TableSeat } from '../online/transport';
 import { sfx } from '../sfx';
 import {
+  casualCancel,
+  casualStart,
   compatibleVersion,
   duelCreate,
   duelJoin,
@@ -36,7 +38,8 @@ import {
 } from '../store';
 import { DeckBox, keyCards } from '../components/DeckBox';
 import { COLOR_LABEL } from '../format';
-import { deckInfo } from '../decks';
+import { deckInfo, STARTER_DECKS } from '../decks';
+import { startVsBot } from '../bot/vsBot';
 import { db } from '../store';
 import { BackButton, CardArt, deckColor, deckSize } from './shared';
 import { AvatarImg } from '../components/AccountDialog';
@@ -294,7 +297,7 @@ const timeText = (t: number) => new Date(t).toLocaleTimeString('th-TH', { hour: 
 
 // ---------------------------------------------------------------- หน้าต่าง ๆ
 
-function DuelMenu({ onRoom, onTeam }: { onRoom: () => void; onTeam: () => void }) {
+function DuelMenu({ onRoom, onTeam, onCasual }: { onRoom: () => void; onTeam: () => void; onCasual: () => void }) {
   return (
     <div className="relative z-10 grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)] gap-10 px-16 py-6">
       <div className="flex min-h-0 flex-col gap-2">
@@ -303,7 +306,7 @@ function DuelMenu({ onRoom, onTeam }: { onRoom: () => void; onTeam: () => void }
         <h2 className="mt-2 text-lg font-black text-white">Free Duel</h2>
         <div className="grid min-h-0 flex-1 grid-cols-2 grid-rows-2 gap-4">
           <DuelTile title="Duel Room" icon="room" color="#38bdf8" status="ใช้งานได้" onClick={onRoom} className="row-span-2" big />
-          <DuelTile title="Casual Match" tag="เร็ว ๆ นี้" icon="casual" color="#facc15" status="ยังไม่เปิด" />
+          <DuelTile title="Casual Match" tag="ใหม่" icon="casual" color="#facc15" status="จับคู่อัตโนมัติ · 1VS1" onClick={onCasual} />
           <DuelTile title="Team Battle" tag="ทดลอง" icon="team" color="#c084fc" status="2VS2 · ใช้งานได้" onClick={onTeam} />
         </div>
       </div>
@@ -312,6 +315,108 @@ function DuelMenu({ onRoom, onTeam }: { onRoom: () => void; onTeam: () => void }
         <div className="flex h-56 flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-white/10 bg-black/40 text-slate-400">
           <Emblem icon="event" color="#f472b6" size={90} />
           ยังไม่มีอีเวนต์ในตอนนี้
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** หลังรอกี่วินาทีจึงเสนอดวลกับบอท */
+const CASUAL_BOT_AFTER = 60;
+
+/** หน้าต่าง Casual Match: เลือกเด็ค → หาคู่ดวลอัตโนมัติ (1VS1) · รอนานเสนอดวลกับบอท */
+function CasualMatch({ deck, onClose }: { deck: DeckId; onClose: () => void }) {
+  const casual = useGame((s) => s.casual);
+  const online = useGame((s) => s.online);
+  const setScreen = useGame((s) => s.setScreen);
+  const [now, setNow] = useState(() => Date.now());
+  const searching = casual?.status === 'searching';
+  const found = casual?.status === 'found' || !!online;
+  useEffect(() => {
+    if (!searching) return;
+    const t = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(t);
+  }, [searching]);
+  // เกมเริ่มแล้ว (ทั้งสองคนเข้าห้อง): ไปกระดาน
+  const go = !!online && online.status !== 'waiting';
+  useEffect(() => {
+    if (!go) return;
+    const t = setTimeout(() => setScreen('game'), 700);
+    return () => clearTimeout(t);
+  }, [go, setScreen]);
+  const waited = casual ? Math.max(0, Math.floor((now - casual.since) / 1000)) : 0;
+  const mmss = `${Math.floor(waited / 60)}:${String(waited % 60).padStart(2, '0')}`;
+  const close = () => {
+    if (searching) casualCancel();
+    if (!found) onClose();
+  };
+  const playBot = () => {
+    casualCancel();
+    onClose();
+    const starters = Object.keys(STARTER_DECKS);
+    startVsBot({ p1: deck, p2: starters[Math.floor(Math.random() * starters.length)]! }, { level: 3 });
+  };
+  const colors = [...new Set(deckInfo(deck).entries.flatMap((e) => db.find(e.cardNo)?.colors ?? []))];
+  return (
+    <div className="fixed inset-0 z-40 flex justify-center bg-black/70" onClick={close}>
+      <div className="flex h-full w-[52rem] max-w-full flex-col justify-center bg-gradient-to-b from-slate-800/95 via-slate-900/95 to-slate-950/95 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="border-b-2 border-yellow-400 pb-3 text-center text-2xl font-black text-white">Casual Match</div>
+        <div className="bg-black/50 px-8 py-5">
+          <div className="text-center text-sm text-slate-300">จับคู่ดวลกับผู้เล่นออนไลน์อัตโนมัติ (1VS1) · ผลการดวลได้ EXP ตามปกติ</div>
+          <div className="mt-3 flex items-center justify-center gap-6">
+            <DeckBox deck={deck} open size={1} />
+            <div>
+              <div className="text-xs text-slate-400">เด็คที่ใช้</div>
+              <div className="text-lg font-black text-white">{deckInfo(deck).label}</div>
+              <div className="text-xs text-slate-400">
+                {deckSize(deck)} ใบ · สี {colors.map((c) => COLOR_LABEL[c as keyof typeof COLOR_LABEL] ?? c).join(' / ')}
+              </div>
+              {!casual && !found && (
+                <button type="button" onClick={() => pickDeckScreen(deck)} className="mt-2 rounded-lg border border-white/30 bg-black/60 px-4 py-1.5 text-sm font-bold text-sky-200 hover:border-sky-300">
+                  เปลี่ยนเด็ค
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+        <div className="flex flex-col items-center gap-3 bg-gradient-to-b from-yellow-900/20 to-transparent px-16 py-6">
+          {found ? (
+            <>
+              <div className="text-2xl font-black text-yellow-300">พบคู่ดวลแล้ว!</div>
+              <div className="text-sm text-slate-300">กำลังเข้าห้องดวล…</div>
+            </>
+          ) : searching ? (
+            <>
+              <div className="relative flex h-24 w-24 items-center justify-center">
+                <span className="absolute inset-0 rounded-full border-2 border-yellow-300/60" style={{ animation: 'casual-ping 1.6s ease-out infinite' }} />
+                <span className="absolute inset-0 rounded-full border-2 border-yellow-300/60" style={{ animation: 'casual-ping 1.6s ease-out 0.8s infinite' }} />
+                <Emblem icon="casual" color="#facc15" size={70} />
+              </div>
+              <div className="text-xl font-black text-white">กำลังหาคู่ดวล…</div>
+              <div className="font-mono text-lg text-yellow-200">{mmss}</div>
+              <div className="text-xs text-slate-400">จับคู่เฉพาะผู้เล่นที่ใช้แอปเวอร์ชันหลักเดียวกัน</div>
+              {waited >= CASUAL_BOT_AFTER && (
+                <div className="mt-1 flex items-center gap-3 rounded-lg border border-sky-300/30 bg-sky-500/10 px-4 py-2 text-sm text-sky-100">
+                  ยังไม่เจอคู่ดวล · ลองดวลกับบอทระหว่างนี้ไหม?
+                  <button type="button" onClick={playBot} className="rounded-md bg-sky-500 px-3 py-1 font-black text-white hover:bg-sky-400">
+                    ดวลกับบอท
+                  </button>
+                </div>
+              )}
+              <button type="button" onClick={close} className="mt-2 w-96 rounded-lg border border-white/40 bg-black py-2.5 text-lg font-black text-lime-300 hover:border-lime-300">
+                ยกเลิกการหาคู่
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" onClick={() => void casualStart(deck)} className="w-96 rounded-lg bg-gradient-to-b from-yellow-300 to-amber-500 py-3 text-xl font-black text-slate-900 shadow-[0_0_24px_rgba(250,204,21,0.35)] hover:brightness-110">
+                เริ่มหาคู่ดวล
+              </button>
+              <button type="button" onClick={onClose} className="w-96 rounded-lg border border-white/40 bg-black py-2.5 text-lg font-black text-lime-300 hover:border-lime-300">
+                ยกเลิก
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -822,6 +927,8 @@ export function Lobby() {
     setTeamState(v);
   };
   const [deck, setDeck] = useLobbyDeck();
+  const casual = useGame((s) => s.casual);
+  const [casualOpen, setCasualOpen] = useState(!!casual);
 
   // อยู่ในห้องดวลแล้ว (สร้าง / เข้า / กลับมาจากกระดาน): แสดงหน้าห้อง
   const current: View = duel ? { kind: 'room', code: duel.code } : view.kind === 'room' ? { kind: 'list' } : view;
@@ -856,7 +963,7 @@ export function Lobby() {
       {!onlineAvailable ? (
         <div className="flex flex-1 items-center justify-center text-amber-300">ยังไม่ได้ตั้งค่า Firebase (apps/web/.env.local)</div>
       ) : current.kind === 'menu' ? (
-        <DuelMenu onRoom={() => (setTeam(false), setRoomMatch(true))} onTeam={() => (setTeam(true), setRoomMatch(true))} />
+        <DuelMenu onRoom={() => (setTeam(false), setRoomMatch(true))} onTeam={() => (setTeam(true), setRoomMatch(true))} onCasual={() => setCasualOpen(true)} />
       ) : current.kind === 'create' ? (
         <CreateRoom key={String(team)} deck={deck} team={team} />
       ) : current.kind === 'list' ? (
@@ -864,6 +971,7 @@ export function Lobby() {
       ) : (
         <RoomView deck={deck} setDeck={setDeck} />
       )}
+      {(casualOpen || !!casual) && !duel && <CasualMatch deck={deck} onClose={() => setCasualOpen(false)} />}
       {roomMatch && !duel && (
         <RoomMatch
           team={team}

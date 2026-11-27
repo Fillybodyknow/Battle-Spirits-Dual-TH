@@ -6,6 +6,22 @@
         ".write": "auth != null"
       }
     },
+    "match": {
+      "queue": {
+        "$major": {
+          ".read": "auth != null",
+          "$uid": {
+            ".write": "auth != null"
+          }
+        }
+      },
+      "found": {
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid",
+          ".write": "auth != null"
+        }
+      }
+    },
     "lobby": {
       ".read": "auth != null",
       "$code": {

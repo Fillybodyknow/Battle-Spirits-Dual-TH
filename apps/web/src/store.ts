@@ -2660,6 +2660,8 @@ interface Store {
   onlineLeave(): void;
   /** ห้องดวลที่อยู่ (หลายคน หลายโต๊ะ) */
   duel: DuelState | null;
+  /** Casual Match: กำลังหาคู่ดวลอัตโนมัติ */
+  casual: CasualState | null;
   /** เจ้าของห้องเปลี่ยนเด็คระหว่างรอคู่แข่ง */
   onlineSetDeck(deck: DeckId): Promise<void>;
   /** เจ้าของห้อง: เริ่มเกมใหม่ในห้องเดิม */
@@ -3485,6 +3487,183 @@ export function duelChatSend(text: string) {
 }
 
 /** เข้าชมการดวลของโต๊ะ t (มือทั้งสองฝ่ายคว่ำ สั่งอะไรไม่ได้) */
+// ---------------------------------------------------------------- Casual Match (จับคู่ดวลอัตโนมัติ 1VS1)
+/**
+ * คิวรอ = match/queue/<MAJOR>/<uid> (จับคู่เฉพาะเวอร์ชัน MAJOR เดียวกัน · หลุดการเชื่อมต่อ = เซิร์ฟเวอร์ลบเอง)
+ * คนที่เข้าคิวทีหลังเป็นคนจับคู่: ล็อกตัวเองก่อน (claimedBy = ตัวเอง) แล้วจองคนที่รอนานที่สุดด้วย transaction
+ * → สร้างห้องเกม (ตัวเองเป็น p1) แล้วเขียนรหัสห้องให้อีกฝ่ายที่ match/found/<uid> · อีกฝ่ายเข้าห้องเป็น p2
+ * ห้องเกมขึ้นต้นด้วย "cm-" (ออกจากเกมครบทุกคน = ลบห้องเหมือนห้องของโต๊ะดวล)
+ */
+export interface CasualState {
+  status: 'searching' | 'found';
+  /** เริ่มหาคู่เมื่อ (เวลาในเครื่อง) */
+  since: number;
+  deck: DeckId;
+  uid: string;
+}
+interface CasualEntry {
+  uid: string;
+  name: string;
+  deck: string;
+  version: string;
+  level?: number;
+  avatar?: string;
+  /** เวลาเข้าคิว (ใช้เรียงว่าใครรอก่อน) */
+  at: number;
+  /** สัญญาณชีพ: เจ้าของเปลี่ยนค่านี้ทุกรอบ (คนอื่นดูว่าเปลี่ยนไหม ไม่เทียบนาฬิกาข้ามเครื่อง) */
+  seen: number;
+  /** ผู้ที่จองคนนี้ไว้ (ตัวเอง = กำลังจับคู่ให้คนอื่น) */
+  claimedBy?: string;
+}
+export const CASUAL_PREFIX = 'cm-';
+const casualQueuePath = (uid?: string) => `match/queue/${APP_VERSION.split('.')[0]}${uid ? `/${uid}` : ''}`;
+const casualFoundPath = (uid: string) => `match/found/${uid}`;
+let casualTimer: ReturnType<typeof setInterval> | null = null;
+let casualUnsub: (() => void) | null = null;
+let casualBusy = false;
+/** เห็นว่าถูกจองไว้แต่ยังไม่มีห้องตั้งแต่เมื่อไร (ผู้จองหลุดกลางทาง = ปลดเอง) */
+let casualClaimedAt = 0;
+/** สัญญาณชีพของคนอื่นในคิวที่เห็นล่าสุด + เวลาในเครื่องเราที่เห็นค่านั้นครั้งแรก */
+const casualSeen = new Map<string, { seen: number; at: number; changed: boolean }>();
+/** ไม่เห็นสัญญาณชีพเปลี่ยนนานเกินนี้ (ms) = หลุดไปแล้ว */
+const CASUAL_STALE = 10000;
+
+function casualStopLocal() {
+  if (casualTimer) clearInterval(casualTimer);
+  casualTimer = null;
+  casualUnsub?.();
+  casualUnsub = null;
+  casualBusy = false;
+  casualClaimedAt = 0;
+  casualSeen.clear();
+}
+
+/** เริ่มหาคู่ดวลด้วยเด็คนี้ */
+export async function casualStart(deck: DeckId): Promise<void> {
+  const st = useGame.getState();
+  if (st.casual || st.online || st.duel) return;
+  try {
+    const uid = await transport.signIn();
+    const avatar = storedAvatar();
+    const me: CasualEntry = { uid, name: st.playerName, deck: deckToken(deck), version: APP_VERSION, level: myLevel(), at: Date.now(), seen: Date.now(), ...(avatar ? { avatar } : {}) };
+    useGame.setState({ casual: { status: 'searching', since: Date.now(), deck, uid }, error: null });
+    await transport.removePath(casualFoundPath(uid)).catch(() => {});
+    casualUnsub = transport.watchPath(casualFoundPath(uid), (v) => {
+      if (typeof v === 'string' && v) void casualMatched(v, uid);
+    });
+    await transport.setPath(casualQueuePath(uid), me);
+    await transport.removeOnDisconnect(casualQueuePath(uid));
+    await transport.removeOnDisconnect(casualFoundPath(uid));
+    casualTimer = setInterval(() => void casualTick(uid), 2500);
+    void casualTick(uid);
+  } catch (e) {
+    casualStopLocal();
+    useGame.setState({ casual: null, error: `หาคู่ดวลไม่สำเร็จ: ${(e as Error).message}` });
+  }
+}
+
+/** ยกเลิกการหาคู่ */
+export function casualCancel(): void {
+  const c = useGame.getState().casual;
+  casualStopLocal();
+  useGame.setState({ casual: null });
+  if (!c) return;
+  void transport.removePath(casualQueuePath(c.uid)).catch(() => {});
+  void transport.removePath(casualFoundPath(c.uid)).catch(() => {});
+}
+
+/** ทุก 2.5 วิ: ดูว่ามีคนรอก่อนเราไหม แล้วจองมาเป็นคู่ */
+async function casualTick(uid: string) {
+  if (casualBusy || useGame.getState().casual?.status !== 'searching') return;
+  casualBusy = true;
+  try {
+    // สัญญาณชีพของเรา
+    await transport.transactPath(casualQueuePath(uid), (cur: CasualEntry | null) => (cur ? { ...cur, seen: Date.now() } : cur));
+    const all = ((await transport.readPath(casualQueuePath())) ?? {}) as Record<string, CasualEntry>;
+    const mine = all[uid];
+    if (!mine) return;
+    // คนอื่น: ยังมีชีวิตอยู่ไหม (ค่าสัญญาณชีพต้องเปลี่ยนภายใน CASUAL_STALE ตามนาฬิกาเครื่องเรา · เห็นครั้งแรก = รอดูอีกรอบ)
+    const now = Date.now();
+    const alive = new Set<string>();
+    for (const [id, e] of Object.entries(all)) {
+      if (id === uid || !e) continue;
+      const o = casualSeen.get(id);
+      if (!o || o.seen !== e.seen) {
+        // เปลี่ยนจากที่เคยเห็น = ยังอยู่ · เห็นครั้งแรก = ยังไม่รู้ (รอดูว่าเปลี่ยนไหม)
+        casualSeen.set(id, { seen: e.seen, at: now, changed: !!o });
+        if (o) alive.add(id);
+      } else if (o.changed && now - o.at < CASUAL_STALE) alive.add(id);
+      // ค้างในคิว (ปิดแอปแบบที่เซิร์ฟเวอร์ลบให้ไม่ได้): ลบทิ้งถ้ายังเป็นค่าเดิม
+      else if (now - o.at >= CASUAL_STALE) void transport.transactPath(casualQueuePath(id), (cur: CasualEntry | null) => (cur && cur.seen === o.seen ? null : cur)).catch(() => {});
+    }
+    // ถูกจองแล้ว: รอผู้จองสร้างห้อง · เกิน 15 วิไม่มาก็ปลดตัวเองกลับเข้าคิว
+    if (mine.claimedBy && mine.claimedBy !== uid) {
+      if (!casualClaimedAt) casualClaimedAt = Date.now();
+      if (Date.now() - casualClaimedAt > 15000) {
+        casualClaimedAt = 0;
+        await transport.transactPath(casualQueuePath(uid), (cur: CasualEntry | null) => (cur && cur.claimedBy && cur.claimedBy !== uid ? { ...cur, claimedBy: null } : cur));
+      }
+      return;
+    }
+    casualClaimedAt = 0;
+    // จองได้เฉพาะคนที่รอก่อนเรา (เรียงด้วย at แล้ว uid: ทุกเครื่องเห็นลำดับเดียวกัน สองคนไม่จองกันเองพร้อมกัน)
+    const older = (e: CasualEntry, id: string) => e.at < mine.at || (e.at === mine.at && id < uid);
+    const cands = Object.entries(all)
+      .filter(([id, e]) => id !== uid && e && !e.claimedBy && alive.has(id) && older(e, id))
+      .sort(([a, x], [b, y]) => x.at - y.at || (a < b ? -1 : 1));
+    if (cands.length === 0) return;
+    // ล็อกตัวเองก่อน: ระหว่างนี้คนอื่นจองเราไม่ได้
+    const self = await transport.transactPath(casualQueuePath(uid), (cur: CasualEntry | null) => (cur && !cur.claimedBy ? { ...cur, claimedBy: uid } : cur ? undefined : cur));
+    if (!self.committed || (self.value as CasualEntry | null)?.claimedBy !== uid) return;
+    for (const [oid] of cands) {
+      const r = await transport.transactPath(casualQueuePath(oid), (cur: CasualEntry | null) => (cur && !cur.claimedBy ? { ...cur, claimedBy: uid } : cur ? undefined : cur));
+      const opp = r.value as CasualEntry | null;
+      if (r.committed && opp?.claimedBy === uid) {
+        await casualCreateGame({ ...mine, claimedBy: uid }, opp);
+        return;
+      }
+    }
+    // ไม่ได้ใครเลย: ปลดล็อกตัวเอง
+    await transport.transactPath(casualQueuePath(uid), (cur: CasualEntry | null) => (cur && cur.claimedBy === uid ? { ...cur, claimedBy: null } : cur));
+  } catch {
+    /* ลองใหม่รอบถัดไป */
+  } finally {
+    casualBusy = false;
+  }
+}
+
+/** เราเป็นผู้จับคู่: สร้างห้องเกม (เราเป็น p1) แจ้งอีกฝ่าย แล้วเข้าห้อง */
+async function casualCreateGame(me: CasualEntry, opp: CasualEntry) {
+  const game = `${CASUAL_PREFIX}${randomCode()}${randomCode()}`;
+  const avatars = { ...(me.avatar ? { p1: me.avatar } : {}), ...(opp.avatar ? { p2: opp.avatar } : {}) };
+  const levels = { ...(me.level ? { p1: me.level } : {}), ...(opp.level ? { p2: opp.level } : {}) };
+  await transport.createRoom(game, {
+    seats: { p1: me.uid, p2: opp.uid },
+    setup: { round: 1, seed: randomSeed(), decks: { p1: me.deck, p2: opp.deck } },
+    names: { p1: me.name, p2: opp.name },
+    versions: { p1: me.version, p2: opp.version },
+    ...(Object.keys(avatars).length ? { avatars } : {}),
+    ...(Object.keys(levels).length ? { levels } : {}),
+  });
+  await transport.setPath(casualFoundPath(opp.uid), game);
+  await transport.removePath(casualQueuePath(opp.uid)).catch(() => {});
+  await transport.removePath(casualQueuePath(me.uid)).catch(() => {});
+  casualStopLocal();
+  useGame.setState({ casual: { ...useGame.getState().casual!, status: 'found' } });
+  enterRoom(game, 'p1', me.uid);
+}
+
+/** มีคนจับคู่กับเราแล้ว: เข้าห้องเกมเป็น p2 */
+async function casualMatched(game: string, uid: string) {
+  const c = useGame.getState().casual;
+  if (!c || c.uid !== uid || useGame.getState().online) return;
+  casualStopLocal();
+  useGame.setState({ casual: { ...c, status: 'found' } });
+  void transport.removePath(casualFoundPath(uid)).catch(() => {});
+  void transport.removePath(casualQueuePath(uid)).catch(() => {});
+  enterRoom(game, 'p2', uid);
+}
+
 export function duelSpectate(t: string) {
   const d = useGame.getState().duel;
   const game = d?.room?.tables?.[t]?.game;
@@ -3736,7 +3915,7 @@ export const useGame = create<Store>((set, get) => {
           .leave(code, seatKey(on.me, on.seat))
           // ผู้เล่นออกครบทุกที่นั่งแล้ว (เกมของโต๊ะจบ): ลบห้องเกมทิ้ง · ห้องที่เข้าด้วยรหัสแบบเดิม (ไม่มีห้องดวล) เจ้าของลบเมื่อออก
           .then(async () => {
-            if (!duel) return;
+            if (!duel && !code.startsWith(CASUAL_PREFIX)) return;
             const seats = await transport.readPath(`rooms/${code}/seats`);
             if (!seats || Object.keys(seats as object).length === 0) await removeRoom(code);
           })
@@ -3744,7 +3923,7 @@ export const useGame = create<Store>((set, get) => {
       }
       // ผู้ชมออกจากเกม: เอาชื่อออกจากรายชื่อผู้ชมทันที (ไม่ต้องรอหลุดการเชื่อมต่อ)
       if (on?.spectator) void transport.removePath(watcherPath(on.code, on.uid)).catch(() => {});
-      if (on?.me === 'p1' && !duel) void transport.unpublishRoom(on.code).catch(() => {});
+      if (on?.me === 'p1' && !duel && !on.code.startsWith(CASUAL_PREFIX)) void transport.unpublishRoom(on.code).catch(() => {});
       // ผู้เล่นออกจากเกมของโต๊ะ: โต๊ะกลับไปรอพร้อมใหม่ (ยังนั่งที่เดิม)
       if (duel && on && !on.spectator) {
         void transport
@@ -3760,7 +3939,8 @@ export const useGame = create<Store>((set, get) => {
           })
           .catch(() => {});
       }
-      set({ online: null, screen: duel || (on && on.status === 'waiting') ? 'lobby' : 'home', localInProgress: false });
+      const casualGame = !!on?.code.startsWith(CASUAL_PREFIX);
+      set({ online: null, casual: null, screen: duel || casualGame || (on && on.status === 'waiting') ? 'lobby' : 'home', localInProgress: false });
       get().newGame();
     },
     onlineSetDeck: async (deck) => {
@@ -3821,6 +4001,7 @@ export const useGame = create<Store>((set, get) => {
       set({ picked: null });
     },
     duel: null,
+    casual: null,
     evolveCard: null,
     hovered: null,
     pinned: null,

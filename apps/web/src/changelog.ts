@@ -16,6 +16,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '62.1.0',
+    date: '2026-11-28',
+    items: [
+      'ใหม่! Casual Match (DUEL → Casual Match): กดเริ่มหาคู่ แล้วระบบจับคู่ดวลกับผู้เล่นออนไลน์คนอื่นให้อัตโนมัติ (1VS1) · ไม่ต้องสร้างห้องหรือแลกรหัส · รอนานเกิน 1 นาทีเลือกดวลกับบอทระหว่างนี้ได้',
+      'ปุ่ม Discord ที่หน้าหลักเปลี่ยนเป็นลิงก์เชิญถาวร (ลิงก์เดิมจะหมดอายุ)',
+    ],
+  },
+  {
     version: '62.0.0',
     date: '2026-11-27',
     items: [
