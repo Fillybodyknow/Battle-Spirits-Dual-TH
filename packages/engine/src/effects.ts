@@ -5976,7 +5976,8 @@ function applyCardPick(ctx: Ctx, cur: QueuedEffect, choice: Extract<PendingChoic
       cur.steps.unshift({ do: 'placeCores', cardId: pick }, ...(step.max > 1 ? [{ ...step, max: step.max - 1 }] : []));
       break;
     case 'summonFromHandFree':
-      cur.steps.unshift({ do: 'placeCores', cardId: pick });
+      // ฮิสุย แคนนอน ดราก้อน / ทรูธ-อีเด็น: "เอฟเฟกต์ [เมื่อ...ถูกอัญเชิญ] ของการ์ดนั้นจะไม่ทำงาน" (อัญเชิญ 1 ใบ)
+      cur.steps.unshift({ do: 'placeCores', cardId: pick, ...(step.noTriggers ? { noTriggers: true as const } : {}) });
       break;
     case 'summonFromTrashFree':
       cur.steps.unshift(

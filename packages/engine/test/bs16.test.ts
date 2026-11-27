@@ -142,6 +142,22 @@ describe('Booster Set 16 (แดง)', () => {
     expect(s.players.p2.life.length).toBe(life - 1);
   });
 
+  it('ฮิสุย แคนนอน ดราก้อน: อัญเชิญมังกรติดเกราะจากมือ 1 ใบ = [เมื่อสปิริตนี้ถูกอัญเชิญ] ของการ์ดนั้นไม่ทำงาน', () => {
+    let s = setup();
+    const hisui = put(s, 'p1', no('ฮิสุย แคนนอน ดราก้อน'), 1);
+    const shiro = card(s, 'p1', no('มังกรเครื่องกล ชิโรงาเนะดราก้อน'), 'hand'); // เมื่อถูกอัญเชิญ: นำสปิริตคู่แข่งกลับขึ้นมือ
+    const target = put(s, 'p2', DARIU, 1);
+    const ab = db.get(s.cards[hisui]!.cardNo).abilities.find((a) => a.kind === 'trigger' && a.on === 'summon')!;
+    queue(s, 'p1', hisui, ab.kind === 'trigger' ? [...ab.steps] : []);
+    s = act(s, { type: 'endMain', player: 'p1' });
+    expect(s.choice).toMatchObject({ kind: 'card', candidates: [shiro] });
+    s = choose(s, shiro);
+    if (s.choice?.kind === 'placeCores') s = choose(s, { pay: s.players.p1.reserve.slice(0, 1) });
+    expect(s.players.p1.field).toContain(shiro);
+    expect(s.choice).toBeNull();
+    expect(s.players.p2.field).toContain(target);
+  });
+
   it('อัลติเมท ไก-อสุรา: ย้ายคอร์มาวาง ดาร์คแมทเทอร์ดราก้อนเหลือคอร์ 1 เม็ด ไม่สูญสลาย ("ไม่กลายเป็น 0 เม็ดโดยเอฟเฟกต์ของผู้เล่นทุกคน")', () => {
     let s = setup();
     const gai = put(s, 'p1', no('อัลติเมท ไก-อสุรา'), 1);
