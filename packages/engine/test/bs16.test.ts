@@ -142,6 +142,19 @@ describe('Booster Set 16 (แดง)', () => {
     expect(s.players.p2.life.length).toBe(life - 1);
   });
 
+  it('อัลติเมท ไก-อสุรา: ย้ายคอร์มาวาง ดาร์คแมทเทอร์ดราก้อนเหลือคอร์ 1 เม็ด ไม่สูญสลาย ("ไม่กลายเป็น 0 เม็ดโดยเอฟเฟกต์ของผู้เล่นทุกคน")', () => {
+    let s = setup();
+    const gai = put(s, 'p1', no('อัลติเมท ไก-อสุรา'), 1);
+    const dm = put(s, 'p1', no('ดาร์คแมทเทอร์ดราก้อน'), 3);
+    s.players.p2.deck.unshift(card(s, 'p2', DARIU, 'hand'));
+    s.players.p2.hand.pop();
+    queue(s, 'p1', gai, [{ do: 'uTrigger', then: [{ do: 'allCoresToSelf', then: [] }] }]);
+    s = act(s, { type: 'endMain', player: 'p1' });
+    expect(s.players.p1.field).toContain(dm);
+    expect(s.cards[dm]!.cores).toHaveLength(1);
+    expect(s.cards[gai]!.cores).toHaveLength(3);
+  });
+
   it('อัลติเมท เอ็กซ์-คาลิบัส: Critical Hit (การ์ดที่ฮิตคอสต์ไม่เกิน 3) + ถูกสปิริต BP ไม่เกิน 6000 ป้องกัน = ไลฟ์คู่แข่ง 1 เม็ด', () => {
     let s = setup();
     const ex = put(s, 'p1', no('อัลติเมท เอ็กซ์-คาลิบัส'), 1);

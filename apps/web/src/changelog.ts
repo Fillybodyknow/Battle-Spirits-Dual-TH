@@ -16,6 +16,11 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '59.0.0',
+    date: '2026-11-27',
+    items: ['แก้ ดาร์คแมทเทอร์ดราก้อน: ถูก อัลติเมท ไก-อสุรา (U Trigger) ย้ายคอร์ไปแล้วจะเหลือคอร์ 1 เม็ด ไม่สูญสลาย ("คอร์จะไม่กลายเป็น 0 เม็ดโดยเอฟเฟกต์ของผู้เล่นทุกคน")'],
+  },
+  {
     version: '58.0.0',
     date: '2026-11-27',
     items: [

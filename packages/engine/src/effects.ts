@@ -1873,10 +1873,15 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       for (const id of [...s.players[me].field]) {
         if (id === self || !spiritLike(id) || db.get(s.cards[id]!.cardNo).type === 'ultimate') continue;
         const c = s.cards[id]!;
-        if (c.cores.length === 0) continue;
-        moved += c.cores.length;
-        s.cards[self]!.cores.push(...c.cores);
-        c.cores = [];
+        // ดาร์คแมทเทอร์ดราก้อน: "คอร์บนสปิริตนี้จะไม่กลายเป็น 0 เม็ดโดยเอฟเฟกต์ของผู้เล่นทุกคน" → เหลือคอร์ไว้ตามขั้นต่ำ
+        const floor = coreFloorOf(s, db, id, true);
+        const keep = floor ? Math.min(floor.min, c.cores.length) : 0;
+        if (c.cores.length <= keep) continue;
+        if (keep > 0) emitStatic(ctx, floor!.src);
+        const take = c.cores.slice(keep);
+        moved += take.length;
+        s.cards[self]!.cores.push(...take);
+        c.cores = c.cores.slice(0, keep);
       }
       if (moved > 0) {
         emit(ctx, { type: 'coresMoved', player: me, count: moved });
