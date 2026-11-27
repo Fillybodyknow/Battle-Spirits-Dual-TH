@@ -81,7 +81,9 @@ const listeners = new Set<() => void>();
 const reducedMotionMq = typeof window !== 'undefined' ? window.matchMedia?.('(prefers-reduced-motion: reduce)') : undefined;
 const reducedMotion = () => !!reducedMotionMq?.matches;
 /** ชุดที่ auto เลือกตอนนี้ */
-export const autoPreset = (): 'low' | 'high' => (slow || reducedMotion() ? 'low' : 'high');
+const touchOnly = () => typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches && !window.matchMedia?.('(any-pointer: fine)').matches;
+/** auto: เครื่องช้า/ขอลดการเคลื่อนไหว = ต่ำ · จอสัมผัส (มือถือ, iPad) = กลาง · คอม = สูง */
+export const autoPreset = (): 'low' | 'medium' | 'high' => (slow || reducedMotion() ? 'low' : touchOnly() ? 'medium' : 'high');
 
 /** ค่าเอฟเฟกต์ที่ใช้จริงตอนนี้ */
 export function effects(): Effects {

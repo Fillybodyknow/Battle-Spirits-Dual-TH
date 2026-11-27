@@ -1018,7 +1018,7 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
       runQueue(ctx);
       return;
     }
-    payBlockTax(ctx, player, battle.attackerId);
+    payBlockTax(ctx, player, battle.attackerId, blockerId);
     delete battle.noBlockVotes;
     card.state = battle.exhaustedBlock ? 'refresh' : 'exhausted';
     battle.blockers.push(blockerId);
@@ -1325,7 +1325,7 @@ function applyChosenBlockers(ctx: Ctx): void {
   const defender = opponentOf(s.turnPlayer);
   const chosen = battle.chosenBlockers.filter((id) => inBattle(s, id));
   if (chosen.length === 0) return;
-  payBlockTax(ctx, defender, battle.attackerId);
+  payBlockTax(ctx, defender, battle.attackerId, chosen[0]);
   for (const id of chosen) {
     const wasExhausted = s.cards[id]!.state === 'exhausted';
     s.cards[id]!.state = battle.exhaustedBlock ? 'refresh' : 'exhausted';
@@ -1634,6 +1634,8 @@ function endBattle(ctx: Ctx): void {
   for (const c of Object.values(ctx.s.cards)) {
     delete c.battleBp;
     delete c.battleSymbols;
+    delete c.battleBpDestroy;
+    delete c.battleBpDestroyUlt;
     delete c.battleStack;
   }
   emit(ctx, { type: 'battleEnded' });
@@ -1667,13 +1669,20 @@ function blockLevelTotal(ctx: Ctx): number {
 }
 
 /** ฮิเมะเนโกะ: การป้องกันครั้งแรกของการต่อสู้นี้ ฝ่ายป้องกันส่งคอร์รีเสิร์ฟลงแทรช (คอร์ปกติก่อน) */
-function payBlockTax(ctx: Ctx, defender: PlayerId, attackerId: string): void {
+function payBlockTax(ctx: Ctx, defender: PlayerId, attackerId: string, blockerId?: string): void {
   const tax = ctx.s.battle?.blockTax;
   if (!tax || tax.paid) return;
+  // BS26 ควีนไนท์แมร์: เฉพาะการป้องกันด้วยอัลติเมท
+  if (tax.ultimatesOnly && (!blockerId || ctx.db.get(ctx.s.cards[blockerId]!.cardNo).type !== 'ultimate')) return;
+  if (tax.lifeToReserve) {
+    tax.paid = true;
+    loseLife(ctx, defender, tax.lifeToReserve, opponentOf(defender), 'reserve', false, { selfOnly: true, noBurst: true });
+    return;
+  }
   // อาคิตะ-ด็อก: ทิ้งการ์ดบนมือ (ฝ่ายป้องกันเลือก) แทนการส่งคอร์
   if (tax.discard) {
     tax.paid = true;
-    enqueue(ctx, { controller: defender, sourceId: attackerId, steps: [{ do: 'discard', count: tax.discard }], paidWithSoul: false, trashWhenDone: false, announce: false });
+    enqueue(ctx, { controller: defender, sourceId: attackerId, steps: [{ do: 'discard', count: tax.discard, ...(tax.discardFilter ? { filter: tax.discardFilter } : {}) }], paidWithSoul: false, trashWhenDone: false, announce: false });
     return;
   }
   const p = ctx.s.players[defender];

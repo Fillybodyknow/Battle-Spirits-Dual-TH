@@ -14,6 +14,8 @@
           var landscape = window.matchMedia('(orientation: landscape)').matches;
           var w = landscape ? Math.max(sw, sh) : Math.min(sw, sh);
           var h = landscape ? Math.min(sw, sh) : Math.max(sw, sh);
+          // iPad ที่เปิดจากหน้าจอโฮม: แถบสถานะ (~24px) กินความสูงจอ (screen.height รวมไว้)
+          if (navigator.standalone && Math.min(sw, sh) >= 600) h -= 24;
           var coarse = window.matchMedia('(pointer: coarse)').matches;
           var content = 'width=device-width, initial-scale=1.0, viewport-fit=cover';
           if (coarse || w < 1280) {
@@ -37,7 +39,8 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- black (ไม่โปร่ง): หน้าเว็บเริ่มใต้แถบเวลา/แบตเตอรี่ของ iPad ไม่ถูกบังปุ่มมุมบน -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <meta name="apple-mobile-web-app-title" content="BS Dual" />
   </head>
   <body>

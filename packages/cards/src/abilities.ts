@@ -35,6 +35,8 @@ export type Condition =
   | { allySoulNamed: string[] }
   /** อยู่ใน Attack Step (เทิร์นใครก็ได้) */
   | { attackStep: true }
+  /** BS26: อยู่ในเมนสเต็ป (เทิร์นใครก็ได้) */
+  | { mainStep: true }
   /** "แอทแท็คสเต็ปของเรา" */
   | { ownAttackStep: true }
   /** ทุกเงื่อนไขเป็นจริง */
@@ -128,6 +130,16 @@ export type Condition =
   | { ownGemColor: Color }
   /** การ์ดต้นเหตุ (subject) ของเอฟเฟกต์นี้ตรงตัวกรอง (ตรวจตอนประมวลผล) */
   | { subjectIs: CardFilter }
+  /** BS26 ชิลด์แทงก์: ผู้โจมตีของการต่อสู้นี้ตรงตัวกรอง */
+  | { battleAttacker: CardFilter }
+  /** BS26 นอร์แลนดี (trigger lifeLost): ไลฟ์ลดลงครั้งนี้ตั้งแต่ N เม็ด */
+  | { lifeLostAtLeast: number }
+  /** BS26 ลิงซ์โมเกอร์ (trigger ถูกทำลาย): ผู้ทำลายตรงตัวกรอง */
+  | { destroyedBy: CardFilter }
+  /** BS26 คอร์เดรน: เอฟเฟกต์นี้ทำให้การ์ดที่ตรงตัวกรองสูญสลาย */
+  | { depletedByThis: CardFilter }
+  /** BS26 แอมเบอร์ เลออน: เบรฟที่ร่วมร่างกับสปิริตของเราอยู่ตรงตัวกรองตั้งแต่ 1 ใบ */
+  | { ownBraveHas: CardFilter }
   /** ในแทรชเรามีคอร์ที่ไม่ใช่โซลคอร์อย่างน้อย N เม็ด */
   | { trashCoreAtLeast: number }
   /** (trigger lifeLost) ไลฟ์ลดลงเพราะเอฟเฟกต์ของคู่แข่ง (ไม่ใช่การโจมตี) */
@@ -211,6 +223,10 @@ export interface CountPer {
   uTriggerHits?: true;
   /** BS14 U Trigger: คอสต์ของการ์ดที่ถูกวางที่แทรช (ต่อคอสต์ 1) */
   uTriggerCost?: true;
+  /** BS26 เบรฟพิสเกส: จำนวนการ์ดที่ตรงตัวกรองที่เอฟเฟกต์นี้ทำให้สูญสลาย */
+  depletedByThis?: CardFilter;
+  /** BS26 ควีนไนท์แมร์: จำนวนการ์ดที่ returnAllFromTrash ของเอฟเฟกต์นี้นำขึ้นมือ */
+  returnedByThis?: true;
   /** BS14: จำนวนเจ็มของสปิริตนี้ (รวมเจ็มที่ได้รับเพิ่ม) */
   selfSymbols?: true;
   /** BS14: จำนวนคอร์บนการ์ดนี้ (เน็กซัส "ต่อคอร์ 1 เม็ดบนเน็กซัสนี้") */
@@ -273,6 +289,14 @@ export interface CardFilter {
   noBraves?: true;
   /** เจ็มรวม (รวมเบรฟที่ร่วมร่าง) ตั้งแต่ N เม็ด */
   minSymbols?: number;
+  /** BS26 อควาเรียส: ไม่มีคำเหล่านี้ในข้อความ */
+  noTextIncludes?: string[];
+  /** BS26 คริมสันแฟลร์: เจ็มรวมไม่เกิน N เม็ด */
+  maxSymbols?: number;
+  /** BS26 หุบเขาใหญ่ไกน่าร็อค: การ์ดที่มีเอฟเฟกต์ [ร่วมร่าง] */
+  hasBravedEffect?: true;
+  /** BS26 ไกเซอร์ดราก้อน: BP ต่ำกว่าผู้โจมตีของการต่อสู้นี้ */
+  bpBelowAttacker?: true;
   // ---------------- BS07
   /** อยู่ในทีมนี้ */
   team?: string;
@@ -400,7 +424,7 @@ export type Step =
   /** แสดงใบบนสุดเด็ค N ใบ เลือก 1 ใบที่ตรงตัวกรองขึ้นมือ ที่เหลือลง Trash */
   | { do: 'revealPickRestTrash'; count: number; filter: CardFilter; /** BSC04 แคธี่-เรม: count × จำนวนนี้ */ per?: CountPer; /** การ์ดที่เหลือ: ลงแทรช (ค่าเริ่มต้น) / ใต้สุดเด็ค / บนสุดเด็ค เรียงลำดับได้ */ rest?: 'trash' | 'bottom' | 'top' }
   /** แสดงใบบนสุดเด็ค N ใบ นำการ์ดที่ตรงตัวกรองทั้งหมดขึ้นมือ ที่เหลือลงแทรช */
-  | { do: 'revealTakeAll'; count: number; filter: CardFilter; /** ที่เหลือ: แทรช (ค่าเริ่มต้น) / ใต้สุดเด็คเรียงลำดับได้ */ rest?: 'trash' | 'bottom'; /** BS11: ชื่อการ์ดละ 1 ใบ */ distinctNames?: true }
+  | { do: 'revealTakeAll'; count: number; filter: CardFilter; /** ที่เหลือ: แทรช (ค่าเริ่มต้น) / ใต้สุดเด็คเรียงลำดับได้ */ rest?: 'trash' | 'bottom' | 'top'; /** BS11: ชื่อการ์ดละ 1 ใบ */ distinctNames?: true }
   /** นำการ์ดในแทรชเรา 1 ใบที่ตรงตัวกรอง กลับขึ้นมือ */
   | { do: 'returnFromTrash'; filter: CardFilter; if?: Condition; /** จำนวนใบ (ไม่ระบุ = 1) */ count?: number; per?: CountPer }
   /** เมื่อจบการต่อสู้นี้ จบ Attack Step */
@@ -454,7 +478,7 @@ export type Step =
   /** เราเลือกทิ้งการ์ดในมือ N ใบ */
   | { do: 'discard'; count: number; if?: Condition; filter?: CardFilter }
   /** นำ Core จากวอยด์ (Core ใหม่) วางที่ไลฟ์เรา */
-  | { do: 'gainLifeFromVoid'; count: number }
+  | { do: 'gainLifeFromVoid'; count: number; /** BS26 ซีคเวิร์ม โนวา: ไลฟ์มีได้สูงสุดเท่านี้ */ maxLife?: number }
   /** Burst: "หลังจากนั้นสามารถจ่ายคอสต์ เพื่อให้เอฟเฟกต์ [Flash] ของการ์ดนี้ทำงาน" (จ่ายหรือไม่ก็ได้) */
   | { do: 'payToUseFlash'; /** BS11: เอฟเฟกต์ [Main] ของการ์ดนี้แทน [Flash] */ main?: true }
   /** (engine ใช้ภายใน) เปิด Burst: นำการ์ดออกจากช่อง Burst และลง Trash เมื่อประมวลผลเสร็จ */
@@ -488,6 +512,8 @@ export type Step =
   | { do: 'destroyOpponentBrave'; if?: Condition }
   /** คู่แข่งเลือกทำลายการ์ดของตัวเองที่ตรงตัวกรอง 1 ใบ */
   | { do: 'opponentDestroysOwn'; filter: CardFilter }
+  /** BS26 ซิกเฟซุล: คู่แข่งเลือกการ์ดของตัวเอง 1 ใบกลับไปไว้ใต้สุดเด็ค */
+  | { do: 'opponentBottomsOwn'; filter: CardFilter }
   /** "ในเทิร์นนี้ สปิริตเราทั้งหมด (ที่ตรงตัวกรอง) BP+": มีผลทั้งเทิร์น รวมตัวที่ลงสนามทีหลัง */
   | { do: 'buffAllies'; amount: number; filter?: CardFilter }
   /** อัญเชิญการ์ดในแทรชเราไม่จ่ายคอสต์ (เลือก ไม่อัญเชิญก็ได้) */
@@ -506,7 +532,7 @@ export type Step =
   /** ทิ้งใบบนสุดเด็คคู่แข่ง N ใบ ('level' = เท่าเลเวลของสปิริตนี้: [Crush]) */
   | { do: 'mill'; count: number | 'level' | /** BS17 ออริฮาลคอน โกเล็ม (Crush ที่ให้): Lv ของ subject */ 'subjectLevel' }
   /** ถ้าการ์ดที่ถูกทิ้งด้วย mill ล่าสุดของเอฟเฟกต์นี้ ตรงตัวกรองอย่างน้อย 1 ใบ: ทำ steps */
-  | { do: 'ifMilled'; filter: CardFilter; steps: Step[] }
+  | { do: 'ifMilled'; filter: CardFilter; steps: Step[]; /** BS26: ไม่ตรง = ทำอันนี้ */ else?: Step[] }
   /** ทิ้งใบบนสุดเด็คคู่แข่ง 1 ใบ ต่อคอสต์รวมของการ์ดคู่แข่งที่ถูกทำลายโดยเอฟเฟกต์นี้ */
   | { do: 'millPerDestroyedCost' }
   /** ทิ้งเบิร์สที่เซ็ทอยู่ของคู่แข่ง */
@@ -531,7 +557,7 @@ export type Step =
   /** นำการ์ดทั้งหมดในแทรชเราไปไว้ใต้สุดเด็ค (เรียงลำดับได้) */
   | { do: 'trashToDeckBottom' }
   /** สามารถอัญเชิญไม่จ่ายคอสต์การ์ดบนมือเรา 1 ใบที่ตรงตัวกรอง */
-  | { do: 'summonFromHandFree'; filter: CardFilter; if?: Condition; /** BS17: อัญเชิญโดย Summon Bolt */ summonBolt?: true; /** อัญเชิญได้ไม่เกิน max ใบ (ไม่ระบุ = 1) */ max?: number; /** BS11 ริวเซ็น: สีละ 1 ใบ */ distinctColors?: true; /** BS12 ทรูธ-อีเด็น: เอฟเฟกต์ [เมื่อสปิริต/เบรฟนี้ถูกอัญเชิญ] ของการ์ดที่อัญเชิญจะไม่ทำงาน */ noTriggers?: true; /** BS15 อองเปอเรอร์: max × จำนวนนี้ */ per?: CountPer }
+  | { do: 'summonFromHandFree'; filter: CardFilter; if?: Condition; /** BS26 อิฟริต: ทำต่อเมื่ออัญเชิญสำเร็จ (อยู่บนสนามหรือร่วมร่างอยู่) */ then?: Step[]; /** BS17: อัญเชิญโดย Summon Bolt */ summonBolt?: true; /** อัญเชิญได้ไม่เกิน max ใบ (ไม่ระบุ = 1) */ max?: number; /** BS11 ริวเซ็น: สีละ 1 ใบ */ distinctColors?: true; /** BS12 ทรูธ-อีเด็น: เอฟเฟกต์ [เมื่อสปิริต/เบรฟนี้ถูกอัญเชิญ] ของการ์ดที่อัญเชิญจะไม่ทำงาน */ noTriggers?: true; /** BS15 อองเปอเรอร์: max × จำนวนนี้ */ per?: CountPer }
   /**
    * ในเทิร์นนี้ เลือกการ์ดของคู่แข่งที่ตรงตัวกรอง BP-amount แล้วทำลายตัวที่ BP กลายเป็น 0
    * count = จำนวนตัว (ไม่ระบุ = 1), countPerAllyFamily = จำนวนตัวเท่าสปิริตเราเผ่านี้
@@ -664,6 +690,8 @@ export type Step =
       withReserve?: true;
       /** (engine ใช้ภายใน) ถามแบ่งจากรีเสิร์ฟ/แทรชแล้ว */
       pileAsked?: true;
+      /** BS26 คิลเมดีส: ถ้าเป้าจะสูญสลาย ถามว่าจะนำกลับไปไว้บนสุดเด็คแทนลงแทรช */
+      depletedToDeckTop?: true;
       if?: Condition;
       per?: CountPer;
       /** (engine ใช้ภายใน) บวก Charge แล้ว */
@@ -674,7 +702,7 @@ export type Step =
    * มี Soul Core และเลือกได้ (ส่งไม่หมด และคอร์ปกติพอ) = เจ้าของการ์ดเลือกว่าจะส่ง Soul Core ด้วยหรือไม่ (กติกา 07 Q2)
    * soul = ผลที่เลือกแล้ว · byOpponent = เอฟเฟกต์ของคู่แข่ง (เช็กสูญสลายโดยคู่แข่ง)
    */
-  | { do: 'coresOff'; cardId: string; n: number; to: 'reserve' | 'trash' | 'void'; byOpponent: boolean; soul?: boolean }
+  | { do: 'coresOff'; cardId: string; n: number; to: 'reserve' | 'trash' | 'void'; byOpponent: boolean; soul?: boolean; /** BS26 คิลเมดีส: สูญสลายแล้วกลับไปไว้บนสุดเด็คแทนแทรช */ toDeckTop?: true }
   /**
    * (ภายใน engine) ส่งคอร์ออกจากหลายตัวตามที่แบ่งไว้ (choice distribute) ทีเดียว:
    * ถาม Kagemusha ของทุกเป้าก่อน (kage = ผู้เลือกคือผู้ควบคุมเอฟเฟกต์) → ถามเรื่อง Soul Core ของแต่ละตัว → ส่งออกพร้อมกัน
@@ -720,7 +748,7 @@ export type Step =
   /** BS17 เบียคุ-กาโร: "เมื่อตัดสินผลการต่อสู้" (バトル解決時) = ทำ steps ก่อนเทียบ BP / ไลฟ์ลดของการต่อสู้นี้ */
   | { do: 'atBattleResolve'; steps: Step[] }
   /** BS17 ซาราตี: ในการต่อสู้นี้ เมื่อการโจมตีของการ์ดนี้ทำให้ไลฟ์คู่แข่งลดลง ทำ steps */
-  | { do: 'onBattleHitLife'; steps: Step[] }
+  | { do: 'onBattleHitLife'; steps: Step[]; /** BS26 สคูลด์: การ์ดต้นเหตุ (subject) แทนการ์ดนี้ */ target?: 'subject' }
   /** BS17 คู-ซี: ในการต่อสู้นี้ ผู้โจมตี (การ์ดนี้) ไม่ถูกป้องกันโดยสปิริต/อัลติเมทที่มี Lv ต่ำกว่าการ์ดนี้ */
   | { do: 'battleUnblockableLowerLevel' }
   /** BS17 เพนต้น / พาวเวอร์ดาวน์: ในเทิร์นนี้ เด็คของเราจะไม่ถูกทิ้ง */
@@ -814,7 +842,7 @@ export type Step =
   /** ในการต่อสู้นี้ ผู้โจมตี (สปิริตนี้) ไม่ถูกป้องกันโดยสปิริตคู่แข่งที่คอสต์ไม่เกินคอสต์ของสปิริตนี้ */
   | { do: 'unblockableByCostAtMostSelf' }
   /** ในการต่อสู้นี้ คู่แข่งจะป้องกันได้ต้องส่งคอร์รีเสิร์ฟ N เม็ดลงแทรช */
-  | { do: 'blockTax'; reserveToTrash: number; /** ทิ้งการ์ดบนมือแทน (อาคิตะ-ด็อก) */ discard?: number; /** BSC02 มิเรีย: ส่งคอร์บนฟิลด์ของตัวเอง (สนาม/รีเสิร์ฟ) N เม็ดไปแทรช */ fieldToTrash?: number }
+  | { do: 'blockTax'; /** BS26 มุคุโระ: การ์ดที่ทิ้ง (discard) ต้องตรงตัวกรอง */ discardFilter?: CardFilter; /** BS26 ควีนไนท์แมร์: ส่งคอร์ไลฟ์ N เม็ดไปรีเสิร์ฟ (เปิดเบิร์สไม่ได้) */ lifeToReserve?: number; /** BS26: ภาษีเฉพาะการป้องกันด้วยอัลติเมท */ ultimatesOnly?: true; reserveToTrash: number; /** ทิ้งการ์ดบนมือแทน (อาคิตะ-ด็อก) */ discard?: number; /** BSC02 มิเรีย: ส่งคอร์บนฟิลด์ของตัวเอง (สนาม/รีเสิร์ฟ) N เม็ดไปแทรช */ fieldToTrash?: number }
   /** ทำลายเบรฟที่ให้เอฟเฟกต์นี้ (ร่วมร่างอยู่) ถ้าทำได้ ทำ then */
   | { do: 'destroySourceBrave'; then?: Step[] }
   /** ถ้า debuff ของเอฟเฟกต์นี้ทำให้สปิริตคู่แข่งกลายเป็น BP0 เป็นตัวแรกของเทิร์น: ทำ steps */
@@ -865,7 +893,7 @@ export type Step =
   /** สามารถเลือกสปิริตของคู่แข่ง 1 ตัว: ตัวนั้นต้องโจมตีมาที่สปิริตนี้เป็นใบแรกสุดของสเต็ป ถ้าทำได้ */
   | { do: 'forceAttackChosen'; /** BS16 ซันสโตน ดรากูน: "สปิริตนั้นต้องโจมตีถ้าทำได้" (ไม่ต้องโจมตีมาที่สปิริตนี้) */ noHolder?: true }
   /** ในเทิร์นนี้ ไลฟ์เราไม่ได้รับความเสียหายจากการโจมตีของสปิริต/อัลติเมทคอสต์ตั้งแต่ minCost */
-  | { do: 'lifeShieldThisTurn'; minCost?: number; /** BSC01 เบิร์สต์แบริเออร์: การโจมตีของสปิริตคอสต์ไม่เกิน N (อัลติเมทไม่นับ) */ maxCost?: number; spiritsOnly?: true }
+  | { do: 'lifeShieldThisTurn'; /** BS26 แอนตี้เบรฟแบริเออร์: เฉพาะสปิริตร่วมร่าง */ braved?: true; minCost?: number; /** BSC01 เบิร์สต์แบริเออร์: การโจมตีของสปิริตคอสต์ไม่เกิน N (อัลติเมทไม่นับ) */ maxCost?: number; spiritsOnly?: true }
   /** (engine ใช้ภายใน) Kagemusha: จดว่าการ์ดนี้ถูกอัญเชิญแล้ว เอฟเฟกต์ที่เล็งอยู่ต้องเล็งการ์ดนี้แทน */
   | { do: 'kageSet'; cardId: string }
   // ---------------- BS07
@@ -876,7 +904,7 @@ export type Step =
   /** ทิ้งการ์ดเมจิคไทป์ [เพลง] บนฟิลด์เรา (opponent = ของคู่แข่ง) 1 ใบ */
   | { do: 'songToTrash'; opponent?: true }
   /** BSC04 เซน่า-ริวมิน: นำคอร์ทั้งหมดในแทรชเราไปวางบนสปิริตของเราได้ตามใจชอบ (left: engine ใช้ภายใน) */
-  | { do: 'trashCoresSpread'; left?: number }
+  | { do: 'trashCoresSpread'; left?: number; /** BS26 ริวแมน แฟนตาซิสต้า: วางได้เฉพาะการ์ดของเราที่ตรงตัวกรอง */ filter?: CardFilter }
   /** BSC04 คอสตูมเชนจ์: แยกเบรฟ 1 ใบออกจากสปิริตร่วมร่างของเรา 1 ตัว (เบรฟอยู่ต่อเป็นสปิริต/ลงแทรชตามกติกา 04) */
   | { do: 'separateOwnBrave' }
   /** BSC04 ไดอาน่า-เฟลอร์: นำการ์ดนี้กลับไปไว้ใต้สุดเด็ค */
@@ -897,6 +925,28 @@ export type Step =
   | { do: 'onStageLeave'; cardId: string; keyword: boolean; /** (ตัดสินแล้ว) เสื่อมสภาพแทนกลับใต้เด็ค */ exhaust?: boolean }
   /** (engine ใช้ภายใน) ถ้าการ์ดนี้อยู่บนสนาม ทำ steps ("เมื่อเป็นเช่นนั้น" หลังอัญเชิญ) */
   | { do: 'ifOnField'; cardId: string; steps: Step[] }
+  /** (engine ใช้ภายใน) BS26 Trigger Counter: ถามเจ้าของเด็คที่ U Trigger ฮิต / ใช้การ์ดที่เลือก / จ่ายคอสต์เมจิค */
+  | { do: 'triggerCounterAsk' }
+  /** BS26 เบรฟพิสเกส: ส่งคอร์บนสปิริตและอัลติเมททั้งหมดของคู่แข่งตัวละ 1 เม็ดไปรีเสิร์ฟคู่แข่ง */
+  | { do: 'coresOffEveryOpponent' }
+  /** BS26 ไฮม์แคนนอน: อัลติเมทของเราที่กำลังต่อสู้ 1 ตัวฟื้นสภาพ และในเทิร์นนี้โจมตีไม่ได้ */
+  | { do: 'refreshBattlingUltimateNoAttack' }
+  /** BS26 แอมเบอร์ เลออน / อควาเรียส: นำเบรฟที่ร่วมร่างกับสปิริตของเรา 1 ใบที่ตรงตัวกรองกลับขึ้นมือ (then = ทำต่อเมื่อนำกลับได้) */
+  | { do: 'ownBraveToHand'; filter: CardFilter; then?: Step[] }
+  /** BS26 ซอร์ดฟิช: ในเทิร์นนี้สปิริตทั้งหมดของเราไม่รับผลเอฟเฟกต์ของการ์ดประเภทเหล่านี้ของคู่แข่ง */
+  | { do: 'immuneAlliesThisTurn'; fromTypes: CardType[] }
+  /** (engine ใช้ภายใน) BS26 ซิกเฟซุล: การ์ดนี้ไม่รับผลเอฟเฟกต์ที่เล็งอยู่ */
+  | { do: 'dodgeSet'; cardId: string }
+  /** (engine ใช้ภายใน) ทำ steps ถ้าการ์ดนี้อยู่บนสนาม (รวมเบรฟที่ร่วมร่างอยู่) */
+  | { do: 'ifSummoned'; cardId: string; steps: Step[] }
+  /** BS26 อัลโลเบลดเดอร์: ในการต่อสู้นี้ ขอบเขต [เอฟเฟกต์ทำลาย BP] ของการ์ดนี้ +amount */
+  | { do: 'bpDestroyBoostBattle'; amount: number }
+  /** BS26 ชิโซเบิร์ด: ในการต่อสู้นี้ [เอฟเฟกต์ทำลาย BP] ของการ์ดนี้เลือกเป้าเป็นอัลติเมทได้ */
+  | { do: 'bpDestroyUltimateBattle' }
+  /** BS26 ประกายแห่งซูเปอร์โนวา: ในเทิร์นนี้ การ์ดในมือเราที่ตรงตัวกรองมีคอสต์เท่ากับจำนวนไลฟ์ของเรา */
+  | { do: 'handCostLifeThisTurn'; filter: CardFilter }
+  | { do: 'triggerCounterUse'; cardId: string }
+  | { do: 'payToUseCounter' }
   /** (engine ใช้ภายใน) เบิร์สของเราที่ถูกคู่แข่งทิ้ง ไม่สั่งใช้: ลงแทรช */
   | { do: 'trashOwnBurst' }
   /** (engine ใช้ภายใน) On Stage จบ: trigger "เมื่อสปิริตนี้/สปิริตของเรา On Stage" */
@@ -1082,7 +1132,7 @@ export type Step =
   /** ในเทิร์นนี้ สปิริตนี้ไม่ถูกป้องกัน */
   | { do: 'unblockableSelfThisTurn'; if?: Condition }
   /** ในเทิร์นนี้ สปิริตของเรา 1 ตัว (เลือก) ได้รับเจ็มสีนี้เพิ่ม */
-  | { do: 'symbolChosenAllyThisTurn'; color: Color; count: number }
+  | { do: 'symbolChosenAllyThisTurn'; color: Color; count: number; /** BS26 พลีอาดีส: ตัวกรองเป้า (notSelf ได้) */ filter?: CardFilter }
   /** ในการต่อสู้นี้ เมื่อสปิริตที่ต่อสู้กับสปิริตนี้ถูกทำลาย/สูญสลาย สปิริตนี้ฟื้นสภาพ */
   | { do: 'refreshOnBattlerGone' }
   /** สปิริตที่คู่แข่งเพิ่งเลือกเสื่อมสภาพ (opponentExhaustsOwn) มี BP ไม่เกินสปิริตต้นเหตุ (ผู้โจมตี): ส่งคอร์ไลฟ์คู่แข่ง 1 เม็ดลงรีเสิร์ฟ */
@@ -1247,6 +1297,10 @@ export type TriggerEvent =
   | 'allyUTriggerHit'
   /** BS17 เพนต้น / พาวเวอร์ดาวน์: การ์ดนี้ถูกวางจากเด็คเราที่แทรชโดย U Trigger ของคู่แข่ง (คู่กับ milledByOpponent) */
   | 'uTriggeredByOpponent'
+  /** BS26 เครื่องบินรบปเทรา (การ์ดในมือ): U Trigger ของเราถูก Guard */
+  | 'uTriggerGuarded'
+  /** BS26 หุบเขาใหญ่ไกน่าร็อค: การ์ดของคู่แข่งถูกอัญเชิญ (subject = การ์ดนั้น) */
+  | 'oppSummoned'
   /** BS17 เหมืองแร่หายาก: ไลฟ์ของคู่แข่งลดลง */
   | 'oppLifeLost'
   /** เราทิ้งเด็คคู่แข่งด้วยเอฟเฟกต์ (subject = สปิริตที่เป็นเจ้าของเอฟเฟกต์นั้น) */
@@ -1422,6 +1476,8 @@ export interface SubjectFilter {
   // ---------------- BS09
   /** allyDestroyed: ถูกทำลายโดยเอฟเฟกต์ของคู่แข่ง (ไม่นับการต่อสู้) */
   byOpponentEffect?: true;
+  /** BS26 ซีแบ็ค อาร์เมอร์ (allyExhausted): เสื่อมสภาพโดยเอฟเฟกต์ของคู่แข่ง */
+  exhaustedByOpponentEffect?: true;
   // ---------------- BS11
   /** allyBurstActivated: เบิร์สนั้นถูกสั่งใช้โดย Catalyze */
   catalyzed?: true;
@@ -1544,6 +1600,12 @@ type AbilityCore =
       destroySource?: true;
       /** BS17 อาร์ชิบอลด์: ใช้กับการถูกทำลายโดยเราเองด้วย (Summon Bolt) */
       ownToo?: true;
+      /** BS26 สม็อกชีพ: จ่ายด้วยการส่งคอร์บนอัลติเมทของคู่แข่ง 1 เม็ดไปรีเสิร์ฟคู่แข่ง */
+      oppUltCore?: true;
+      /** BS26 โบนริตเตอร์: (บังคับ ไม่ถาม) ทิ้งใบบนสุดเด็คเรา 1 ใบ ถ้าตรงตัวกรอง = อยู่ต่อ ไม่งั้นถูกทำลาย */
+      millSelfIf?: CardFilter;
+      /** BS26 เดวิด: (บังคับ ไม่ถาม) U Trigger ถ้าฮิต = then แล้วอยู่ต่อ ไม่งั้นถูกทำลาย */
+      uTriggerStay?: true;
       if?: Condition;
     }
   /** "ถ้าเรามี <name> อยู่, การลดคอสต์ทั้งหมดของการ์ดนี้ถือว่าลดจนครบแล้ว" */
@@ -1789,6 +1851,17 @@ type AbilityCore =
   | { kind: 'uTriggerCostBoost'; source: number; levels: number[]; if?: Condition; filter: CardFilter; amount: number }
   /** BS17 เซเบอร์เซเซริ: การ์ดนี้ถูกวางจากเด็คเราที่แทรชโดย U Trigger ของอัลติเมทคอสต์ไม่เกิน maxCost ของคู่แข่ง = Guard (ไม่ฮิต) */
   | { kind: 'uTriggerGuard'; source: number; levels: number[]; maxCost: number }
+  /**
+   * BS26 Trigger Counter (การ์ดในมือ): เมื่อ U Trigger ของคู่แข่งฮิต ก่อนผลฮิตทำงาน
+   * เบรฟ/สปิริต = จ่ายคอสต์อัญเชิญ แล้วทำ steps (ถ้าอยู่บนสนาม) · เมจิค = จ่ายคอสต์ใช้ แล้วทำ steps (ลงแทรช)
+   */
+  | { kind: 'triggerCounter'; source: number; levels: number[]; steps: Step[] }
+  /** BS26 ซิกเฟซุล: เมื่อการ์ดนี้ตกเป็นเป้าของเอฟเฟกต์คู่แข่ง สามารถทิ้งการ์ดในมือ 1 ใบเพื่อไม่รับผลเอฟเฟกต์นั้น (key = ใช้ได้ตามเงื่อนไข if เช่น usedFewerThan) */
+  | { kind: 'targetDodge'; source: number; levels: number[]; if?: Condition; key: string }
+  /** BS26 จุดเชื่อมกาลอวกาศ A-01: สปิริตคอสต์ต่ำกว่า min ไม่นับในเงื่อนไขอัญเชิญของอัลติเมท (ผู้เล่นทุกคน) */
+  /** BS26 เมืองแห่งความโศก โทรเมอา: อัญเชิญเบรฟจากมือด้วย Trigger Counter ไม่ต้องจ่ายคอสต์ */
+  | { kind: 'triggerCounterFree'; source: number; levels: number[] }
+  | { kind: 'summonConditionMinCost'; source: number; levels: number[]; if?: Condition; min: number }
   /** BS16 เวลซันดี: รีเฟรชสเต็ปของคู่แข่ง เราก็ทำรีเฟรชสเต็ปด้วย */
   | { kind: 'refreshWithOpponent'; source: number; levels: number[] }
   /** BS16 โนวา-เรมแนนต์: สปิริตทั้งหมดจะร่วมร่างไม่ได้ */
@@ -1821,7 +1894,9 @@ type AbilityCore =
   | { kind: 'teamAlso'; source: number; levels: number[]; teams: string[]; granted?: true }
   | { kind: 'familyAlso'; source: number; levels: number[]; if?: Condition; family: string; /** BSC04 ชุดซานต้า: เบรฟให้ผู้ร่วมร่าง */ granted?: true; /** BS10: การ์ดของเราที่ตรงตัวกรองได้รับแทน (ไม่ใช่ตัวการ์ดนี้) */ allies?: CardFilter }
   /** การ์ดของเราที่ตรงตัวกรอง ใช้โซลคอร์ร่วมจ่ายคอสต์อัญเชิญ เพื่ออัญเชิญโดยไม่สนเงื่อนไข (《เงื่อนไขอัญเชิญ》) ได้ */
-  | { kind: 'ignoreSummonCondition'; source: number; levels: number[]; filter: CardFilter }
+  | { kind: 'ignoreSummonCondition'; source: number; levels: number[]; filter: CardFilter; /** BS26 ฮิโนโกะ: ไม่สนเงื่อนไขอัญเชิญเลย (ไม่ต้องจ่ายด้วยโซลคอร์) */ always?: true }
+  /** BS26 ประกายแห่งซูเปอร์โนวา: ตอนอัญเชิญการ์ดที่ตรง filter อัลติเมทของเราถือว่าเป็นสปิริตด้วย (นับในเงื่อนไขอัญเชิญ) */
+  | { kind: 'ultimatesAsSpiritsForSummon'; source: number; levels: number[]; filter: CardFilter; ownMainStepOnly?: true }
   /** [เอฟเฟกต์ทำลายคอสต์] (ทำลายคอสต์ไม่เกิน N) ของสปิริต/อัลติเมทของเราที่ตรงตัวกรอง ทำลายได้เพิ่ม +amount คอสต์ */
   | { kind: 'destroyCostBoost'; source: number; levels: number[]; if?: Condition; filter: CardFilter; amount: number }
   /** สปิริตของเราที่ตรงตัวกรองทั้งหมดถือว่าเป็น Lv สูงสุด (ownAttackStepOnly = แอทแท็คสเต็ปของเรา) */

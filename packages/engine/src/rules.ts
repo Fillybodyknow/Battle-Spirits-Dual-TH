@@ -418,6 +418,7 @@ export function conditionHolds(
   if ('not' in cond) return !conditionHolds(state, sourceId, cond.not, paidWithSoul, catalyzed, db);
   if ('all' in cond) return cond.all.every((c) => conditionHolds(state, sourceId, c, paidWithSoul, catalyzed, db));
   if ('attackStep' in cond) return state.phase === 'attack';
+  if ('mainStep' in cond) return state.phase === 'main';
   if ('ownAttackStep' in cond) return state.phase === 'attack' && state.turnPlayer === card.owner;
   if ('anyAllySoul' in cond) return owner.field.some((id) => state.cards[id]!.cores.some((x) => state.cores[x]!.isSoul));
   if ('selfBraved' in cond) return card.braves.length > 0;
@@ -457,6 +458,17 @@ export function conditionHolds(
   if ('noLifeDamageThisTurn' in cond) return !(state.lifeDamagedThisTurn ?? []).includes(card.owner);
   if ('directAttack' in cond) return !!state.battle?.direct;
   if ('selfInBattle' in cond) return !!state.battle && (state.battle.attackerId === sourceId || state.battle.blockers.includes(sourceId));
+  if ('battleAttacker' in cond) {
+    const b = state.battle;
+    return !!b && !!db && !!state.cards[b.attackerId] && matchesFilter(state, db, b.attackerId, cond.battleAttacker);
+  }
+  if ('ownBraveHas' in cond) {
+    if (!db) return false;
+    const me = state.cards[sourceId]!.owner;
+    return state.players[me].field.some((f) => state.cards[f]!.braves.some((b) => matchesFilter(state, db, b, cond.ownBraveHas)));
+  }
+  // ตรวจจาก trigger lifeLost เท่านั้น (holds ใน effects.ts)
+  if ('lifeLostAtLeast' in cond || 'destroyedBy' in cond || 'depletedByThis' in cond) return false;
   if ('attackerFamily' in cond) {
     const b = state.battle;
     if (!b || !db) return false;
@@ -748,6 +760,13 @@ export function matchesFilter(state: GameState, db: CardDatabase, cardId: string
   if (filter.braveNamed && !card.braves.some((b) => nameHas(db.get(state.cards[b]!.cardNo), filter.braveNamed!))) return false;
   if (filter.shownOnly && !(state.shownCards ?? []).includes(cardId)) return false;
   if (filter.minSymbols !== undefined && cardSymbolTotal(state, db, cardId) < filter.minSymbols) return false;
+  // ---------------- BS26
+  if (filter.maxSymbols !== undefined && cardSymbolTotal(state, db, cardId) > filter.maxSymbols) return false;
+  if (filter.hasBravedEffect && !(db.get(card.cardNo).effects as { whileBraved?: boolean }[]).some((e) => e.whileBraved)) return false;
+  if (filter.bpBelowAttacker) {
+    const atk = state.battle?.attackerId;
+    if (!atk || !state.cards[atk] || currentBp(state, db, cardId) >= currentBp(state, db, atk)) return false;
+  }
   // ---------------- BS07
   if (filter.team && !cardTeams(state, db, cardId).includes(filter.team)) return false;
   if (filter.teamsAny && !filter.teamsAny.some((t) => cardTeams(state, db, cardId).includes(t))) return false;
@@ -758,6 +777,7 @@ export function matchesFilter(state: GameState, db: CardDatabase, cardId: string
   if (filter.excludeIds?.includes(cardId)) return false;
   // ---------------- BS08
   if (filter.textIncludes && !filter.textIncludes.some((w) => textHas(def, w) || grantedText(state, db, cardId, w))) return false;
+  if (filter.noTextIncludes && filter.noTextIncludes.some((w) => textHas(def, w))) return false;
   if (filter.noEffectText && effectText(def).trim() !== '') return false;
   if (filter.notInBattle && state.battle && (state.battle.attackerId === cardId || state.battle.blockers.includes(cardId))) return false;
   // ---------------- BS09
@@ -1167,6 +1187,11 @@ function baseCostInner(state: GameState, db: CardDatabase, cardId: string, zone:
         cost = cost === null ? v : Math.min(cost, v);
       }
     }
+    // BS26 ประกายแห่งซูเปอร์โนวา: ในเทิร์นนี้คอสต์เท่ากับจำนวนไลฟ์
+    for (const t of state.turnHandCostLife ?? []) {
+      if (t.turn !== state.turn || t.player !== card.owner || !matchesFilter(state, db, cardId, t.filter)) continue;
+      cost = cost === null ? owner.life.length : Math.min(cost, owner.life.length);
+    }
   }
   if (cost !== null) return cost;
   if (zone === 'hand') {
@@ -1315,6 +1340,8 @@ export function effectBlocker(state: GameState, db: CardDatabase, sourceId: stri
   if ((state.battle?.immune ?? []).some((im) => im.cardId === targetId && im.types.includes(srcType))) return 'battle';
   // BS09 เฟเธอร์บาเรีย: ในเทิร์นนี้ไม่รับเอฟเฟกต์ทั้งหมดของคู่แข่ง
   if ((state.turnImmune ?? []).some((t) => t.cardId === targetId && t.turn === state.turn)) return 'battle';
+  // BS26 ซอร์ดฟิช: ในเทิร์นนี้สปิริตทั้งหมดของเราไม่รับผลเอฟเฟกต์ของอัลติเมทของคู่แข่ง
+  if (tDef.type !== 'ultimate' && tDef.type !== 'nexus' && (state.turnImmuneAll ?? []).some((t) => t.player === target.owner && t.turn === state.turn && t.fromTypes.includes(srcType))) return 'battle';
   for (const p of ['p1', 'p2'] as const) {
     if (p === src.owner) continue; // ผู้ถือความสามารถต้องเป็นคู่แข่งของต้นเหตุ
     for (const holder of state.players[p].field.flatMap((f) => [f, ...state.cards[f]!.braves])) {
@@ -2045,6 +2072,11 @@ export function bpDestroyBoostFor(state: GameState, db: CardDatabase, cardId: st
       out.src.push({ cardId: src, source: ab.source });
     }
   }
+  // BS26 อัลโลเบลดเดอร์: ในการต่อสู้นี้ (ของการ์ดนี้เอง)
+  if (card.battleBpDestroy) {
+    out.amount += card.battleBpDestroy.amount;
+    out.src.push({ cardId, source: card.battleBpDestroy.source });
+  }
   return out.src.length ? out : null;
 }
 
@@ -2158,6 +2190,7 @@ export function lifeShielded(state: GameState, db: CardDatabase, defender: Playe
     if (cost < l.minCost) return false;
     if (l.maxCost !== undefined && cost > l.maxCost) return false;
     if (l.spiritsOnly && db.get(state.cards[attackerId]!.cardNo).type === 'ultimate') return false;
+    if (l.braved && (state.cards[attackerId]!.braves.length === 0)) return false;
     return true;
   });
 }
@@ -2382,7 +2415,7 @@ export function canAttackWith(state: GameState, db: CardDatabase, cardId: string
 
 /** "ในเทิร์นนี้ สปิริตนั้นจะโจมตี/ป้องกันไม่ได้" (blockOnly = ป้องกันไม่ได้อย่างเดียว: forBlock) */
 export function turnLocked(state: GameState, cardId: string, forBlock = false): boolean {
-  return (state.turnLocks ?? []).some((l) => l.cardId === cardId && l.turn === state.turn && (!l.blockOnly || forBlock));
+  return (state.turnLocks ?? []).some((l) => l.cardId === cardId && l.turn === state.turn && (!l.blockOnly || forBlock) && (!l.attackOnly || !forBlock));
 }
 
 /**
@@ -2442,7 +2475,9 @@ export function blockersFor(state: GameState, db: CardDatabase, defender: Player
   // ฮิเมะเนโกะ: ต้องส่งคอร์รีเสิร์ฟลงแทรชก่อนป้องกัน (ยังไม่จ่าย และคอร์ไม่พอ = ป้องกันไม่ได้)
   if (b?.blockTax && !b.blockTax.paid && state.players[defender].reserve.length < b.blockTax.reserveToTrash) return [];
   // อาคิตะ-ด็อก: ต้องทิ้งการ์ดบนมือก่อนป้องกัน
-  if (b?.blockTax?.discard && !b.blockTax.paid && handCards(state, defender).length < b.blockTax.discard) return [];
+  if (b?.blockTax?.discard && !b.blockTax.paid && handCards(state, defender).filter((h) => !b.blockTax!.discardFilter || matchesFilter(state, db, h, b.blockTax!.discardFilter)).length < b.blockTax.discard) return [];
+  // BS26 ควีนไนท์แมร์: ป้องกันด้วยอัลติเมทต้องส่งไลฟ์ไปรีเสิร์ฟ (ไลฟ์ไม่พอ = อัลติเมทป้องกันไม่ได้)
+  if (b?.blockTax?.lifeToReserve && b.blockTax.ultimatesOnly && !b.blockTax.paid && state.players[defender].life.length < b.blockTax.lifeToReserve) list = list.filter((x) => db.get(state.cards[x]!.cardNo).type !== 'ultimate');
   // BSC02 มิเรีย: ต้องส่งคอร์บนฟิลด์ (สนาม/รีเสิร์ฟ) ลงแทรชก่อนป้องกัน
   if (b?.blockTax?.fieldToTrash && !b.blockTax.paid && fieldCoreCount(state, defender) < b.blockTax.fieldToTrash) return [];
   // BSC02 โซโลวิง: ในการต่อสู้นี้ ไม่ถูกป้องกันโดยสปิริตเลเวลที่ระบุ
@@ -2682,16 +2717,69 @@ export function summonConditionOk(state: GameState, db: CardDatabase, cardId: st
   if (!cond) return true;
   // BS09 เหล่าคนใกล้ชิด: ใช้โซลคอร์ร่วมจ่ายคอสต์ = อัญเชิญโดยไม่สนเงื่อนไข (opts.paidWithSoul ไม่ระบุ = ถามว่า "อัญเชิญได้ถ้าจ่ายด้วยโซลคอร์" ด้วย)
   if (opts.paidWithSoul !== false && ignoreSummonConditionSource(state, db, cardId)) return true;
+  // BS26 ฮิโนโกะ: ไม่สนเงื่อนไขอัญเชิญ (ไม่ต้องจ่ายด้วยโซลคอร์)
+  if (ignoreSummonConditionSource(state, db, cardId, true)) return true;
   const { text: _t, ...c } = cond as Condition & { text?: string };
-  return conditionHolds(state, cardId, c as Condition, false, false, db);
+  // BS26 ประกายแห่งซูเปอร์โนวา: อัลติเมทของเราถือว่าเป็นสปิริตด้วย (นับในเงื่อนไข "สปิริต…ของเราตั้งแต่ N ตัว")
+  const asSpirit = ultimatesAsSpiritsSource(state, db, cardId);
+  let cc = asSpirit ? ultimatesCountAsSpirits(c as Condition) : (c as Condition);
+  // BS26 จุดเชื่อมกาลอวกาศ A-01: สปิริตคอสต์ไม่เกิน N ไม่นับ (ผู้เล่นทุกคน)
+  const minCost = summonConditionMinCostOf(state, db);
+  if (minCost > 0) cc = withSummonMinCost(cc, minCost);
+  return conditionHolds(state, cardId, cc, false, false, db);
+}
+
+/** BS26 จุดเชื่อมกาลอวกาศ A-01: คอสต์ขั้นต่ำของสปิริตที่นับในเงื่อนไขอัญเชิญของอัลติเมท (0 = ไม่มีผล) */
+function summonConditionMinCostOf(state: GameState, db: CardDatabase): number {
+  let min = 0;
+  for (const src of staticSources(state, db, ['p1', 'p2'], 'summonConditionMinCost')) {
+    const ab = db.get(state.cards[src.cardId]!.cardNo).abilities.find((a) => a.kind === 'summonConditionMinCost' && a.source === src.source);
+    if (ab?.kind !== 'summonConditionMinCost' || !conditionHolds(state, src.cardId, ab.if, false, false, db)) continue;
+    min = Math.max(min, ab.min);
+  }
+  return min;
+}
+function withSummonMinCost(c: Condition, min: number): Condition {
+  const x = c as Record<string, unknown>;
+  if (x.all) return { all: (x.all as Condition[]).map((y) => withSummonMinCost(y, min)) } as Condition;
+  if (x.alliesMatchAtLeast) {
+    const a = x.alliesMatchAtLeast as { filter: CardFilter; count: number };
+    return { ...x, alliesMatchAtLeast: { ...a, filter: { ...a.filter, minCost: Math.max(a.filter.minCost ?? 0, min) } } } as Condition;
+  }
+  return c;
+}
+
+/** BS26: เงื่อนไขอัญเชิญที่นับสปิริต → นับอัลติเมทด้วย */
+function ultimatesCountAsSpirits(c: Condition): Condition {
+  const x = c as Record<string, unknown>;
+  if (x.all) return { all: (x.all as Condition[]).map(ultimatesCountAsSpirits) } as Condition;
+  if (x.alliesMatchAtLeast) {
+    const a = x.alliesMatchAtLeast as { filter: CardFilter; count: number };
+    const types = a.filter.types;
+    if (types && types.includes('spirit') && !types.includes('ultimate')) return { ...x, alliesMatchAtLeast: { ...a, filter: { ...a.filter, types: [...types, 'ultimate'] } } } as Condition;
+  }
+  return c;
+}
+
+/** BS26 ประกายแห่งซูเปอร์โนวา: ตอนอัญเชิญการ์ดนี้ อัลติเมทของเราถือว่าเป็นสปิริตด้วย */
+export function ultimatesAsSpiritsSource(state: GameState, db: CardDatabase, cardId: string): StaticSource | null {
+  const owner = state.cards[cardId]!.owner;
+  for (const src of staticSources(state, db, [owner], 'ultimatesAsSpiritsForSummon')) {
+    const ab = db.get(state.cards[src.cardId]!.cardNo).abilities.find((a) => a.kind === 'ultimatesAsSpiritsForSummon' && a.source === src.source);
+    if (ab?.kind !== 'ultimatesAsSpiritsForSummon' || !matchesFilter(state, db, cardId, ab.filter)) continue;
+    if (ab.ownMainStepOnly && !(state.phase === 'main' && state.turnPlayer === owner)) continue;
+    return src;
+  }
+  return null;
 }
 
 /** BS09: การ์ดของเราที่ให้การ์ดนี้ใช้โซลคอร์ร่วมจ่าย เพื่ออัญเชิญโดยไม่สนเงื่อนไข */
-export function ignoreSummonConditionSource(state: GameState, db: CardDatabase, cardId: string): StaticSource | null {
+export function ignoreSummonConditionSource(state: GameState, db: CardDatabase, cardId: string, always = false): StaticSource | null {
   const owner = state.cards[cardId]!.owner;
   for (const src of staticSources(state, db, [owner], 'ignoreSummonCondition')) {
     const ab = db.get(state.cards[src.cardId]!.cardNo).abilities.find((a) => a.kind === 'ignoreSummonCondition' && a.source === src.source);
-    if (ab?.kind === 'ignoreSummonCondition' && matchesFilter(state, db, cardId, ab.filter)) return src;
+    // always = เฉพาะแบบไม่ต้องจ่ายโซลคอร์ (BS26) · ไม่ระบุ = เฉพาะแบบจ่ายโซลคอร์ (BS09)
+    if (ab?.kind === 'ignoreSummonCondition' && !!ab.always === always && matchesFilter(state, db, cardId, ab.filter)) return src;
   }
   return null;
 }

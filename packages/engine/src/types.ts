@@ -62,6 +62,10 @@ export interface CardInstance {
   battleBp?: number;
   /** เจ็มที่เพิ่มจากเอฟเฟกต์ที่ไม่บอกระยะเวลา: มีผลจนจบการต่อสู้นั้น */
   battleSymbols?: { color: string; count: number }[];
+  /** BS26 อัลโลเบลดเดอร์: ในการต่อสู้นี้ขอบเขต [เอฟเฟกต์ทำลาย BP] ของการ์ดนี้ +amount (source = บรรทัดที่ให้ผล) */
+  battleBpDestroy?: { amount: number; source: number };
+  /** BS26 ชิโซเบิร์ด: ในการต่อสู้นี้ [เอฟเฟกต์ทำลาย BP] ของการ์ดนี้เลือกอัลติเมทได้ */
+  battleBpDestroyUlt?: true;
   /** BS17 ไนท์ไอบิส: ในการต่อสู้นี้ ถือว่ามีคอสต์/BP นี้ (ร่างแยกซ้อน) */
   battleStack?: { cost: number; bp: number };
   /** BS17 ออร์แกนปีกทองคำ: การ์ดที่วางคว่ำอยู่ใต้การ์ดนี้ (ไม่อยู่ในโซนใด · ออกจากฟิลด์ = ลงแทรช) */
@@ -161,7 +165,7 @@ export interface Battle {
   /** จบ Attack Step เมื่อจบการต่อสู้นี้ ถ้าเงื่อนไขของผู้เล่นนี้เป็นจริงตอนจบ (ยูคิเกิร์ล) */
   endAttackStepIf?: { player: PlayerId; sourceId: string; cond: Condition };
   /** คู่แข่งต้องส่งคอร์รีเสิร์ฟ N เม็ดลงแทรชก่อนป้องกัน (ฮิเมะเนโกะ) · paid = จ่ายแล้วในการต่อสู้นี้ */
-  blockTax?: { reserveToTrash: number; discard?: number; /** BSC02: คอร์บนฟิลด์ (สนาม/รีเสิร์ฟ) ไปแทรช */ fieldToTrash?: number; paid?: boolean };
+  blockTax?: { discardFilter?: CardFilter; lifeToReserve?: number; ultimatesOnly?: true; reserveToTrash: number; discard?: number; /** BSC02: คอร์บนฟิลด์ (สนาม/รีเสิร์ฟ) ไปแทรช */ fieldToTrash?: number; paid?: boolean };
   /** BSC02 โซโลวิง: ผู้โจมตีไม่ถูกป้องกันโดยสปิริตเลเวลเหล่านี้ */
   unblockLevels?: number[];
   /** BS17 คู-ซี: ผู้โจมตีไม่ถูกป้องกันโดยสปิริต/อัลติเมทที่ Lv ต่ำกว่า */
@@ -280,6 +284,8 @@ export interface QueuedEffect {
   asMagic?: boolean;
   /** trigger oppHandIncreased: จำนวนการ์ดที่มือคู่แข่งเพิ่มขึ้น */
   handIncrease?: number;
+  /** BS26 ซิกเฟซุล: การ์ดที่ถามทิ้งการ์ดเพื่อไม่รับผลแล้ว (ในเอฟเฟกต์นี้) */
+  dodgeAsked?: string[];
   /** BS14 U Trigger: คอสต์ของการ์ดที่ถูกวางที่แทรช (ล่าสุด) */
   uTriggerCost?: number;
   /** BS14 เฟลมบรีซ: ในเอฟเฟกต์นี้ คู่แข่งสั่งใช้เบิร์ส "หลังจากสปิริตของเราถูกทำลายโดยคู่แข่ง" ไม่ได้ */
@@ -322,6 +328,10 @@ export interface QueuedEffect {
   uTriggerCardId?: string;
   /** BSC03 Double U Trigger: จำนวนครั้งที่ฮิต */
   uTriggerHits?: number;
+  /** BS26 การ์ดที่เอฟเฟกต์นี้ทำให้สูญสลาย */
+  depletedIds?: string[];
+  /** BS26 จำนวนการ์ดที่ returnAllFromTrash นำขึ้นมือ */
+  returnedCount?: number;
   /** BS16 เบรฟครีเมชัน: เบรฟของสปิริตที่เอฟเฟกต์นี้ทำลายล่าสุด */
   destroyedBraves?: string[];
   /** (BS07) trigger summon: การ์ดถูกอัญเชิญโดย On Stage / โดยเอฟเฟกต์ของการ์ดนี้ */
@@ -501,7 +511,7 @@ export interface GameState {
   forcedBlockers?: { cardId: string; turn: number }[];
   /** BS15 มิคาฟาร์: เทิร์นนี้ 1 ครั้ง เมจิคของ player นำสปิริตคู่แข่งกลับมือ/เด็ค = ไลฟ์คู่แข่ง 1 เม็ด */
   magicBounceLife?: { player: PlayerId; turn: number; used?: boolean };
-  turnLocks?: { cardId: string; turn: number; /** BS15: ป้องกันไม่ได้อย่างเดียว */ blockOnly?: boolean }[];
+  turnLocks?: { cardId: string; turn: number; /** BS15: ป้องกันไม่ได้อย่างเดียว */ blockOnly?: boolean; /** BS26 ไฮม์แคนนอน: โจมตีไม่ได้อย่างเดียว */ attackOnly?: boolean }[];
   /** BSC02 คัทลียา: ในเทิร์นนี้ เอฟเฟกต์ "แอทแท็คสเต็ปของคู่แข่ง" / "เมื่อสปิริตนี้ป้องกัน" ของการ์ดนี้ไม่ทำงาน */
   timingLocks?: { cardId: string; turn: number }[];
   /** BS16 วินด์เซอร์เคิล: ในเทิร์นนี้ "เมื่อสปิริตนี้ถูกทำลาย" ของสปิริตผู้เล่นนี้ไม่ทำงาน */
@@ -525,7 +535,7 @@ export interface GameState {
   /** เทิร์นที่มีสปิริตกลายเป็น BP0 โดย debuff ไปแล้ว */
   bpZeroTurn?: number;
   /** ในเทิร์นนี้ ไลฟ์ของผู้เล่นนี้ไม่ได้รับความเสียหายจากการโจมตีของสปิริต/อัลติเมทคอสต์ตั้งแต่ minCost (ลิมิเต็ดบาเรีย) */
-  lifeShields?: { player: PlayerId; minCost: number; turn: number; /** BSC01 เบิร์สต์แบริเออร์: คอสต์ไม่เกิน / เฉพาะสปิริต */ maxCost?: number; spiritsOnly?: true }[];
+  lifeShields?: { player: PlayerId; minCost: number; turn: number; /** BSC01 เบิร์สต์แบริเออร์: คอสต์ไม่เกิน / เฉพาะสปิริต */ maxCost?: number; spiritsOnly?: true; /** BS26: เฉพาะสปิริตร่วมร่าง */ braved?: true }[];
   /** สปิริต/อัลติเมทที่ทำให้ไลฟ์ของ player เสียหายแล้วในเทิร์นนี้ (ลองเคพ) */
   lifeDamageBy?: { turn: number; player: PlayerId; ids: string[] };
   /** การโจมตีใบแรกสุดของเทิร์น */
@@ -553,6 +563,10 @@ export interface GameState {
   magicBans?: { player: PlayerId; turn: number }[];
   /** ในเทิร์นนี้ การ์ดนี้ไม่รับเอฟเฟกต์ทั้งหมดของคู่แข่ง (เฟเธอร์บาเรีย) */
   turnImmune?: { cardId: string; turn: number }[];
+  /** BS26 ซอร์ดฟิช: ในเทิร์นนี้สปิริตทั้งหมดของ player ไม่รับผลเอฟเฟกต์ของการ์ดคู่แข่งประเภทเหล่านี้ */
+  turnImmuneAll?: { player: PlayerId; turn: number; fromTypes: string[] }[];
+  /** BS26 ซิกเฟซุล: การ์ดที่เลือกไม่รับผลเอฟเฟกต์ที่เล็งอยู่ (ใช้แล้วลบ) */
+  dodged?: string[];
   /** ในเทิร์นนี้ ขณะสปิริตของ player ที่ตรงตัวกรองโจมตีอยู่ เอฟเฟกต์ของคู่แข่งจบแอทแท็คสเต็ปไม่ได้ */
   noEndAttackStep?: { player: PlayerId; turn: number; filter: import('@bs/cards').CardFilter }[];
   /** โซลคอร์ที่อยู่ในแทรชของแต่ละฝ่ายตอนตรวจครั้งล่าสุด (trigger oppSoulToTrash) */
@@ -591,6 +605,8 @@ export interface GameState {
   colorlessTurn?: { cardId: string; turn: number }[];
   /** ในเทิร์นนี้ เจ็มของสปิริต/อัลติเมทของ player ที่ตรงตัวกรองเปลี่ยน count เม็ด (ลบได้) */
   turnSymbolBuffs?: { player: PlayerId; turn: number; filter?: CardFilter; color: string; count: number }[];
+  /** BS26 ประกายแห่งซูเปอร์โนวา: ในเทิร์นนี้การ์ดในมือของ player ที่ตรงตัวกรองมีคอสต์เท่ากับไลฟ์ */
+  turnHandCostLife?: { player: PlayerId; turn: number; filter: CardFilter }[];
   /** player ข้ามสเต็ปเหล่านี้ในเทิร์น turn */
   skipSteps?: { player: PlayerId; turn: number; steps: ('refresh' | 'main')[] }[];
   /** ในเทิร์นนี้ ไลฟ์ของ player เสียหายรวมได้ไม่เกิน 1 (กำแพงผลึกขาว · used = ที่เสียไปแล้วหลังเริ่มมีผล) */

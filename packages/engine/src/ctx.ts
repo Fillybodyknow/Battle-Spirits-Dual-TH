@@ -147,6 +147,8 @@ export function leaveField(ctx: Ctx, cardId: string, to: 'trash' | 'hand', opts:
   card.turnBp = 0;
   delete card.battleBp;
   delete card.battleSymbols;
+  delete card.battleBpDestroy;
+  delete card.battleBpDestroyUlt;
   delete card.battleStack;
   // BS17 ออร์แกนปีกทองคำ: การ์ดใต้เน็กซัสถูกทิ้งเมื่อเน็กซัสออกจากฟิลด์
   if (card.under?.length) {
@@ -225,7 +227,7 @@ export function destroy(ctx: Ctx, cardId: string, by?: PlayerId, bySource?: stri
 }
 
 /** ไลฟ์ไปรีเสิร์ฟของเจ้าของ; คืน true ถ้าไลฟ์หมดแล้วจบเกม */
-export function loseLife(ctx: Ctx, player: PlayerId, amount: number, winner: PlayerId, to: 'reserve' | 'trash' | 'void' = 'reserve', attack = false, opts: { selfOnly?: boolean } = {}): boolean {
+export function loseLife(ctx: Ctx, player: PlayerId, amount: number, winner: PlayerId, to: 'reserve' | 'trash' | 'void' = 'reserve', attack = false, opts: { selfOnly?: boolean; /** BS26 ควีนไนท์แมร์ */ noBurst?: boolean } = {}): boolean {
   // กำแพงผลึกขาว: ทั้งเทิร์นไลฟ์เสียรวมไม่เกิน 1 (ทุกความเสียหาย ทั้งโจมตีและเอฟเฟกต์ · ไม่นับการจ่ายไลฟ์ของเราเอง)
   const cap = opts.selfOnly ? undefined : (ctx.s.lifeCapOne ?? []).find((l) => l.player === player && l.turn === ctx.s.turn);
   if (cap) amount = Math.min(amount, Math.max(0, 1 - (cap.used ?? 0)));
@@ -251,7 +253,7 @@ export function loseLife(ctx: Ctx, player: PlayerId, amount: number, winner: Pla
     lostNow(lost);
     emit(ctx, { type: 'lifeLost', player, amount: lost, ...(attack ? { attack: true } : {}) });
     if (lost > 0 && !(ctx.s.lifeDamagedThisTurn ?? []).includes(player)) ctx.s.lifeDamagedThisTurn = [...(ctx.s.lifeDamagedThisTurn ?? []), player];
-    if (lost > 0) pendBurst(ctx, player, 'afterLifeLost');
+    if (lost > 0 && !opts.noBurst) pendBurst(ctx, player, 'afterLifeLost');
     if (allZones(ctx.s, player).some((z) => z.life.length > 0)) return false;
     return lifeZeroLose(ctx, player, winner);
   }
@@ -264,7 +266,7 @@ export function loseLife(ctx: Ctx, player: PlayerId, amount: number, winner: Pla
   lostNow(n);
   emit(ctx, { type: 'lifeLost', player, amount: n, ...(attack ? { attack: true } : {}) });
   if (n > 0 && !(ctx.s.lifeDamagedThisTurn ?? []).includes(player)) ctx.s.lifeDamagedThisTurn = [...(ctx.s.lifeDamagedThisTurn ?? []), player];
-  if (n > 0) pendBurst(ctx, player, 'afterLifeLost');
+  if (n > 0 && !opts.noBurst) pendBurst(ctx, player, 'afterLifeLost');
   if (p.life.length > 0) return false;
   return lifeZeroLose(ctx, player, winner);
 }

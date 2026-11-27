@@ -337,7 +337,11 @@ export function FinalBlowWarning() {
   return (
     <div className="pointer-events-none fixed inset-0 z-[41] overflow-hidden" key={battle.attackerId}>
       {/* ขอบจอแดงเรือง */}
-      <div className="absolute inset-0" style={{ boxShadow: 'inset 0 0 120px 30px rgba(244,63,94,0.35)', animation: 'aura-pulse 1.2s ease-in-out infinite' }} />
+      {/* ไล่สีวงรี (ไม่ใช้เงาเบลอเต็มจอ: iPad วาดใหม่ทุกเฟรมจนเฟรมตก) + แยกชั้นให้การ์ดจอเปลี่ยนแค่ความทึบ */}
+      <div
+        className="absolute inset-0 will-change-[opacity]"
+        style={{ background: 'radial-gradient(ellipse at center, transparent 55%, rgba(244,63,94,0.18) 75%, rgba(244,63,94,0.45) 100%)', animation: 'aura-pulse 1.2s ease-in-out infinite' }}
+      />
       {band('left')}
       {band('right')}
     </div>

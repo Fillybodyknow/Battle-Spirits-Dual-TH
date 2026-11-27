@@ -411,7 +411,8 @@ function parseSummonCondition(text: string, err: (msg: string) => void): unknown
   // BS24: "สปิริตสีแดงของเราตั้งแต่ 1 ตัวขึ้นไป" / "สปิริตสีแดงของเราตั้งแต่ 1 ตัว และสปิริตสีขาวของเราตั้งแต่ 1 ตัวขึ้นไป"
   // BSC17: "สปิริตสีแดง/ม่วงของเรา…" (สีใดสีหนึ่ง) · "อัลติเมทของเราตั้งแต่ 1 ตัวขึ้นไป" · "สปิริตเผ่า [ผีอมตะ] ของเราตั้งแต่ 3 ตัวขึ้นไป"
   const one = (p: string): unknown => {
-    const m = p.trim().match(/^(สปิริต|อัลติเมท)(?:สี(\S+?)|เผ่า\s*\[(.+?)\]\s*)?ของเราตั้งแต่\s*(\d+)\s*ตัว(ขึ้นไป)?$/);
+    // BS26 ฮิโนโกะ: "สปิริตคอสต์ตั้งแต่ 1 ขึ้นไปของเรา…"
+    const m = p.trim().match(/^(สปิริต|อัลติเมท)(?:สี(\S+?)|เผ่า\s*\[(.+?)\]\s*|คอสต์ตั้งแต่\s*(\d+)\s*ขึ้นไป)?ของเราตั้งแต่\s*(\d+)\s*ตัว(ขึ้นไป)?$/);
     if (!m) return null;
     const filter: Record<string, unknown> = { types: m[1] === 'อัลติเมท' ? ['ultimate'] : ['spirit', 'brave'] };
     if (m[2]) {
@@ -421,7 +422,8 @@ function parseSummonCondition(text: string, err: (msg: string) => void): unknown
       else filter.anyOf = colors.map((color) => ({ color }));
     }
     if (m[3]) filter.family = m[3];
-    return { alliesMatchAtLeast: { filter, count: Number(m[4]) } };
+    if (m[4]) filter.minCost = Number(m[4]);
+    return { alliesMatchAtLeast: { filter, count: Number(m[5]) } };
   };
   const conds = text.split(/\s+และ\s*/).map(one);
   if (conds.length > 0 && conds.every((c) => c)) {
@@ -448,6 +450,8 @@ function parseEffectLine(line: Line, type: CardDefInput['type'] | undefined, err
   if (levels.length > 0) return { levels, text: rest };
 
   if (/^การ์ด\S*นี้บนมือ/.test(rest)) return { hand: true, text: rest };
+  // BS26 Trigger Counter: ใช้จากในมือตอน U Trigger ของคู่แข่งฮิต (เบรฟ/เมจิค)
+  if (/^Trigger Counter\b/.test(rest)) return { text: rest };
   // กฎของการ์ดเองที่ไม่ผูกกับเลเวล/จังหวะ เช่น "การ์ดสปิริตนี้ เมื่อถูกทิ้ง..." หรือ "ถ้าเรามี ... การลดคอสต์..."
   // หรือ "สปิริตนี้/การ์ดสปิริตนี้ถือว่ามีคำว่า ... ในชื่อการ์ดด้วย"
   // "เบรฟนี้/การ์ดเบรฟนี้ จะไม่ถูกนับ..." · "Immortality: ..." (อัญเชิญจากแทรชได้เมื่อ...) · "Kagemusha: ..." (อัญเชิญจากมือเมื่อสปิริตเราตกเป็นเป้า)

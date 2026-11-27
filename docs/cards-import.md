@@ -22,6 +22,8 @@
 | BS17 | BS25 เขียว (14) + เหลือง (14) + ฟ้า (17) | เขียว ✅ เหลือง ✅ ฟ้า ✅ (56.0.0 · ครบ 45 ใบ) |
 | BSC03 | BSC17 (18 อัลติเมททุกสี) | ✅ (57.0.0 · ชุด bsc03: data/bsc03-scripts.ts + loadBSC03Cards · ถอดจากภาพเอง: `cards-list/BSC17.text`) |
 | BSC04 | BSC18 (48 ดีว่าสีเหลือง) | ✅ (58.0.0 · ชุด bsc04: data/bsc04-scripts.ts + loadBSC04Cards · ถอดจากภาพเอง: `cards-list/BSC18.text` · ชื่อใหม่ยังไม่ได้ให้เจ้าของโปรเจกต์ตรวจ) |
+| BS18 | BS26 แดง (16) + ขาว (15) + ม่วง (15) | แดง ✅ (63.0.0 · ชุด bs18: data/bs18-scripts.ts + loadBS18Cards · ถอดจากภาพเอง: `cards-list/BS26/แดง.text` · ชื่อ/เผ่าใหม่ยังไม่ได้ให้เจ้าของโปรเจกต์ตรวจ) · ขาว ✅ (63.0.0 · `cards-list/BS26/ขาว.text`) · ม่วง ✅ (63.0.0 · `cards-list/BS26/ม่วง.text` · ครบ 46 ใบ) |
+| BS19 | BS26 เขียว (16) + เหลือง (15) + ฟ้า (14) | ⬜ |
 
 **การ์ด BSC = ชุดในเกมแยกชื่อ "BSC01, BSC02, …"** (เจ้าของโปรเจกต์กำหนด ไม่ใช้ BS16) · BSC15 = BSC01, BSC16 = BSC02 (แยกสองชุด) ·
 `BOOSTER_SETS` (bot-helpers.ts) และแบนเนอร์ชุดล่าสุด (`useLatestBoosters` ใน Home.tsx) รับ `/^BSC?\d+$/` แล้ว (แบนเนอร์เรียงตามลำดับใน `loadAllCards()` = ชุดที่เพิ่มทีหลังอยู่บน)
@@ -71,6 +73,35 @@
 - ทีมจากเบรฟ = ability `teamAlso` (granted) + `cardTeams()` ใช้แทน `def.teams` · ตัวกรอง `braveNamed` / `minLevel` / `shownOnly` · เงื่อนไข `alliesMatchAtLeast.distinctNames` · CountPer `max`
 - trigger `onStageSummoned` (allyOnStage: subject = ตัวที่ On Stage อัญเชิญ: `item.onStageSummonedId`) · `maxLevelThisTurn.target: subject` · `blockTax.fieldToTrash` · `unblockableByCost.bySpirits`
 - `debuffChosenOpponent.untilBattleEnd` / `buffChosen.untilBattleEnd` + `amountFrom: exhaustedBp` (exhaustOwn จด `item.exhaustedBp`) · `replaceDestroy.ask` (toHand แบบถาม)
+
+## กลไกที่เพิ่มแล้วระหว่างงานนี้ (BS18 แดง)
+
+- **Trigger Counter** = ability `triggerCounter` (การ์ดในมือ) · ใน step uTrigger ตอนฮิต (ทั้งเดี่ยว/Double) ถ้าเจ้าของเด็คมีการ์ดนี้ → แทรก step ภายใน `triggerCounterAsk` ก่อน then (ถามเจ้าของเด็ค) →
+  `triggerCounterUse` = `s.queue.unshift` เอฟเฟกต์ใหม่ของเจ้าของการ์ด (ทำก่อนผลฮิตที่เหลือ): เบรฟ/สปิริต = payForSummon + ifOnField(steps) · เมจิค = `payToUseCounter` (payCost → ออกจากมือ, magicUsed, ลงแทรชเมื่อจบ)
+  · ตัวแปลงรับบรรทัดที่ขึ้นต้น `Trigger Counter` (ทุกประเภท)
+- trigger `uTriggerGuarded` (การ์ดในมือ: U Trigger ของเราถูก Guard) · `oppSummoned` (การ์ดคู่แข่งบนสนาม: การ์ดของเราถูกอัญเชิญ, subject = ตัวที่อัญเชิญ)
+- step `bpDestroyBoostBattle` (`card.battleBpDestroy` ใน bpDestroyBoostFor) / `bpDestroyUltimateBattle` (`card.battleBpDestroyUlt`: destroyChosenOpponent ที่มี maxBp เพิ่ม 'ultimate' ในเป้า) ล้างใน endBattle / leaveField
+- `summonFromHandFree.then` (step ภายใน `ifSummoned`: ทำต่อเมื่ออัญเชิญสำเร็จ รวมเบรฟที่ร่วมร่าง · อิฟริต)
+- step `handCostLifeThisTurn` (`state.turnHandCostLife` ใน baseCost) · ability `ultimatesAsSpiritsForSummon` (summonConditionOk เติม 'ultimate' ใน alliesMatchAtLeast) · `ignoreSummonCondition.always` (ไม่ต้องจ่ายโซลคอร์)
+- ตัวกรอง `maxSymbols` / `hasBravedEffect` / `bpBelowAttacker` · `gainLifeFromVoid.maxLife` · `symbolChosenAllyThisTurn.filter` · `trashCoresSpread.filter` · `revealTakeAll.rest: 'top'`
+- ตัวแปลง: เงื่อนไขอัญเชิญ "สปิริตคอสต์ตั้งแต่ N ขึ้นไปของเรา…"
+- คำ/เผ่าใหม่: 星将 = ขุนพลดวงดาว · 光導 = ดาราจักร · 次代 = รุ่นใหม่ (เจ้าของโปรเจกต์กำหนด) · ยังไม่ได้ตรวจ: 星魂 = วิญญาณดวงดาว · 三龍神 = สามเทพมังกร · 空牙 = เขี้ยวเวหา · 爬獣 = สมิงเลื้อยคลาน (ตาม BS24)
+
+## กลไกที่เพิ่มแล้วระหว่างงานนี้ (BS18 ขาว)
+
+- ability `targetDodge` (ซิกเฟซุล: ตกเป็นเป้าของเอฟเฟกต์คู่แข่ง → ทิ้งการ์ดในมือ 1 ใบ = ไม่รับผล) · ตรวจที่จุดเดียวกับ Kagemusha (step ใน `KAGE_STEPS`): `dodgeOffer` แทรกเอฟเฟกต์ถามของเจ้าของไว้หน้าคิว
+  แล้วลงผลต่อด้วย `applyPicks` (ตัดเป้าที่อยู่ใน `state.dodged`) · `item.dodgeAsked` กันถามซ้ำในเอฟเฟกต์เดียว
+- trigger `uTriggerGuarded` ทำงานกับการ์ดบนสนามด้วย (subject = อัลติเมทที่ถูก Guard) · step `refreshBattlingUltimateNoAttack` (`turnLocks.attackOnly`)
+- step `ownBraveToHand` (+ then) / `immuneAlliesThisTurn` (`state.turnImmuneAll` ใน effectBlocker) / `opponentBottomsOwn` · `onBattleHitLife.target: 'subject'` · `lifeShieldThisTurn.braved`
+- ability `summonConditionMinCost` (ผู้เล่นทุกคน: summonConditionOk เติม minCost ใน alliesMatchAtLeast) · เงื่อนไข `mainStep` / `battleAttacker` / `lifeLostAtLeast` (holds) / `ownBraveHas` · ตัวกรอง `noTextIncludes`
+
+## กลไกที่เพิ่มแล้วระหว่างงานนี้ (BS18 ม่วง)
+
+- replaceDestroy `oppUltCore` (สม็อกชีพ) / `millSelfIf` (โบนริตเตอร์: บังคับ ทิ้งใบบนสุด ตรง = อยู่ต่อ · step `ifMilled.else`) / `uTriggerStay` (เดวิด: บังคับ U Trigger ฮิต = then + อยู่ต่อ · U Trigger เดี่ยวจด `item.uTriggerHits` แล้ว)
+- `removeOpponentCores.depletedToDeckTop` (คิลเมดีส: ถามก่อนส่งคอร์ → `coresOff.toDeckTop`) · `item.depletedIds` (depleteByOpponent) → เงื่อนไข / CountPer `depletedByThis` · step `coresOffEveryOpponent`
+- `blockTax.discardFilter` / `.lifeToReserve` + `.ultimatesOnly` (payBlockTax รับ blockerId · loseLife `noBurst`) · trigger ถูกทำลายจด `destroyerId` (ผู้ทำลาย/คู่ต่อสู้) → เงื่อนไข `destroyedBy`
+- subject `exhaustedByOpponentEffect` (allyExhausted) · CountPer `returnedByThis` (returnAllFromTrash) · ability `triggerCounterFree` (โทรเมอา) · Trigger Counter ของเบรฟใช้ `ifSummoned` (ร่วมร่างก็ทำงาน)
+- เผ่า (ยังไม่ได้ให้เจ้าของโปรเจกต์ตรวจ): 呪鬼 = มารต้องสาป (ตามอัลติเมทม่วง BS24/25) · 魔神 = เทพมาร
 
 ## ข้อตกลงคำ/เผ่าที่เจ้าของโปรเจกต์ยืนยันแล้ว (ใช้ต่อ)
 

@@ -87,7 +87,7 @@ function GraphicsTab() {
   const tiltOn = usePrefs((p) => p.boardTilt);
   const qualityHint =
     settings.quality === 'auto'
-      ? `เลือกให้ตามความแรงเครื่อง · ตอนนี้ใช้ชุด "${autoPreset === 'low' ? 'ต่ำ' : 'สูง'}"`
+      ? `เลือกให้ตามความแรงเครื่อง · ตอนนี้ใช้ชุด "${autoPreset === 'low' ? 'ต่ำ' : autoPreset === 'medium' ? 'กลาง' : 'สูง'}"`
       : settings.quality === 'custom'
         ? 'ตั้งแต่ละตัวเลือกเอง'
         : 'ชุดสำเร็จ · แก้ตัวเลือกด้านล่างเมื่อไหร่ = กำหนดเอง';
