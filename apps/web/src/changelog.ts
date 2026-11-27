@@ -16,6 +16,11 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '61.0.0',
+    date: '2026-11-27',
+    items: ['แก้ อัลติเมท ซีคเวิร์ม: สปิริต/อัลติเมทเผ่า [มังกรดวงดาว] ตัวอื่นของเราที่โจมตี ได้รับ True-Rage จริงแล้ว (คู่แข่งต้องป้องกันถ้าทำได้ · เดิมรับไลฟ์ได้)'],
+  },
+  {
     version: '60.0.0',
     date: '2026-11-27',
     items: [

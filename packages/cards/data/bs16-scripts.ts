@@ -94,7 +94,8 @@ export const BS16_SCRIPTS: Record<string, CardScript> = {
   ],
   'อัลติเมท ซีคเวิร์ม': [
     // ได้รับ True-Rage = เมื่อสปิริต/อัลติเมทเผ่ามังกรดวงดาวของเราโจมตี
-    { kind: 'trigger', on: 'allyAttack', subject: { card: { types: SPIRITISH, family: STAR_DRAGON } }, levels: U345, steps: [trueRage] },
+    // subject: บังคับป้องกันตัวที่โจมตี (ไม่ใช่ซีคเวิร์มเอง)
+    { kind: 'trigger', on: 'allyAttack', subject: { card: { types: SPIRITISH, family: STAR_DRAGON } }, levels: U345, steps: [{ do: 'mustBlock', subject: true }] },
     uTrigger(U45, [{ do: 'buffSelf', amount: 10000, untilBattleEnd: true }]),
   ],
   'อัลติเมท เอ็กซ์-คาลิบัส': [

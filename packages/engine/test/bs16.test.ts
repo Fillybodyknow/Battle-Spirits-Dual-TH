@@ -142,6 +142,21 @@ describe('Booster Set 16 (แดง)', () => {
     expect(s.players.p2.life.length).toBe(life - 1);
   });
 
+  it('อัลติเมท ซีคเวิร์ม: สปิริตเผ่า [มังกรดวงดาว] ตัวอื่นของเราโจมตี = True-Rage (คู่แข่งต้องป้องกันถ้าทำได้)', async () => {
+    const { blockForced } = await import('../src/rules');
+    let s = setup();
+    put(s, 'p1', no('อัลติเมท ซีคเวิร์ม'), 1);
+    const moon = put(s, 'p1', no('มูนโบว์ ดรากูน'), 1);
+    const blocker = put(s, 'p2', DARIU, 1);
+    s = act(s, { type: 'endMain', player: 'p1' });
+    s = act(s, { type: 'declareAttack', player: 'p1', attackerId: moon });
+    expect(s.battle?.mustBlock).toBe(true);
+    for (let i = 0; i < 6 && s.battle?.flash; i++) s = act(s, { type: 'passFlash', player: s.battle.flash.priority });
+    expect(blockForced(s, db)).toBe(true);
+    expect(applyAction(s, { type: 'noBlock', player: 'p2' }, db).ok).toBe(false);
+    void blocker;
+  });
+
   it('ฮิสุย แคนนอน ดราก้อน: อัญเชิญมังกรติดเกราะจากมือ 1 ใบ = [เมื่อสปิริตนี้ถูกอัญเชิญ] ของการ์ดนั้นไม่ทำงาน', () => {
     let s = setup();
     const hisui = put(s, 'p1', no('ฮิสุย แคนนอน ดราก้อน'), 1);
