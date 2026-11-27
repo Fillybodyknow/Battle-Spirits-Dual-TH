@@ -19,6 +19,9 @@ import { LESSONS } from '../tutorial/lessons';
 import { startVsBot } from '../bot/vsBot';
 import { CardArt, DeckTile, GLOW, deckColor, deckCover, deckSize } from './shared';
 
+/** ช่องทางคอมมูนิตี้ของเกม (Discord) */
+export const COMMUNITY_URL = 'https://discord.gg/YgGu24BGc';
+
 /** คู่การ์ด X-Rare ที่หมุนแสดงทางขวาของหน้าหลัก */
 function useShowcase(): string[][] {
   return useMemo(() => {
@@ -470,6 +473,17 @@ export function Home() {
       <div className="absolute top-5 right-6 flex items-center gap-2">
         {/* เลขเวอร์ชัน (กดดู Changelog) */}
         <VersionBadge />
+        {/* ช่องทางคอมมูนิตี้ (Discord) */}
+        <a
+          href={COMMUNITY_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex h-10 items-center gap-1.5 rounded-full border border-indigo-300/50 bg-indigo-500/20 px-3 text-xs font-bold text-indigo-100 hover:bg-indigo-500/35 hover:text-white"
+          title="เข้าร่วมคอมมูนิตี้ Discord"
+        >
+          <Icon name="chat" className="text-base" />
+          Discord
+        </a>
         <InstallButton />
         <span
           className={`rounded-full border px-3 py-1 text-xs font-bold ${

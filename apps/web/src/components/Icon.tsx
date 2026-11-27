@@ -80,10 +80,17 @@ const PATHS: Record<IconName, React.ReactNode> = {
   ),
   check: <path d="M5 12.5l4.5 4.5L19 7.5" />,
   download: <path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14" />,
+  // กล่องแชต (ช่องทางคอมมูนิตี้)
+  chat: (
+    <>
+      <path d="M4.5 6.5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H11l-4.5 3.5V16.5h0a2 2 0 0 1-2-2z" />
+      <path d="M8.5 10.5h.01M12 10.5h.01M15.5 10.5h.01" />
+    </>
+  ),
   star: <path d="M12 3.5l2.6 5.3 5.9.9-4.25 4.1 1 5.8L12 16.9l-5.25 2.7 1-5.8L3.5 9.7l5.9-.9z" />,
 };
 
-export type IconName = 'home' | 'settings' | 'undo' | 'restart' | 'globe' | 'info' | 'chain' | 'log' | 'eye' | 'back' | 'book' | 'cap' | 'swords' | 'flag' | 'lock' | 'check' | 'star' | 'chevron' | 'close' | 'download';
+export type IconName = 'home' | 'settings' | 'undo' | 'restart' | 'globe' | 'info' | 'chain' | 'log' | 'eye' | 'back' | 'book' | 'cap' | 'swords' | 'flag' | 'lock' | 'check' | 'star' | 'chevron' | 'close' | 'download' | 'chat';
 
 export function Icon({ name, className = '' }: { name: IconName; className?: string }) {
   return (

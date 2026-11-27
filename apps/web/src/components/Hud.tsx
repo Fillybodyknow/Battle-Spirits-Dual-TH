@@ -140,7 +140,8 @@ export function FloatingInspector({ enabled }: { enabled: boolean }) {
   const sticky = touch || (!!pinned && !hovered);
   return (
     <div
-      className={`fixed top-14 left-2 z-[43] flex h-[min(600px,calc(100vh-150px))] w-[320px] flex-col rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.7)] ${sticky ? 'pointer-events-auto' : 'pointer-events-none'}`}
+      // อยู่เหนือภาพเอฟเฟกต์ระหว่างเกม (แถบ Final Blow z-[59] ฯลฯ): ผู้เล่นเปิดดูเอง ต้องอ่านได้เสมอ
+      className={`fixed top-14 left-2 z-[60] flex h-[min(600px,calc(100vh-150px))] w-[320px] flex-col rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.7)] ${sticky ? 'pointer-events-auto' : 'pointer-events-none'}`}
       style={{ animation: 'fx-fade-in 0.12s ease-out both' }}
     >
       <CardInspector />
