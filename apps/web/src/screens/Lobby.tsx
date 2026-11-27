@@ -41,10 +41,10 @@ import { DeckBox, keyCards } from '../components/DeckBox';
 import { COLOR_LABEL } from '../format';
 import { deckInfo, STARTER_DECKS } from '../decks';
 import { startVsBot } from '../bot/vsBot';
-import { casualHistory } from '../casualHistory';
+import { casualHistory, getReplay } from '../casualHistory';
 import { Modal } from '../components/Modal';
 import { Icon } from '../components/Icon';
-import { db } from '../store';
+import { db, replayPlayable, startReplay } from '../store';
 import { BackButton, CardArt, deckColor, deckSize } from './shared';
 import { AvatarImg } from '../components/AccountDialog';
 
@@ -488,6 +488,7 @@ function CasualDetails({ onClose }: { onClose: () => void }) {
         <li>เจอคู่แล้วเสี่ยงลำดับและเลือกเริ่มก่อน/หลังเหมือนห้องดวลปกติ · ชนะหรือแพ้ได้ EXP ตามปกติ</li>
         <li>รอนานเกิน 1 นาที เลือกดวลกับบอทระหว่างนี้ได้ · ปิดแอประหว่างรอ = ออกจากคิวเอง</li>
         <li>ผลการดวล Casual Match ดูย้อนหลังได้ที่ "ประวัติการดวล" (เก็บในเครื่องนี้ 50 เกมล่าสุด)</li>
+        <li>กด "ดู Replay" ในประวัติเพื่อดูเกมนั้นซ้ำได้ (เก็บ 30 เกมล่าสุด · Replay จากแอปเวอร์ชันหลักเก่าดูไม่ได้)</li>
       </ul>
     </Modal>,
     document.body,
@@ -529,6 +530,7 @@ function CasualHistoryPanel({ onClose }: { onClose: () => void }) {
                   </div>
                 </div>
                 <span className="shrink-0 text-xs text-slate-500">{when(r.at)}</span>
+                <ReplayButton id={r.id} onOpen={onClose} />
               </div>
             ))}
           </div>
@@ -536,6 +538,27 @@ function CasualHistoryPanel({ onClose }: { onClose: () => void }) {
       )}
     </Modal>,
     document.body,
+  );
+}
+
+/** ปุ่มดู Replay ของเกมในประวัติ (ไม่มี = เกมก่อนมีระบบ Replay / ถูกลบเพราะเก็บได้แค่เกมล่าสุด) */
+function ReplayButton({ id, onOpen }: { id: string; onOpen: () => void }) {
+  const data = getReplay(id);
+  if (!data) return <span className="w-20 shrink-0" />;
+  if (!replayPlayable(data))
+    return (
+      <span className="w-20 shrink-0 text-center text-[10px] leading-tight text-slate-500" title="Replay จากแอปเวอร์ชันหลักเก่า กติกาในเกมเปลี่ยนไปแล้วจึงเล่นซ้ำไม่ได้">
+        Replay เวอร์ชันเก่า
+      </span>
+    );
+  return (
+    <button
+      type="button"
+      onClick={() => (sfx('click'), onOpen(), startReplay(data))}
+      className="w-20 shrink-0 rounded-lg bg-sky-600/80 px-2 py-1.5 text-xs font-black text-white hover:bg-sky-500"
+    >
+      ดู Replay
+    </button>
   );
 }
 

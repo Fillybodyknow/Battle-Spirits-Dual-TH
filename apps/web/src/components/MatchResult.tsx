@@ -7,8 +7,8 @@ import { BTN } from './Modal';
 import { restartVsBot, vsBotExit, vsBotInfo } from '../bot/vsBot';
 import { addExp, matchExp } from '../progression/level';
 import { ExpGain } from './LevelBadge';
-import { recordCasual } from '../casualHistory';
-import { CASUAL_PREFIX } from '../store';
+import { recordCasual, saveReplay } from '../casualHistory';
+import { CASUAL_PREFIX, currentReplayData, exitReplay, replaySeek } from '../store';
 
 const REASON: Record<string, (win: string, lose: string) => string> = {
   lifeZero: (_w, l) => `Life ของ ${l} เป็น 0!`,
@@ -138,7 +138,8 @@ export function MatchResult({ fx, onClose }: { fx: Extract<Fx, { kind: 'result' 
   const showFx = useGame((s) => s.showFx);
   const online = useGame((s) => s.online);
   const decks = useGame((s) => s.decks);
-  const names = useGame((s) => s.online?.names);
+  const replay = useGame((s) => s.replay);
+  const names = useGame((s) => s.online?.names ?? s.replay?.names);
   const myName = useGame((s) => s.playerName);
   const { startLocal, onlineLeave, setScreen } = useGame.getState();
   const [step, setStep] = useState<'wait' | 'shatter' | 'word' | 'panel'>(fx.delay > 0 ? 'wait' : 'shatter');
@@ -147,10 +148,12 @@ export function MatchResult({ fx, onClose }: { fx: Extract<Fx, { kind: 'result' 
   const loser = opponentOf(fx.winner);
   const botSeat = useGame((s) => s.botSeat);
   // ออนไลน์ = มุมของที่นั่งเรา · ดวลกับบอท = บอทชนะคือเราแพ้ · สองคนเครื่องเดียว = ฉลองผู้ชนะเสมอ
-  const win = online ? fx.winner === online.me : botSeat ? fx.winner !== botSeat : true;
+  const win = replay ? fx.winner === replay.me : online ? fx.winner === online.me : botSeat ? fx.winner !== botSeat : true;
   const botName = useGame((s) => s.botName);
   const label = (p: PlayerId) =>
-    online
+    replay
+      ? (replay.names[p] ?? (p === replay.me ? myName : 'คู่แข่ง'))
+      : online
       ? p === online.me
         ? (names?.[p] ?? myName)
         : (names?.[p] ?? 'คู่แข่ง')
@@ -164,6 +167,7 @@ export function MatchResult({ fx, onClose }: { fx: Extract<Fx, { kind: 'result' 
   const exit = vsBotExit();
   // EXP ของเกมนี้ (ครั้งเดียวต่อหน้าผล): ออนไลน์ = ที่นั่งเรา · ดวลกับบอท = ฝั่งที่ไม่ใช่บอท · ผู้ชม/เครื่องเดียว/บทเรียน = ไม่มี
   const award = useMemo(() => {
+    if (useGame.getState().replay) return null;
     const bot = vsBotInfo();
     const me = online && !online.spectator ? online.me : bot && botSeat ? opponentOf(botSeat) : null;
     if (!me) return null;
@@ -178,8 +182,10 @@ export function MatchResult({ fx, onClose }: { fx: Extract<Fx, { kind: 'result' 
     const me = online.me;
     const opp = opponentOf(me);
     const g = useGame.getState();
+    const id = `${online.code}-${online.setup?.round ?? 1}`;
+    const data = currentReplayData();
     recordCasual({
-      id: `${online.code}-${online.setup?.round ?? 1}`,
+      id,
       at: Date.now(),
       won: fx.winner === me,
       opponent: names?.[opp] ?? 'คู่แข่ง',
@@ -188,6 +194,7 @@ export function MatchResult({ fx, onClose }: { fx: Extract<Fx, { kind: 'result' 
       oppDeck: deckInfo(decks[opp]).label,
       turns: g.state.turn,
     });
+    if (data) saveReplay(id, data);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fx.id]);
 
@@ -288,6 +295,16 @@ export function MatchResult({ fx, onClose }: { fx: Extract<Fx, { kind: 'result' 
                 })}
               </div>
               {award && <ExpGain award={award} />}
+              {replay ? (
+                <div className="flex gap-3">
+                  <button type="button" className={BTN.secondary} onClick={() => (onClose(), replaySeek(0))}>
+                    ดูซ้ำตั้งแต่ต้น
+                  </button>
+                  <button type="button" className={`${BTN.primary} px-10`} onClick={() => (onClose(), exitReplay())}>
+                    ออกจาก Replay
+                  </button>
+                </div>
+              ) : (
               <div className="flex gap-3">
                 {canRematch && (
                   <button
@@ -322,6 +339,7 @@ export function MatchResult({ fx, onClose }: { fx: Extract<Fx, { kind: 'result' 
                   {exit?.label ?? 'กลับหน้าหลัก'}
                 </button>
               </div>
+              )}
             </div>
           )}
         </div>

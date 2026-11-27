@@ -28,6 +28,7 @@ import { usePrefs } from './prefs';
 import { GameDataAsk, GameDataPill } from './components/GameDataUi';
 import { NetWarning } from './components/NetStatus';
 import { ReportButton } from './components/ReportDialog';
+import { ReplayBar } from './components/ReplayBar';
 
 const ICON_BTN =
   'flex h-10 w-10 items-center justify-center rounded-full border border-sky-300/50 bg-gradient-to-b from-slate-700 to-slate-900 text-lg text-sky-200 shadow-[0_0_12px_rgba(56,189,248,0.25),inset_0_1px_0_rgba(255,255,255,0.15)] transition hover:scale-105 hover:text-white hover:shadow-[0_0_16px_rgba(56,189,248,0.55)] disabled:opacity-40';
@@ -65,6 +66,15 @@ function WatchersBadge() {
 /** ปุ่มลอยมุมซ้ายบน (แทน TopBar) */
 function Toolbar() {
   const online = useGame((s) => s.online);
+  const replay = useGame((s) => !!s.replay);
+  // ดู Replay: เหลือแค่ตั้งค่า (ตัวควบคุม + ปุ่มออกอยู่ที่แถบกลางกระดาน ReplayBar)
+  if (replay) {
+    return (
+      <div className="fixed top-2 left-2 z-[45] flex items-center gap-1.5">
+        <Settings />
+      </div>
+    );
+  }
   // ออนไลน์: เหลือแค่ปุ่มตั้งค่า (ยอมแพ้/ออกจากห้องอยู่ในตั้งค่า)
   if (online) {
     return (
@@ -255,6 +265,7 @@ function GameScreen() {
   const bottomTeam = useGame((s) => !!s.state.players[viewPlayer(s)].partner);
   const partnerHidden = useGame((s) => s.partnerHandHidden);
   const tilt = usePrefs((p) => p.boardTilt);
+  const replay = useGame((s) => !!s.replay);
 
   return (
     <div className="game-bg relative flex h-screen min-w-[1200px] overflow-hidden">
@@ -270,7 +281,7 @@ function GameScreen() {
           <div className={`board-tilt flex flex-1 flex-col gap-1.5 ${tilt ? 'tilted' : ''}`}>
             <PlayerMat player={top} top />
             <div data-setup="bar" className="sticky top-0 bottom-0 z-30 shrink-0">
-              <PromptBar />
+              {replay ? <ReplayBar /> : <PromptBar />}
             </div>
             <PlayerMat player={bottom} />
           </div>

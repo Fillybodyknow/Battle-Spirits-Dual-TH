@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { setSeatNames } from './format';
 import { cancelSfx, sfx, type SfxName } from './sfx';
 import { levelOf, useLevel } from './progression/level';
 import { primeCoreMotion, snapCores } from './motion';
@@ -1942,15 +1943,16 @@ function fxEnd(f: FxInput): number {
  * ทุกอันเกิดผลทันทีที่ทำงาน แถบ Chain แค่แสดงว่าในการโจมตีนี้มีอะไรต่อกันมาแล้วบ้าง
  */
 /** ผู้เล่นที่อยู่ฝั่งล่างของจอ (ถือเป็น "ฝั่งเรา" ตอนแสดงผล) */
-export const viewPlayer = (st: { fixedView: boolean; viewTurn: PlayerId; online: OnlineState | null }): PlayerId =>
-  st.online ? st.online.me : st.fixedView ? 'p1' : st.viewTurn;
+export const viewPlayer = (st: { fixedView: boolean; viewTurn: PlayerId; online: OnlineState | null; replay?: ReplayState | null }): PlayerId =>
+  st.replay ? st.replay.me : st.online ? st.online.me : st.fixedView ? 'p1' : st.viewTurn;
 
 /**
  * การ์ดบนมือ/Burst ของผู้เล่นนี้ต้องคว่ำไว้สำหรับคนที่ดูจอนี้หรือไม่
  * ออนไลน์ = ของคู่แข่งคว่ำเสมอ, เล่นเครื่องเดียว = ตามตัวเลือก "ซ่อนมือฝ่ายที่ไม่ได้ตัดสินใจ"
  */
-export const hiddenFrom = (st: { online: OnlineState | null; hideIdleHand: boolean; state: GameState; botSeat?: PlayerId | null }, owner: PlayerId): boolean =>
-  st.online ? !!st.online.spectator || owner !== st.online.me : st.botSeat ? owner === st.botSeat : st.hideIdleHand && actingPlayer(st.state) !== owner;
+export const hiddenFrom = (st: { online: OnlineState | null; hideIdleHand: boolean; state: GameState; botSeat?: PlayerId | null; replay?: ReplayState | null }, owner: PlayerId): boolean =>
+  // Replay: มือ/เบิร์สของคู่แข่งคว่ำ เว้นแต่กด "เปิดไพ่ทั้งสองฝั่ง"
+  st.replay ? !st.replay.reveal && owner !== st.replay.me : st.online ? !!st.online.spectator || owner !== st.online.me : st.botSeat ? owner === st.botSeat : st.hideIdleHand && actingPlayer(st.state) !== owner;
 
 /**
  * การ์ด/Core/การเลือกของผู้เล่นนี้ จับต้องได้จากเครื่องนี้หรือไม่ (ออนไลน์ = เฉพาะของที่นั่งเรา)
@@ -1958,7 +1960,8 @@ export const hiddenFrom = (st: { online: OnlineState | null; hideIdleHand: boole
  * ไม่งั้นสองเครื่องจะเดิน state ต่างกัน
  */
 export function mine(player: PlayerId | null | undefined): boolean {
-  const { online: on, botSeat, state } = useGame.getState();
+  const { online: on, botSeat, state, replay } = useGame.getState();
+  if (replay) return false;
   if (!on && botSeat) return player !== botSeat && !partnerTurn(state, player);
   return !on || (!on.spectator && player === on.me && !partnerTurn(state, player));
 }
@@ -1968,7 +1971,7 @@ export const mySeat = (): Seat => useGame.getState().online?.seat ?? 0;
 
 /** ผู้เล่นนี้กดสั่งงานจากเครื่องนี้ได้หรือไม่ (ออนไลน์ = เฉพาะที่นั่งของเรา · ดวลกับบอท = ไม่ใช่ฝั่งบอท: ไม่แสดงตัวเลือก/หน้ากดจั่วของบอท) */
 export const controls = (st: { online: OnlineState | null }, player: PlayerId | null | undefined): boolean =>
-  !st.online
+  useGame.getState().replay ? false : !st.online
     ? !player || (player !== useGame.getState().botSeat && !partnerTurn(useGame.getState().state, player))
     : !st.online.spectator && st.online.status === 'playing' && player === st.online.me && !partnerTurn(useGame.getState().state, player);
 
@@ -2620,6 +2623,8 @@ interface Store {
   applyLocal(action: Action, opts?: { silent?: boolean; remote?: boolean }): boolean;
   /** การเล่นออนไลน์ (null = เล่นเครื่องเดียว) */
   online: OnlineState | null;
+  /** กำลังดู Replay (อ่านอย่างเดียว: กด/เลือกอะไรบนกระดานไม่ได้) */
+  replay: ReplayState | null;
   onlineHost(deck: DeckId, meta?: { name: string; comment: string; listed: boolean }): Promise<void>;
   /** หน้าที่แสดงอยู่ */
   screen: Screen;
@@ -3026,6 +3031,7 @@ async function startRound(code: string, setup: RoomSetup, opponentHere: boolean)
 /** สร้างเกมของรอบนี้ด้วยผู้เริ่มก่อนที่เลือกแล้ว แล้วเริ่มรับ action (existing = action ที่มีอยู่แล้ว เล่นซ้ำแบบเงียบ) */
 function beginPlay(code: string, setup: RoomSetup, opponentHere: boolean, existing: number) {
   unsubActions?.();
+  replayLog = { code, round: setup.round, actions: [] };
   buffer.clear();
   const st = useGame.getState();
   if (!st.online || !setup.first) return;
@@ -3090,6 +3096,8 @@ function applyBuffered(code: string, round: number, draft: { coreId: string; to:
       useGame.setState({ state: st.truth, truth: null });
     }
     st.applyLocal(a, { silent: on.applied < silentBelow, remote: true });
+    // Replay: จด action ตามลำดับในห้อง (กลับเข้าห้องใหม่ก็ทำซ้ำตั้งแต่ 0)
+    if (replayLog?.code === code && replayLog.round === round && replayLog.actions.length === on.applied) replayLog.actions.push(a);
     const after = useGame.getState().online!;
     useGame.setState({ online: { ...after, applied: on.applied + 1 } });
     nextIndex = Math.max(nextIndex, on.applied + 1);
@@ -3487,6 +3495,123 @@ export function duelChatSend(text: string) {
 }
 
 /** เข้าชมการดวลของโต๊ะ t (มือทั้งสองฝ่ายคว่ำ สั่งอะไรไม่ได้) */
+// ---------------------------------------------------------------- Replay (Casual Match · เก็บในเครื่อง)
+/**
+ * engine เป็นแบบ deterministic: Replay = สถานะตอนเริ่ม (seed + เด็ค + ผู้เริ่มก่อน) + action ทั้งหมดของห้องตามลำดับ
+ * เล่นซ้ำด้วย applyAction + autoAdvance แบบเดียวกับตอนเล่นออนไลน์ (applyBuffered) · ใช้ได้เฉพาะเวอร์ชัน MAJOR เดียวกัน
+ */
+export interface ReplayData {
+  /** เวอร์ชันแอปตอนบันทึก */
+  v: string;
+  seed: number;
+  decks: { p1: string; p2: string };
+  first: PlayerId;
+  /** ฝั่งของเราในเกมนั้น */
+  me: PlayerId;
+  names: Partial<Record<PlayerId, string>>;
+  actions: Action[];
+}
+export interface ReplayState {
+  me: PlayerId;
+  names: Partial<Record<PlayerId, string>>;
+  data: ReplayData;
+  /** จำนวน action ที่เล่นไปแล้ว */
+  index: number;
+  playing: boolean;
+  speed: 1 | 2 | 4;
+  reveal: boolean;
+}
+/** action ของเกมออนไลน์ที่กำลังเล่น (จดใน applyBuffered) */
+let replayLog: { code: string; round: number; actions: Action[] } | null = null;
+
+/** ข้อมูล Replay ของเกมออนไลน์ที่เพิ่งจบ (เรียกจากหน้าผลการดวล) */
+export function currentReplayData(): ReplayData | null {
+  const on = useGame.getState().online;
+  if (!on?.setup?.first || on.spectator || !replayLog || replayLog.code !== on.code || replayLog.round !== on.setup.round) return null;
+  const d = on.setup.decks;
+  return {
+    v: APP_VERSION,
+    seed: on.setup.seed,
+    decks: { p1: d.p1, p2: d.p2 ?? d.p1 },
+    first: on.setup.first,
+    me: on.me,
+    names: { p1: on.names.p1, p2: on.names.p2 },
+    actions: [...replayLog.actions],
+  };
+}
+
+/** Replay นี้ดูได้ไหม (engine เปลี่ยนเมื่อขึ้น MAJOR = เล่นซ้ำไม่ตรง) */
+export const replayPlayable = (d: ReplayData) => d.v.split('.')[0] === APP_VERSION.split('.')[0];
+
+/** สถานะหลังเล่น action ไป k ตัว (ไม่มีแอนิเมชัน) */
+function replayStateAt(d: ReplayData, k: number): GameState {
+  let st = startGame(d.seed, d.decks, d.first);
+  for (const a of d.actions.slice(0, k)) {
+    const r = applyAction(st, a, db);
+    if (r.ok) st = autoAdvance(r.state, r.events);
+  }
+  return st;
+}
+
+export function startReplay(d: ReplayData): void {
+  if (useGame.getState().online || useGame.getState().casual) return;
+  const state = replayStateAt(d, 0);
+  // ป้ายชื่อ / ข้อความ "ผู้เล่น 1/2" = ชื่อผู้เล่นในเกมนั้น
+  setSeatNames(d.names);
+  useGame.setState({
+    ...resetUi,
+    state,
+    truth: null,
+    history: [],
+    fx: [],
+    holds: {},
+    error: null,
+    pregame: null,
+    seed: d.seed,
+    decks: d.decks as DeckChoice,
+    botSeat: null,
+    replay: { me: d.me, names: d.names, data: d, index: 0, playing: false, speed: 1, reveal: false },
+    viewTurn: state.turnPlayer,
+    localInProgress: false,
+    screen: 'game',
+  });
+}
+
+/** เล่น action ถัดไป (มีแอนิเมชัน · speed 4 = ไม่มีแอนิเมชัน) */
+export function replayStep(): boolean {
+  const g = useGame.getState();
+  const r = g.replay;
+  if (!r || r.index >= r.data.actions.length) return false;
+  const a = r.data.actions[r.index]!;
+  if (r.speed === 4) {
+    const res = applyAction(g.state, a, db);
+    if (res.ok) useGame.setState({ ...resetUi, state: autoAdvance(res.state, res.events), fx: [], holds: {}, viewTurn: r.me });
+  }
+  else g.applyLocal(a, { remote: true });
+  useGame.setState({ replay: { ...useGame.getState().replay!, index: r.index + 1 } });
+  return true;
+}
+
+/** ข้ามไปหลัง action ที่ k (ไม่มีแอนิเมชัน) */
+export function replaySeek(k: number): void {
+  const r = useGame.getState().replay;
+  if (!r) return;
+  const idx = Math.max(0, Math.min(r.data.actions.length, k));
+  useGame.setState({ ...resetUi, state: replayStateAt(r.data, idx), truth: null, fx: [], holds: {}, replay: { ...r, index: idx } });
+}
+
+export function replaySet(patch: Partial<Pick<ReplayState, 'playing' | 'speed' | 'reveal'>>): void {
+  const r = useGame.getState().replay;
+  if (r) useGame.setState({ replay: { ...r, ...patch } });
+}
+
+/** ออกจาก Replay กลับหน้า Casual Match */
+export function exitReplay(): void {
+  setSeatNames(null);
+  useGame.setState({ ...resetUi, replay: null, fx: [], holds: {}, screen: 'lobby' });
+  useGame.getState().newGame();
+}
+
 // ---------------------------------------------------------------- Casual Match (จับคู่ดวลอัตโนมัติ 1VS1)
 /**
  * คิวรอ = match/queue/<MAJOR>/<uid> (จับคู่เฉพาะเวอร์ชัน MAJOR เดียวกัน · หลุดการเชื่อมต่อ = เซิร์ฟเวอร์ลบเอง)
@@ -3794,6 +3919,7 @@ export const useGame = create<Store>((set, get) => {
     holds: {},
     autoPass: true,
     online: null,
+    replay: null,
     screen: 'home',
     setScreen: (screen) => set({ screen }),
     playerName: loadName(),
@@ -4086,6 +4212,8 @@ export const useGame = create<Store>((set, get) => {
     },
 
     dispatch(action) {
+      // ดู Replay: กดอะไรบนกระดานไม่ได้
+      if (get().replay) return false;
       const on = get().online;
       if (!on) {
         if (tutorialHooks && !tutorialHooks.guard(action)) {
@@ -4169,7 +4297,7 @@ export const useGame = create<Store>((set, get) => {
       const events = [...pre, ...result.events];
       if (!CHAIN_CONTINUES.has(action.type)) chainFloor = base.log.length;
       // ออนไลน์: Auto Pass เปิดเสมอ (ทั้งสองเครื่องต้องเดิน state เหมือนกัน)
-      const next = asMySeat(get().autoPass || get().online ? autoAdvance(result.state, events) : result.state);
+      const next = asMySeat(get().autoPass || get().online || get().replay ? autoAdvance(result.state, events) : result.state);
       const newFx = eventsToFx(events, next, state, rects, action.type === 'choose' ? action.pick : undefined);
       const fx = animate ? [...get().fx, ...newFx] : [];
       let holds: Record<string, Hold> = {};
