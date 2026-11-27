@@ -18,6 +18,7 @@ import { useTutorial } from '../tutorial/tutorial';
 import { LESSONS } from '../tutorial/lessons';
 import { startVsBot } from '../bot/vsBot';
 import { CardArt, DeckTile, GLOW, deckColor, deckCover, deckSize } from './shared';
+import { ReportButton } from '../components/ReportDialog';
 
 /** ช่องทางคอมมูนิตี้ของเกม (Discord) */
 export const COMMUNITY_URL = 'https://discord.gg/JbCjFdVBrN';
@@ -484,6 +485,10 @@ export function Home() {
           <Icon name="chat" className="text-base" />
           Discord
         </a>
+        <ReportButton
+          label="แจ้งปัญหา"
+          className="flex h-10 items-center gap-1.5 rounded-full border border-rose-300/50 bg-rose-500/15 px-3 text-xs font-bold text-rose-100 hover:bg-rose-500/30 hover:text-white"
+        />
         <InstallButton />
         <span
           className={`rounded-full border px-3 py-1 text-xs font-bold ${

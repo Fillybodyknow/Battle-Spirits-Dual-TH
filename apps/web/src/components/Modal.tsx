@@ -8,6 +8,7 @@ export function Modal({
   title,
   subtitle,
   wide,
+  front,
 }: {
   children: React.ReactNode;
   /** ไม่ระบุ = ปิดเองไม่ได้ (ต้องเลือก) */
@@ -15,9 +16,11 @@ export function Modal({
   title: React.ReactNode;
   subtitle?: React.ReactNode;
   wide?: boolean;
+  /** อยู่เหนือทุกอย่างบนกระดาน (หน้าจั่ว / เอฟเฟกต์ / แผงรายละเอียดการ์ด) */
+  front?: boolean;
 }) {
   return (
-    <div className="fixed inset-y-0 left-0 right-[var(--sidebar)] z-40 flex items-center justify-center bg-black/65 p-6" onClick={onClose}>
+    <div className={`fixed inset-y-0 left-0 right-[var(--sidebar)] ${front ? 'z-[70]' : 'z-40'} flex items-center justify-center bg-black/65 p-6`} onClick={onClose}>
       <div
         className={`hud-panel flex max-h-full w-full flex-col gap-4 overflow-y-auto rounded-xl p-5 ${
           wide ? 'max-w-4xl' : 'max-w-2xl'

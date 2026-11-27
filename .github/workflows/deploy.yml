@@ -26,6 +26,9 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url || steps.deployment_retry.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # ใช้ commit ก่อนหน้าเทียบเลขเวอร์ชันตอนโพสต์อัปเดตเข้า Discord
+          fetch-depth: 2
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -36,6 +39,7 @@ jobs:
         run: |
           if [ -z "$VITE_FIREBASE_API_KEY" ]; then echo "::warning::ยังไม่ได้ตั้ง VITE_FIREBASE_API_KEY: เว็บจะเล่นออนไลน์ไม่ได้"; fi
           if [ -z "$VITE_FIREBASE_APP_ID" ]; then echo "::warning::ยังไม่ได้ตั้ง VITE_FIREBASE_APP_ID"; fi
+          if [ -z "$VITE_REPORT_WEBHOOK_BUG$VITE_REPORT_WEBHOOK_CARD$VITE_REPORT_WEBHOOK_IDEA" ]; then echo "::warning::ยังไม่ได้ตั้ง VITE_REPORT_WEBHOOK_*: ปุ่มแจ้งปัญหาจะถูกซ่อน"; fi
           npm run build
         env:
           # เว็บอยู่ที่ https://<user>.github.io/<repo>/
@@ -45,6 +49,10 @@ jobs:
           VITE_FIREBASE_DATABASE_URL: ${{ vars.VITE_FIREBASE_DATABASE_URL }}
           VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
           VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
+          # Discord Webhook ของห้องแจ้งปัญหา ห้องละตัว (ปุ่มแจ้งปัญหาในเกม · ไม่ตั้ง = ไม่มีประเภทนั้น)
+          VITE_REPORT_WEBHOOK_BUG: ${{ vars.VITE_REPORT_WEBHOOK_BUG }}
+          VITE_REPORT_WEBHOOK_CARD: ${{ vars.VITE_REPORT_WEBHOOK_CARD }}
+          VITE_REPORT_WEBHOOK_IDEA: ${{ vars.VITE_REPORT_WEBHOOK_IDEA }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
@@ -59,3 +67,11 @@ jobs:
       - id: deployment_retry
         if: steps.deployment.outcome == 'failure'
         uses: actions/deploy-pages@v4
+      # โพสต์ changelog ของเวอร์ชันใหม่เข้าห้อง "อัปเดตเกม" ใน Discord (Secret DISCORD_UPDATE_WEBHOOK · ไม่ตั้ง = ข้าม · เวอร์ชันไม่เปลี่ยน = ไม่โพสต์)
+      - name: Post update to Discord
+        if: steps.deployment.outcome == 'success' || steps.deployment_retry.outcome == 'success'
+        continue-on-error: true
+        run: node scripts/post-update.mjs
+        env:
+          DISCORD_UPDATE_WEBHOOK: ${{ secrets.DISCORD_UPDATE_WEBHOOK }}
+          SITE_URL: ${{ steps.deployment.outputs.page_url || steps.deployment_retry.outputs.page_url }}
