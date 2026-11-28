@@ -1005,14 +1005,21 @@ html.touch-ui textarea {
 
 /* ================================================================ ตั้งค่ากราฟิก (gfx.ts: คลาส gfx-* บน <html>) */
 /* ฉากหลังนิ่ง */
+/* ไม่ขยับแล้ว = ไม่ต้องจองชั้นแยกบนการ์ดจอ (will-change ค้างไว้ = เท็กซ์เจอร์ใหญ่กว่าจอหลายเท่าค้างในหน่วยความจำการ์ดจอ:
+   แท็บเล็ต Android หน่วยความจำไม่พอ → จอกระพริบดำ) · ชั้นดาวไม่ต้องเลื่อน = ไม่ต้องขยายเกินจอ */
 html.gfx-bg-static .game-bg::before,
 html.gfx-bg-static .game-bg::after {
   animation: none !important;
+  will-change: auto;
+}
+html.gfx-bg-static .game-bg::after {
+  inset: 0;
 }
 /* กรอบสนาม + แสงกวาดนิ่ง */
 html.gfx-mat-static .mat-ring-spin,
 html.gfx-mat-static .mat-sheen::before {
   animation: none !important;
+  will-change: auto;
 }
 /* แสงเรือง/ปุ่มเต้น/ของที่วนตลอด (inline animation แบบ infinite): ค้างไว้ที่จังหวะสว่าง ไม่ต้องวาดใหม่ทุกเฟรม */
 html.gfx-glow-static [style*="infinite"],

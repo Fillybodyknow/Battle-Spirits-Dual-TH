@@ -16,6 +16,11 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '64.0.1',
+    date: '2026-11-28',
+    items: ['ลดอาการจอกระพริบสีดำบนแท็บเล็ต/มือถือ: เมื่อฉากหลังหรือกรอบสนามถูกตั้งให้นิ่ง จะไม่จองหน่วยความจำการ์ดจอไว้อีก'],
+  },
+  {
     version: '64.0.0',
     date: '2026-11-28',
     items: [
