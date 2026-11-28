@@ -92,10 +92,11 @@ export function mergeExpJson(local: string | null, remote: string | null): strin
  * EXP ของการดวลหนึ่งเกม
  * - ออนไลน์: ชนะ 150 / แพ้ 60
  * - ดวลกับบอท: ชนะ 50 + 15×ดาว / แพ้ 15 + 5×ดาว · ด่าน Story ×1.5
- * - ยอมแพ้ก่อนเทิร์นที่ 3 = ไม่ได้ทั้งสองฝ่าย (กันกดยอมแพ้รัว ๆ เพื่อปั่น EXP)
+ * - ยอมแพ้ / หมดเวลา ก่อนเทิร์นที่ 3 = ไม่ได้ทั้งสองฝ่าย (กันกดยอมแพ้รัว ๆ เพื่อปั่น EXP)
  */
 export function matchExp(o: { mode: 'online' | 'bot'; won: boolean; stars?: number; story?: boolean; firstClearBonus?: number; turn: number; reason: string }): { exp: number; note: string } {
   if (o.reason === 'concede' && o.turn < 3) return { exp: 0, note: 'ยอมแพ้ก่อนเทิร์นที่ 3 ไม่ได้รับ EXP' };
+  if (o.reason === 'timeout' && o.turn < 3) return { exp: 0, note: 'หมดเวลาก่อนเทิร์นที่ 3 ไม่ได้รับ EXP' };
   if (o.mode === 'online') return { exp: o.won ? 150 : 60, note: o.won ? 'ชนะดวลออนไลน์' : 'ดวลออนไลน์' };
   const stars = Math.max(1, Math.min(6, o.stars ?? 5));
   const base = o.won ? 50 + 15 * stars : 15 + 5 * stars;

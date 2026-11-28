@@ -14,6 +14,7 @@ const REASON: Record<string, (win: string, lose: string) => string> = {
   lifeZero: (_w, l) => `Life ของ ${l} เป็น 0!`,
   deckOut: (_w, l) => `เด็คของ ${l} หมด!`,
   concede: (_w, l) => `${l} ยอมแพ้`,
+  timeout: (_w, l) => `${l} ไม่ตอบสนองเกินเวลา`,
   effectWin: (w) => `${w} ชนะด้วยเอฟเฟกต์การ์ด!`,
 };
 

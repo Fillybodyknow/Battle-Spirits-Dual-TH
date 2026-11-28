@@ -27,6 +27,7 @@ import { useBgmDirector } from './bgmDirector';
 import { usePrefs } from './prefs';
 import { GameDataAsk, GameDataPill } from './components/GameDataUi';
 import { NetWarning } from './components/NetStatus';
+import { AfkWatch } from './components/AfkWatch';
 import { ReportButton } from './components/ReportDialog';
 import { ReplayBar } from './components/ReplayBar';
 
@@ -302,6 +303,7 @@ function GameScreen() {
       <FinalBlowWarning />
       {/* ออนไลน์: หลุด / ส่งแล้วรอนาน / คู่แข่งไม่ตอบสนอง */}
       <NetWarning />
+      <AfkWatch />
       <FlashCue />
       <GfxNotice />
       <PlayerPlate player={bottom} corner="bottom-left" />

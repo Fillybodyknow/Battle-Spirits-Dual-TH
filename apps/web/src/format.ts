@@ -57,7 +57,7 @@ export function setSeatNames(names: Partial<Record<PlayerId, string>> | null) {
 }
 export const playerLabel = (p: PlayerId) => seatNames?.[p] ?? (p === 'p1' ? 'ผู้เล่น 1' : 'ผู้เล่น 2');
 
-const END_REASON = { lifeZero: 'Life เป็น 0', deckOut: 'เด็คหมด', concede: 'ยอมแพ้', effectWin: 'ชนะด้วยเอฟเฟกต์การ์ด' } as const;
+const END_REASON = { lifeZero: 'Life เป็น 0', deckOut: 'เด็คหมด', concede: 'ยอมแพ้', timeout: 'ไม่ตอบสนองเกินเวลา', effectWin: 'ชนะด้วยเอฟเฟกต์การ์ด' } as const;
 
 export function cardName(state: GameState, cardId: string): string {
   const card = state.cards[cardId];

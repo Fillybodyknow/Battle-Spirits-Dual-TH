@@ -3880,6 +3880,35 @@ function startGame(seed: number, decks: DeckChoice, firstPlayer?: PlayerId, part
 }
 
 /** คนชนะการเสี่ยงของรอบออนไลน์ (คำนวณจาก seed ของห้อง: ทั้งสองเครื่องได้ผลเดียวกัน) */
+/** หมดเวลาเลือกเริ่มก่อน/หลัง: สุ่มจาก seed (ทุกเครื่องได้ค่าเดียวกัน · คนละบิตกับการเสี่ยง) */
+function randomFirst(seed: number): PlayerId {
+  let x = (seed ^ 0x85ebca6b) >>> 0;
+  x = Math.imul(x ^ (x >>> 15), 0x2c1b3c6d) >>> 0;
+  x = Math.imul(x ^ (x >>> 12), 0x297a2d39) >>> 0;
+  return ((x ^ (x >>> 15)) & 1) === 0 ? 'p1' : 'p2';
+}
+
+/** เวลาเลือกเริ่มก่อน/หลัง (ออนไลน์) · ฝั่งที่รอเขียนผลสุ่มแทนหลังหมดเวลา + PREGAME_GRACE_MS (เผื่อคนเลือกเน็ตช้า) */
+export const PREGAME_CHOOSE_MS = 10_000;
+export const PREGAME_GRACE_MS = 3_000;
+/** ออนไลน์: หมดเวลาเลือกเริ่มก่อน/หลัง = สุ่ม (เขียนได้ทุกที่นั่ง: setFirst เขียนเฉพาะตอนยังไม่มีใครเลือก + ค่าสุ่มมาจาก seed จึงตรงกันทุกเครื่อง) */
+export function pregameTimeout() {
+  const { online, pregame } = useGame.getState();
+  if (!online || online.spectator || online.status !== 'choosing' || !online.setup || online.setup.first || pregame?.chosen) return;
+  void transport.setFirst(online.code, online.setup.round, randomFirst(online.setup.seed)).catch(() => {});
+}
+/** ออนไลน์: คู่แข่งไม่มีการกระทำเกินเวลา = ส่ง concede (timeout) แทนเขา ที่ช่อง action ถัดไป (มีคนเขียนก่อน = เขากลับมาแล้ว ไม่ต้องทำอะไร) */
+export function forfeitOpponent() {
+  const on = useGame.getState().online;
+  if (!on?.setup || on.spectator || on.status !== 'playing') return;
+  void transport.pushAction(on.code, on.setup.round, on.applied, { type: 'concede', player: opponentOf(on.me), timeout: true }).catch(() => {});
+}
+/** ผู้เล่นนี้มี action ในรอบนี้แล้วหรือยัง (ยังไม่เคยเลย = หลุดก่อนได้เล่น → ไม่นับผล) */
+export function actedInRound(p: PlayerId): boolean {
+  const on = useGame.getState().online;
+  return !!on?.setup && replayLog?.code === on.code && replayLog.round === on.setup.round && replayLog.actions.some((a) => 'player' in a && a.player === p);
+}
+
 function coinWinner(seed: number): PlayerId {
   let x = (seed ^ 0x9e3779b9) >>> 0;
   x = Math.imul(x ^ (x >>> 16), 0x45d9f3b) >>> 0;

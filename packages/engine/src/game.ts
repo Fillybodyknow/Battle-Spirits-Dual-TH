@@ -1292,8 +1292,8 @@ const handlers: { [T in Action['type']]: Handler<T> } = {
     delete s.awaitingDraw;
     continueDraw(ctx);
   },
-  concede(ctx, { player }) {
-    endGame(ctx, opponentOf(player), 'concede');
+  concede(ctx, { player, timeout }) {
+    endGame(ctx, opponentOf(player), timeout ? 'timeout' : 'concede');
   },
 };
 

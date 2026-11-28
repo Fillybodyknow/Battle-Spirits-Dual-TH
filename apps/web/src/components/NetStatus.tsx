@@ -10,7 +10,7 @@ import { seatKey, type TableSeat } from '../online/transport';
 import { useGame } from '../store';
 
 /** รีเฟรชทุก ms (ตัวเลขที่ขึ้นกับเวลา: รอนานเท่าไร / ไม่ได้ข่าวนานเท่าไร) · ไม่ใช่ออนไลน์ = ไม่ตั้งเวลา (ไม่วาดใหม่เปล่า ๆ) */
-function useNow(ms: number, enabled: boolean): number {
+export function useNow(ms: number, enabled: boolean): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!enabled) return;

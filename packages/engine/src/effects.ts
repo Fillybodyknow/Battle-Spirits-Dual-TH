@@ -226,7 +226,8 @@ export function queueTriggers(
     const isGranted = src !== cardId;
     if (!isGranted && ab.granted) continue;
     if (ab.zone === 'hand') {
-      if (!inHand) continue;
+      // การ์ดที่วางแสดงนอกมือ (shownCards: ยังอยู่ใน hand) ไม่ใช่ "การ์ดในมือ" (กติกา 14 ข้อ 1 · เน-รันเทล BSC04)
+      if (!inHand || (s.shownCards ?? []).includes(cardId)) continue;
     } else if (ab.zone === 'trash') {
       if (!inTrash) continue;
       // BS09 เมียวโอสยบมาร: การ์ดในแทรชใช้เอฟเฟกต์ไม่ได้

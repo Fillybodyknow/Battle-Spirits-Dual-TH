@@ -234,6 +234,22 @@ describe('BSC04 (BSC18)', () => {
     expect(s.players.p2.trashCards).toContain(wing);
   });
 
+  it('เน-รันเทล: อัญเชิญจากในมือได้เมื่อสปิริตดีว่าของเราถูกทำลายโดยคู่แข่ง · วางแสดงนอกมือ = ไม่ทำงาน', () => {
+    for (const shown of [false, true]) {
+      let s = setup();
+      const diva = put(s, 'p1', no('[พาวเวอร์ฟูลด็อก] เวนดี้-เคท'), 1);
+      const ne = inHand(s, 'p1', no('เน-รันเทล'));
+      if (shown) s.shownCards = [ne];
+      queue(s, 'p2', diva, [{ do: 'destroyChosenOpponent', filter: { types: ['spirit'] } }]);
+      s.queue[0]!.controller = 'p2';
+      s = act(s, { type: 'endMain', player: 'p1' });
+      if (s.choice?.kind === 'card') s = choose(s, diva);
+      expect(s.players.p1.field).not.toContain(diva);
+      const offered = s.choice?.kind === 'option' && s.choice.options.some((o) => o.includes('เน-รันเทล'));
+      expect(offered, shown ? 'นอกมือ' : 'ในมือ').toBe(!shown);
+    }
+  });
+
   it('ชุดซานต้า: ผู้ร่วมร่างเผ่า [ไพรเวทแวร์] ได้รับเผ่า [สเตจสไตล์] ในแอทแท็คสเต็ปของเรา', async () => {
     const { cardFamilies } = await import('../src/rules');
     let s = setup();

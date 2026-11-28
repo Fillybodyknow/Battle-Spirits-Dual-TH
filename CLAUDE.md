@@ -301,6 +301,9 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
   กฎ Realtime Database อยู่ที่ `database.rules.json` (+ `firebase.json`) ไม่ได้ deploy อัตโนมัติ: แก้ path ใหม่ใน DB ต้องแก้ไฟล์นี้
   แล้วให้เจ้าของโปรเจกต์วางใน Firebase Console → Realtime Database → Rules (หรือ `npx firebase-tools deploy --only database`)
   ไม่งั้น path ใหม่ถูกปฏิเสธ (เช่น `lobby` ใช้ไม่ได้ = รายการห้องว่าง แต่เข้าด้วยรหัสยังได้)
+- **ไม่มีการกระทำ / หลุด (ออนไลน์ 1VS1, `components/AfkWatch.tsx` · เจ้าของโปรเจกต์กำหนด)**: เลือกเริ่มก่อน/หลัง 10 วิ (`PREGAME_CHOOSE_MS`, นับใน MatchIntro) หมดเวลา = สุ่มจาก seed (`pregameTimeout` → setFirst ที่นั่งไหนเขียนก่อนก็ได้ ค่าเดียวกัน) ·
+  ระหว่างเกม รอคู่แข่ง (`actorOf`) แล้วไม่มี action ใหม่ 60 วิ = ป้าย "ถือว่าหลุด" · อีก 60 วิ = เครื่องเราส่ง `concede` + `timeout: true` แทนเขา (`forfeitOpponent`, EndReason `timeout`) ·
+  คู่แข่งไม่เคยมี action ในรอบนี้เลย (`actedInRound`) = หลุดก่อนได้เล่น → แผง "ไม่นับผล" ออกได้โดยไม่บันทึก · Team Battle ยังไม่ใช้
 - **Casual Match (จับคู่อัตโนมัติ 1VS1, `casualStart` / `casualCancel` ใน store, หน้าต่าง `CasualMatch` ใน Lobby.tsx)**: คิวที่ `match/queue/<MAJOR>/<uid>` (จับคู่เฉพาะเวอร์ชัน MAJOR เดียวกัน, หลุด = เซิร์ฟเวอร์ลบเอง) ·
   ทุก 2.5 วิ (`casualTick`): อัปเดตสัญญาณชีพ `seen` → คนที่มาทีหลังล็อกตัวเอง (`claimedBy` = ตัวเอง) แล้วจองคนที่รอนานที่สุดด้วย transaction (เรียงด้วย `at` แล้ว uid: สองคนไม่จองกันเอง) → สร้างห้องเกม `cm-…` (ผู้จอง = p1) แล้วเขียนรหัสห้องที่ `match/found/<uid>` ให้อีกฝ่ายเข้าเป็น p2
   · คนในคิวที่ "ยังมีชีวิต" = เห็น `seen` เปลี่ยนภายใน 10 วิตามนาฬิกาเครื่องเรา (ไม่เทียบนาฬิกาข้ามเครื่อง · ค้างนานกว่านั้นถูกลบ) · ถูกจองแต่ไม่มีห้องภายใน 15 วิ = ปลดเองกลับเข้าคิว

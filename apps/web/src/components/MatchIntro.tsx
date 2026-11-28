@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { sfx } from '../sfx';
 import { flashScale, shakeScale } from '../gfx';
-import { useGame, type Fx, type IntroSide } from '../store';
+import { pregameTimeout, PREGAME_CHOOSE_MS, PREGAME_GRACE_MS, useGame, type Fx, type IntroSide } from '../store';
 import { playerId } from '../account/account';
 import { IMG } from '../assets';
 import { coverOf, DiamondAvatar } from './SeatAvatar';
@@ -248,6 +248,25 @@ export function MatchIntro({ fx, onDone }: { fx: Extract<Fx, { kind: 'intro' }>;
   // ดวลกับบอท: บอทเลือกเอง (bot/vsBot.ts) ไม่แสดงปุ่มให้กดแทน
   const iChoose = online ? !online.spectator && online.me === winner : !(botSeat && botSeat === winner);
 
+  // ออนไลน์: เลือกภายใน 10 วิ หมดเวลา = สุ่ม (คนเลือกเขียนเองตอนหมดเวลา · ฝั่งที่รอเขียนแทนหลังเผื่ออีกนิด เผื่อคนเลือกหลุด)
+  const timed = !!online && !spec && phase === 'choose' && chosen === null;
+  const [left, setLeft] = useState(PREGAME_CHOOSE_MS / 1000);
+  useEffect(() => {
+    if (!timed) return;
+    const t0 = Date.now();
+    const limit = PREGAME_CHOOSE_MS + (iChoose ? 0 : PREGAME_GRACE_MS);
+    const iv = setInterval(() => {
+      const e = Date.now() - t0;
+      setLeft(Math.max(0, Math.ceil((PREGAME_CHOOSE_MS - e) / 1000)));
+      if (e >= limit) {
+        clearInterval(iv);
+        pregameTimeout();
+      }
+    }, 200);
+    return () => clearInterval(iv);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timed]);
+
   // ข้ามฉาก: ก่อนเลือก = ไปที่ช่วงเลือกเลย / เลือกแล้ว = จบฉาก
   const skip = () => {
     if (chosen === null) {
@@ -343,11 +362,13 @@ export function MatchIntro({ fx, onDone }: { fx: Extract<Fx, { kind: 'intro' }>;
                       เริ่มหลัง
                     </button>
                   </div>
+                  {timed && <div className="text-base font-bold text-slate-200 drop-shadow">เลือกภายใน {left} วิ · หมดเวลา = สุ่ม</div>}
                 </>
               ) : (
                 <div className="flex h-20 w-[64%] items-center justify-center gap-3 border-y border-sky-300/40 bg-gradient-to-r from-transparent via-slate-950/90 to-transparent text-2xl font-bold text-slate-200">
                   <span className="h-5 w-5 animate-spin rounded-full border-2 border-sky-300/30 border-t-sky-300" />
                   {spec ? seatName(winner) : 'คู่แข่ง'}กำลังเลือกว่าจะเริ่มก่อนหรือเริ่มหลัง…
+                  {timed && <span className="text-lg text-slate-400">({left > 0 ? `${left} วิ` : 'กำลังสุ่ม…'})</span>}
                 </div>
               )}
             </div>

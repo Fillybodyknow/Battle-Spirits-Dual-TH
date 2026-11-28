@@ -642,7 +642,7 @@ export interface GameState {
   log: GameEvent[];
 }
 
-export type EndReason = 'lifeZero' | 'deckOut' | 'concede' | /** BSC02 ดีว่าสเตจ: ชนะด้วยเอฟเฟกต์ */ 'effectWin';
+export type EndReason = 'lifeZero' | 'deckOut' | 'concede' | /** ออนไลน์: ไม่มีการกระทำเกินเวลา (คู่แข่งส่ง concede แทน) */ 'timeout' | /** BSC02 ดีว่าสเตจ: ชนะด้วยเอฟเฟกต์ */ 'effectWin';
 
 /** ปลายทางของการย้าย Core */
 export type CoreTarget = { area: 'reserve' } | { cardId: string };
@@ -685,7 +685,8 @@ type ActionBody =
    *  - hostId null = แยกร่าง: วาง Core (placement) บน Brave, Brave มีสภาพตามผู้ร่วมร่างเดิม
    */
   | { type: 'brave'; player: PlayerId; braveId: string; hostId: string | null; placement?: string[] }
-  | { type: 'concede'; player: PlayerId }
+  /** timeout = ออนไลน์: อีกฝ่ายส่งแทนเมื่อผู้เล่นนี้ไม่มีการกระทำเกินเวลา (ผลเหมือนยอมแพ้ ต่างแค่เหตุผลที่แสดง) */
+  | { type: 'concede'; player: PlayerId; timeout?: boolean }
   /** Draw Step แบบกดจั่วเอง (config.manualDraw) */
   | { type: 'drawStep'; player: PlayerId }
   /** (BS07) แอทแท็คสเต็ปของเรา: ใช้ On Stage ของการ์ดบนสนาม (ability onStage ที่บรรทัด source) แทนการโจมตี */

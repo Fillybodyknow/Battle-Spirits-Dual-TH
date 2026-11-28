@@ -274,6 +274,13 @@ describe('การโจมตีและบล็อก (หมวด 7)', ()
   it('ยอมแพ้ได้ทุกเมื่อ', () => {
     const s = act(setup(), { type: 'concede', player: 'p2' });
     expect(s.winner).toBe('p1');
+    expect(s.endReason).toBe('concede');
+  });
+
+  it('ออนไลน์: ไม่มีการกระทำเกินเวลา = concede timeout (ผลเหมือนยอมแพ้ เหตุผล timeout)', () => {
+    const s = act(setup(), { type: 'concede', player: 'p1', timeout: true });
+    expect(s.winner).toBe('p2');
+    expect(s.endReason).toBe('timeout');
   });
 });
 
