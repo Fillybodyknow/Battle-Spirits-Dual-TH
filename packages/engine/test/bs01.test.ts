@@ -222,6 +222,26 @@ describe('Booster Set 01', () => {
     expect(opp.gained).toBe(2);
   });
 
+  it('ทวีปแห่งหุบผาหินแหลมคม: ใช้โซลคอร์จ่ายอัญเชิญ "สปิริต" = ทำลายเน็กซัสคู่แข่ง · อัลติเมทไม่นับ', () => {
+    const run = (cardNo: string, extra?: string) => {
+      const s = setup();
+      put(s, 'p1', NEXUS_C, 0);
+      if (extra) put(s, 'p1', extra, 1);
+      const theirs = put(s, 'p2', NEXUS_C, 0);
+      const card = inZone(s, 'p1', cardNo, 'hand');
+      const soul = s.players.p1.reserve.find((id) => s.cores[id]!.isSoul)!;
+      const normal = s.players.p1.reserve.filter((id) => !s.cores[id]!.isSoul);
+      const cost = payableCost(s, db, 'p1', db.get(cardNo));
+      const payment = [soul, ...normal.slice(0, cost - 1)];
+      let x = act(s, { type: 'summon', player: 'p1', cardId: card, payment, placement: normal.slice(cost - 1, cost) });
+      for (let i = 0; i < 4 && x.choice; i++) x = x.choice.kind === 'card' ? choose(x, theirs) : choose(x, 0);
+      return onField(x, 'p2', theirs);
+    };
+    const any = (name: string) => db.all().find((c) => c.name === name)!.cardNo;
+    expect(run(any('เก็คโค โกเล็ม')), 'สปิริต').toBe(false); // สีฟ้า: เจ็มแดงของเน็กซัสไม่ลดคอสต์ (ต้องจ่ายจริงอย่างน้อย 1)
+    expect(run(any('อัลติเมท ออริฮาลคอน โกเล็ม'), any('เก็คโค โกเล็ม')), 'อัลติเมท').toBe(true);
+  });
+
   it('ชิปปูดราก้อน Lv2: ต่อสู้กับอัลติเมทของคู่แข่ง BP+10000 (ไม่ได้ต่อสู้ = ไม่ได้)', () => {
     const s = setup();
     const chip = put(s, 'p1', CHIPPU, db.get(CHIPPU).levels[1]!.cores);

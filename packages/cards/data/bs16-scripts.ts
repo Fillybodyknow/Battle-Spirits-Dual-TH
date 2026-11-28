@@ -94,7 +94,7 @@ export const BS16_SCRIPTS: Record<string, CardScript> = {
   ],
   'อัลติเมท ซีคเวิร์ม': [
     // ได้รับ True-Rage = เมื่อสปิริต/อัลติเมทเผ่ามังกรดวงดาวของเราโจมตี
-    // subject: บังคับป้องกันตัวที่โจมตี (ไม่ใช่ซีคเวิร์มเอง)
+    // subject: บังคับป้องกันตัวที่โจมตี (ไม่ใช่ซีคเวิร์มเอง) · ตัวซีคเวิร์มเองก็ได้ True-Rage ด้วย (เจ้าของโปรเจกต์ยืนยัน · ต่างจากออริฮาลคอน โกเล็มที่ตัวเองไม่ได้ Crush)
     { kind: 'trigger', on: 'allyAttack', subject: { card: { types: SPIRITISH, family: STAR_DRAGON } }, levels: U345, steps: [{ do: 'mustBlock', subject: true }] },
     uTrigger(U45, [{ do: 'buffSelf', amount: 10000, untilBattleEnd: true }]),
   ],

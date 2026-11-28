@@ -254,7 +254,10 @@ export function queueTriggers(
     }
     if (ab.subject && !(opts.subject && subjectMatches(ctx, opts.subject, ab.subject, cardId, !!opts.srcFromAttack, opts.subjectSoul, { ...opts, subjectByOnStage: opts.byOnStage }))) continue;
     if (ab.blocker && !(opts.blockerId && s.cards[opts.blockerId] && matchesFilter(s, db, opts.blockerId, ab.blocker))) continue;
-    if (ab.if && !conditionHolds(s, isGranted ? cardId : src, ab.if, false, false, db)) continue;
+    // "ถ้าสปิริตนี้มีโซลคอร์ (ตอนถูกทำลาย/สูญสลาย)": การ์ดลงแทรชไปแล้ว คอร์กลับรีเสิร์ฟ → ใช้ค่าที่จดไว้ก่อนออกจากสนาม (โดจิ ห้ามงคล)
+    if (ab.if && 'soulOnSelf' in ab.if && opts.soulSnapshot !== undefined && !isGranted) {
+      if (!opts.soulSnapshot) continue;
+    } else if (ab.if && !conditionHolds(s, isGranted ? cardId : src, ab.if, false, false, db)) continue;
     if (ab.milled && !(opts.milled ?? []).some((id) => matchesFilter(s, db, id, ab.milled!))) continue;
     if (ab.milledMax !== undefined && (opts.milled ?? []).length > ab.milledMax) continue;
     if (ab.attackStepOnly && s.phase !== 'attack') continue;

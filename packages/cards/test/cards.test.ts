@@ -83,3 +83,14 @@ describe('validateDeck', () => {
     expect(expandDeck([{ cardNo: 'A', count: 2 }, { cardNo: 'B', count: 1 }])).toEqual(['A', 'A', 'B']);
   });
 });
+
+describe('Banlist', () => {
+  it('ชื่อการ์ดทุกใบใน Banlist มีอยู่จริง (พิมพ์ผิด = ไม่มีผล) และระดับเป็น 0/1/2', async () => {
+    const { BANLIST, loadAllCards } = await import('../src');
+    const names = new Set(loadAllCards().all().map((c) => c.name));
+    for (const [name, lv] of Object.entries(BANLIST.cards)) {
+      expect(names.has(name), `ไม่มีการ์ดชื่อ "${name}"`).toBe(true);
+      expect([0, 1, 2]).toContain(lv);
+    }
+  });
+});

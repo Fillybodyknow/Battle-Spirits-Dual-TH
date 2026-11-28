@@ -21,7 +21,8 @@
 packages/cards/    ข้อมูลการ์ด + ภาษาสคริปต์เอฟเฟกต์
   src/text-format.ts   ตัวแปลงไฟล์การ์ดภาษาไทย (.text) → JSON (import แค่ type: รันด้วย node ตรง ๆ ได้)
   src/abilities.ts     DSL เอฟเฟกต์ (Step / Condition / CardFilter / TriggerEvent / Ability) + attachScripts
-  src/schema.ts, database.ts, deck.ts (validateDeck: ≥40 ใบ, ชื่อเดียวกัน ≤3), rarity.ts
+  src/schema.ts, database.ts, deck.ts (validateDeck: ≥40 ใบ, ชื่อเดียวกัน ≤3 + Banlist), rarity.ts
+  src/banlist.ts       Banlist (ชื่อการ์ด → 0 ห้าม / 1 / 2 ใบ) = DEFAULT_DECK_RULES.restricted บังคับทุกโหมด · แก้รายการ = เปลี่ยน updated · เทสต์เช็กว่าชื่อมีอยู่จริง
   data/<set>.json, <set>-deck.json   สร้างจาก npm run cards (ห้ามแก้มือ)
   data/<set>-scripts.ts               สคริปต์เอฟเฟกต์ เขียนมือ ผูกกับการ์ดด้วย "ชื่อการ์ด"
 packages/engine/   กฎเกมแบบ pure + deterministic: applyAction(state, action, db) → { state, events }

@@ -2072,7 +2072,7 @@ type AbilityCore =
   | { kind: 'coreStepBonus'; source: number; levels: number[]; amount: number; if?: Condition; /** "ไม่แสดงผลซ้ำซ้อน": การ์ดชื่อเดียวกันนับครั้งเดียว */ noStack?: true }
   /** BS17 อาซาเอล: ตอนตัดสินผลการต่อสู้ ถ้าผู้โจมตีของคู่แข่งมี BP ไม่เกิน maxBp ไลฟ์ของเราไม่ลด */
   /** BS17 ออริฮาลคอน โกเล็ม: การ์ดของเราที่ตรงตัวกรองถือว่ามีคีย์เวิร์ด/ข้อความนี้ (ตัวกรอง textIncludes เห็นด้วย) */
-  | { kind: 'grantText'; source: number; levels: number[]; if?: Condition; filter: CardFilter; text: string }
+  | { kind: 'grantText'; source: number; levels: number[]; if?: Condition; filter: CardFilter; text: string; /** ตัวที่ให้เองไม่ได้รับ (ออริฮาลคอน โกเล็ม: เจ้าของโปรเจกต์กำหนด) */ excludeSelf?: true }
   /** BS17 ธงโจรสลัดมังกรสามหัว: สปิริตที่มี Summon Bolt ของเราที่ถูกทำลายจากการเทียบ BP ยังใช้ Summon Bolt ได้ */
   | { kind: 'summonBoltOnBattleLoss'; source: number; levels: number[]; if?: Condition }
   | { kind: 'lowBpLifeShield'; source: number; levels: number[]; if?: Condition; maxBp: number }
@@ -2163,6 +2163,8 @@ export function clauseSpiritsOnly(text: string): boolean {
   const m = /(?:เมื่อ|หลังจาก)[^,:\]】)]*/.exec(text);
   if (!m) return false;
   const c = m[0];
+  // "สปิริต/อัลติเมทนี้" = ครอบคลุมอัลติเมทด้วย (mentionsUltimate ข้าม "อัลติเมทนี้" ไว้ จึงต้องเช็กรูปทับก่อน · ออริฮาลคอน โกเล็ม: Crush ที่ให้ [ทหารสังเคราะห์])
+  if (/สปิริต\s*\/\s*อัลติเมท|อัลติเมท\s*\/\s*สปิริต/.test(c)) return false;
   return c.includes('สปิริต') && !mentionsUltimate(c) && !c.includes('เน็กซัส') && !c.includes('การ์ด');
 }
 

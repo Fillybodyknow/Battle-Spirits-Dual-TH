@@ -326,4 +326,36 @@ describe('Booster Set 17 (ฟ้า)', () => {
     expect(matchesFilter(s, db, gk, { textIncludes: ['Crush'] })).toBe(true);
     expect(cardLevel(s, db, gk)).toBe(2);
   });
+
+  it('อัลติเมท ออริฮาลคอน โกเล็ม: Crush ที่ได้รับทำงานจริง (ตัวที่โจมตีทิ้งเด็คคู่แข่งเท่ากับ Lv ของตัวมันเอง · ตัวมันเองไม่ได้)', () => {
+    for (const ultFirst of [true, false]) {
+      let s = setup();
+      if (ultFirst) put(s, 'p1', no('อัลติเมท ออริฮาลคอน โกเล็ม'), 1);
+      const gk = put(s, 'p1', no('เก็คโค โกเล็ม'), 1);
+      if (!ultFirst) put(s, 'p1', no('อัลติเมท ออริฮาลคอน โกเล็ม'), 1);
+      const lv = cardLevel(s, db, gk);
+      const deck = s.players.p2.deck.length;
+      s = act(s, { type: 'endMain', player: 'p1' });
+      s = settle(act(s, { type: 'declareAttack', player: 'p1', attackerId: gk }));
+      expect(s.players.p2.deck.length, ultFirst ? 'อัลติเมทลงก่อน' : 'อัลติเมทลงทีหลัง').toBe(deck - lv);
+    }
+    // ตัวออริฮาลคอน โกเล็มเองไม่ได้รับ Crush (เจ้าของโปรเจกต์กำหนด): โจมตีเอง = ไม่ทิ้งเด็ค (Lv3 · ยังไม่ถึง U Trigger Lv4)
+    let s = setup();
+    const ult = put(s, 'p1', no('อัลติเมท ออริฮาลคอน โกเล็ม'), 1);
+    put(s, 'p1', no('เก็คโค โกเล็ม'), 1);
+    const deck = s.players.p2.deck.length;
+    s = act(s, { type: 'endMain', player: 'p1' });
+    s = settle(act(s, { type: 'declareAttack', player: 'p1', attackerId: ult }));
+    expect(s.players.p2.deck.length, 'ออริฮาลคอนโจมตีเอง').toBe(deck);
+    expect(matchesFilter(s, db, ult, { textIncludes: ['Crush'] })).toBe(false);
+    // อัลติเมท [ทหารสังเคราะห์] ตัวอื่น (คาสเซิลโกเล็ม Lv3) ได้ Crush: ทิ้ง 3 + U Trigger เปิด 1 + ฮิตคอสต์ 1 × 3 = 7
+    let t = setup();
+    put(t, 'p1', no('อัลติเมท ออริฮาลคอน โกเล็ม'), 1);
+    const castle = put(t, 'p1', no('อัลติเมท คาสเซิลโกเล็ม'), 1);
+    put(t, 'p1', no('เก็คโค โกเล็ม'), 1);
+    const d2 = t.players.p2.deck.length;
+    t = act(t, { type: 'endMain', player: 'p1' });
+    t = settle(act(t, { type: 'declareAttack', player: 'p1', attackerId: castle }));
+    expect(t.players.p2.deck.length, 'คาสเซิลโกเล็มโจมตี').toBe(d2 - 7);
+  });
 });

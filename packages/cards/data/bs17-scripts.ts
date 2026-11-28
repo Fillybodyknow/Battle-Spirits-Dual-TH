@@ -378,9 +378,10 @@ export const BS17_SCRIPTS: Record<string, CardScript> = {
   ],
   'อัลติเมท ออริฮาลคอน โกเล็ม': [
     [
-      { kind: 'grantText', levels: U345, if: { ownAttackStep: true }, filter: { types: SPIRITISH, family: SYNTH }, text: 'Crush' },
+      // ตัวออริฮาลคอน โกเล็มเองไม่ได้รับ Crush (เจ้าของโปรเจกต์กำหนด) = excludeSelf / subject.other
+      { kind: 'grantText', levels: U345, if: { ownAttackStep: true }, filter: { types: SPIRITISH, family: SYNTH }, text: 'Crush', excludeSelf: true },
       // Crush ที่ได้รับ: เมื่อโจมตี ทิ้งใบบนสุดเด็คคู่แข่ง = Lv ของตัวที่โจมตี
-      { kind: 'trigger', on: 'allyAttack', subject: { card: { types: SPIRITISH, family: SYNTH } }, levels: U345, ownTurnOnly: true, steps: [{ do: 'mill', count: 'subjectLevel' }] },
+      { kind: 'trigger', on: 'allyAttack', subject: { card: { types: SPIRITISH, family: SYNTH }, other: true }, levels: U345, ownTurnOnly: true, steps: [{ do: 'mill', count: 'subjectLevel' }] },
     ],
     uTrigger(U45, [when({ uTriggerCard: { minCost: 5 } }, [{ do: 'bigMillLifeThisTurn', min: 6 }]), { do: 'mill', count: 6 }]),
   ],

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { DEFAULT_DECK_RULES, rarityOf, validateDeck, type DeckEntry, type DeckError } from '@bs/cards';
+import { BAN_LABEL, BANLIST, copyLimit, DEFAULT_DECK_RULES, rarityOf, validateDeck, type DeckEntry, type DeckError } from '@bs/cards';
 import { RARITY_BADGE } from '../format';
 import { db, useGame } from '../store';
 import { deckInfo, deckSizeOf, deleteMyDeck, loadMyDecks, newDeckId, saveMyDeck, STARTER_DECKS, type SavedDeck } from '../decks';
@@ -11,6 +11,8 @@ import { byTypeCost, FilterBar, FilterPanel, useCardFilters } from './DeckFilter
 
 const MAX = DEFAULT_DECK_RULES.maxCopiesPerName;
 const MIN = DEFAULT_DECK_RULES.minCards;
+/** ใส่ได้กี่ใบ (Banlist: ห้าม 0 / จำกัด 1 / จำกัด 2 · ไม่อยู่ในลิสต์ = 3) */
+const limitOf = (name: string) => copyLimit(name, MAX);
 function errorText(e: DeckError): string {
   switch (e.code) {
     case 'TOO_FEW_CARDS':
@@ -18,7 +20,7 @@ function errorText(e: DeckError): string {
     case 'TOO_MANY_COPIES':
       return `${e.name} ใส่ได้ไม่เกิน ${e.max} ใบ`;
     case 'RESTRICTED':
-      return `${e.name} ถูกจำกัดไว้ ${e.max} ใบ`;
+      return e.max === 0 ? `${e.name} ถูกห้ามใช้ (Banlist)` : `${e.name} ถูกจำกัดไว้ ${e.max} ใบ (Banlist)`;
     case 'UNKNOWN_CARD':
       return `ไม่รู้จักการ์ด ${e.cardNo}`;
     default:
@@ -30,6 +32,12 @@ interface Draft {
   id: string | null;
   name: string;
   entries: DeckEntry[];
+}
+
+/** ป้าย Banlist บนการ์ด: ห้ามใช้ = แดง · จำกัด 1/2 = ส้ม/เหลือง */
+export function BanBadge({ level, className = '' }: { level: 0 | 1 | 2; className?: string }) {
+  const tone = level === 0 ? 'bg-rose-600 text-white' : level === 1 ? 'bg-orange-500 text-white' : 'bg-amber-300 text-slate-900';
+  return <span className={`rounded px-1 text-[9px] leading-tight font-black shadow ${tone} ${className}`}>{level === 0 ? 'ห้าม' : `จำกัด ${level}`}</span>;
 }
 
 /** หน้าจัดเด็ค: รายละเอียดการ์ด (ซ้าย) · การ์ดในเด็ค (กลาง) · คลังการ์ดทุกชุด (ขวา) */
@@ -61,7 +69,7 @@ export function DeckBuilder() {
     for (const e of draft.entries) m.set(db.get(e.cardNo).name, (m.get(db.get(e.cardNo).name) ?? 0) + e.count);
     return m;
   }, [draft.entries]);
-  const fl = useCardFilters(allCards, nameCounts, MAX);
+  const fl = useCardFilters(allCards, nameCounts, limitOf);
   const pool = fl.pool;
 
   // ---------------- ลากการ์ด (เมาส์และนิ้ว: pointer events)
@@ -138,7 +146,7 @@ export function DeckBuilder() {
     change((entries) => {
       const name = db.get(cardNo).name;
       const n = entries.reduce((k, e) => k + (db.get(e.cardNo).name === name ? e.count : 0), 0);
-      if (n >= MAX) return entries;
+      if (n >= limitOf(name)) return entries;
       const found = entries.find((e) => e.cardNo === cardNo);
       return found ? entries.map((e) => (e === found ? { ...e, count: e.count + 1 } : e)) : [...entries, { cardNo, count: 1 }];
     });
@@ -226,6 +234,7 @@ export function DeckBuilder() {
         <div className="flex w-[300px] shrink-0 flex-col gap-2">
           {(() => {
             const n = countOf(db.get(focus).name);
+            const lim = limitOf(db.get(focus).name);
             return (
               <div className="hud-panel flex items-center justify-between gap-2 rounded-xl px-3 py-2">
                 <button
@@ -239,14 +248,14 @@ export function DeckBuilder() {
                 </button>
                 <div className="text-center leading-tight">
                   <div className="text-xs text-slate-400">ในเด็ค</div>
-                  <div className={`text-xl font-black ${n >= MAX ? 'text-yellow-300' : 'text-white'}`}>
-                    {n} / {MAX}
+                  <div className={`text-xl font-black ${n >= lim ? 'text-yellow-300' : 'text-white'}`}>
+                    {n} / {lim}
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => add(focus)}
-                  disabled={n >= MAX}
+                  disabled={n >= lim}
                   className="h-11 w-14 rounded-lg bg-emerald-600 text-2xl font-black text-white shadow transition hover:bg-emerald-500 active:scale-95 disabled:opacity-30"
                   title="ใส่ในเด็ค 1 ใบ"
                 >
@@ -305,7 +314,7 @@ export function DeckBuilder() {
         >
           <FilterBar fl={fl} />
           {fl.open && <FilterPanel fl={fl} />}
-          {!fl.open && <div className="text-xs text-slate-400">{pool.length} ใบ · ลากการ์ดเข้าเด็ค หรือกดการ์ดแล้วกด + (ชื่อเดียวกันไม่เกิน {MAX} ใบ)</div>}
+          {!fl.open && <div className="text-xs text-slate-400">{pool.length} ใบ · ลากการ์ดเข้าเด็ค หรือกดการ์ดแล้วกด + (ชื่อเดียวกันไม่เกิน {MAX} ใบ · ป้ายแดง/ส้ม = Banlist)</div>}
           <div className={`min-h-0 flex-1 overflow-y-auto pr-1 ${fl.open ? 'hidden' : ''}`}>
             {pool.length === 0 && (
               <div className="flex flex-col items-center gap-2 py-10 text-sm text-slate-400">
@@ -318,7 +327,9 @@ export function DeckBuilder() {
             <div className="grid grid-cols-4 gap-1.5">
               {pool.map((c) => {
                 const n = countOf(c.name);
-                const full = n >= MAX;
+                const lim = limitOf(c.name);
+                const full = n >= lim;
+                const ban = BANLIST.cards[c.name];
                 const r = rarityOf(c.rarity);
                 return (
                   <button
@@ -327,13 +338,14 @@ export function DeckBuilder() {
                     onPointerDown={(e) => !full && startPress(e, c.cardNo, 'pool')}
                     onClick={() => pick(c.cardNo)}
                     className={`relative touch-pan-y rounded-md transition ${full ? 'opacity-40' : 'hover:-translate-y-0.5'} ${focus === c.cardNo ? 'ring-2 ring-yellow-300' : ''}`}
-                    title={full ? `${c.name} ครบ ${MAX} ใบแล้ว` : c.name}
+                    title={ban !== undefined ? `${c.name} · Banlist: ${BAN_LABEL[ban]}` : full ? `${c.name} ครบ ${lim} ใบแล้ว` : c.name}
                   >
                     <CardArt cardNo={c.cardNo} className="pointer-events-none aspect-[0.686] w-full" />
                     {r && <span className={`absolute top-0.5 left-0.5 rounded px-1 text-[9px] leading-tight font-black ${RARITY_BADGE[r.rank]}`}>{r.code}</span>}
+                    {ban !== undefined && <BanBadge level={ban} className="absolute top-0.5 right-0.5" />}
                     {n > 0 && (
                       <span className="absolute -right-1 -bottom-1 rounded-full bg-slate-950 px-1.5 text-xs font-black text-yellow-300 ring-1 ring-yellow-300/60">
-                        {n}/{MAX}
+                        {n}/{lim}
                       </span>
                     )}
                   </button>

@@ -152,7 +152,7 @@ function loadSaved(): { f: Filters; open: boolean } {
 }
 
 /** สถานะตัวกรอง + ผลกรอง · nameCounts = จำนวนในเด็คตามชื่อการ์ด */
-export function useCardFilters(cards: CardDef[], nameCounts: Map<string, number>, max: number) {
+export function useCardFilters(cards: CardDef[], nameCounts: Map<string, number>, limitOf: (name: string) => number) {
   const [state, setState] = useState(loadSaved);
   const f = state.f;
   useEffect(() => {
@@ -185,10 +185,10 @@ export function useCardFilters(cards: CardDef[], nameCounts: Map<string, number>
       families: (c) => !f.families.length || c.family.some((x) => f.families.includes(x)),
       teams: (c) => !f.teams.length || c.teams.some((x) => f.teams.includes(x)),
       keywords: (c) => f.keywords.every((k) => KEYWORDS.find((x) => x.id === k)?.test(c, texts.get(c.cardNo) ?? '') ?? true),
-      owned: (c) => (f.owned === 'inDeck' ? inDeck(c) > 0 : f.owned === 'notInDeck' ? inDeck(c) === 0 : f.owned === 'notFull' ? inDeck(c) < max : true),
+      owned: (c) => (f.owned === 'inDeck' ? inDeck(c) > 0 : f.owned === 'notInDeck' ? inDeck(c) === 0 : f.owned === 'notFull' ? inDeck(c) < limitOf(c.name) : true),
     };
     return t;
-  }, [f, names, texts, nameCounts, max]);
+  }, [f, names, texts, nameCounts, limitOf]);
 
   // แต่ละใบตกกลุ่มไหนบ้าง (นับตัวเลขข้างตัวเลือก = ถ้าเลือกตัวนี้จะเหลือกี่ใบ)
   const { pool, near } = useMemo(() => {
@@ -212,7 +212,7 @@ export function useCardFilters(cards: CardDef[], nameCounts: Map<string, number>
   const clear = () => setState((s) => ({ ...s, f: { ...EMPTY, sort: s.f.sort, desc: s.f.desc } }));
   const setOpen = (open: boolean) => setState((s) => ({ ...s, open }));
 
-  return { f, open: state.open, setOpen, update, clear, pool, count, families, teams, keywords, texts, max };
+  return { f, open: state.open, setOpen, update, clear, pool, count, families, teams, keywords, texts };
 }
 
 type FilterState = ReturnType<typeof useCardFilters>;

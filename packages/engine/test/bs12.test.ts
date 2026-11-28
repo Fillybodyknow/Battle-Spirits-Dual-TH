@@ -88,6 +88,19 @@ describe('Booster Set 12', () => {
     expect(s.players.p2.field).toContain(foe);
   });
 
+  it('โดจิ ห้ามงคล: มีโซลคอร์ + ถูกทำลายโดยเอฟเฟกต์คู่แข่ง = ทิ้งเด็คคู่แข่ง 5 ใบ (ไม่มีโซลคอร์ = ไม่ทำงาน)', () => {
+    for (const soul of [true, false]) {
+      let s = setup();
+      const doji = put(s, 'p2', no('โดจิ ห้ามงคล'), 1, soul);
+      const deck = s.players.p1.deck.length;
+      s.queue = [{ controller: 'p1', sourceId: doji, steps: [{ do: 'destroyChosenOpponent', filter: { types: ['spirit'] } }], paidWithSoul: false, trashWhenDone: false }];
+      s = act(s, { type: 'endMain', player: 'p1' });
+      for (let i = 0; i < 5 && s.choice; i++) s = s.choice.kind === 'card' ? choose(s, doji) : choose(s, 0);
+      expect(s.players.p2.field).not.toContain(doji);
+      expect(s.players.p1.deck.length, soul ? 'มีโซลคอร์' : 'ไม่มีโซลคอร์').toBe(soul ? deck - 5 : deck);
+    }
+  });
+
   it('ซีโนะบาซุคุ (ไม่มีห้ามงคล): ทำลาย BP ไม่เกิน 3000 แล้วจั่ว 1', () => {
     let s = setup();
     const foe = put(s, 'p2', DARIU, 1);

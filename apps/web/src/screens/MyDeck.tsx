@@ -4,7 +4,8 @@
  *  - "+" สร้างเด็คใหม่: เด็คเปล่า / คัดลอกจาก Starter Deck / นำเข้าจากรหัสเด็ค
  */
 import { useMemo, useState } from 'react';
-import { validateDeck } from '@bs/cards';
+import { BAN_LABEL, BANLIST, validateDeck, type BanLevel } from '@bs/cards';
+import { BanBadge } from './DeckBuilder';
 import { CardDetail } from '../components/CardDetail';
 import { CASE_COLORS, DeckBox, autoKeyCards, keyCards } from '../components/DeckBox';
 import { decodeDeck, deckInfo, deckSizeOf, deleteMyDeck, encodeDeck, loadDeckAcc, loadMyDecks, newDeckId, saveDeckAcc, saveMyDeck, STARTER_DECKS, type DeckId } from '../decks';
@@ -13,7 +14,7 @@ import { db, playableDecks, useGame } from '../store';
 import { useAccount } from '../account/account';
 import { BackButton, CardArt, deckColor } from './shared';
 
-type View = { kind: 'grid' } | { kind: 'detail'; deck: DeckId } | { kind: 'acc'; deck: DeckId };
+type View = { kind: 'grid' } | { kind: 'detail'; deck: DeckId } | { kind: 'acc'; deck: DeckId } | { kind: 'banlist' };
 
 /** หน้าที่เปิดอยู่ (กลับจากหน้าจัดเด็คแล้วอยู่ที่เดิม) */
 let lastView: View = { kind: 'grid' };
@@ -403,6 +404,54 @@ function Accessories({ id }: { id: DeckId }) {
   );
 }
 
+// ---------------------------------------------------------------- Banlist
+
+/** รายการการ์ดใน Banlist แยกตามระดับ (ห้ามใช้ / จำกัด 1 / จำกัด 2) · คลิกการ์ด = รายละเอียด */
+function BanlistView() {
+  const [focus, setFocus] = useState<string | null>(null);
+  const groups = ([0, 1, 2] as BanLevel[]).map((lv) => ({
+    lv,
+    cards: Object.entries(BANLIST.cards)
+      .filter(([, v]) => v === lv)
+      .map(([name]) => db.all().find((c) => c.name === name))
+      .filter((c): c is NonNullable<typeof c> => !!c),
+  }));
+  const empty = groups.every((g) => g.cards.length === 0);
+  return (
+    <div className="relative z-10 flex min-h-0 flex-1 gap-4 px-6 py-4">
+      <div className="min-h-0 flex-1 overflow-y-auto pr-2">
+        {empty ? (
+          <div className="mt-24 text-center text-lg text-slate-400">ยังไม่มีการ์ดใน Banlist · ทุกการ์ดใส่ในเด็คได้ชื่อละ 3 ใบ</div>
+        ) : (
+          groups
+            .filter((g) => g.cards.length > 0)
+            .map((g) => (
+              <section key={g.lv} className="mb-5">
+                <h2 className="mb-2 flex items-center gap-2 text-lg font-black text-white">
+                  <BanBadge level={g.lv} className="!text-sm" />
+                  {BAN_LABEL[g.lv]}
+                  <span className="text-sm font-normal text-slate-400">{g.lv === 0 ? 'ใส่ในเด็คไม่ได้' : `ใส่ในเด็คได้ไม่เกิน ${g.lv} ใบ`} · {g.cards.length} ใบ</span>
+                </h2>
+                <div className="grid grid-cols-8 gap-2">
+                  {g.cards.map((c) => (
+                    <button key={c.cardNo} type="button" onClick={() => setFocus(c.cardNo)} className={`relative rounded-md transition hover:-translate-y-0.5 ${focus === c.cardNo ? 'ring-2 ring-yellow-300' : ''}`} title={c.name}>
+                      <CardArt cardNo={c.cardNo} className="pointer-events-none aspect-[0.686] w-full" />
+                      <BanBadge level={g.lv} className="absolute top-0.5 right-0.5" />
+                      <div className="mt-0.5 truncate text-[11px] text-slate-300">{c.name}</div>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ))
+        )}
+      </div>
+      {focus && (
+        <CardDetail cardNo={focus} className="w-80" />
+      )}
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------- หน้าหลัก
 
 export function MyDeck() {
@@ -427,7 +476,7 @@ export function MyDeck() {
   };
   const choosePick = (id: DeckId) => {
     if (!playableDecks().includes(id)) {
-      setPickErr(`${deckInfo(id).label}: เด็คยังไม่ครบตามกติกา (อย่างน้อย 40 ใบ ชื่อเดียวกันไม่เกิน 3 ใบ) ใช้ดวลไม่ได้`);
+      setPickErr(`${deckInfo(id).label}: เด็คยังไม่ครบตามกติกา (อย่างน้อย 40 ใบ ชื่อเดียวกันไม่เกิน 3 ใบ ตาม Banlist) ใช้ดวลไม่ได้`);
       return;
     }
     sfx('click');
@@ -447,7 +496,7 @@ export function MyDeck() {
   };
   const title = pick && view.kind === 'grid'
     ? ['SELECT DECK', pickFor === 'solo' ? 'เลือกเด็คที่จะใช้ในด่าน' : 'เลือกเด็คที่จะใช้ในห้องดวล']
-    : view.kind === 'acc' ? ['CHANGE ACCESSORIES', 'เปลี่ยนของตกแต่ง'] : view.kind === 'detail' ? ['DECK', 'ดูเด็ค'] : starters ? ['STARTER DECK', 'รายการ Starter Deck'] : ['MY DECK', 'เด็คของฉัน'];
+    : view.kind === 'banlist' ? ['BANLIST', `ประกาศจำกัดการ์ด · อัปเดต ${BANLIST.updated}`] : view.kind === 'acc' ? ['CHANGE ACCESSORIES', 'เปลี่ยนของตกแต่ง'] : view.kind === 'detail' ? ['DECK', 'ดูเด็ค'] : starters ? ['STARTER DECK', 'รายการ Starter Deck'] : ['MY DECK', 'เด็คของฉัน'];
 
   return (
     <div className="game-bg relative flex h-screen min-w-[1200px] flex-col overflow-hidden">
@@ -480,6 +529,13 @@ export function MyDeck() {
           <div className="absolute right-12 bottom-6 z-10 flex gap-3">
             <button
               type="button"
+              onClick={() => (sfx('click'), setView({ kind: 'banlist' }))}
+              className="w-44 rounded-lg border-2 border-white/40 bg-black py-3 text-lg font-black text-rose-300 transition hover:border-rose-300 hover:shadow-[0_0_24px_rgba(253,164,175,0.5)]"
+            >
+              Banlist
+            </button>
+            <button
+              type="button"
               onClick={() => (sfx('click'), setStarters((v) => !v))}
               className="w-80 rounded-lg border-2 border-white/40 bg-black py-3 text-lg font-black text-lime-300 transition hover:border-lime-300 hover:shadow-[0_0_24px_rgba(190,242,100,0.5)]"
             >
@@ -497,6 +553,8 @@ export function MyDeck() {
             setMenu(nid);
           }}
         />
+      ) : view.kind === 'banlist' ? (
+        <BanlistView />
       ) : (
         <Accessories id={view.deck} />
       )}

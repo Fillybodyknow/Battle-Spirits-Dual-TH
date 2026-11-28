@@ -1,6 +1,7 @@
 export * from './schema';
 export * from './database';
 export * from './deck';
+export * from './banlist';
 export * from './text-format';
 export * from './abilities';
 export * from './rarity';

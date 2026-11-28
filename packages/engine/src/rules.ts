@@ -2716,6 +2716,7 @@ function grantedText(state: GameState, db: CardDatabase, cardId: string, word: s
   if (!owner || !state.players[owner].field.includes(cardId)) return false;
   for (const src of staticSources(state, db, [owner], 'grantText')) {
     const a = db.get(state.cards[src.cardId]!.cardNo).abilities.find((x) => x.kind === 'grantText' && x.source === src.source);
+    if (a?.kind === 'grantText' && a.excludeSelf && src.cardId === cardId) continue;
     if (a?.kind === 'grantText' && a.text === word && conditionHolds(state, src.cardId, a.if, false, false, db) && matchesFilter(state, db, cardId, a.filter)) return true;
   }
   return false;

@@ -1,4 +1,5 @@
 import type { CardDatabase } from './database';
+import { BANLIST } from './banlist';
 
 /** ฟอยของการ์ดแต่ละใบ: ฟอยขาว หรือ ฟอยรุ้ง (ไม่มี = การ์ดปกติ) */
 export type Foil = 'white' | 'rainbow';
@@ -23,7 +24,8 @@ export interface DeckRules {
 export const DEFAULT_DECK_RULES: DeckRules = {
   minCards: 40,
   maxCopiesPerName: 3,
-  restricted: {},
+  // Banlist ปัจจุบัน (banlist.ts) · บังคับทุกโหมด
+  restricted: BANLIST.cards,
 };
 
 export type DeckError =

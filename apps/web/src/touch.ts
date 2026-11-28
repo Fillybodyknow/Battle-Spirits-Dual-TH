@@ -89,6 +89,19 @@ export function installTouch(): void {
   lockLandscape();
   window.addEventListener('pointerdown', lockLandscape, { once: true });
 
+  // Android เปิดในแท็บ Chrome / ทางลัดหน้าจอหลัก (ไม่ใช่แอปที่ติดตั้ง): แตะครั้งแรก = เต็มจอ + ล็อกแนวนอน
+  // (Xiaomi บางรุ่นเปิดแอปที่ติดตั้งไม่ได้ ผู้เล่นใช้ทางลัดแทน แถบเบราว์เซอร์กินพื้นที่กระดาน) · ปัดออกจากเต็มจอได้ตามปกติ แตะอีกครั้ง = กลับเต็มจอ
+  const android = /android/i.test(navigator.userAgent);
+  const goFullscreen = () => {
+    const standalone = window.matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches;
+    if (!android || standalone || document.fullscreenElement || !document.documentElement.requestFullscreen) return;
+    document.documentElement
+      .requestFullscreen({ navigationUI: 'hide' })
+      .then(() => (screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> })?.lock?.('landscape').catch(() => {}))
+      .catch(() => {});
+  };
+  if (android && isCoarsePointer()) window.addEventListener('pointerup', goFullscreen);
+
   let timer: ReturnType<typeof setTimeout> | null = null;
   let start: { x: number; y: number } | null = null;
   let suppressClick = false;

@@ -647,7 +647,7 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
         </div>
         {spirit && (
           <div data-arrow-avoid
-            className={`absolute -top-2.5 -right-2.5 rounded-md px-1.5 py-0.5 text-sm font-black shadow ${
+            className={`absolute -top-2.5 -right-2.5 rounded-md px-1.5 py-0.5 text-sm font-black shadow ${matTop ? 'rotate-180' : ''} ${
               card.turnBp > 0 || bp > (def.levels.find((l) => l.level === level)?.bp ?? 0) ? 'bg-yellow-300 text-slate-900' : 'bg-black/85 text-yellow-300'
             }`}
           >
@@ -948,12 +948,14 @@ function MatSlot({
   children?: React.ReactNode;
   className?: string;
 } & React.HTMLAttributes<HTMLDivElement>) {
+  // สนามคู่แข่ง (หมุน 180°): ชื่อช่องและตัวเลขหันมาทางเรา (ผู้เล่นขอ: อ่านง่าย)
+  const matTop = useContext(MatTopCtx);
   return (
     <div
       className={`slot-frame relative flex flex-col gap-1 rounded-lg p-1.5 ${className}`}
       {...rest}
     >
-      <div className="flex items-baseline justify-between gap-1 leading-none">
+      <div className={`flex items-baseline justify-between gap-1 leading-none ${matTop ? 'rotate-180' : ''}`}>
         <span className="font-serif text-[15px] font-bold tracking-wider text-slate-100 [text-shadow:0_1px_0_#000,0_0_8px_rgba(255,255,255,0.3)]">
           {label}
           <span className="ml-1 font-sans text-[10px] font-normal tracking-normal text-slate-400 [text-shadow:none]">{sub}</span>
@@ -1051,7 +1053,7 @@ function ReserveSlot({ player, partner }: { player: PlayerId; partner?: boolean 
       onClick={active ? () => moveCoresTo(target) : undefined}
       {...dropHandlers(active, () => moveCoresTo(target), setOver)}
     >
-      {p.reserve.length > 0 ? <CoreRow cores={p.reserve} size="md" board /> : <span className="text-[11px] text-slate-500">ว่าง</span>}
+      {p.reserve.length > 0 ? <CoreRow cores={p.reserve} size="md" board /> : <span className="upright text-[11px] text-slate-500">ว่าง</span>}
       <PileAlloc pileId={pileId(state, 'reserve', player, partner)} label="รีเสิร์ฟ" />
     </MatSlot>
   );
@@ -1121,7 +1123,7 @@ function BurstSlot({ player, partner }: { player: PlayerId; partner?: boolean })
           {burst ? (
             <CardBack />
           ) : (
-            <div className="flex h-full w-full items-center justify-center rounded-lg border border-dashed border-slate-400/30 text-[11px] text-slate-500">ว่าง</div>
+            <div className="flex h-full w-full items-center justify-center rounded-lg border border-dashed border-slate-400/30 text-[11px] text-slate-500"><span className="upright">ว่าง</span></div>
           )}
           {burst && !showMenu && (
             <span className="pointer-events-none absolute inset-x-1 bottom-1 rounded bg-orange-500/95 py-px text-center text-[10px] font-black whitespace-nowrap text-white shadow">เซ็ทอยู่!</span>
@@ -1191,6 +1193,7 @@ function DeckSlot({ player, partner }: { player: PlayerId; partner?: boolean }) 
 }
 
 function TrashSlot({ player, partner }: { player: PlayerId; partner?: boolean }) {
+  const matTop = useContext(MatTopCtx);
   const p = useGame((s) => zoneOf(s.state, player, partner));
   const state = useGame((s) => s.state);
   const openTrash = useGame((s) => s.openTrash);
@@ -1264,12 +1267,12 @@ function TrashSlot({ player, partner }: { player: PlayerId; partner?: boolean })
             <div className="h-full w-full rounded border border-dashed border-slate-400/30" />
           )}
         </div>
-        <div className="flex min-w-0 flex-col gap-0.5 text-[11px]">
+        <div className={`flex min-w-0 flex-col gap-0.5 text-[11px] ${matTop ? 'rotate-180' : ''}`}>
           <span className="text-slate-400">Card · {shown.length} ใบ</span>
           <span className="line-clamp-2 text-slate-200">{top ? db.get(state.cards[top]!.cardNo).name : '—'}</span>
         </div>
       </div>
-      <div className="flex flex-col gap-0.5 text-[11px]">
+      <div className={`flex flex-col gap-0.5 text-[11px] ${matTop ? 'rotate-180' : ''}`}>
         <span className="text-slate-400">Core · {p.trashCores.length}</span>
         {p.trashCores.length > 0 && <CoreRow cores={p.trashCores} size="sm" />}
       </div>
@@ -1391,7 +1394,7 @@ export function PlayerMat({ player, top }: { player: PlayerId; top?: boolean }) 
     <MatTopCtx.Provider value={!!top}>
     <section
       data-mat={player}
-      className={`mat-sheen mat-slab relative isolate flex min-h-fit flex-1 gap-2 overflow-hidden rounded-xl border-2 p-2 flex-row ${top ? 'rotate-180' : ''} ${
+      className={`mat-sheen mat-slab relative isolate flex min-h-fit flex-1 gap-2 overflow-hidden rounded-xl border-2 p-2 flex-row ${top ? 'mat-top rotate-180' : ''} ${
         acting ? 'mat-active border-transparent' : 'border-slate-500/30'
       }`}
       style={{ '--ly': top ? -1 : 1 } as React.CSSProperties}
@@ -1505,7 +1508,7 @@ export function PlayerMat({ player, top }: { player: PlayerId; top?: boolean }) 
         </div>
         {/* แถวบนของสนาม: ป้ายผู้เล่น (ซ้าย) + ช่อง Nexus (กลาง) */}
         <div className="relative flex shrink-0 items-start gap-2">
-          <div className="flex w-36 shrink-0 flex-wrap items-center gap-1.5">
+          <div className="upright flex w-36 shrink-0 flex-wrap items-center gap-1.5">
             <span className={`rounded px-2 py-0.5 text-xs font-black ${acting ? 'player-tag-active' : 'player-tag text-slate-200'}`}>
               {playerLabel(player)}
             </span>
@@ -1534,7 +1537,7 @@ export function PlayerMat({ player, top }: { player: PlayerId; top?: boolean }) 
                   {nexus.length > 0 ? (
                     nexus.map((id) => <FieldCard key={id} cardId={id} depleting={depleting.has(id)} />)
                   ) : (
-                    <span className="px-6 py-0.5 text-[10px] tracking-[0.3em] text-white/25 select-none">NEXUS</span>
+                    <span className="upright px-6 py-0.5 text-[10px] tracking-[0.3em] text-white/25 select-none">NEXUS</span>
                   )}
                 </div>
               </div>

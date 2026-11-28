@@ -1,4 +1,4 @@
-import { rarityOf, type TextEffect } from '@bs/cards';
+import { BAN_LABEL, BANLIST, rarityOf, type TextEffect } from '@bs/cards';
 import { braveText, COLOR_LABEL, RARITY_BADGE, TYPE_LABEL } from '../format';
 import { db } from '../store';
 import { CardArt } from '../screens/shared';
@@ -17,6 +17,11 @@ export function CardDetail({ cardNo, className = 'w-[360px]' }: { cardNo: string
           const r = rarityOf(def.rarity);
           return r ? <span className={`my-1 inline-block rounded px-1.5 text-xs font-black ${RARITY_BADGE[r.rank]}`}>{r.code} · {r.label}</span> : null;
         })()}
+        {BANLIST.cards[def.name] !== undefined && (
+          <span className={`my-1 ml-1 inline-block rounded px-1.5 text-xs font-black ${BANLIST.cards[def.name] === 0 ? 'bg-rose-600 text-white' : 'bg-orange-500 text-white'}`}>
+            Banlist · {BAN_LABEL[BANLIST.cards[def.name]!]}
+          </span>
+        )}
         <div className="text-xs text-slate-400">
           {TYPE_LABEL[def.type]} · {def.colors.map((c) => COLOR_LABEL[c]).join('/')} · คอสต์ {def.cost}
           {def.family.length > 0 && <> · {def.family.join(' / ')}</>}

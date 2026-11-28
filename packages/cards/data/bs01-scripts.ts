@@ -91,7 +91,8 @@ export const BS01_SCRIPTS: Record<string, CardScript> = {
 
   // ---------------------------------------------------------------- Nexus
   ทวีปแห่งหุบผาหินแหลมคม: [
-    { kind: 'trigger', on: 'allySummoned', subject: { paidWithSoul: true }, levels: [1, 2], ownTurnOnly: true, mainStepOnly: true, steps: [destroy(NEXUS)] },
+    // "อัญเชิญสปิริตเรา" = สปิริตเท่านั้น (อัลติเมทไม่นับ · ตัวแปลงอ่านท่อน "เมื่อใช้ (โซลคอร์)" ไม่ถึงคำว่าสปิริตจึงต้องระบุเอง)
+    { kind: 'trigger', on: 'allySummoned', subject: { paidWithSoul: true, types: SPIRIT }, levels: [1, 2], ownTurnOnly: true, mainStepOnly: true, steps: [destroy(NEXUS)] },
     {
       kind: 'trigger',
       on: 'oppDestroyed',
