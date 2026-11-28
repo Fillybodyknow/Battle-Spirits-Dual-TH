@@ -93,7 +93,11 @@ function PlayDialogInner({ cardId, kind, timing, braveOnto }: { cardId: string; 
   // BS10 สิงโตควันม่วง: ทิ้งใบบนสุดเด็คเราไม่เกิน N ใบ ใบละคอสต์ -1
   const millAb = kind === 'summon' && !braveOnto ? def.abilities.find((a) => a.kind === 'millCostReduce') : undefined;
   const millMax = millAb?.kind === 'millCostReduce' ? Math.min(millAb.max, p.deck.length) : 0;
-  const [mill, setMill] = useState(0);
+  // เริ่มที่จำนวนน้อยที่สุดที่ทำให้จ่าย + วาง Lv1 ไหว (คอร์ไม่พอคอสต์เต็ม = ต้องทิ้งเด็คถึงจะอัญเชิญได้)
+  const [mill, setMill] = useState(() => {
+    for (let n = 0; n < millMax; n++) if (payableCost(state, db, player, def, Math.max(0, baseCost(state, db, cardId) - n)) + (def.levels[0]?.cores ?? 0) <= p.reserve.length) return n;
+    return millMax;
+  });
   // BS12 คาเมะมิสึ: เสื่อมสภาพเน็กซัสของเรา ใบละ = จ่ายแล้ว 1 คอสต์ (อัญเชิญเซ็นจูจากมือในเมนสเต็ป)
   const nexusMax = kind === 'summon' && !braveOnto && !fromTrash ? nexusExhaustPayMax(state, db, player, cardId, Math.max(0, baseCost(state, db, cardId) - Math.min(mill, millMax))).max : 0;
   const [nexusPay, setNexusPay] = useState(0);

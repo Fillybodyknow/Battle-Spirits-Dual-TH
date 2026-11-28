@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { burstSetDone, activatableOptions, blockForced, onStageAbilities, baseCost, braveToSwap, canAttackWith, cardColors, cardGems, cardLevel, currentBp, isSpiritLike, magicBanned, payableCost, summonConditionOk, trashSummonRule, type CoreTarget, type GameState, type PlayerId } from '@bs/engine';
+import { burstSetDone, activatableOptions, blockForced, nexusExhaustPayMax, onStageAbilities, baseCost, braveToSwap, canAttackWith, cardColors, cardGems, cardLevel, currentBp, isSpiritLike, magicBanned, payableCost, summonConditionOk, trashSummonRule, type CoreTarget, type GameState, type PlayerId } from '@bs/engine';
 import { COLOR_LABEL, playerLabel } from '../format';
 import { GEM_IMG, IMG } from '../assets';
 import type { Fx } from '../store';
@@ -500,11 +500,14 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
   if (def.type === 'nexus') {
     return (
       <div
+        ref={boxRef}
         data-field-card={cardId}
         className={`relative flex shrink-0 items-center gap-1 rounded-lg bg-black/40 p-1 transition ${flying ? 'invisible' : ''} ${
           candidate
             ? 'cursor-pointer ring-4 ring-fuchsia-400'
-            : over
+            : flashReady
+              ? 'cursor-pointer ring-4 ring-cyan-300'
+              : over
               ? 'ring-4 ring-emerald-400'
               : dropTarget
                 ? 'ring-2 ring-emerald-400/60'
@@ -514,9 +517,28 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
         }`}
         onMouseEnter={() => hover(cardId)}
         onMouseLeave={() => hover(null)}
-        onClick={() => clickFieldCard(cardId)}
+        onClick={() => {
+          // เน็กซัสที่มีเอฟเฟกต์ Flash กดใช้ได้ (BSC02 งานขอบคุณแฟนคลับ): เปิด/ปิดเมนู Flash เหมือนสปิริต
+          const st = useGame.getState();
+          if (menuCount > 0 && !st.state.choice && !isChoiceCandidate(st.state, cardId) && st.selectedCores.length === 0) {
+            useGame.setState({ pinned: cardId });
+            setFlashOpen(!flashOpen);
+            return;
+          }
+          clickFieldCard(cardId);
+        }}
         {...dropHandlers(dropTarget, () => moveCoresTo(target), setOver)}
       >
+        {menuCount > 0 && !flashOpen && (
+          <div data-arrow-avoid
+            className="pointer-events-none absolute -top-2 left-1/2 z-[6] flex -translate-x-1/2 items-center gap-0.5 rounded-md bg-cyan-300 px-1.5 py-0.5 text-[10px] font-black whitespace-nowrap text-slate-900 shadow"
+            style={{ animation: 'fx-flash-glow 1.2s ease-in-out infinite' }}
+          >
+            <Bolt />
+            {`Flash${menuCount > 1 ? ` ×${menuCount}` : ''}`}
+          </div>
+        )}
+        {flashOpen && menuCount > 0 && <FlashMenu cardId={cardId} anchor={boxRef} onClose={() => setFlashOpen(false)} />}
         {/* เสื่อมสภาพ: หมุน 90° เหมือนสปิริต (กรอบขยายตามให้ไม่ทับช่อง Core) */}
         <div
           className={`relative flex shrink-0 cursor-pointer items-center justify-center transition-[height,width] duration-300 ${exhausted ? 'h-[4.2rem] w-24' : 'h-24 w-[4.2rem]'}`}
@@ -552,7 +574,7 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
           )}
         </div>
         {previewText && (
-          <span className="absolute top-full left-1/2 z-10 mt-0.5 -translate-x-1/2 rounded bg-emerald-400 px-1 text-center text-[10px] font-bold whitespace-nowrap text-slate-900">
+          <span data-arrow-avoid className="absolute top-full left-1/2 z-10 mt-0.5 -translate-x-1/2 rounded bg-emerald-400 px-1 text-center text-[10px] font-bold whitespace-nowrap text-slate-900">
             {previewText}
           </span>
         )}
@@ -624,7 +646,7 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
           )}
         </div>
         {spirit && (
-          <div
+          <div data-arrow-avoid
             className={`absolute -top-2.5 -right-2.5 rounded-md px-1.5 py-0.5 text-sm font-black shadow ${
               card.turnBp > 0 || bp > (def.levels.find((l) => l.level === level)?.bp ?? 0) ? 'bg-yellow-300 text-slate-900' : 'bg-black/85 text-yellow-300'
             }`}
@@ -655,7 +677,7 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
         )}
         {/* มีเอฟเฟกต์ Flash / [Evolution] ที่กดใช้ได้: ป้ายบอกให้คลิกการ์ด (Main Step มีแค่ Evolution = ป้าย Evolution สีเขียว) */}
         {menuCount > 0 && !flashOpen && (
-          <div
+          <div data-arrow-avoid
             className={`pointer-events-none absolute top-6 left-1/2 z-[6] flex -translate-x-1/2 items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[10px] font-black whitespace-nowrap text-slate-900 shadow ${flashPlayer(state) ? 'bg-cyan-300' : 'bg-emerald-400'}`}
             style={flashPlayer(state) ? { animation: 'fx-flash-glow 1.2s ease-in-out infinite' } : undefined}
           >
@@ -712,39 +734,39 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
         })}
         {braveMenu && (braveMenu === cardId ? ownTurnMain : braveOwnMain(braveMenu)) && <BraveMenu braveId={braveMenu} onClose={() => setBraveMenu(null)} />}
         {(braveDrop || fieldBraveDrop) && (
-          <div className="absolute inset-x-1 bottom-1 z-10 rounded bg-emerald-400 py-0.5 text-center text-xs font-bold text-slate-900 shadow">
+          <div data-arrow-avoid className="absolute inset-x-1 bottom-1 z-10 rounded bg-emerald-400 py-0.5 text-center text-xs font-bold text-slate-900 shadow">
             {over ? 'ปล่อยเพื่อร่วมร่าง' : 'ร่วมร่างได้'}
           </div>
         )}
         {!isBlocker && battle?.chosenBlockers.includes(cardId) && (
-          <div className="absolute -top-2.5 left-1/2 z-10 -translate-x-1/2 rounded bg-fuchsia-500 px-1.5 text-[11px] font-black whitespace-nowrap text-white shadow">
+          <div data-arrow-avoid className="absolute -top-2.5 left-1/2 z-10 -translate-x-1/2 rounded bg-fuchsia-500 px-1.5 text-[11px] font-black whitespace-nowrap text-white shadow">
             🎯 ถูกเลือกให้ป้องกัน
           </div>
         )}
         {(isAttacker || isBlocker) && (
-          <div className={`absolute -top-2.5 -left-2 rounded px-1.5 text-xs font-black text-white shadow ${isAttacker ? 'bg-rose-600' : 'bg-sky-600'}`}>
+          <div data-arrow-avoid className={`absolute -top-2.5 -left-2 rounded px-1.5 text-xs font-black text-white shadow ${isAttacker ? 'bg-rose-600' : 'bg-sky-600'}`}>
             {isAttacker ? 'โจมตี' : 'ป้องกัน'}
           </div>
         )}
         {candidate && allocN === 0 && (
-          <div
+          <div data-arrow-avoid
             className={`absolute inset-x-1 rounded py-0.5 text-center text-xs font-bold shadow ${matTop ? 'top-1 rotate-180' : 'bottom-1'} ${picked ? 'bg-yellow-300 text-slate-900' : 'bg-fuchsia-500 text-white'}`}
           >
             {picked ? 'เลือกแล้ว ✓' : 'คลิกเพื่อเลือก'}
           </div>
         )}
         {canAttack && !confirming && (
-          <div className="absolute inset-x-1 bottom-1 rounded bg-amber-400 py-0.5 text-center text-xs font-bold text-slate-900">คลิกเพื่อโจมตี</div>
+          <div data-arrow-avoid className="absolute inset-x-1 bottom-1 rounded bg-amber-400 py-0.5 text-center text-xs font-bold text-slate-900">คลิกเพื่อโจมตี</div>
         )}
         {/* On Stage (BS07): ทำได้แทนการโจมตี · ก่อนกด = ป้ายบนการ์ด · กดการ์ดแล้ว = ปุ่มข้างปุ่มดาบ */}
         {canAttack && stageAbs.length > 0 && !confirming && (
-          <div className="pointer-events-none absolute top-6 left-1/2 z-[6] -translate-x-1/2 rounded-md bg-pink-400 px-1.5 py-0.5 text-[10px] font-black whitespace-nowrap text-slate-900 shadow">On Stage</div>
+          <div data-arrow-avoid className="pointer-events-none absolute top-6 left-1/2 z-[6] -translate-x-1/2 rounded-md bg-pink-400 px-1.5 py-0.5 text-[10px] font-black whitespace-nowrap text-slate-900 shadow">On Stage</div>
         )}
         {/* On Stage: ปุ่มวงกลมแบบเดียวกับปุ่มดาบ วางคู่กัน (ดาบซ้าย · On Stage ขวา) */}
         {canAttack &&
           confirming &&
           stageAbs.map((ab, i) => (
-            <button
+            <button data-arrow-avoid
               key={ab.source}
               type="button"
               title={ab.label}
@@ -773,7 +795,7 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
           ))}
         {/* ยืนยันโจมตี: ปุ่มวงกลมรูปดาบลอยเหนือการ์ด (กดปุ่ม หรือคลิกการ์ดซ้ำ = โจมตี) */}
         {canAttack && confirming && (
-          <button
+          <button data-arrow-avoid
             type="button"
             onClick={(e) => {
               e.stopPropagation();
@@ -797,11 +819,11 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
           </button>
         )}
         {canBlock && !blockConfirming && (
-          <div className="absolute inset-x-1 bottom-1 rounded bg-sky-400 py-0.5 text-center text-xs font-bold text-slate-900">คลิกเพื่อป้องกัน</div>
+          <div data-arrow-avoid className="absolute inset-x-1 bottom-1 rounded bg-sky-400 py-0.5 text-center text-xs font-bold text-slate-900">คลิกเพื่อป้องกัน</div>
         )}
         {/* ยืนยันป้องกัน: ปุ่มวงกลมรูปโล่ลอยเหนือการ์ด (กดปุ่ม = ป้องกัน · คลิกการ์ดซ้ำ = พับปุ่ม) */}
         {canBlock && blockConfirming && (
-          <button
+          <button data-arrow-avoid
             type="button"
             onClick={(e) => {
               e.stopPropagation();
@@ -823,7 +845,7 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
           </button>
         )}
         {previewText && (
-          <div
+          <div data-arrow-avoid
             className={`absolute inset-x-1 bottom-1 rounded py-1 text-center text-sm font-bold shadow-lg ${
               previewText === 'สูญสลาย!' ? 'bg-rose-600 text-white' : 'bg-emerald-400 text-slate-900'
             }`}
@@ -832,14 +854,14 @@ function FieldCard({ cardId, depleting }: { cardId: string; depleting: boolean }
           </div>
         )}
         {spirit && level === 0 && !previewText && (
-          <div className="absolute inset-x-1 top-1/3 rounded bg-rose-700/90 py-1 text-center text-xs font-bold text-white shadow-lg">
+          <div data-arrow-avoid className="absolute inset-x-1 top-1/3 rounded bg-rose-700/90 py-1 text-center text-xs font-bold text-white shadow-lg">
             Core ไม่พอ
             <br />
             <span className="font-normal">สูญสลายเมื่อยืนยัน</span>
           </div>
         )}
         {depleting && !previewText && level > 0 && (
-          <div className="absolute inset-x-1 bottom-1 rounded bg-rose-600 py-1 text-center text-sm font-bold text-white shadow-lg">จะสูญสลาย!</div>
+          <div data-arrow-avoid className="absolute inset-x-1 bottom-1 rounded bg-rose-600 py-1 text-center text-sm font-bold text-white shadow-lg">จะสูญสลาย!</div>
         )}
       </div>
 
@@ -1843,7 +1865,12 @@ function HandCard({ cardId, hidden, small, fan, shown: order }: { cardId: string
   const main = !readOnly && mine(card.owner) && inMain(state) && card.owner === state.turnPlayer;
   const flash = !readOnly && mine(card.owner) && flashPlayer(state) === card.owner;
   const timings = handMagicTimings(state, cardId);
-  const pay = payableCost(state, db, card.owner, def, baseCost(state, db, cardId));
+  // ลดคอสต์ที่เลือกได้ตอนเล่น (สิงโตควันม่วง: ทิ้งเด็ค · คาเมะมิสึ: เสื่อมสภาพเน็กซัส) = นับเต็มที่ตอนเช็กว่าจ่ายไหว (แผงเล่นการ์ดเลือกเองอีกที)
+  const millAb = def.abilities.find((a) => a.kind === 'millCostReduce');
+  const millCut = millAb?.kind === 'millCostReduce' ? Math.min(millAb.max, state.players[card.owner].deck.length) : 0;
+  const handBase = Math.max(0, baseCost(state, db, cardId) - millCut);
+  const nexusCut = state.players[card.owner].hand.includes(cardId) ? nexusExhaustPayMax(state, db, card.owner, cardId, handBase).max : 0;
+  const pay = payableCost(state, db, card.owner, def, Math.max(0, handBase - nexusCut));
   const affordable = pay <= state.players[card.owner].reserve.length + state.players[card.owner].field.reduce((n, id) => n + state.cards[id]!.cores.length, 0);
   const quick = canQuickSummon(state, cardId);
   const playable = ((main || (flash && timings.includes('flash'))) && affordable) || quick;

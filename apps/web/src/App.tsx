@@ -209,21 +209,21 @@ export function App() {
       <GameDataPill />
       <WhatsNew />
       <FpsMeter />
-      {/* มือถือ: เล่นแนวนอนเท่านั้น (ทุกหน้า) */}
-      <RotateHint />
+      {/* มือถือ: เล่นแนวนอนเท่านั้น (ทุกหน้า) · แท็บเล็ต/iPad: เฉพาะหน้าเล่นเกม */}
+      <RotateHint tablet={screen === 'game'} />
     </>
   );
 }
 
 /** ถือมือถือแนวตั้ง: เกมเล่นแนวนอนเท่านั้น */
-function RotateHint() {
-  if (!usePortraitPhone()) return null;
+function RotateHint({ tablet = false }: { tablet?: boolean }) {
+  if (!usePortraitPhone(tablet)) return null;
   return (
     <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center gap-6 bg-[#05040d]/95 text-center text-white">
       <div className="text-7xl" style={{ animation: 'rotate-hint 2.4s ease-in-out infinite' }}>
         📱
       </div>
-      <div className="text-4xl font-black">หมุนโทรศัพท์เป็นแนวนอน</div>
+      <div className="text-4xl font-black">หมุนจอเป็นแนวนอน</div>
       <div className="text-2xl text-slate-300">เกมนี้เล่นได้เฉพาะแนวนอน</div>
     </div>
   );

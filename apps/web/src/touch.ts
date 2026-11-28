@@ -43,20 +43,22 @@ export function useLastInputTouch(): boolean {
 /** อุปกรณ์ใช้นิ้วเป็นหลัก (มือถือ / แท็บเล็ต) */
 export const isCoarsePointer = () => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
 
-/** ถือแนวตั้งบนมือถือ (จอด้านสั้นน้อยกว่า 700) */
-export function usePortraitPhone(): boolean {
+/** ถือแนวตั้งบนมือถือ (จอด้านสั้นน้อยกว่า 700) · tablet = นับแท็บเล็ต/iPad ด้วย (หน้าเล่นเกม: กระดานออกแบบแนวนอน แนวตั้งแล้วการ์ดในมือตกขอบล่าง) */
+export function usePortraitPhone(tablet = false): boolean {
   const check = () =>
-    isCoarsePointer() && window.matchMedia('(orientation: portrait)').matches && Math.min(screen.width, screen.height) < 700;
+    isCoarsePointer() && window.matchMedia('(orientation: portrait)').matches && (tablet || Math.min(screen.width, screen.height) < 700);
   const [portrait, setPortrait] = useState(check);
   useEffect(() => {
     const update = () => setPortrait(check());
+    update();
     window.addEventListener('resize', update);
     window.addEventListener('orientationchange', update);
     return () => {
       window.removeEventListener('resize', update);
       window.removeEventListener('orientationchange', update);
     };
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tablet]);
   return portrait;
 }
 

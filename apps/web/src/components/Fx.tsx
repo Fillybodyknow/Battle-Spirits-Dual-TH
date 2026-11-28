@@ -4397,6 +4397,8 @@ export function AttackArrow() {
   const battle = useGame((s) => s.state.battle);
   const turnPlayer = useGame((s) => s.state.turnPlayer);
   const [lines, setLines] = useState<Line[]>([]);
+  /** ป้ายบนการ์ดในสนาม (data-arrow-avoid ใน Board.tsx: ป้าย Flash / โจมตี / ปุ่มยืนยัน ฯลฯ) = เส้นเว้นช่องให้ ไม่บังป้าย */
+  const [holes, setHoles] = useState<{ x: number; y: number; w: number; h: number }[]>([]);
   /** ฉาก U Trigger กลางจอ: ซ่อนลูกศรไม่ให้พาดทับ */
   const uTriggerShowing = useGame((s) => s.fx.some((f) => f.kind === 'uTrigger'));
   const attacker = battle?.attackerId;
@@ -4416,10 +4418,16 @@ export function AttackArrow() {
         : // ยังไม่ได้ตัดสินว่าจะป้องกันหรือรับด้วย Life: ชี้ไปกลางสนามคู่แข่ง (ไม่ชี้ไปที่ Life ก่อน)
           [centerOf(`[data-mat="${opponentOf(turnPlayer)}"]`)];
       const next = from ? targets.filter((t): t is { x: number; y: number } => !!t).map((t) => ({ x1: from.x, y1: from.y, x2: t.x, y2: t.y })) : [];
-      const key = next.map((l) => `${l.x1 | 0},${l.y1 | 0},${l.x2 | 0},${l.y2 | 0}`).join(';');
+      const avoid = [...document.querySelectorAll('[data-arrow-avoid]')]
+        .map((el) => el.getBoundingClientRect())
+        .filter((r) => r.width > 0 && r.height > 0)
+        .map((r) => ({ x: r.left - 3, y: r.top - 3, w: r.width + 6, h: r.height + 6 }));
+      const key =
+        next.map((l) => `${l.x1 | 0},${l.y1 | 0},${l.x2 | 0},${l.y2 | 0}`).join(';') + '|' + avoid.map((r) => `${r.x | 0},${r.y | 0},${r.w | 0},${r.h | 0}`).join(';');
       if (key !== last) {
         last = key;
         setLines(next);
+        setHoles(avoid);
       }
       // อ่านตำแหน่งการ์ดทุก 100 ms (เดิมทุกเฟรม: getBoundingClientRect ระหว่างแอนิเมชัน = บังคับคำนวณ layout ทุกเฟรม → กระตุกตอนต่อสู้)
       raf = window.setTimeout(tick, 100);
@@ -4434,6 +4442,14 @@ export function AttackArrow() {
     // ไม่ใส่ filter: SVG เต็มจอ + เส้นประวิ่งตลอดการต่อสู้ = วาด drop-shadow ทั้งจอใหม่ทุกเฟรม (FPS ตกบนมือถือ/iPad) · แสงเรือง = เส้นกว้างจาง ๆ ซ้อนใต้
     <svg data-attack-arrow className="pointer-events-none fixed inset-0 z-30 h-full w-full">
       <defs>
+        {holes.length > 0 && (
+          <mask id="fx-arrow-holes" maskUnits="userSpaceOnUse" x="0" y="0" width="100%" height="100%">
+            <rect x="0" y="0" width="100%" height="100%" fill="#fff" />
+            {holes.map((r, i) => (
+              <rect key={i} x={r.x} y={r.y} width={r.w} height={r.h} rx={6} fill="#000" />
+            ))}
+          </mask>
+        )}
         <marker id="fx-arrowhead" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse">
           <path d="M 0 0 L 10 5 L 0 10 z" fill={color} />
         </marker>
@@ -4445,7 +4461,7 @@ export function AttackArrow() {
         const len = Math.hypot(dx, dy) || 1;
         const end = { x: l.x2 - (dx / len) * 40, y: l.y2 - (dy / len) * 40 };
         return (
-          <g key={i}>
+          <g key={i} mask={holes.length > 0 ? 'url(#fx-arrow-holes)' : undefined}>
             <line x1={l.x1} y1={l.y1} x2={end.x} y2={end.y} stroke={color} strokeOpacity={0.12} strokeWidth={30} strokeLinecap="round" />
             <line x1={l.x1} y1={l.y1} x2={end.x} y2={end.y} stroke={color} strokeOpacity={0.25} strokeWidth={18} strokeLinecap="round" />
             <line
