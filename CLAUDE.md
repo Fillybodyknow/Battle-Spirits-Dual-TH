@@ -355,7 +355,8 @@ cd /d && npx vitest run --root /d/Coding/Battle-Spirits-Dual-TH   # เทสต
 
 ## Git / deploy
 
-- commit และ push **เฉพาะเมื่อเจ้าของโปรเจกต์สั่ง** (มักพูดว่า "commit และ push ขึ้นเว็บ") ทำงานบน `main`
+- commit และ push **เฉพาะเมื่อเจ้าของโปรเจกต์สั่ง** · **ทำงานบน branch `Dev`** (commit/push เข้า `Dev` ได้เมื่อสั่ง · push เข้า `Dev` ไม่รัน Actions ไม่ deploy)
+- **ขึ้นเว็บ** = รวม `Dev` เข้า `main` แล้ว push `main` (เฉพาะเมื่อเจ้าของโปรเจกต์สั่งให้ขึ้นเว็บ) แล้วกลับมาทำงานต่อบน `Dev`
 - หลัง push: GitHub Actions รันเทสต์ + build + deploy Pages · รอผลจาก
   `https://api.github.com/repos/Fillybodyknow/Battle-Spirits-Dual-TH/actions/runs?head_sha=<sha>` แล้วรายงาน
 - ค่า Firebase อยู่ใน environment variables ของ GitHub (`VITE_FIREBASE_*`) ไม่อยู่ใน repo

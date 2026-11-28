@@ -10,7 +10,9 @@ export function deckCover(id: DeckId): string {
   const entries = deckInfo(id).entries;
   const withArt = entries.filter((e) => cardArt(e.cardNo));
   const xr = withArt.find((e) => isXRare(db.find(e.cardNo) ?? {}));
-  return (xr ?? withArt[0] ?? entries[0]!).cardNo;
+  const pick = xr ?? withArt[0] ?? entries[0];
+  // เด็คว่าง (0 ใบ): ใช้ปกของ Starter แทน (เดิม entries[0]! พัง = หน้าโหลดตอนเข้าเกมค้างที่ READY 100%)
+  return pick ? pick.cardNo : id === 'sd01' ? (deckInfo('sd01').entries[0]?.cardNo ?? '') : deckCover('sd01');
 }
 
 export const deckSize = (id: DeckId) => deckSizeOf(deckInfo(id).entries);

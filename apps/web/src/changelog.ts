@@ -16,6 +16,11 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '65.0.1',
+    date: '2026-11-28',
+    items: ['แก้บั๊ก: ผู้เล่นที่มีเด็คว่าง (0 ใบ) ในเด็คของฉัน กดเข้าเกมแล้วค้างที่หน้าโหลด "READY 100%"'],
+  },
+  {
     version: '65.0.0',
     date: '2026-11-28',
     items: [

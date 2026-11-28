@@ -70,7 +70,13 @@ export async function preloadAll(onProgress: (p: PreloadProgress) => void): Prom
   await withTimeout(account.syncNow().catch(() => {}));
   tick(SYNC_W);
 
-  const images = homeImages();
+  // พังที่นี่ = แค่ไม่ได้โหลดภาพล่วงหน้า (ห้ามทำให้ทั้งหน้าโหลดค้าง)
+  let images: string[] = [];
+  try {
+    images = homeImages();
+  } catch (e) {
+    console.error('preload: homeImages', e);
+  }
   total += images.length;
   label = 'โหลดภาพ';
   report();

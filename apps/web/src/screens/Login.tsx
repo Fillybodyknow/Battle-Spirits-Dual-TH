@@ -366,7 +366,10 @@ export function Login({ onEnter }: { onEnter: () => void }) {
     enteredAt.current = Date.now();
     // เรียกในจังหวะที่ผู้เล่นแตะ: สร้าง AudioContext สำหรับถอดรหัสเสียงได้
     // เพดานรวม: เน็ตช้ามากก็เข้าหน้าหลักได้ภายใน MAX_LOAD_MS (ส่วนที่ค้างโหลดต่อเบื้องหลัง)
-    void Promise.race([preloadAll(setProgress), new Promise<void>((r) => setTimeout(r, MAX_LOAD_MS))]).then(() => setLoaded(true));
+    // finally: โหลดพังกลางทางก็ยังเข้าหน้าหลักได้ (เดิม .then อย่างเดียว = พังแล้วค้างฉากวาร์ปตลอด)
+    void Promise.race([preloadAll(setProgress), new Promise<void>((r) => setTimeout(r, MAX_LOAD_MS))])
+      .catch((e) => console.error('preload', e))
+      .finally(() => setLoaded(true));
   }, []);
   // ID ใหม่: แผงชวนเล่นบทเรียนขึ้นเมื่อโหลดเสร็จ และไม่เร็วกว่าเดิม (1.4 วิหลังแตะเริ่ม)
   const [welcomeReady, setWelcomeReady] = useState(false);
