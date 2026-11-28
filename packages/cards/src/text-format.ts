@@ -357,12 +357,15 @@ function parseCardBlock(block: Line[], autoCardNo: string, errors: string[]): Ca
     const noEffectText = /ไม่มีข้อความเอฟเฟกต์/.test(braveField.value);
     // "ร่วมร่างกับสปิริต/อัลติเมท" (BS12 โอคุริดาระ)
     const ultimate = braveField.value.includes('สปิริต/อัลติเมท');
-    if (!minCost && !family && !noEffectText) errIn(braveField.line, 'Brave ต้องระบุ "คอสต์ตั้งแต่ N ขึ้นไป" หรือ "สปิริตเผ่า..." หรือ "สปิริตที่ไม่มีข้อความเอฟเฟกต์"');
+    // "ร่วมร่างกับสปิริตที่มี Summon Bolt" (BS26 เบรฟอาร์โก)
+    const keyword = braveField.value.match(/สปิริตที่มี\s+([A-Za-z][A-Za-z ]*?)\s*,/);
+    if (!minCost && !family && !noEffectText && !keyword) errIn(braveField.line, 'Brave ต้องระบุ "คอสต์ตั้งแต่ N ขึ้นไป" หรือ "สปิริตเผ่า..." หรือ "สปิริตที่ไม่มีข้อความเอฟเฟกต์"');
     braveCondition = {
       maxSpirits: 1,
       ...(minCost ? { minCost: Number(minCost[1]) } : {}),
       ...(family ? { family: family[1]! } : {}),
       ...(noEffectText ? { noEffectText: true } : {}),
+      ...(keyword ? { textIncludes: keyword[1]!.trim() } : {}),
       ...(ultimate ? { ultimate: true } : {}),
       ...(bp ? { bp: Number(bp[1]) } : {}),
     };

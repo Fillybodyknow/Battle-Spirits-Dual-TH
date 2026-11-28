@@ -59,7 +59,9 @@ export function braveFits(braveDef: CardDef, hostDef: CardDef): boolean {
     hostDef.cost >= (c?.minCost ?? 0) &&
     (!c?.family || hostDef.family.includes(c.family)) &&
     // BS09 ไดกิว-อาร์มส์: ร่วมร่างกับสปิริตที่ไม่มีข้อความเอฟเฟกต์
-    (!c?.noEffectText || effectText(hostDef).trim() === '')
+    (!c?.noEffectText || effectText(hostDef).trim() === '') &&
+    // BS26 เบรฟอาร์โก: ผู้ร่วมร่างต้องมีคีย์เวิร์ดนี้
+    (!c?.textIncludes || textHas(hostDef, c.textIncludes))
   );
 }
 
@@ -182,7 +184,8 @@ export function depletionSaveSource(state: GameState, db: CardDatabase, cardId: 
   const owner = state.cards[cardId]!.owner;
   for (const src of staticSources(state, db, [owner], 'depletionSave')) {
     const ab = db.get(state.cards[src.cardId]!.cardNo).abilities.find((a) => a.kind === 'depletionSave' && a.source === src.source);
-    if (ab?.kind === 'depletionSave' && matchesFilter(state, db, cardId, ab.filter)) return src;
+    // BS26 เนินโซลูจ (lifeCore) เป็นอีกแบบ: ถามเจ้าของใน depleteByOpponent
+    if (ab?.kind === 'depletionSave' && !ab.lifeCore && matchesFilter(state, db, cardId, ab.filter)) return src;
   }
   return null;
 }
@@ -458,6 +461,16 @@ export function conditionHolds(
   if ('noLifeDamageThisTurn' in cond) return !(state.lifeDamagedThisTurn ?? []).includes(card.owner);
   if ('directAttack' in cond) return !!state.battle?.direct;
   if ('selfInBattle' in cond) return !!state.battle && (state.battle.attackerId === sourceId || state.battle.blockers.includes(sourceId));
+  if ('battleBlockedBy' in cond) {
+    const b = state.battle;
+    return !!b && !!db && b.blockers.some((x) => !!state.cards[x] && matchesFilter(state, db, x, cond.battleBlockedBy));
+  }
+  if ('battleOpponentUltimate' in cond) {
+    const b = state.battle;
+    if (!b || !db) return false;
+    const me = state.cards[sourceId]!.owner;
+    return [b.attackerId, ...b.blockers].some((x) => state.cards[x] && state.cards[x]!.owner !== me && db.get(state.cards[x]!.cardNo).type === 'ultimate');
+  }
   if ('battleAttacker' in cond) {
     const b = state.battle;
     return !!b && !!db && !!state.cards[b.attackerId] && matchesFilter(state, db, b.attackerId, cond.battleAttacker);
@@ -468,7 +481,7 @@ export function conditionHolds(
     return state.players[me].field.some((f) => state.cards[f]!.braves.some((b) => matchesFilter(state, db, b, cond.ownBraveHas)));
   }
   // ตรวจจาก trigger lifeLost เท่านั้น (holds ใน effects.ts)
-  if ('lifeLostAtLeast' in cond || 'destroyedBy' in cond || 'depletedByThis' in cond) return false;
+  if ('lifeLostAtLeast' in cond || 'destroyedBy' in cond || 'depletedByThis' in cond || 'destroyedByThisMatch' in cond) return false;
   if ('attackerFamily' in cond) {
     const b = state.battle;
     if (!b || !db) return false;
@@ -701,6 +714,17 @@ export function fieldCost(state: GameState, db: CardDatabase, cardId: string, ig
       out?.push({ cardId: id, source: ab.source, amount: ab.amount });
     }
   }
+  // BS26 ชิโรคาบุโตะ: คอสต์ของการ์ดเรา ± จากความสามารถของคู่แข่ง
+  for (const id of state.players[card.owner === 'p1' ? 'p2' : 'p1'].field) {
+    if (!db.get(state.cards[id]!.cardNo).abilities.some((a) => a.kind === 'opponentCostBoost') || effectsNegated(state, db, id)) continue;
+    const level = cardLevel(state, db, id);
+    for (const ab of db.get(state.cards[id]!.cardNo).abilities) {
+      if (ab.kind !== 'opponentCostBoost' || !ab.levels.includes(level)) continue;
+      if (!conditionHolds(state, id, ab.if, false, false, db) || !matchesFilter(state, db, cardId, ab.filter)) continue;
+      cost += ab.amount;
+      out?.push({ cardId: id, source: ab.source, amount: ab.amount });
+    }
+  }
   // BS16 โบนเซเบอร์ไทเกอร์: ในเทิร์นนี้ คอสต์ +N
   for (const t of state.turnCostBoosts ?? []) if (t.player === card.owner && t.turn === state.turn && matchesFilter(state, db, cardId, t.filter)) cost += t.amount;
   return cost;
@@ -778,6 +802,12 @@ export function matchesFilter(state: GameState, db: CardDatabase, cardId: string
   // ---------------- BS08
   if (filter.textIncludes && !filter.textIncludes.some((w) => textHas(def, w) || grantedText(state, db, cardId, w))) return false;
   if (filter.noTextIncludes && filter.noTextIncludes.some((w) => textHas(def, w))) return false;
+  // ---------------- BS26
+  if (filter.braveFamily && !card.braves.some((b) => db.get(state.cards[b]!.cardNo).family.includes(filter.braveFamily!))) return false;
+  if (filter.costIn) {
+    const onFieldNow = state.players[card.owner].field.includes(cardId);
+    if (!filter.costIn.includes(onFieldNow ? fieldCost(state, db, cardId) : def.cost)) return false;
+  }
   if (filter.noEffectText && effectText(def).trim() !== '') return false;
   if (filter.notInBattle && state.battle && (state.battle.attackerId === cardId || state.battle.blockers.includes(cardId))) return false;
   // ---------------- BS09
@@ -1553,6 +1583,7 @@ export function ownGemColors(state: GameState, db: CardDatabase, player: PlayerI
 /** BS09 วัดอรุณ: ในเทิร์นนี้ผู้เล่นนี้ใช้งานการ์ดเมจิคไม่ได้ */
 export function magicBanned(state: GameState, player: PlayerId, db?: CardDatabase, def?: CardDef): boolean {
   if ((state.magicBans ?? []).some((b) => b.player === player && b.turn === state.turn)) return true;
+  if (def && handColorBanned(state, player, def)) return true;
   return !!db && !!def && cardBanSource(state, db, player, def) !== null;
 }
 
@@ -1651,12 +1682,15 @@ export function nexusExhaustPayMax(state: GameState, db: CardDatabase, player: P
 /** BS12 แคพิทัลแคพิทัล: จำนวนคอร์ในรีเสิร์ฟที่ต้องส่งลงแทรชเพื่อสั่งการ์ดนี้โจมตี (การ์ดที่ไม่มีโซลคอร์ · 0 = ไม่มี) */
 export function attackReserveTaxFor(state: GameState, db: CardDatabase, attackerId: string): { cores: number; src: StaticSource[] } {
   const card = state.cards[attackerId]!;
-  if (state.phase !== 'attack' || card.cores.some((c) => state.cores[c]!.isSoul)) return { cores: 0, src: [] };
+  if (state.phase !== 'attack') return { cores: 0, src: [] };
+  const hasSoul = card.cores.some((c) => state.cores[c]!.isSoul);
   let cores = 0;
   const src: StaticSource[] = [];
   for (const s of staticSources(state, db, [card.owner === 'p1' ? 'p2' : 'p1'], 'attackReserveTax')) {
     const ab = db.get(state.cards[s.cardId]!.cardNo).abilities.find((a) => a.kind === 'attackReserveTax' && a.source === s.source);
     if (ab?.kind !== 'attackReserveTax') continue;
+    // แคพิทัลแคพิทัล: เฉพาะตัวที่ไม่มีโซลคอร์ · BS26 ทะเลสายฟ้า: เฉพาะตัวที่ตรงตัวกรอง
+    if (ab.filter ? !matchesFilter(state, db, attackerId, ab.filter) : hasSoul) continue;
     cores += ab.cores + (state.cards[s.cardId]!.cores.some((c) => state.cores[c]!.isSoul) ? ab.soulBonus : 0);
     src.push(s);
   }
@@ -2115,9 +2149,12 @@ export function staticSources(state: GameState, db: CardDatabase, players: reado
   const out: StaticSource[] = [];
   for (const p of players) {
     for (const id of state.players[p].field) {
+      const abilities = db.get(state.cards[id]!.cardNo).abilities;
+      // ไม่มีความสามารถชนิดนี้: ไม่ต้องคำนวณเลเวล/การลบล้าง (ถูกเรียกบ่อยมาก)
+      if (!abilities.some((a) => a.kind === kind)) continue;
       if (effectsNegated(state, db, id)) continue;
       const level = cardLevel(state, db, id);
-      for (const a of db.get(state.cards[id]!.cardNo).abilities) {
+      for (const a of abilities) {
         if (a.kind === kind && 'levels' in a && a.levels.includes(level) && !timingLocked(state, db, id, a)) out.push({ cardId: id, source: a.source });
       }
     }
@@ -2396,6 +2433,7 @@ export function canAttackWith(state: GameState, db: CardDatabase, cardId: string
     if (def.abilities.some((a) => a.kind === 'cannotAttack' && a.levels.includes(level) && conditionHolds(state, cardId, a.if, false, false, db))) return false;
   }
   if ((state.turnNoAttack ?? []).some((t) => t.cardId === cardId && t.turn === state.turn)) return false;
+  if (opponentAttackBanned(state, db, cardId)) return false;
   // BS09 สุสานของจักรพรรดิมาร: คอร์ 1 เม็ดโจมตีไม่ได้ / ต้องส่งคอร์ 2 เม็ดลงแทรชเพื่อโจมตี
   if (oneCoreLocked(state, db, cardId)) return false;
   if (card.cores.length < attackTaxFor(state, db, card.owner)) return false;
@@ -2414,6 +2452,47 @@ export function canAttackWith(state: GameState, db: CardDatabase, cardId: string
 }
 
 /** "ในเทิร์นนี้ สปิริตนั้นจะโจมตี/ป้องกันไม่ได้" (blockOnly = ป้องกันไม่ได้อย่างเดียว: forBlock) */
+/** BS26 พาร์ฟูม: ผู้โจมตีนี้ไม่ถูกป้องกันโดยการ์ดประเภทนี้ */
+export function alliesUnblockableBlocked(state: GameState, db: CardDatabase, attackerId: string, blockerType: string): boolean {
+  const owner = state.cards[attackerId]!.owner;
+  for (const src of staticSources(state, db, [owner], 'alliesUnblockableBy')) {
+    const ab = db.get(state.cards[src.cardId]!.cardNo).abilities.find((a) => a.kind === 'alliesUnblockableBy' && a.source === src.source);
+    if (ab?.kind !== 'alliesUnblockableBy' || !conditionHolds(state, src.cardId, ab.if, false, false, db) || !matchesFilter(state, db, attackerId, ab.filter)) continue;
+    if (ab.by === 'spirits' ? blockerType !== 'ultimate' : blockerType === 'ultimate') return true;
+  }
+  return false;
+}
+
+/** BS26 วาร์โกเบรฟ: การ์ดของคู่แข่งที่ห้ามการ์ดนี้โจมตี (ของบนสนาม + ที่เบรฟให้ผู้ร่วมร่าง) */
+export function opponentAttackBanned(state: GameState, db: CardDatabase, cardId: string): boolean {
+  const opp = state.cards[cardId]!.owner === 'p1' ? 'p2' : 'p1';
+  for (const host of state.players[opp].field) {
+    const hasBan = (x: string) => db.get(state.cards[x]!.cardNo).abilities.some((a) => a.kind === 'opponentAttackBan');
+    if (!hasBan(host) && !state.cards[host]!.braves.some(hasBan)) continue;
+    if (effectsNegated(state, db, host)) continue;
+    const level = cardLevel(state, db, host);
+    const entries = [
+      ...db.get(state.cards[host]!.cardNo).abilities.filter((a) => a.kind === 'opponentAttackBan' && !a.granted && a.levels.includes(level)),
+      ...state.cards[host]!.braves.flatMap((b) => db.get(state.cards[b]!.cardNo).abilities.filter((a) => a.kind === 'opponentAttackBan' && a.granted)),
+    ];
+    for (const ab of entries) {
+      if (ab.kind !== 'opponentAttackBan' || !conditionHolds(state, host, ab.if, false, false, db)) continue;
+      if (matchesFilter(state, db, cardId, ab.filter)) return true;
+    }
+  }
+  return false;
+}
+
+/** BS26 ชิโรคาบุโตะ: การ์ดนี้ไม่ถูกป้องกันโดยการ์ดคู่แข่งที่เสื่อมสภาพ */
+export function exhaustedBlockBanned(state: GameState, db: CardDatabase, attackerId: string): boolean {
+  const owner = state.cards[attackerId]!.owner;
+  for (const src of staticSources(state, db, [owner], 'unblockableByExhausted')) {
+    const ab = db.get(state.cards[src.cardId]!.cardNo).abilities.find((a) => a.kind === 'unblockableByExhausted' && a.source === src.source);
+    if (ab?.kind === 'unblockableByExhausted' && conditionHolds(state, src.cardId, ab.if, false, false, db) && matchesFilter(state, db, attackerId, ab.filter)) return true;
+  }
+  return false;
+}
+
 export function turnLocked(state: GameState, cardId: string, forBlock = false): boolean {
   return (state.turnLocks ?? []).some((l) => l.cardId === cardId && l.turn === state.turn && (!l.blockOnly || forBlock) && (!l.attackOnly || !forBlock));
 }
@@ -2446,6 +2525,10 @@ export function blockersFor(state: GameState, db: CardDatabase, defender: Player
     if (attacker && attackerUnblockable(state, attacker.id, def.type)) return false;
     if (turnLocked(state, id, true)) return false;
     if (oneCoreLocked(state, db, id)) return false;
+    // BS26 พาร์ฟูม: ผู้โจมตีไม่ถูกป้องกันโดยสปิริต/อัลติเมทของคู่แข่ง
+    if (attacker && alliesUnblockableBlocked(state, db, attacker.id, def.type)) return false;
+    // BS26 ชิโรคาบุโตะ: ผู้โจมตีไม่ถูกป้องกันโดยการ์ดที่เสื่อมสภาพ
+    if (attacker && card.state === 'exhausted' && exhaustedBlockBanned(state, db, attacker.id)) return false;
     if (coreTaxed(state, defender) && !card.cores.some((c) => !state.cores[c]!.isSoul)) return false;
     // ไทรซอร์ดอน: ป้องกันสปิริตที่ BP น้อยกว่าสปิริตนี้ไม่ได้
     if (attacker && cannotBlockLowerBp(state, db, id) && currentBp(state, db, attacker.id) < currentBp(state, db, id)) return false;
@@ -2708,7 +2791,13 @@ export function showdownBp(state: GameState, db: CardDatabase, cardId: string): 
 
 /** การ์ดนี้ของ player อัญเชิญไม่ได้ในเทิร์นนี้ (เฮียวจินดราก้อน) */
 export function summonBanned(state: GameState, db: CardDatabase, player: PlayerId, def: CardDef): boolean {
+  if (handColorBanned(state, player, def)) return true;
   return (state.summonBans ?? []).some((b) => b.player === player && b.turn === state.turn && b.types.includes(def.type) && def.cost <= b.maxCost);
+}
+
+/** BS26 เอ็ดเวิร์ด: ในเทิร์นนี้ใช้การ์ดในมือสีนี้ไม่ได้ */
+export function handColorBanned(state: GameState, player: PlayerId, def: CardDef): boolean {
+  return (state.handColorBans ?? []).some((b) => b.player === player && b.turn === state.turn && def.colors.some((c) => b.colors.includes(c)));
 }
 
 /** เงื่อนไขอัญเชิญของอัลติเมท ("ไลฟ์เราไม่เกิน N") ผ่านไหม */
@@ -2860,6 +2949,9 @@ export function payableCost(state: GameState, db: CardDatabase, player: PlayerId
 export function noRefreshSource(state: GameState, db: CardDatabase, cardId: string, byEffect: boolean): StaticSource | null {
   const card = state.cards[cardId];
   if (!card) return null;
+  // BS26 ไฮเพรสเชอร์ / อีเกรต: ฟื้นสภาพไม่ได้ทุกทางจนถึงแอทแท็คสเต็ปครั้งถัดไปของเจ้าของ
+  const until = (state.refreshLocksUntilAttack ?? []).find((l) => l.cardId === cardId);
+  if (until) return { cardId: until.by, source: until.source };
   // BS15 หอสมุดคัมภีร์: สปิริตของผู้เล่นทุกคนจะไม่ฟื้นสภาพโดยเอฟเฟกต์
   if (byEffect) {
     const lib = staticSources(state, db, ['p1', 'p2'], 'noEffectRefresh')[0];

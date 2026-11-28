@@ -187,6 +187,8 @@ export function probeGfx() {
 
 /** ค่าที่ใช้กับ Fx: แรงจอสั่น (0 = ไม่สั่น) / ความแรงแสงวาบเต็มจอ */
 export const shakeScale = () => (settings.shake === 'off' ? 0 : settings.shake === 'light' ? 0.4 : 1);
+/** ชั้นกระดานที่ใช้จอสั่น (App.tsx: data-shake อยู่ใน main · main เองใช้ซูมกระแทก: คนละ element = การ์ดจอทำแทนได้ทั้งคู่) */
+export const shakeTarget = () => document.querySelector('[data-shake]') ?? document.querySelector('main');
 export const flashScale = () => (settings.flash === 'low' ? 0.3 : 1);
 
 export function useGfx() {

@@ -23,7 +23,7 @@
 | BSC03 | BSC17 (18 อัลติเมททุกสี) | ✅ (57.0.0 · ชุด bsc03: data/bsc03-scripts.ts + loadBSC03Cards · ถอดจากภาพเอง: `cards-list/BSC17.text`) |
 | BSC04 | BSC18 (48 ดีว่าสีเหลือง) | ✅ (58.0.0 · ชุด bsc04: data/bsc04-scripts.ts + loadBSC04Cards · ถอดจากภาพเอง: `cards-list/BSC18.text` · ชื่อใหม่ยังไม่ได้ให้เจ้าของโปรเจกต์ตรวจ) |
 | BS18 | BS26 แดง (16) + ขาว (15) + ม่วง (15) | แดง ✅ (63.0.0 · ชุด bs18: data/bs18-scripts.ts + loadBS18Cards · ถอดจากภาพเอง: `cards-list/BS26/แดง.text` · ชื่อ/เผ่าใหม่ยังไม่ได้ให้เจ้าของโปรเจกต์ตรวจ) · ขาว ✅ (63.0.0 · `cards-list/BS26/ขาว.text`) · ม่วง ✅ (63.0.0 · `cards-list/BS26/ม่วง.text` · ครบ 46 ใบ) |
-| BS19 | BS26 เขียว (16) + เหลือง (15) + ฟ้า (14) | ⬜ |
+| BS19 | BS26 เขียว (16) + เหลือง (15) + ฟ้า (14) | เขียว ✅ (64.0.0 · ชุด bs19: data/bs19-scripts.ts + loadBS19Cards · `cards-list/BS26/เขียว.text`) · เหลือง ✅ (64.0.0 · `cards-list/BS26/เหลือง.text`) · ฟ้า ✅ (64.0.0 · `cards-list/BS26/ฟ้า.text` · ครบ 45 ใบ) |
 
 **การ์ด BSC = ชุดในเกมแยกชื่อ "BSC01, BSC02, …"** (เจ้าของโปรเจกต์กำหนด ไม่ใช้ BS16) · BSC15 = BSC01, BSC16 = BSC02 (แยกสองชุด) ·
 `BOOSTER_SETS` (bot-helpers.ts) และแบนเนอร์ชุดล่าสุด (`useLatestBoosters` ใน Home.tsx) รับ `/^BSC?\d+$/` แล้ว (แบนเนอร์เรียงตามลำดับใน `loadAllCards()` = ชุดที่เพิ่มทีหลังอยู่บน)
@@ -102,6 +102,31 @@
 - `blockTax.discardFilter` / `.lifeToReserve` + `.ultimatesOnly` (payBlockTax รับ blockerId · loseLife `noBurst`) · trigger ถูกทำลายจด `destroyerId` (ผู้ทำลาย/คู่ต่อสู้) → เงื่อนไข `destroyedBy`
 - subject `exhaustedByOpponentEffect` (allyExhausted) · CountPer `returnedByThis` (returnAllFromTrash) · ability `triggerCounterFree` (โทรเมอา) · Trigger Counter ของเบรฟใช้ `ifSummoned` (ร่วมร่างก็ทำงาน)
 - เผ่า (ยังไม่ได้ให้เจ้าของโปรเจกต์ตรวจ): 呪鬼 = มารต้องสาป (ตามอัลติเมทม่วง BS24/25) · 魔神 = เทพมาร
+
+## กลไกที่เพิ่มแล้วระหว่างงานนี้ (BS19 เขียว)
+
+- ผลฮิตของ U Trigger ที่มี Trigger Counter รออยู่ = ห่อด้วย step ภายใน `uTriggerHitGate` · step `guardUTriggerIf` (ใน Trigger Counter) หาเอฟเฟกต์ที่รอ gate ในคิว แล้วตั้ง `guarded` = ไม่ทำผลฮิต + trigger `uTriggerGuarded`
+- step `lockRefreshOpponent` (`state.refreshLocks`) / `exhaustUltimateBattle` (`card.battleExhaustUlt`: exhaustOpponent เติม 'ultimate') / `peekOpponentDeckTop` / `revealTopSummonBelowSubject` (payForSummon รับใบบนสุดเด็ค) / `deckCardToTrash`
+- `refreshOnBattleWin.ultimatesOnly` (`battle.refreshOnWinUlt`) · `turnTrigger.on: 'allyUltExhausted'` (queueExhaustTriggers) · replaceDestroy `toHand` + `then`
+- ability `opponentCostBoost` (fieldCost) / `unblockableByExhausted` (`exhaustedBlockBanned` ใน blockersFor) · เงื่อนไข `battleOpponentUltimate`
+- เผ่า: 剣獣 = ศาสตราสมิง · 刃虫 = แมลงดาบ · 爪鳥 = กรงเล็บวิหค · 殻人 = มนุษย์แมลง (ตาม BS24/25) · 殻虫 = แมลงปีกแข็ง (เจ้าของโปรเจกต์กำหนด)
+
+## กลไกที่เพิ่มแล้วระหว่างงานนี้ (BS19 เหลือง)
+
+- อิลลูชันมิเรอร์ = step `mirrorUTriggerHit` (ตั้ง `mirrored` ที่ gate) → ระหว่างผลฮิต `item.mirrored` = `opp` ใน execStep เป็นผู้ควบคุมเอง (**execStep ใช้ `opp` แทน `opponentOf(me)` ทุกจุดแล้ว: step ใหม่ต้องใช้ `opp`**) · step ภายใน `mirrorEnd`
+- step `treatAsUnblocked` / `battleBpSubstitute` (`battle.bpSub` ใน resolveBattle) / `ownSpiritCoreToTrash` · `negateChosenThisTurn.untilBattleEnd` (`negatedCards[].battle` ล้างใน endBattle) · `revealTakeAll.thenSummon` (→ revealSummon ที่เหลือ) · `ownBraveToHand.ofSelf`
+- ability `triggerCounterMagicFree` (payToUseCounter ไม่ถามจ่าย) / `alliesUnblockableBy` (`alliesUnblockableBlocked` ใน blockersFor) / `opponentAttackBan` (`opponentAttackBanned` ใน canAttackWith · granted ได้) · `depletionSave.lifeCore` ("สามารถ" = ถามเจ้าของ: พักการสูญสลายด้วย `state.depletionHold` ที่ checkDepletion ข้าม → step ภายใน askDepletionSave / depletionLifeSave / depleteHeld · depletionSaveSource ข้ามแบบ lifeCore)
+- ตัวกรอง `braveFamily` / `costIn` · เงื่อนไข `battleBlockedBy`
+- `staticSources` ข้ามการ์ดที่ไม่มีความสามารถชนิดนั้นก่อนคำนวณเลเวล (เร็วขึ้น) · memo.test: กระดานสุ่มบางแบบ (BS32-X02 + คาราเวล โกเล็ม) คำนวณสด ~9 วิ (ปัญหาเดิม) ขยายเวลาเทสต์เป็น 180 วิ
+- เผ่า (ยังไม่ได้ตรวจ): 楽族 = เผ่าดนตรี · 小玩 = ของเล่น · 戯狩 = นักล่าสนุก · 想獣 = สัตว์มายา (ตามของเดิม) · 天霊 = คนธรรพ์ · 神聖命 = Holy Life
+
+## กลไกที่เพิ่มแล้วระหว่างงานนี้ (BS19 ฟ้า)
+
+- Summon Bolt คอสต์สองค่า (a/b ไม่ใช่ช่วง) = ตัวช่วย `summonBolt()` ใน bs19-scripts (ตัวกรอง `costIn`) · step `summonBoltNoDestroy` (เบรฟอาร์โก: หา step อัญเชิญ summonBolt ในความสามารถของผู้ร่วมร่าง)
+- เบรฟ `braveCondition.textIncludes` (ตัวแปลง: "ร่วมร่างกับสปิริตที่มี Summon Bolt" · ตรวจใน braveFits)
+- `destroyedByThis[].id` + เงื่อนไข `destroyedByThisMatch` (destroyHighestCostOpponent จดแล้ว) · CountPer `bpSum` · `attackReserveTax.filter` (มีตัวกรอง = ไม่สนโซลคอร์)
+- step `opponentHandColorBanMilled` (`state.handColorBans` ใน summonBanned / magicBanned) / `destroyBattlingUltByHitCost` (คอสต์จาก U Trigger ที่รอ gate) / `opponentDestroysOwnLowest`
+- เผ่า: 闘神 = วิญญาณนักรบ · 獣頭 = สมิงหัว · 剣使 = จอมดาบ · 造兵 = ทหารสังเคราะห์ · 異合 = ร่างประกอบ (ตามของเดิม ยังไม่ได้ตรวจคู่ญี่ปุ่น)
 
 ## ข้อตกลงคำ/เผ่าที่เจ้าของโปรเจกต์ยืนยันแล้ว (ใช้ต่อ)
 

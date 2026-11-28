@@ -278,12 +278,15 @@ function GameScreen() {
           {/* เว้นที่ให้มือคู่แข่งแบบพัดที่ลอยอยู่ขอบบน */}
           <div className="h-[56px] shrink-0" />
           {/* โต๊ะ: สนามสองฝั่ง + แถบกลาง เอียงเป็นระนาบเดียว (ตั้งค่า → กราฟิก → เอียงกระดาน) */}
-          <div className={`board-tilt flex flex-1 flex-col gap-1.5 ${tilt ? 'tilted' : ''}`}>
-            <PlayerMat player={top} top />
-            <div data-setup="bar" className="sticky top-0 bottom-0 z-30 shrink-0">
-              {replay ? <ReplayBar /> : <PromptBar />}
+          {/* data-shake = ชั้นที่จอสั่น (แยกจาก main ที่ซูมกระแทก: แอนิเมชันสองตัวคนละ element → การ์ดจอทำแทนได้ทั้งคู่ ไม่ต้องวาดกระดานใหม่ทุกเฟรม) */}
+          <div data-shake className="flex flex-1 flex-col">
+            <div className={`board-tilt flex flex-1 flex-col gap-1.5 ${tilt ? 'tilted' : ''}`}>
+              <PlayerMat player={top} top />
+              <div data-setup="bar" className="sticky top-0 bottom-0 z-30 shrink-0">
+                {replay ? <ReplayBar /> : <PromptBar />}
+              </div>
+              <PlayerMat player={bottom} />
             </div>
-            <PlayerMat player={bottom} />
           </div>
           {/* เว้นที่ให้มือแบบพัดที่ลอยอยู่ขอบล่าง */}
           <div className="h-[104px] shrink-0" />

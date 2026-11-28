@@ -662,6 +662,8 @@ export function destroyCard(ctx: Ctx, cardId: string, by: PlayerId, opts: { bySo
         emitStatic(ctx, { cardId: repl.id, source: ab.source });
         leaveField(ctx, cardId, 'hand', { cloneToHand: true });
         emit(ctx, { type: 'bounced', player: owner, cardId });
+        // BS26 ซิลบาร์ ยันมะ: กลับขึ้นมือแล้วนำคอร์จากวอยด์ไปรีเสิร์ฟ
+        if (ab.then) s.queue.unshift({ controller: owner, sourceId: repl.id, source: ab.source, steps: [...ab.then], paidWithSoul: false, trashWhenDone: false });
         return;
       }
       // BS26 โบนริตเตอร์ / เดวิด: บังคับ (ไม่ถาม) ผลออกมาแล้วค่อยตัดสินว่าอยู่ต่อหรือถูกทำลาย
@@ -756,6 +758,13 @@ export function queueExhaustTriggers(ctx: Ctx, cardId: string, byEffect = true):
   queueRightAfterCurrent(ctx, () => {
     const batch = newBatch(ctx);
     for (const id of [...ctx.s.players[owner].field]) queueTriggers(ctx, id, 'allyExhausted', batch, { subject: cardId, ...(by ? { subjectExhaustedBy: by } : {}) });
+    // BS26 อัลติเมทวินด์: "ในเทิร์นนี้ ทุกครั้งที่อัลติเมทของเราเสื่อมสภาพ"
+    if (ctx.db.get(ctx.s.cards[cardId]!.cardNo).type === 'ultimate') {
+      for (const t of ctx.s.turnTriggers ?? []) {
+        if (t.player !== owner || t.turn !== ctx.s.turn || t.on !== 'allyUltExhausted') continue;
+        enqueue(ctx, { controller: owner, sourceId: t.sourceId, steps: [...t.steps], paidWithSoul: t.paidWithSoul, trashWhenDone: false, subjectId: cardId, batch });
+      }
+    }
     for (const id of [...ctx.s.players[opponentOf(owner)].field]) queueTriggers(ctx, id, 'oppExhausted', batch, { subject: cardId, ...(by ? { subjectExhaustedBy: by } : {}) });
   });
 }
@@ -813,7 +822,7 @@ function returnCard(ctx: Ctx, cardId: string, to: 'hand' | 'deckTop' | 'deckBott
 }
 
 /** การ์ดสูญสลายเพราะเอฟเฟกต์ของคู่แข่งถอดคอร์: ลงแทรชทันที + "เมื่อสปิริตนี้สูญสลายโดยคู่แข่ง" + Burst */
-function depleteByOpponent(ctx: Ctx, item: QueuedEffect, cardId: string, level: number, hadSoul: boolean): void {
+function depleteByOpponent(ctx: Ctx, item: QueuedEffect, cardId: string, level: number, hadSoul: boolean, skipLifeSave = false): void {
   const owner = ctx.s.cards[cardId]!.owner;
   // BSC01 ทัวร์มาลีนดรากูน: "สามารถ" นำคอร์จากวอยด์ 1 เม็ดมาวาง อยู่ต่อแบบเสื่อมสภาพ (ได้ประโยชน์เสมอ = ทำเองไม่ถาม)
   {
@@ -827,6 +836,20 @@ function depleteByOpponent(ctx: Ctx, item: QueuedEffect, cardId: string, level: 
           card.state = 'exhausted';
           emit(ctx, { type: 'exhausted', cardId });
         }
+        return;
+      }
+    }
+  }
+  // BS26 เนินโซลูจ: "สามารถ" นำคอร์ไลฟ์ 1 เม็ดมาวาง อยู่ต่อแบบฟื้นสภาพ → ถามเจ้าของ (พักการสูญสลายไว้ก่อน)
+  if (!skipLifeSave) {
+    const card = ctx.s.cards[cardId]!;
+    const need = minCores(ctx.db.get(card.cardNo)) - card.cores.length;
+    if (need === 1 && ctx.s.players[owner].life.length > 0) {
+      for (const src of staticSources(ctx.s, ctx.db, [owner], 'depletionSave')) {
+        const ab = ctx.db.get(ctx.s.cards[src.cardId]!.cardNo).abilities.find((a) => a.kind === 'depletionSave' && a.source === src.source);
+        if (ab?.kind !== 'depletionSave' || !ab.lifeCore || !matchesFilter(ctx.s, ctx.db, cardId, ab.filter)) continue;
+        ctx.s.depletionHold = [...(ctx.s.depletionHold ?? []), cardId];
+        item.steps.unshift({ do: 'askDepletionSave', cardId, level, hadSoul, srcId: src.cardId, source: src.source });
         return;
       }
     }
@@ -1473,11 +1496,13 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
     if (cond && 'lifeLostAtLeast' in cond) return (item.lifeLost ?? 0) >= cond.lifeLostAtLeast;
     if (cond && 'destroyedBy' in cond) return !!item.destroyerId && !!s.cards[item.destroyerId] && matchesFilter(s, db, item.destroyerId, cond.destroyedBy);
     if (cond && 'depletedByThis' in cond) return (item.depletedIds ?? []).some((id) => matchesFilter(s, db, id, cond.depletedByThis));
+    if (cond && 'destroyedByThisMatch' in cond) return (item.destroyedByThis ?? []).some((d) => !!d.id && matchesFilter(s, db, d.id, cond.destroyedByThisMatch));
     // BS11 สุโอว: เบิร์สที่ Catalyze สั่งใช้ ถือว่าไลฟ์เราเป็น N
     if (cond && 'lifeAtMost' in cond && item.lifeAs !== undefined) return item.lifeAs <= cond.lifeAtMost;
     return conditionHolds(s, self, cond, item.paidWithSoul, item.catalyzed, db);
   };
-  const opp = opponentOf(me);
+  // BS26 อิลลูชันมิเรอร์: "คู่แข่ง" ของผลฮิตเปลี่ยนเป็น "เรา"
+  const opp = item.mirrored ? me : opponentOf(me);
   // อัลติเมทไม่ใช่สปิริต: บรรทัดเอฟเฟกต์ที่ไม่พูดถึงอัลติเมท "สปิริต" = สปิริต + เบรฟ (การ์ดนี้เองยังนับ เช่น "อัลติเมทนี้")
   // ตัวกรองของ step ที่ระบุ 'ultimate' เอง ("สปิริต/อัลติเมท" ในบรรทัดที่มีสปิริตเดี่ยว ๆ ด้วย) = รวมอัลติเมท
   const stepTypes = (step as { filter?: { types?: string[] } }).filter?.types;
@@ -1617,6 +1642,10 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
           item.steps.unshift({ ...step, count: step.count + bonus, charged: true });
           return;
         }
+      }
+      if (s.cards[self]?.battleExhaustUlt && onField(ctx, self) && !(step.filter?.types ?? []).includes('ultimate')) {
+        item.steps.unshift({ ...step, filter: { ...(step.filter ?? {}), types: [...(step.filter?.types ?? ['spirit', 'brave']), 'ultimate'] } });
+        return;
       }
       const pool = step.anySide ? [...s.players[me].field, ...s.players[opp].field] : s.players[opp].field;
       const candidates = pool.filter(
@@ -2066,7 +2095,9 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       }
       if (take.length > 0) handIncreasedByEffect(ctx, me);
       const rest = revealed.filter((id) => !take.includes(id));
-      if (rest.length > 0 && step.rest === 'bottom') item.steps.unshift({ do: 'toDeckBottom', cardIds: rest });
+      // BS26 มาริกะ: ที่เหลือ (ยังอยู่บนสุดเด็ค) อัญเชิญได้ 1 ใบ แล้วที่เหลือไว้ใต้สุดเด็ค
+      if (rest.length > 0 && step.thenSummon) item.steps.unshift({ do: 'revealSummon', count: rest.length, filter: step.thenSummon, max: 1, rest: 'bottom' });
+      else if (rest.length > 0 && step.rest === 'bottom') item.steps.unshift({ do: 'toDeckBottom', cardIds: rest });
       // BS26 ไกเซอร์ดราก้อน: ที่เหลือคืนบนสุดเด็คเรียงลำดับได้ (ยังอยู่บนสุดอยู่แล้ว)
       else if (rest.length > 0 && step.rest === 'top') item.steps.unshift({ do: 'toDeckTop', cardIds: rest });
       else if (rest.length > 0) mill(ctx, me, rest);
@@ -2749,7 +2780,7 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
     case 'destroyAllOpponent': {
       const f = bpBoost && step.filter.maxBp !== undefined ? { ...step.filter, maxBp: step.filter.maxBp + bpBoost.amount } : step.filter;
       if (bpBoost) emitStatic(ctx, bpBoost.src);
-      for (const id of [...s.players[opponentOf(me)].field]) {
+      for (const id of [...s.players[opp].field]) {
         if (matchesFilter(s, db, id, f) && hits(id)) {
           recordDestroyed(ctx, item, id);
           destroyCard(ctx, id, me, { bySource: item.sourceId, effect: true });
@@ -2942,7 +2973,7 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       // BS11 True-Consecutive Blade: เลือกระบุได้ไม่เกิน N ตัว ต่อสู้พร้อมกัน
       if (step.max && battle.chosenBlockers.length === 0) battle.maxBlockers = step.max;
       if (battle.chosenBlockers.length >= battle.maxBlockers) return;
-      const candidates = s.players[opponentOf(me)].field.filter(
+      const candidates = s.players[opp].field.filter(
         (id) =>
           spiritLike(id) && !battle.chosenBlockers.includes(id) && (!step.filter || matchesFilter(s, db, id, step.filter)) && hits(id),
       );
@@ -3094,7 +3125,7 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
         }
       }
       // เลือกหลายตัว = คนละตัว (ตัวที่รอดด้วยเอฟเฟกต์แทนที่ไม่ถูกเลือกซ้ำ)
-      const pool = step.anySide ? [...s.players[me].field, ...s.players[opponentOf(me)].field] : s.players[opponentOf(me)].field;
+      const pool = step.anySide ? [...s.players[me].field, ...s.players[opp].field] : s.players[opp].field;
       const candidates = pool.filter((id) => matchesFilter(s, db, id, filter) && !step.exclude?.includes(id) && hits(id));
       if (candidates.length === 0) return;
       // "คอสต์ +N" ทำให้มีเป้าเพิ่มจริง → เรืองแสงการ์ดต้นเหตุก่อนให้เลือก
@@ -3591,6 +3622,7 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       const max = Math.max(...pool.map(costOf));
       const candidates = pool.filter((id) => costOf(id) === max);
       if (candidates.length === 1) {
+        recordDestroyed(ctx, item, candidates[0]!);
         destroyCard(ctx, candidates[0]!, me, { bySource: item.sourceId, effect: true });
         return;
       }
@@ -3824,7 +3856,10 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
 
     case 'refreshOnBattleWin':
       // BS15 โคเคทริส: ผู้ป้องกันที่ชนะก็ฟื้นสภาพได้
-      if (s.battle && (s.battle.attackerId === self || s.battle.blockers.includes(self)) && holds(step.if)) s.battle.refreshOnWin = [...(s.battle.refreshOnWin ?? []), self];
+      if (s.battle && (s.battle.attackerId === self || s.battle.blockers.includes(self)) && holds(step.if)) {
+        s.battle.refreshOnWin = [...(s.battle.refreshOnWin ?? []), self];
+        if (step.ultimatesOnly) s.battle.refreshOnWinUlt = [...(s.battle.refreshOnWinUlt ?? []), self];
+      }
       return;
 
     case 'lifeOnBattlerGone':
@@ -3902,7 +3937,7 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
     }
 
     case 'payForSummon': {
-      if (!s.players[me].hand.includes(step.cardId) && !myTrash(s, me).includes(step.cardId)) return;
+      if (!s.players[me].hand.includes(step.cardId) && !myTrash(s, me).includes(step.cardId) && s.players[me].deck[0] !== step.cardId) return;
       // BS10 สิงโตควันม่วง: ทิ้งใบบนสุดเด็คลดคอสต์ (ทุกการอัญเชิญ)
       if (!step.millAsked) {
         const mab = db.get(s.cards[step.cardId]!.cardNo).abilities.find((a) => a.kind === 'millCostReduce');
@@ -4334,6 +4369,206 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       }
       return;
 
+    case 'summonBoltNoDestroy': {
+      // หา step อัญเชิญของ Summon Bolt ในความสามารถของผู้ร่วมร่าง (ตัวเลือกแรกที่มี summonBolt)
+      if (!onField(ctx, self)) return;
+      const found: Step[] = [];
+      const walk = (x: unknown): void => {
+        if (found.length > 0 || !x || typeof x !== 'object') return;
+        if (Array.isArray(x)) {
+          for (const y of x) walk(y);
+          return;
+        }
+        const o = x as Record<string, unknown>;
+        if (o.do === 'chooseOne' && Array.isArray(o.options)) {
+          for (const opt of o.options as { steps: Step[] }[]) {
+            const sums = opt.steps.filter((st) => st.do === 'summonFromHandFree' && st.summonBolt);
+            if (sums.length > 0 && opt.steps.some((st) => st.do === 'destroySelf')) {
+              found.push(...sums);
+              return;
+            }
+          }
+        }
+        for (const v of Object.values(o)) walk(v);
+      };
+      walk(db.get(s.cards[self]!.cardNo).abilities);
+      if (found.length === 0) return;
+      item.steps.unshift({ do: 'chooseOne', options: [{ label: 'Summon Bolt (ไม่ทำลายสปิริตนี้): อัญเชิญจากมือไม่จ่ายคอสต์', steps: found }, { label: 'ไม่ใช้', steps: [] }] });
+      return;
+    }
+
+    case 'opponentHandColorBanMilled': {
+      const colors = [...new Set((item.milled ?? []).flatMap((id) => db.get(s.cards[id]!.cardNo).colors))];
+      if (colors.length === 0) return;
+      s.handColorBans = [...(s.handColorBans ?? []).filter((b) => b.turn === s.turn), { player: opp, turn: s.turn, colors }];
+      return;
+    }
+
+    case 'destroyBattlingUltByHitCost': {
+      // เอฟเฟกต์ U Trigger ที่รอผลฮิต (Trigger Counter แทรกหน้า): คอสต์ของการ์ดที่ฮิต
+      const target = s.queue.find((q) => q !== item && q.steps[0]?.do === 'uTriggerHitGate');
+      if (!target || target.uTriggerCost === undefined || !s.battle) return;
+      item.steps.unshift({ do: 'destroyChosenOpponent', filter: { types: ['ultimate'], inBattle: true, maxCost: target.uTriggerCost + step.plus } });
+      return;
+    }
+
+    case 'opponentDestroysOwnLowest': {
+      const pool = s.players[opp].field.filter((id) => spiritLike(id) && matchesFilter(s, db, id, step.filter) && hits(id));
+      if (pool.length === 0) return;
+      const min = Math.min(...pool.map((id) => fieldCost(s, db, id)));
+      const candidates = pool.filter((id) => fieldCost(s, db, id) === min);
+      ask(ctx, item, { kind: 'card', prompt: 'เลือกการ์ดของตัวเองที่คอสต์ต่ำที่สุด 1 ใบที่จะถูกทำลาย', candidates, step: { do: 'opponentDestroysOwn', filter: step.filter } }, opp);
+      return;
+    }
+
+    case 'treatAsUnblocked':
+      // BS26 เคทอส: ผู้ป้องกันออกจากการต่อสู้ (ไม่เทียบ BP) = ถือว่าไม่ถูกป้องกัน
+      if (s.battle && s.battle.attackerId === self && s.battle.blockers.length > 0) {
+        s.battle.blockers = [];
+      }
+      return;
+
+    case 'battleBpSubstitute': {
+      if (!s.battle) return;
+      const mineIn = [s.battle.attackerId, ...s.battle.blockers].some((x) => s.cards[x]?.owner === me);
+      const candidates = s.players[me].field.filter((id) => db.get(s.cards[id]!.cardNo).type === 'ultimate');
+      if (!mineIn || candidates.length === 0) return;
+      ask(ctx, item, { kind: 'card', prompt: 'เลือกอัลติเมทของเราที่จะใช้เทียบ BP แทน', candidates, step });
+      return;
+    }
+
+    case 'ownSpiritCoreToTrash': {
+      const candidates = s.players[me].field.filter((id) => spiritLike(id) && s.cards[id]!.cores.length > 0);
+      if (candidates.length === 0) return;
+      ask(ctx, item, { kind: 'card', prompt: 'เลือกสปิริตของเราที่จะส่งคอร์ 1 เม็ดไปแทรช', candidates, step });
+      return;
+    }
+
+    case 'uTriggerHitGate':
+      if (!step.guarded) {
+        if (step.mirrored) {
+          item.mirrored = true;
+          item.steps.unshift(...step.steps, { do: 'mirrorEnd' });
+        } else item.steps.unshift(...step.steps);
+        return;
+      }
+      // Trigger Counter ทำให้เป็น Guard: ไม่ทำผลฮิต · "เมื่อ U Trigger ของเราถูก Guard"
+      {
+        const gb = newBatch(ctx);
+        for (const id of [...s.players[me].field, ...teamHand(s, me)]) queueTriggers(ctx, id, 'uTriggerGuarded', gb, { subject: self });
+      }
+      return;
+
+    case 'askDepletionSave': {
+      const card = s.cards[step.cardId];
+      const owner = card?.owner;
+      if (!card || !owner || !s.players[owner].field.includes(step.cardId)) {
+        s.depletionHold = (s.depletionHold ?? []).filter((x) => x !== step.cardId);
+        return;
+      }
+      const name = db.get(card.cardNo).name;
+      const opts = [
+        { label: `นำคอร์ไลฟ์ 1 เม็ดมาวางบน ${name}: อยู่ต่อแบบฟื้นสภาพ`, steps: [{ do: 'depletionLifeSave' as const, cardId: step.cardId, srcId: step.srcId, source: step.source }] },
+        { label: `ไม่ใช้ (${name} สูญสลาย)`, steps: [{ do: 'depleteHeld' as const, cardId: step.cardId, level: step.level, hadSoul: step.hadSoul }] },
+      ];
+      ask(ctx, item, { kind: 'option', prompt: `${name} กำลังจะสูญสลาย`, options: opts.map((o) => o.label), step: { do: 'chooseOne', options: opts } }, owner);
+      return;
+    }
+
+    case 'depletionLifeSave': {
+      s.depletionHold = (s.depletionHold ?? []).filter((x) => x !== step.cardId);
+      const card = s.cards[step.cardId];
+      if (!card) return;
+      const pz = s.players[card.owner];
+      if (!pz.field.includes(step.cardId) || pz.life.length === 0) return;
+      emitStatic(ctx, { cardId: step.srcId, source: step.source });
+      card.cores.push(pz.life.pop()!);
+      emit(ctx, { type: 'lifeLost', player: card.owner, amount: 1 });
+      card.state = 'refresh';
+      emit(ctx, { type: 'cardRefreshed', cardId: step.cardId });
+      if (pz.life.length === 0) lifeZeroLose(ctx, card.owner, opponentOf(card.owner));
+      return;
+    }
+
+    case 'depleteHeld': {
+      s.depletionHold = (s.depletionHold ?? []).filter((x) => x !== step.cardId);
+      const card = s.cards[step.cardId];
+      if (!card || !s.players[card.owner].field.includes(step.cardId)) return;
+      const def = db.get(card.cardNo);
+      if (levelOf(def, card.cores.length) === 0) depleteByOpponent(ctx, item, step.cardId, step.level, step.hadSoul, true);
+      return;
+    }
+
+    case 'mirrorEnd':
+      delete item.mirrored;
+      return;
+
+    case 'mirrorUTriggerHit': {
+      const target = s.queue.find((q) => q !== item && q.steps[0]?.do === 'uTriggerHitGate');
+      const gate = target?.steps[0];
+      if (!target || gate?.do !== 'uTriggerHitGate') return;
+      // เฉพาะอัลติเมทของคู่แข่งที่กำลังต่อสู้
+      if (!s.battle || ![s.battle.attackerId, ...s.battle.blockers].includes(target.sourceId)) return;
+      target.steps[0] = { ...gate, mirrored: true };
+      return;
+    }
+
+    case 'guardUTriggerIf': {
+      // เอฟเฟกต์ U Trigger ที่รอผลฮิตอยู่ (ถูก Trigger Counter แทรกหน้า)
+      const target = s.queue.find((q) => q !== item && q.steps[0]?.do === 'uTriggerHitGate');
+      const gate = target?.steps[0];
+      if (!target || gate?.do !== 'uTriggerHitGate' || !target.uTriggerCardId || !matchesFilter(s, db, target.uTriggerCardId, step.filter)) return;
+      target.steps[0] = { ...gate, guarded: true };
+      emit(ctx, { type: 'uTrigger', cardId: target.sourceId, revealedId: target.uTriggerCardId, cost: target.uTriggerCost ?? 0, hit: false });
+      return;
+    }
+
+    case 'lockRefreshOpponent': {
+      const candidates = s.players[opp].field.filter((id) => matchesFilter(s, db, id, step.filter) && hits(id) && !(s.refreshLocksUntilAttack ?? []).some((l) => l.cardId === id));
+      if (candidates.length === 0) return;
+      if (candidates.length === 1) {
+        s.refreshLocksUntilAttack = [...(s.refreshLocksUntilAttack ?? []), { cardId: candidates[0]!, by: item.sourceId, source: item.source ?? 0 }];
+        return;
+      }
+      ask(ctx, item, { kind: 'card', prompt: 'เลือกการ์ดของคู่แข่งที่จะฟื้นสภาพไม่ได้', candidates, step });
+      return;
+    }
+
+    case 'exhaustUltimateBattle':
+      if (s.battle && onField(ctx, self)) s.cards[self]!.battleExhaustUlt = true;
+      return;
+
+    case 'peekOpponentDeckTop': {
+      const top = s.players[opp].deck[0];
+      if (top) emit(ctx, { type: 'cardsRevealed', player: opp, cardIds: [top] });
+      return;
+    }
+
+    case 'revealTopSummonBelowSubject': {
+      const top = s.players[me].deck[0];
+      const subj = item.subjectId ? s.cards[item.subjectId] : undefined;
+      if (!top || !subj) return;
+      emit(ctx, { type: 'cardsRevealed', player: me, cardIds: [top] });
+      const def = db.get(s.cards[top]!.cardNo);
+      const ok = (def.type === 'spirit' || def.type === 'brave') && def.cost < db.get(subj.cardNo).cost;
+      if (!ok) {
+        item.steps.unshift({ do: 'deckCardToTrash', cardId: top });
+        return;
+      }
+      item.steps.unshift({
+        do: 'chooseOne',
+        options: [
+          { label: `อัญเชิญ ${def.name} (จ่ายคอสต์)`, steps: [{ do: 'payForSummon', cardId: top, cost: payableCost(s, db, me, def) }, { do: 'deckCardToTrash', cardId: top }] },
+          { label: `ไม่อัญเชิญ (${def.name} ลงแทรช)`, steps: [{ do: 'deckCardToTrash', cardId: top }] },
+        ],
+      });
+      return;
+    }
+
+    case 'deckCardToTrash':
+      if (s.players[me].deck.includes(step.cardId)) mill(ctx, me, [step.cardId]);
+      return;
+
     case 'coresOffEveryOpponent': {
       const steps: Step[] = [];
       for (const id of s.players[opp].field) {
@@ -4356,7 +4591,8 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
     }
 
     case 'ownBraveToHand': {
-      const candidates = s.players[me].field.flatMap((id) => s.cards[id]!.braves).filter((b) => matchesFilter(s, db, b, step.filter));
+      const hosts = step.ofSelf ? s.players[me].field.filter((id) => id === self) : s.players[me].field;
+      const candidates = hosts.flatMap((id) => s.cards[id]!.braves).filter((b) => matchesFilter(s, db, b, step.filter));
       if (candidates.length === 0) return;
       ask(ctx, item, { kind: 'card', prompt: 'เลือกเบรฟที่ร่วมร่างอยู่ของเรา 1 ใบที่จะนำกลับขึ้นมือ', candidates, step });
       return;
@@ -4416,6 +4652,22 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
     case 'payToUseCounter': {
       const def = db.get(s.cards[item.sourceId]!.cardNo);
       if (!handCards(s, me).includes(item.sourceId)) return;
+      // BS26 เอคิดนา: ใช้ได้โดยไม่ต้องจ่ายคอสต์
+      const freeSrc = staticSources(s, db, [me], 'triggerCounterMagicFree').find((src) => {
+        const a = db.get(s.cards[src.cardId]!.cardNo).abilities.find((x) => x.kind === 'triggerCounterMagicFree' && x.source === src.source);
+        return a?.kind === 'triggerCounterMagicFree' && conditionHolds(s, src.cardId, a.if, false, false, db);
+      });
+      if (freeSrc) {
+        emitStatic(ctx, freeSrc);
+        removeFrom(s.players[me].hand, item.sourceId);
+        item.trashWhenDone = true;
+        emit(ctx, { type: 'magicUsed', player: me, cardId: item.sourceId, paid: 0, timing: 'flash' });
+        const ab = def.abilities.find((a) => a.kind === 'triggerCounter');
+        if (ab?.kind === 'triggerCounter') item.steps.unshift(...ab.steps);
+        emit(ctx, { type: 'effectResolving', player: me, cardId: item.sourceId, source: ab?.source ?? null });
+        queueMagicUsedTriggers(ctx, me, item.sourceId, true);
+        return;
+      }
       const cost = payableCost(s, db, me, def);
       if (usableCores(ctx, me).length < cost) return;
       ask(ctx, item, { kind: 'payCost', prompt: `จ่ายคอสต์ ${cost} เพื่อใช้ Trigger Counter ของ ${def.name}?`, cost, step });
@@ -5187,7 +5439,7 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
         item.uTriggerHits = hits;
         if (hits > 0) {
           // BS26 Trigger Counter: เจ้าของเด็คตอบได้ก่อนผลฮิต
-          const hitSteps: Step[] = triggerCounterCards(ctx, opp).length > 0 ? [{ do: 'triggerCounterAsk' }, ...step.then] : step.then;
+          const hitSteps: Step[] = triggerCounterCards(ctx, opp).length > 0 ? [{ do: 'triggerCounterAsk' }, { do: 'uTriggerHitGate', steps: step.then }] : step.then;
           const back = step.seatPicked ? item.steps.findIndex((x) => x.do === 'oppSeat' && x.seat === null) : -1;
           if (back >= 0) item.steps.splice(back + 1, 0, ...hitSteps);
           else item.steps.unshift(...hitSteps);
@@ -5251,7 +5503,7 @@ function execStep(ctx: Ctx, item: QueuedEffect, step: Step): void {
       if (hit) {
         // 2VS2: ผลฮิตทำหลังคืนที่นั่งคู่แข่ง (เอฟเฟกต์ที่ลงผลกับเด็ค/มือคู่แข่งยังโดนทั้งสองคนตามกติกา 15)
         // BS26 Trigger Counter: เจ้าของเด็คตอบได้ก่อนผลฮิต
-        const hitSteps: Step[] = triggerCounterCards(ctx, opp).length > 0 ? [{ do: 'triggerCounterAsk' }, ...step.then] : step.then;
+        const hitSteps: Step[] = triggerCounterCards(ctx, opp).length > 0 ? [{ do: 'triggerCounterAsk' }, { do: 'uTriggerHitGate', steps: step.then }] : step.then;
         const back = step.seatPicked ? item.steps.findIndex((x) => x.do === 'oppSeat' && x.seat === null) : -1;
         if (back >= 0) item.steps.splice(back + 1, 0, ...hitSteps);
         else item.steps.unshift(...hitSteps);
@@ -5719,6 +5971,8 @@ function countPer(ctx: Ctx, item: QueuedEffect, per: CountPer): number {
   // BS26 เบรฟพิสเกส / ควีนไนท์แมร์
   else if (per.depletedByThis) n = (item.depletedIds ?? []).filter((id) => matchesFilter(s, db, id, per.depletedByThis!)).length;
   else if (per.returnedByThis) n = item.returnedCount ?? 0;
+  // BS26 เบอร์แมน: ผลรวม BP
+  else if (per.bpSum) n = s.players[me].field.filter((id) => matchesFilter(s, db, id, per.bpSum!)).reduce((k, id) => k + currentBp(s, db, id), 0);
   else if (per.uTriggerHits) n = item.uTriggerHits ?? 0;
   else if (per.refreshedByThis) n = (item.refreshedByThis ?? []).length;
   else if (per.shownByThis) n = item.shownCount ?? 0;
@@ -6082,6 +6336,7 @@ function applyCardPick(ctx: Ctx, cur: QueuedEffect, choice: Extract<PendingChoic
       if ((step.count ?? 1) > 1) cur.steps.unshift({ ...step, count: (step.count ?? 1) - 1, exclude: [...(step.exclude ?? []), pick] });
       break;
     case 'destroyHighestCostOpponent':
+      recordDestroyed(ctx, cur, pick);
       destroyCard(ctx, pick, player, { bySource: cur.sourceId, effect: true });
       break;
     // ---------------- BS10 Bunshin
@@ -6139,7 +6394,7 @@ function applyCardPick(ctx: Ctx, cur: QueuedEffect, choice: Extract<PendingChoic
       emit(ctx, { type: 'cardLocked', cardId: pick });
       break;
     case 'negateChosenThisTurn':
-      s.negatedCards = [...(s.negatedCards ?? []).filter((t) => t.turn === s.turn), { cardId: pick, turn: s.turn }];
+      s.negatedCards = [...(s.negatedCards ?? []).filter((t) => t.turn === s.turn), { cardId: pick, turn: s.turn, ...(step.do === 'negateChosenThisTurn' && step.untilBattleEnd && s.battle ? { battle: true } : {}) }];
       emit(ctx, { type: 'cardLocked', cardId: pick });
       break;
     case 'noDestroyChosenThisTurn':
@@ -6214,6 +6469,15 @@ function applyCardPick(ctx: Ctx, cur: QueuedEffect, choice: Extract<PendingChoic
         // BSC04 ชูว: อัญเชิญต่ออีก (สูงสุด max ใบ)
         ...((step.max ?? 1) > 1 ? [{ ...step, max: (step.max ?? 1) - 1 }] : []),
       );
+      break;
+    case 'battleBpSubstitute':
+      if (s.battle) s.battle.bpSub = { player, cardId: pick };
+      break;
+    case 'ownSpiritCoreToTrash':
+      cur.steps.unshift({ do: 'coresOff', cardId: pick, n: 1, to: 'trash', byOpponent: false });
+      break;
+    case 'lockRefreshOpponent':
+      s.refreshLocksUntilAttack = [...(s.refreshLocksUntilAttack ?? []), { cardId: pick, by: cur.sourceId, source: cur.source ?? 0 }];
       break;
     case 'ownBraveToHand': {
       for (const id of s.players[player].field) if (s.cards[id]!.braves.includes(pick)) removeFrom(s.cards[id]!.braves, pick);
@@ -6323,6 +6587,7 @@ function applyCardPick(ctx: Ctx, cur: QueuedEffect, choice: Extract<PendingChoic
       s.cards[pick]!.state = 'exhausted';
       emit(ctx, { type: 'exhausted', cardId: pick });
       if (step.lockRefresh) s.refreshLocks = [...(s.refreshLocks ?? []), pick];
+      if (step.lockUntilAttack) s.refreshLocksUntilAttack = [...(s.refreshLocksUntilAttack ?? []), { cardId: pick, by: cur.sourceId, source: cur.source ?? 0 }];
       cur.exhaustedCount = (cur.exhaustedCount ?? 0) + 1;
       queueExhaustTriggers(ctx, pick);
       if (step.count > 1) cur.steps.unshift({ ...step, count: step.count - 1, if: undefined });
@@ -7011,6 +7276,7 @@ function recordDestroyed(ctx: Ctx, item: QueuedEffect, cardId: string): void {
     type: def.type,
     opponent: ctx.s.cards[cardId]!.owner !== item.controller,
     symbols: cardSymbolTotal(ctx.s, ctx.db, cardId),
+    id: cardId,
   });
 }
 

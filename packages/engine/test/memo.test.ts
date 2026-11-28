@@ -67,7 +67,8 @@ function snapshot(s: GameState) {
 }
 
 describe('แคชผลคำนวณ (freezeForCache)', () => {
-  it('state ที่แคชให้ผลเหมือนคำนวณสด ทุกค่า (สุ่ม 60 กระดาน)', () => {
+  // กระดานสุ่มบางแบบ (เช่น BS32-X02 + คาราเวล โกเล็ม) คำนวณสดช้ามาก: เผื่อเวลา (ตัวอย่างเปลี่ยนเมื่อเพิ่มการ์ด)
+  it('state ที่แคชให้ผลเหมือนคำนวณสด ทุกค่า (สุ่ม 60 กระดาน)', { timeout: 180000 }, () => {
     for (let seed = 1; seed <= 60; seed++) {
       const s = board(seed);
       const fresh = snapshot(structuredClone(s));

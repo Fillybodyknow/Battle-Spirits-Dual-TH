@@ -31,6 +31,8 @@ export const BraveConditionSchema = z.object({
   family: z.string().optional(),
   /** ผู้ร่วมร่างต้องเป็นสปิริตที่ไม่มีข้อความเอฟเฟกต์ (BS09 ไดกิว-อาร์มส์) */
   noEffectText: z.boolean().optional(),
+  /** BS26 เบรฟอาร์โก: ผู้ร่วมร่างต้องมีคีย์เวิร์ดนี้ (เช่น Summon Bolt) */
+  textIncludes: z.string().optional(),
   /** BS12 โอคุริดาระ: "ร่วมร่างกับสปิริต/อัลติเมท" = ร่วมร่างกับอัลติเมทได้ด้วย */
   ultimate: z.boolean().optional(),
   /** เอฟเฟกต์ติดตัวที่ให้ผู้ร่วมร่าง: BP+ */

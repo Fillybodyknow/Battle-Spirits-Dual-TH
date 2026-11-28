@@ -460,6 +460,11 @@ function refreshStep(ctx: Ctx): void {
 /** เข้าแอทแท็คสเต็ป: "เมื่อเริ่มแอทแท็คสเต็ปของเรา/คู่แข่ง" */
 function enterAttackStep(ctx: Ctx, player: PlayerId): void {
   setPhase(ctx, 'attack');
+  // BS26 ไฮเพรสเชอร์ / อีเกรต: ล็อกหมดเมื่อเริ่มแอทแท็คสเต็ปของเจ้าของการ์ด
+  if (ctx.s.refreshLocksUntilAttack?.length) {
+    ctx.s.refreshLocksUntilAttack = ctx.s.refreshLocksUntilAttack.filter((l) => ctx.s.cards[l.cardId]?.owner !== player);
+    if (ctx.s.refreshLocksUntilAttack.length === 0) delete ctx.s.refreshLocksUntilAttack;
+  }
   const batch = newBatch(ctx);
   for (const id of [...ctx.s.players[player].field]) queueTriggers(ctx, id, 'ownAttackStepStart', batch);
   for (const id of [...ctx.s.players[opponentOf(player)].field]) queueTriggers(ctx, id, 'oppAttackStepStart', batch);
@@ -1530,7 +1535,12 @@ function resolveBattle(ctx: Ctx): void {
   } else {
     // เทียบ BP กับผู้ป้องกันทีละตัว โดยใช้ BP ก่อนมีใครถูกทำลาย (ต่อสู้พร้อมกัน)
     // BS10 เจเนอรัล เซโตะไดโช: ในการต่อสู้นี้เทียบ Lv แทน BP
-    const power = (id: string) => (battle.compareLevel ? cardLevel(s, db, id) : currentBp(s, db, id));
+    // BS26 เชนจ์ลิง: ฝั่งที่เลือกเทียบ BP ด้วยอัลติเมทที่ระบุแทน
+    const sub = battle.bpSub && s.players[battle.bpSub.player].field.includes(battle.bpSub.cardId) ? battle.bpSub : null;
+    const power = (id: string) => {
+      const who = sub && s.cards[id]!.owner === sub.player ? sub.cardId : id;
+      return battle.compareLevel ? cardLevel(s, db, who) : currentBp(s, db, who);
+    };
     const bpA = power(attacker.id);
     const results = blockers.map((id) => ({ id, bp: power(id) }));
     const destroyedBlockers = results.filter((r) => r.bp <= bpA).map((r) => r.id);
@@ -1554,11 +1564,12 @@ function resolveBattle(ctx: Ctx): void {
       }
     }
     // "ชนะและทำลายสปิริตคู่แข่งจากการเทียบ BP → ฟื้นสภาพ" (คาราคุริโอโอคามิ)
-    if (!attackerLoses && destroyedBlockers.length > 0 && battle.refreshOnWin?.includes(attacker.id) && inBattle(s, attacker.id)) {
+    const ultOnlyOk = (id: string, victims: string[]) => !(battle.refreshOnWinUlt ?? []).includes(id) || (victims.length > 0 && victims.every((v) => ctx.db.get(s.cards[v]!.cardNo).type === 'ultimate'));
+    if (!attackerLoses && destroyedBlockers.length > 0 && battle.refreshOnWin?.includes(attacker.id) && inBattle(s, attacker.id) && ultOnlyOk(attacker.id, destroyedBlockers)) {
       refreshByEffect(ctx, attacker.id, attacker.id);
     }
     // BS15 โคเคทริส: ผู้ป้องกันที่ชนะและทำลายผู้โจมตีจากการเทียบ BP → ฟื้นสภาพ
-    for (const r of results) if (r.bp > bpA && battle.refreshOnWin?.includes(r.id) && inBattle(s, r.id)) refreshByEffect(ctx, r.id, r.id);
+    for (const r of results) if (r.bp > bpA && battle.refreshOnWin?.includes(r.id) && inBattle(s, r.id) && ultOnlyOk(r.id, [attacker.id])) refreshByEffect(ctx, r.id, r.id);
 
     const perBlocker = battle.lifeOnBlockerDestroyed + (battle.consecutiveBlade ? battle.lifeOnBlockerDestroyedByBlade : 0);
     if (destroyedBlockers.length > 0 && perBlocker > 0) {
@@ -1636,8 +1647,11 @@ function endBattle(ctx: Ctx): void {
     delete c.battleSymbols;
     delete c.battleBpDestroy;
     delete c.battleBpDestroyUlt;
+    delete c.battleExhaustUlt;
     delete c.battleStack;
   }
+  // BS26 ราบิตต้า: เอฟเฟกต์หายเฉพาะในการต่อสู้นี้
+  if (ctx.s.negatedCards?.some((n) => n.battle)) ctx.s.negatedCards = ctx.s.negatedCards.filter((n) => !n.battle);
   emit(ctx, { type: 'battleEnded' });
   const cond = battle.endAttackStepIf;
   const endIf = !!cond && !!ctx.s.cards[cond.sourceId] && conditionHolds(ctx.s, cond.sourceId, cond.cond, false, false, ctx.db);

@@ -5,7 +5,7 @@ import { braveSlot, CAST_MS, CHARGE_HIT, CHARGE_MS, CHARGE_WIND, DRAW_FLIP_MS, D
 import { CardBack, CardFace } from './CardFace';
 import { usePrefs } from '../prefs';
 import { setSfxTimeScale, sfx } from '../sfx';
-import { effects, flashScale, shakeScale } from '../gfx';
+import { effects, flashScale, shakeScale, shakeTarget } from '../gfx';
 import { playerLabel } from '../format';
 import { MatchIntro } from './MatchIntro';
 import { UTriggerFx } from './UTriggerFx';
@@ -1229,15 +1229,19 @@ const COLOR_HEX: Record<string, string> = { red: '#ef4444', purple: '#a855f7', g
 
 /** จอสั่นตามการตั้งค่า (ตั้งค่า → กราฟิก → จอสั่น): points = ระยะ px ของแต่ละจังหวะ ก่อนคูณความแรง */
 function shakeMain(points: [number, number][], duration: number) {
-  return shakeEl(document.querySelector('main'), points, duration);
+  return shakeEl(shakeTarget(), points, duration);
 }
+/**
+ * composite 'add' ทำให้ Chrome ส่งแอนิเมชันไปการ์ดจอไม่ได้ (ต้องคำนวณ + วาดทั้งกระดานใหม่ทุกเฟรม = FPS ตกบนแท็บเล็ต/มือถือ)
+ * → ใช้ 'add' เฉพาะตอนที่ element มีแอนิเมชันอื่นอยู่แล้ว (ต้องซ้อนกัน ไม่ทับ) · ปกติ = replace
+ */
+const compositeFor = (el: Element): CompositeOperation => (el.getAnimations().some((a) => a.playState === 'running') ? 'add' : 'replace');
 function shakeEl(el: Element | null | undefined, points: [number, number][], duration: number) {
   const k = shakeScale();
-  if (k === 0) return;
-  return el?.animate(
+  if (k === 0 || !el) return;
+  return el.animate(
     [{ transform: 'translate(0,0)' }, ...points.map(([x, y]) => ({ transform: `translate(${x * k}px,${y * k}px)` })), { transform: 'translate(0,0)' }],
-    // composite add: ซ้อนกับซูมกระแทกตอนโจมตีชนได้ (ไม่ทับกัน)
-    { duration, easing: 'ease-out', composite: 'add' },
+    { duration, easing: 'ease-out', composite: compositeFor(el) },
   );
 }
 
@@ -1262,7 +1266,7 @@ function zoomPunch(x: number, y: number, duration = 520, hold = 0.4) {
       { transform: `translate(0,0) scale(${z - 0.03})`, offset: h, easing: 'cubic-bezier(.45,0,.3,1)' },
       { transform: 'translate(0,0) scale(1)' },
     ],
-    { duration, composite: 'add' },
+    { duration, composite: compositeFor(main) },
   );
   a.onfinish = a.oncancel = () => (main.style.transformOrigin = prev);
 }
@@ -1871,14 +1875,23 @@ function FinalBlow({ fx, onDone }: { fx: Extract<Fx, { kind: 'finalBlow' }>; onD
     const { rate, hold, ramp } = LETHAL_SLOW;
     const t0 = performance.now();
     let raf = 0;
+    let lastScan = -Infinity;
+    let lastR = -1;
     const tick = () => {
-      const t = performance.now() - t0;
+      const now = performance.now();
+      const t = now - t0;
       const u = t <= hold ? 0 : Math.min(1, (t - hold) / ramp);
-      const r = rate + (1 - rate) * u * u;
-      // จอสั่นตอนปล่อย: ไม่ทำให้ช้า
-      for (const x of document.getAnimations()) if (!(x as Animation & { _noSlow?: boolean })._noSlow) x.playbackRate = r;
-      // เสียงช้าตามภาพ
-      setSfxTimeScale(r);
+      // ปัดความเร็วเป็นขั้น 0.05 และไล่ทุกแอนิเมชันแค่ตอนความเร็วเปลี่ยน / ทุก 100ms (จับแอนิเมชันที่เพิ่งเริ่ม):
+      // ตั้ง playbackRate ทุกเฟรม = แอนิเมชันบนการ์ดจอถูกส่งใหม่ทุกเฟรม + getAnimations ทั้งหน้า = เครื่องช้ากระตุก
+      const r = u >= 1 ? 1 : Math.round((rate + (1 - rate) * u * u) * 20) / 20;
+      if (r !== lastR || now - lastScan >= 100) {
+        lastScan = now;
+        lastR = r;
+        // จอสั่นตอนปล่อย: ไม่ทำให้ช้า
+        for (const x of document.getAnimations()) if (!(x as Animation & { _noSlow?: boolean })._noSlow && x.playbackRate !== r) x.playbackRate = r;
+        // เสียงช้าตามภาพ
+        setSfxTimeScale(r);
+      }
       if (u < 1) raf = requestAnimationFrame(tick);
     };
     tick();
@@ -1910,20 +1923,17 @@ function FinalBlow({ fx, onDone }: { fx: Extract<Fx, { kind: 'finalBlow' }>; onD
       {mat && (
         <div className="absolute" style={{ left: mat.x, top: mat.y, width: mat.w, height: mat.h, animation: 'fx-fb-dim 2.6s ease-out both' }}>
           <div className="absolute inset-0 rounded-xl bg-[radial-gradient(ellipse_at_center,rgba(127,29,29,0.35),rgba(0,0,0,0.75))]" />
-          <svg className="absolute inset-0 h-full w-full overflow-visible" style={{ filter: 'drop-shadow(0 0 6px rgba(255,255,255,0.9)) drop-shadow(0 0 14px rgba(248,113,113,0.8))' }}>
-            {(origin ? crackPaths(mat.w, mat.h, origin.x - mat.x, origin.y - mat.y) : crackPaths(mat.w, mat.h)).map((d, i) => (
-              <path
-                key={i}
-                d={d}
-                fill="none"
-                stroke="#fff"
-                strokeWidth={i % 3 === 0 ? 3.5 : 2}
-                strokeLinejoin="bevel"
-                pathLength={1}
-                strokeDasharray="1"
-                style={{ animation: `fx-fb-crack 0.45s ${450 + i * 25}ms cubic-bezier(.2,.8,.2,1) both` }}
-              />
-            ))}
+          {/* รอยร้าว: เรืองแสงด้วยเส้นกว้างโปร่งแสงซ้อนข้างใต้ (เดิม drop-shadow สองชั้นบน SVG ที่เส้นวิ่งอยู่ = เบลอทั้งแผ่นใหม่ทุกเฟรม) */}
+          <svg className="absolute inset-0 h-full w-full overflow-visible">
+            {(origin ? crackPaths(mat.w, mat.h, origin.x - mat.x, origin.y - mat.y) : crackPaths(mat.w, mat.h)).flatMap((d, i) => {
+              const w = i % 3 === 0 ? 3.5 : 2;
+              const anim = { animation: `fx-fb-crack 0.45s ${450 + i * 25}ms cubic-bezier(.2,.8,.2,1) both` };
+              return [
+                <path key={`g${i}`} d={d} fill="none" stroke="rgba(248,113,113,0.45)" strokeWidth={w + 10} strokeLinecap="round" strokeLinejoin="round" pathLength={1} strokeDasharray="1" style={anim} />,
+                <path key={`h${i}`} d={d} fill="none" stroke="rgba(255,255,255,0.55)" strokeWidth={w + 4} strokeLinecap="round" strokeLinejoin="round" pathLength={1} strokeDasharray="1" style={anim} />,
+                <path key={i} d={d} fill="none" stroke="#fff" strokeWidth={w} strokeLinejoin="bevel" pathLength={1} strokeDasharray="1" style={anim} />,
+              ];
+            })}
           </svg>
         </div>
       )}
@@ -2772,7 +2782,7 @@ function ChainAddFx({ fx, onDone }: { fx: Extract<Fx, { kind: 'chainAdd' }>; onD
     const tShake = setTimeout(() => {
       const pts: [number, number][] = [[-7 * k, 3 * k], [6 * k, -3 * k], [-4 * k, 2 * k], [2 * k, -1 * k]];
       shakeEl(stageRef.current, pts, 380);
-      shakeEl(document.querySelector('main'), pts, 380);
+      shakeEl(shakeTarget(), pts, 380);
     }, CL_LOCK_AT * 1000);
     return () => {
       anim.cancel();

@@ -66,6 +66,8 @@ export interface CardInstance {
   battleBpDestroy?: { amount: number; source: number };
   /** BS26 ชิโซเบิร์ด: ในการต่อสู้นี้ [เอฟเฟกต์ทำลาย BP] ของการ์ดนี้เลือกอัลติเมทได้ */
   battleBpDestroyUlt?: true;
+  /** BS26 อีเกรต: ในการต่อสู้นี้ [เอฟเฟกต์เสื่อมสภาพคู่แข่ง] ของการ์ดนี้เลือกอัลติเมทได้ */
+  battleExhaustUlt?: true;
   /** BS17 ไนท์ไอบิส: ในการต่อสู้นี้ ถือว่ามีคอสต์/BP นี้ (ร่างแยกซ้อน) */
   battleStack?: { cost: number; bp: number };
   /** BS17 ออร์แกนปีกทองคำ: การ์ดที่วางคว่ำอยู่ใต้การ์ดนี้ (ไม่อยู่ในโซนใด · ออกจากฟิลด์ = ลงแทรช) */
@@ -165,6 +167,10 @@ export interface Battle {
   /** จบ Attack Step เมื่อจบการต่อสู้นี้ ถ้าเงื่อนไขของผู้เล่นนี้เป็นจริงตอนจบ (ยูคิเกิร์ล) */
   endAttackStepIf?: { player: PlayerId; sourceId: string; cond: Condition };
   /** คู่แข่งต้องส่งคอร์รีเสิร์ฟ N เม็ดลงแทรชก่อนป้องกัน (ฮิเมะเนโกะ) · paid = จ่ายแล้วในการต่อสู้นี้ */
+  /** BS26 เชนจ์ลิง: ฝั่ง player เทียบ BP ด้วยการ์ดนี้แทน */
+  bpSub?: { player: PlayerId; cardId: string };
+  /** BS26 เรกิออส: ฟื้นสภาพเมื่อชนะเฉพาะเมื่อทำลายแต่อัลติเมท */
+  refreshOnWinUlt?: string[];
   blockTax?: { discardFilter?: CardFilter; lifeToReserve?: number; ultimatesOnly?: true; reserveToTrash: number; discard?: number; /** BSC02: คอร์บนฟิลด์ (สนาม/รีเสิร์ฟ) ไปแทรช */ fieldToTrash?: number; paid?: boolean };
   /** BSC02 โซโลวิง: ผู้โจมตีไม่ถูกป้องกันโดยสปิริตเลเวลเหล่านี้ */
   unblockLevels?: number[];
@@ -255,7 +261,7 @@ export interface QueuedEffect {
   /** การ์ดที่ถูกทิ้งด้วย mill ล่าสุดของเอฟเฟกต์นี้ */
   milled?: string[];
   /** การ์ดที่เอฟเฟกต์นี้ทำลาย (BP ตอนถูกทำลาย / ประเภท) ใช้กับ ifDestroyed */
-  destroyedByThis?: { bp: number; type: string; opponent: boolean; /** เจ็มรวมตอนถูกทำลาย */ symbols?: number }[];
+  destroyedByThis?: { bp: number; type: string; opponent: boolean; /** เจ็มรวมตอนถูกทำลาย */ symbols?: number; /** BS26 */ id?: string }[];
   /** BS09 refreshAllAllies: การ์ดที่ฟื้นสภาพโดยเอฟเฟกต์นี้ */
   refreshedByThis?: string[];
   /** BS10 สปิริตที่คู่แข่งเลือกเสื่อมสภาพด้วยเอฟเฟกต์นี้ (ไยบะโนะคามิ) */
@@ -284,6 +290,8 @@ export interface QueuedEffect {
   asMagic?: boolean;
   /** trigger oppHandIncreased: จำนวนการ์ดที่มือคู่แข่งเพิ่มขึ้น */
   handIncrease?: number;
+  /** BS26 อิลลูชันมิเรอร์: ระหว่างนี้ "คู่แข่ง" ของเอฟเฟกต์นี้ = ผู้ควบคุมเอง */
+  mirrored?: boolean;
   /** BS26 ซิกเฟซุล: การ์ดที่ถามทิ้งการ์ดเพื่อไม่รับผลแล้ว (ในเอฟเฟกต์นี้) */
   dodgeAsked?: string[];
   /** BS14 U Trigger: คอสต์ของการ์ดที่ถูกวางที่แทรช (ล่าสุด) */
@@ -483,6 +491,8 @@ export interface GameState {
   usedOncePerTurn?: string[];
   /** การ์ดที่ฟื้นสภาพไม่ได้ในรีเฟรชสเต็ปครั้งถัดไปของเจ้าของ (ล้างเมื่อผ่านรีเฟรชสเต็ปนั้น) */
   refreshLocks?: string[];
+  /** BS26 ไฮเพรสเชอร์ / อีเกรต: ฟื้นสภาพไม่ได้ทุกทาง (รีเฟรชสเต็ป + เอฟเฟกต์) จนถึงตอนเริ่มแอทแท็คสเต็ปครั้งถัดไปของเจ้าของ · by = การ์ดต้นเหตุ (เรืองแสง) */
+  refreshLocksUntilAttack?: { cardId: string; by: string; source: number }[];
   /** BS13 สถานที่ศักดิ์สิทธิ์ต้องห้าม: จำนวนการ์ดในเด็คของแต่ละฝ่ายที่ถูกทิ้งโดยเอฟเฟกต์ของคู่แข่งในเทิร์นนี้ */
   milledByOpponent?: { turn: number; p1?: number; p2?: number };
   /** จำนวนจั่วเพิ่มของ Draw Step ปัจจุบัน (เอฟเฟกต์ก่อนจั่ว) */
@@ -501,7 +511,7 @@ export interface GameState {
   /** สปิริตที่ไม่ถูกป้องกันในเทิร์นนี้ */
   unblockableTurn?: { cardId: string; turn: number }[];
   /** "ในเทิร์นนี้, เมื่อ..." ที่เมจิคตั้งไว้ (ล้างเมื่อจบเทิร์น) */
-  turnTriggers?: { player: PlayerId; turn: number; on: 'allyDestroyed' | 'turnEnd'; steps: Step[]; sourceId: string; paidWithSoul: boolean }[];
+  turnTriggers?: { player: PlayerId; turn: number; on: 'allyDestroyed' | 'turnEnd' | 'allyUltExhausted'; steps: Step[]; sourceId: string; paidWithSoul: boolean }[];
   /** Draw Step แบบกดจั่วเอง: ผู้เล่นที่ต้องกดจั่ว (ระหว่างนี้ทำ action อื่นไม่ได้) */
   awaitingDraw?: PlayerId;
   /** "ในเทิร์นนี้ สปิริตนั้นจะโจมตี/ป้องกันไม่ได้" */
@@ -556,6 +566,8 @@ export interface GameState {
   // ---------------- BS08
   /** ในเทิร์นนี้ player อัญเชิญการ์ดประเภท types คอสต์ไม่เกิน maxCost ไม่ได้ */
   summonBans?: { player: PlayerId; turn: number; maxCost: number; types: string[] }[];
+  /** BS26 เอ็ดเวิร์ด: ในเทิร์นนี้ player ใช้การ์ดในมือที่มีสีเหล่านี้ไม่ได้ (อัญเชิญ/เมจิค) */
+  handColorBans?: { player: PlayerId; turn: number; colors: string[] }[];
   // ---------------- BS09
   /** ในเทิร์นนี้ ผู้เล่นนี้สั่งใช้เบิร์สไม่ได้ */
   burstBans?: { player: PlayerId; turn: number }[];
@@ -567,6 +579,8 @@ export interface GameState {
   turnImmuneAll?: { player: PlayerId; turn: number; fromTypes: string[] }[];
   /** BS26 ซิกเฟซุล: การ์ดที่เลือกไม่รับผลเอฟเฟกต์ที่เล็งอยู่ (ใช้แล้วลบ) */
   dodged?: string[];
+  /** BS26 เนินโซลูจ: การ์ดที่รอเจ้าของเลือกว่าจะใช้คอร์ไลฟ์กันสูญสลายไหม (checkDepletion ข้ามไว้ก่อน) */
+  depletionHold?: string[];
   /** ในเทิร์นนี้ ขณะสปิริตของ player ที่ตรงตัวกรองโจมตีอยู่ เอฟเฟกต์ของคู่แข่งจบแอทแท็คสเต็ปไม่ได้ */
   noEndAttackStep?: { player: PlayerId; turn: number; filter: import('@bs/cards').CardFilter }[];
   /** โซลคอร์ที่อยู่ในแทรชของแต่ละฝ่ายตอนตรวจครั้งล่าสุด (trigger oppSoulToTrash) */
@@ -584,7 +598,7 @@ export interface GameState {
   noDestroyTurn?: { cardId: string; turn: number }[];
   // ---------------- BS11
   /** ในเทิร์นนี้ การ์ดนี้สูญเสียเอฟเฟกต์ทั้งหมด (นปเปะระเกิร์ล) */
-  negatedCards?: { cardId: string; turn: number }[];
+  negatedCards?: { cardId: string; turn: number; /** BS26: หมดเมื่อจบการต่อสู้ */ battle?: boolean }[];
   /** ในเทิร์นนี้ การ์ดของ player ที่ตรงตัวกรองเจ็มเป็น 0 (โททอลซอง) */
   symbolsZeroTurn?: { player: PlayerId; turn: number; filter: CardFilter }[];
   /** ในเทิร์นนี้ การ์ดนี้ทำความเสียหายแก่ไลฟ์ของ player ไม่ได้ (หิมะน้ำแข็ง เซอร์เคิล) */

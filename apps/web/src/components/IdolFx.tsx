@@ -10,7 +10,7 @@ import { useEffect, useRef, useState, type CSSProperties, type RefObject } from 
 import { db, layoutRect, ON_STAGE_CURTAIN, ON_STAGE_REVEAL, SOUL_DRIVE_BREAK, useGame, type Fx, type Rect } from '../store';
 import { IMG } from '../assets';
 import { CardBack, CardFace } from './CardFace';
-import { effects, flashScale, shakeScale } from '../gfx';
+import { effects, flashScale, shakeScale, shakeTarget } from '../gfx';
 
 export const DIVA = 'ดีว่า';
 export const isDivaCard = (cardNo: string) => db.get(cardNo).family.includes(DIVA);
@@ -190,9 +190,9 @@ function OnStage({ fx }: { fx: IdolFx }) {
     const k = shakeScale();
     if (k === 0) return;
     const t = setTimeout(() => {
-      document.querySelector('main')?.animate(
+      shakeTarget()?.animate(
         [[0, 0], [0, 12], [-10, -7], [8, 5], [-4, -3], [0, 0]].map(([x, y]) => ({ transform: `translate(${x! * k}px,${y! * k}px)` })),
-        { duration: 560, easing: 'ease-out', composite: 'add' },
+        { duration: 560, easing: 'ease-out' },
       );
     }, at(ON_STAGE_REVEAL));
     return () => clearTimeout(t);
@@ -431,9 +431,9 @@ function SoulDrive({ fx }: { fx: IdolFx }) {
     const k = shakeScale();
     if (k === 0) return;
     const t = setTimeout(() => {
-      document.querySelector('main')?.animate(
+      shakeTarget()?.animate(
         [[0, 0], [-14, 9], [12, -8], [-8, 6], [5, -3], [-2, 1], [0, 0]].map(([x, y]) => ({ transform: `translate(${x! * k}px,${y! * k}px)` })),
-        { duration: 620, easing: 'ease-out', composite: 'add' },
+        { duration: 620, easing: 'ease-out' },
       );
     }, Math.round(d * SOUL_DRIVE_BREAK));
     return () => clearTimeout(t);

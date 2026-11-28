@@ -149,6 +149,7 @@ export function leaveField(ctx: Ctx, cardId: string, to: 'trash' | 'hand', opts:
   delete card.battleSymbols;
   delete card.battleBpDestroy;
   delete card.battleBpDestroyUlt;
+  delete card.battleExhaustUlt;
   delete card.battleStack;
   // BS17 ออร์แกนปีกทองคำ: การ์ดใต้เน็กซัสถูกทิ้งเมื่อเน็กซัสออกจากฟิลด์
   if (card.under?.length) {
@@ -315,6 +316,8 @@ export function checkDepletion(ctx: Ctx): string[] {
   const depleted: string[] = [];
   for (const player of PLAYERS) {
     for (const cardId of [...ctx.s.players[player].field]) {
+      // BS26 เนินโซลูจ: รอเจ้าของเลือกอยู่
+      if (ctx.s.depletionHold?.includes(cardId)) continue;
       const card = ctx.s.cards[cardId]!;
       const def = ctx.db.get(card.cardNo);
       // คอร์ไม่ถึงเลเวลต่ำสุด (รวม "Lv คอสต์ +N" จากเอฟเฟกต์ เช่นราโชว) = สูญสลาย ทั้งสปิริตและเน็กซัส
